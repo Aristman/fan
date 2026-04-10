@@ -1,0 +1,81 @@
+generator client {
+	provider = "prisma-client-js"
+}
+
+datasource db {
+	provider = "sqlite"
+	url      = env("DATABASE_URL")
+}
+
+model Session {
+	id        String    @id @default(cuid())
+	title     String    @default("New Session")
+	model     String?
+	provider  String?
+	createdAt DateTime  @default(now())
+	updatedAt DateTime  @updatedAt
+	messages  Message[]
+}
+
+model Message {
+	id        String   @id @default(cuid())
+	sessionId String
+	session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+	role      String
+	content   String
+	toolCalls Json?
+	model     String?
+	tokens    Int?
+	cost      Float?
+	createdAt DateTime @default(now())
+
+	@@index([sessionId])
+	@@index([sessionId, createdAt])
+}
+
+model ModelSetting {
+	id          String   @id @default(cuid())
+	provider    String
+	model       String
+	temperature Float?   @default(0.7)
+	maxTokens   Int?
+	thinking    String?
+	isDefault   Boolean  @default(false)
+	priority    Int?     @default(0)
+	updatedAt   DateTime @updatedAt
+
+	@@unique([provider, model])
+}
+
+model RoutingRule {
+	id       String  @id @default(cuid())
+	name     String
+	provider String
+	model    String
+	fallback String?
+	enabled  Boolean @default(true)
+
+	@@unique([name])
+}
+
+model Budget {
+	id         String   @id @default(cuid())
+	provider   String?
+	period     String
+	tokenLimit Int?
+	costLimit  Float?
+	tokensUsed Int      @default(0)
+	costUsed   Float    @default(0)
+	resetAt    DateTime
+	createdAt  DateTime @default(now())
+
+	@@index([provider, period])
+}
+
+model ClientToken {
+	id        String    @id @default(cuid())
+	name      String
+	token     String    @unique
+	createdAt DateTime  @default(now())
+	lastUsed  DateTime?
+}

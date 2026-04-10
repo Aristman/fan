@@ -7,7 +7,7 @@
 - **Type:** Local AI runtime-agent for developers
 - **Base:** Fork of pi-mono (pi-coding-agent core)
 - **Repo:** Monorepo (npm workspaces, Bun, TypeScript)
-- **Stage:** Pre-implementation
+- **Stage:** Phase 1 — Foundation
 
 ## What It Is
 Runs locally on user's machine. Provides external API for multiple UI clients (TUI, WebView, IDEA plugin, etc.). Built on pi-coding-agent with custom orchestrator extension, model management, and all current extensions/skills.

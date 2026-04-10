@@ -1,0 +1,26 @@
+{
+	"name": "@fna/orchestrator",
+	"version": "0.1.0",
+	"description": "FNA orchestrator — multi-agent task decomposition and coordination",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"scripts": {
+		"clean": "shx rm -rf dist",
+		"build": "tsgo -p tsconfig.build.json",
+		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput"
+	},
+	"dependencies": {
+		"@mariozechner/pi-coding-agent": "^0.66.1",
+		"@mariozechner/pi-agent-core": "^0.66.1"
+	},
+	"devDependencies": {
+		"shx": "^0.4.0"
+	}
+}
