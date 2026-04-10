@@ -254,37 +254,14 @@ export async function startServer(
     });
     stop = async () => server.stop();
   } else {
-    // Node.js — create raw HTTP server for WebSocket upgrade support
-    const { createServer } = await import("node:http");
-    const { IncomingMessage, ServerResponse } = await import("node:http");
+    // Node.js — use @hono/node-server for proper body handling + raw Server for WebSocket upgrade
+    const { serve } = await import("@hono/node-server");
 
-    const httpServer = createServer((req: InstanceType<typeof IncomingMessage>, res: InstanceType<typeof ServerResponse>) => {
-      const url = new URL(req.url || "", `http://${req.headers.host || "localhost"}`);
-      const headers = new Headers();
-      for (const [key, value] of Object.entries(req.headers)) {
-        if (value != null) headers.set(key, Array.isArray(value) ? value.join(", ") : value);
-      }
-      const request = new Request(url.toString(), {
-        method: req.method || "GET",
-        headers,
-      });
-      Promise.resolve(app.fetch(request)).then((response: Response) => {
-        res.statusCode = response.status;
-        response.headers.forEach((value: string, key: string) => {
-          res.setHeader(key, value);
-        });
-        return response.text();
-      }).then((body: string) => {
-        res.end(body);
-      }).catch((err: unknown) => {
-        console.error("[api-gateway] Error handling request:", err);
-        res.statusCode = 500;
-        res.end("Internal Server Error");
-      });
-    });
+    // serve() returns the raw http.Server (ServerType) which we need for WebSocket upgrade
+    const httpServer = serve({ fetch: app.fetch, port, hostname: host });
 
     // Attach WebSocket handler (requires 'ws' package)
-    const wsHandler = attachWebSocketHandler({ server: httpServer, sessionAdapter });
+    const wsHandler = attachWebSocketHandler({ server: httpServer as any, sessionAdapter });
 
     stop = async () => {
       wsHandler.close();
@@ -292,19 +269,6 @@ export async function startServer(
         httpServer.close(() => resolve());
       });
     };
-
-    await new Promise<void>((resolve, reject) => {
-      httpServer.on("error", (err: any) => {
-        if (err.code === "EADDRINUSE") {
-          reject(new Error(`Port ${port} is already in use`));
-        } else {
-          reject(err);
-        }
-      });
-      httpServer.listen(port, host, () => {
-        resolve();
-      });
-    });
   }
 
   console.log(`[api-gateway] Server running at http://${host}:${port}`);
