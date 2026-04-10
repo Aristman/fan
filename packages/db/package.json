@@ -1,0 +1,31 @@
+{
+	"name": "@fna/db",
+	"version": "0.1.0",
+	"description": "FNA database layer — Prisma + SQLite",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"scripts": {
+		"clean": "shx rm -rf dist",
+		"build": "prisma generate && tsgo -p tsconfig.build.json",
+		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
+		"db:migrate": "prisma migrate dev",
+		"db:studio": "prisma studio",
+		"db:push": "prisma db push",
+		"db:validate": "prisma validate",
+		"db:generate": "prisma generate"
+	},
+	"dependencies": {
+		"@prisma/client": "^6.5.0"
+	},
+	"devDependencies": {
+		"prisma": "^6.5.0",
+		"shx": "^0.4.0"
+	}
+}
