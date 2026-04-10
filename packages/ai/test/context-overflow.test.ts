@@ -388,10 +388,10 @@ describe("Context overflow error handling", () => {
 	// or may rate limit instead
 	// =============================================================================
 
-	describe.skipIf(!process.env.ZAI_AFAN_KEY)("z.ai", () => {
+	describe.skipIf(!process.env.ZAI_API_KEY)("z.ai", () => {
 		it("glm-4.5-flash - should detect overflow via isContextOverflow when z.ai reports it", async () => {
 			const model = getModel("zai", "glm-4.5-flash");
-			const result = await testContextOverflow(model, process.env.ZAI_AFAN_KEY!);
+			const result = await testContextOverflow(model, process.env.ZAI_API_KEY!);
 			logResult(result);
 
 			// z.ai behavior is inconsistent:

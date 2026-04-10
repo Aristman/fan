@@ -126,12 +126,15 @@ Model management layer:
 - **Per-model Settings:** Temperature, thinking level, max tokens per provider/model
 - Integration with fan ModelRegistry and AuthStorage
 
-### packages/api-gateway — NEW
-Client API layer:
-- **stdio RPC:** JSON-over-stdio (extends pi --mode rpc with FAN commands)
-- **HTTP REST:** Hono server (sessions, models, budgets endpoints)
-- **WebSocket:** Real-time streaming (agent events + FAN-specific events)
-- **API Key:** Token generation for client connections
+### packages/api-gateway/
+Client API Gateway — HTTP REST + WebSocket server mode for FAN.
+
+- **auth.ts** — API token management (generate, validate, list, revoke) via ClientToken DB model. Hono middleware for Bearer token auth.
+- **http-server.ts** — Hono-based REST server with all endpoints (sessions, messages, models, budget, tokens, health). `SessionAdapter` interface decouples from coding-agent.
+- **ws-handler.ts** — WebSocket upgrade handler for `/api/ws/:sessionId`. Multi-client broadcast, session event forwarding, token auth.
+- **types.ts** — Shared request/response types for REST + WebSocket events.
+
+**Dependencies:** `hono`, `@hono/node-server`, `ws`, `@fan/db`, `@fan/model-manager`
 
 ### packages/db (Prisma + SQLite) — Modified
 Database schema for metadata (sessions, model settings, budgets). See Database Schema section below.
@@ -156,6 +159,31 @@ Lit-based web UI client connecting to FAN API:
 | Server | `fna --mode server` | HTTP REST + WebSocket on configurable port |
 | SDK | `import { createFnaSession }` | Programmatic use as library |
 | Desktop | Electron/Tauri wrapper | Windowed app with embedded runtime |
+
+---
+
+## HTTP API (Server Mode)
+
+When started with `--mode server`, FAN exposes a REST API + WebSocket on a configurable port (default: 3456).
+
+### Authentication
+- API token via `Authorization: Bearer <token>` header or `?token=` query param
+- Disabled in dev mode with `FAN_NO_AUTH=1`
+
+### Key Endpoints
+- `GET /api/health` — Health check (no auth)
+- `POST/GET/DELETE /api/sessions[/:id]` — Session CRUD
+- `POST /api/sessions/:id/messages` — Send message (events via WS)
+- `GET /api/models` — Available models + routing rules
+- `GET/PUT /api/models/settings` — Per-model settings
+- `GET/PUT /api/budget` — Budget status and configuration
+- `POST/GET/DELETE /api/tokens` — API token management
+- `WS /api/ws/:sessionId` — Real-time event streaming
+
+### RPC Extensions
+The stdio RPC mode (`--mode rpc`) has been extended with FAN-specific commands:
+- `get_routing_rules`, `get_budget_status`, `get_model_settings`
+- `generate_token`, `list_tokens`, `revoke_token`
 
 ---
 

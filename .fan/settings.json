@@ -1,0 +1,7 @@
+{
+  "defaultProvider": "zai",
+  "defaultModel": "zai/glm-5-turbo",
+  "defaultThinkingLevel": "medium",
+  "hideThinkingBlock": false,
+  "transport": "sse"
+}

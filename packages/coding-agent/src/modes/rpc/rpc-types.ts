@@ -65,7 +65,15 @@ export type RpcCommand =
 	| { id?: string; type: "get_messages" }
 
 	// Commands (available for invocation via prompt)
-	| { id?: string; type: "get_commands" };
+	| { id?: string; type: "get_commands" }
+
+	// FAN Model Management
+	| { id?: string; type: "get_routing_rules" }
+	| { id?: string; type: "get_budget_status" }
+	| { id?: string; type: "get_model_settings" }
+	| { id?: string; type: "generate_token"; name: string }
+	| { id?: string; type: "list_tokens" }
+	| { id?: string; type: "revoke_token"; tokenId: string };
 
 // ============================================================================
 // RPC Slash Command (for get_commands response)
@@ -199,6 +207,14 @@ export type RpcResponse =
 			success: true;
 			data: { commands: RpcSlashCommand[] };
 	  }
+
+	// FAN Model Management
+	| { id?: string; type: "response"; command: "get_routing_rules"; success: true; data: { rules: Array<{ id: string; name: string; provider: string; model: string; fallback?: string; enabled: boolean }> } }
+	| { id?: string; type: "response"; command: "get_budget_status"; success: true; data: { budgets: Array<{ provider: string; period: string; tokensUsed: number; costUsed: number; tokenLimit?: number; costLimit?: number; exceeded: boolean }> } }
+	| { id?: string; type: "response"; command: "get_model_settings"; success: true; data: { settings: Array<{ id: string; provider: string; model: string; temperature?: number | null; maxTokens?: number | null; thinking?: string | null; isDefault: boolean; priority: number }> } }
+	| { id?: string; type: "response"; command: "generate_token"; success: true; data: { token: { id: string; name: string; token: string; createdAt: string; lastUsed?: string } } }
+	| { id?: string; type: "response"; command: "list_tokens"; success: true; data: { tokens: Array<{ id: string; name: string; createdAt: string; lastUsed?: string }> } }
+	| { id?: string; type: "response"; command: "revoke_token"; success: true }
 
 	// Error response (any command can fail)
 	| { id?: string; type: "response"; command: string; success: false; error: string };

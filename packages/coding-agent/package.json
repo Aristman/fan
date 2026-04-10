@@ -40,6 +40,7 @@
 	},
 	"dependencies": {
 		"@fan/model-manager": "^0.1.0",
+		"@fan/api-gateway": "^0.1.0",
 		"@mariozechner/jiti": "^2.6.2",
 		"@itone/fan-agent-core": "^0.66.1",
 		"@itone/fan-ai": "^0.66.1",

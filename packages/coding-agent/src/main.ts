@@ -16,7 +16,7 @@ import { buildInitialMessage } from "./cli/initial-message.js";
 import { listModels } from "./cli/list-models.js";
 import { selectSession } from "./cli/session-picker.js";
 import { getAgentDir, getModelsPath, VERSION } from "./config.js";
-import { type CreateAgentSessionRuntimeFactory, createAgentSessionRuntime } from "./core/agent-session-runtime.js";
+import { type AgentSessionRuntime, type CreateAgentSessionRuntimeFactory, createAgentSessionRuntime } from "./core/agent-session-runtime.js";
 import {
 	type AgentSessionRuntimeDiagnostic,
 	createAgentSessionFromServices,
@@ -45,6 +45,7 @@ import { ExtensionSelectorComponent } from "./modes/interactive/components/exten
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.js";
 import { handleConfigCommand, handlePackageCommand } from "./package-manager-cli.js";
 import { isLocalPath } from "./utils/paths.js";
+import { startServer, type SessionAdapter } from "@fan/api-gateway";
 
 /**
  * Read all content from piped stdin.
@@ -92,9 +93,70 @@ function isTruthyEnvFlag(value: string | undefined): boolean {
 	return value === "1" || value.toLowerCase() === "true" || value.toLowerCase() === "yes";
 }
 
-type AppMode = "interactive" | "print" | "json" | "rpc";
+function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
+	return {
+		async listSessions() {
+			return [{
+				id: runtime.session.sessionId,
+				title: runtime.session.sessionName || "Current Session",
+				model: runtime.session.model?.id,
+				provider: runtime.session.model?.provider,
+				createdAt: new Date().toISOString(),
+				updatedAt: new Date().toISOString(),
+				messageCount: 0,
+			}];
+		},
+		async getSession(id: string) {
+			if (id !== runtime.session.sessionId) return null;
+			return {
+				id: runtime.session.sessionId,
+				title: runtime.session.sessionName || "Current Session",
+				model: runtime.session.model?.id,
+				provider: runtime.session.model?.provider,
+				createdAt: new Date().toISOString(),
+				updatedAt: new Date().toISOString(),
+				messages: [],
+			};
+		},
+		async createSession() {
+			throw new Error("Session creation via HTTP is not yet supported in server mode");
+		},
+		async deleteSession() {
+			return false;
+		},
+		async sendMessage(sessionId: string, message: string, streamingBehavior?: "steer" | "followUp") {
+			if (sessionId !== runtime.session.sessionId) return false;
+			await runtime.session.prompt(message, {
+				streamingBehavior: streamingBehavior ?? "followUp",
+			});
+			return true;
+		},
+		subscribeToSession(sessionId: string, handler: (event: any) => void) {
+			if (sessionId !== runtime.session.sessionId) {
+				return () => {};
+			}
+			return runtime.session.subscribe(handler);
+		},
+		async getAvailableModels() {
+			const registry = runtime.services.modelRegistry;
+			if (!registry) return [];
+			const current = runtime.session.model;
+			if (!current) return [];
+			return [{
+				provider: current.provider,
+				model: current.id,
+				displayName: current.name,
+			}];
+		},
+	};
+}
+
+type AppMode = "interactive" | "print" | "json" | "rpc" | "server";
 
 function resolveAppMode(parsed: Args, stdinIsTTY: boolean): AppMode {
+	if (parsed.mode === "server") {
+		return "server";
+	}
 	if (parsed.mode === "rpc") {
 		return "rpc";
 	}
@@ -107,7 +169,7 @@ function resolveAppMode(parsed: Args, stdinIsTTY: boolean): AppMode {
 	return "interactive";
 }
 
-function toPrintOutputMode(appMode: AppMode): Exclude<Mode, "rpc"> {
+function toPrintOutputMode(appMode: AppMode): Exclude<Mode, "rpc" | "server"> {
 	return appMode === "json" ? "json" : "text";
 }
 
@@ -626,9 +688,9 @@ export async function main(args: string[]) {
 		process.exit(0);
 	}
 
-	// Read piped stdin content (if any) - skip for RPC mode which uses stdin for JSON-RPC
+	// Read piped stdin content (if any) - skip for RPC and server modes which use stdin differently
 	let stdinContent: string | undefined;
-	if (appMode !== "rpc") {
+	if (appMode !== "rpc" && appMode !== "server") {
 		stdinContent = await readPipedStdin();
 		if (stdinContent !== undefined && appMode === "interactive") {
 			appMode = "print";
@@ -658,7 +720,7 @@ export async function main(args: string[]) {
 	}
 	time("createAgentSession");
 
-	if (appMode !== "interactive" && !session.model) {
+	if (appMode !== "interactive" && appMode !== "server" && !session.model) {
 		console.error(chalk.red("No models available."));
 		console.error(chalk.yellow("\nSet an API key environment variable:"));
 		console.error("  ANTHROPIC_AFAN_KEY, OPENAI_AFAN_KEY, GEMINI_AFAN_KEY, etc.");
@@ -672,7 +734,32 @@ export async function main(args: string[]) {
 		process.exit(1);
 	}
 
-	if (appMode === "rpc") {
+	if (appMode === "server") {
+		printTimings();
+		const modelManager = runtime.session.modelManager;
+		if (!modelManager) {
+			console.error("Error: ModelManager is not available. Server mode requires model management to be enabled.");
+			process.exit(1);
+		}
+		const adapter = createSessionAdapter(runtime);
+		const { port, stop } = await startServer(modelManager, adapter, {
+			port: parsed.port || 3456,
+			host: parsed.host || "localhost",
+		});
+		console.log(`[fan] Server mode active — http://${parsed.host || "localhost"}:${port}`);
+
+		// Keep process alive until interrupted
+		await new Promise<void>((resolve) => {
+			const onSignal = async (signal: string) => {
+				console.log(`\n[fan] Received ${signal}, shutting down...`);
+				await stop();
+				await runtime.dispose();
+				resolve();
+			};
+			process.on("SIGINT", () => onSignal("SIGINT"));
+			process.on("SIGTERM", () => onSignal("SIGTERM"));
+		});
+	} else if (appMode === "rpc") {
 		printTimings();
 		await runRpcMode(runtime);
 	} else if (appMode === "interactive") {

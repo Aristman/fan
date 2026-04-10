@@ -601,6 +601,98 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				return success(id, "get_commands", { commands });
 			}
 
+			// =================================================================
+			// FAN Model Management
+			// =================================================================
+
+			case "get_routing_rules": {
+				const modelManager = session.modelManager;
+				if (!modelManager) {
+					return { id: command.id, type: "response", command: "get_routing_rules", success: false, error: "ModelManager not available" };
+				}
+				return {
+					id: command.id,
+					type: "response",
+					command: "get_routing_rules",
+					success: true,
+					data: { rules: await modelManager.getRoutingRules() },
+				};
+			}
+
+			case "get_budget_status": {
+				const modelManager = session.modelManager;
+				if (!modelManager) {
+					return { id: command.id, type: "response", command: "get_budget_status", success: false, error: "ModelManager not available" };
+				}
+				const budgets = await modelManager.getBudgetStatus();
+				return {
+					id: command.id,
+					type: "response",
+					command: "get_budget_status",
+					success: true,
+					data: { budgets: Array.isArray(budgets) ? budgets : [budgets] },
+				};
+			}
+
+			case "get_model_settings": {
+				const modelManager = session.modelManager;
+				if (!modelManager) {
+					return { id: command.id, type: "response", command: "get_model_settings", success: false, error: "ModelManager not available" };
+				}
+				return {
+					id: command.id,
+					type: "response",
+					command: "get_model_settings",
+					success: true,
+					data: { settings: await modelManager.getAllModelSettings() },
+				};
+			}
+
+			case "generate_token": {
+				try {
+					const { generateToken } = await import("@fan/api-gateway");
+					const token = await generateToken(command.name);
+					return {
+						id: command.id,
+						type: "response",
+						command: "generate_token",
+						success: true,
+						data: { token: { id: token.id, name: token.name, token: token.token, createdAt: token.createdAt.toISOString(), lastUsed: token.lastUsed?.toISOString() } },
+					};
+				} catch (err: any) {
+					return { id: command.id, type: "response", command: "generate_token", success: false, error: err.message || "Failed to generate token" };
+				}
+			}
+
+			case "list_tokens": {
+				try {
+					const { listTokens } = await import("@fan/api-gateway");
+					const tokens = await listTokens();
+					return {
+						id: command.id,
+					type: "response",
+						command: "list_tokens",
+						success: true,
+						data: { tokens: tokens.map(t => ({ id: t.id, name: t.name, createdAt: t.createdAt.toISOString(), lastUsed: t.lastUsed?.toISOString() })) },
+					};
+				} catch (err: any) {
+					return { id: command.id, type: "response", command: "list_tokens", success: false, error: err.message || "Failed to list tokens" };
+				}
+			}
+
+			case "revoke_token": {
+				try {
+					const { revokeToken } = await import("@fan/api-gateway");
+					const revoked = await revokeToken(command.tokenId);
+					if (!revoked) {
+						return { id: command.id, type: "response", command: "revoke_token", success: false, error: "Token not found" };
+					}
+					return { id: command.id, type: "response", command: "revoke_token", success: true };
+				} catch (err: any) {
+					return { id: command.id, type: "response", command: "revoke_token", success: false, error: err.message || "Failed to revoke token" };
+				}
+			}
+
 			default: {
 				const unknownCommand = command as { type: string };
 				return error(undefined, unknownCommand.type, `Unknown command: ${unknownCommand.type}`);

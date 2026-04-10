@@ -329,7 +329,7 @@ describe("totalTokens field", () => {
 	// z.ai
 	// =========================================================================
 
-	describe.skipIf(!process.env.ZAI_AFAN_KEY)("z.ai", () => {
+	describe.skipIf(!process.env.ZAI_API_KEY)("z.ai", () => {
 		it(
 			"glm-4.5-flash - should return totalTokens equal to sum of components",
 			{ retry: 3, timeout: 60000 },
@@ -337,7 +337,7 @@ describe("totalTokens field", () => {
 				const llm = getModel("zai", "glm-4.5-flash");
 
 				console.log(`\nz.ai / ${llm.id}:`);
-				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.ZAI_AFAN_KEY });
+				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.ZAI_API_KEY });
 
 				logUsage("First request", first);
 				logUsage("Second request", second);

@@ -8,7 +8,7 @@ import { APP_NAME, CONFIG_DIR_NAME, ENV_AGENT_DIR } from "../config.js";
 import type { ExtensionFlag } from "../core/extensions/types.js";
 import { allTools, type ToolName } from "../core/tools/index.js";
 
-export type Mode = "text" | "json" | "rpc";
+export type Mode = "text" | "json" | "rpc" | "server";
 
 export interface Args {
 	provider?: string;
@@ -42,6 +42,8 @@ export interface Args {
 	listModels?: string | true;
 	offline?: boolean;
 	verbose?: boolean;
+	port?: number;
+	host?: string;
 	messages: string[];
 	fileArgs: string[];
 	/** Unknown flags (potentially extension flags) - map of flag name to value */
@@ -72,7 +74,7 @@ export function parseArgs(args: string[]): Args {
 			result.version = true;
 		} else if (arg === "--mode" && i + 1 < args.length) {
 			const mode = args[++i];
-			if (mode === "text" || mode === "json" || mode === "rpc") {
+			if (mode === "text" || mode === "json" || mode === "rpc" || mode === "server") {
 				result.mode = mode;
 			}
 		} else if (arg === "--continue" || arg === "-c") {
@@ -158,6 +160,20 @@ export function parseArgs(args: string[]): Args {
 			}
 		} else if (arg === "--verbose") {
 			result.verbose = true;
+		} else if (arg === "--port") {
+			const portStr = args[++i];
+			if (!portStr || isNaN(Number(portStr))) {
+				result.diagnostics.push({ type: "error", message: `--port requires a valid number` });
+			} else {
+				result.port = Number(portStr);
+			}
+		} else if (arg === "--host") {
+			const hostStr = args[++i];
+			if (!hostStr) {
+				result.diagnostics.push({ type: "error", message: `--host requires a value` });
+			} else {
+				result.host = hostStr;
+			}
 		} else if (arg === "--offline") {
 			result.offline = true;
 		} else if (arg.startsWith("@")) {
@@ -217,7 +233,9 @@ ${chalk.bold("Options:")}
   --api-key <key>                API key (defaults to env vars)
   --system-prompt <text>         System prompt (default: coding assistant prompt)
   --append-system-prompt <text>  Append text or file contents to the system prompt
-  --mode <mode>                  Output mode: text (default), json, or rpc
+  --mode <mode>                  Output mode: text (default), json, rpc, or server
+  --port <port>                  Server port (default: 3456, used with --mode server)
+  --host <host>                  Server bind address (default: localhost, used with --mode server)
   --print, -p                    Non-interactive mode: process prompt and exit
   --continue, -c                 Continue previous session
   --resume, -r                   Select a session to resume
@@ -291,6 +309,9 @@ ${chalk.bold("Examples:")}
   # Read-only mode (no file modifications possible)
   ${APP_NAME} --tools read,grep,find,ls -p "Review the code in src/"
 
+  # Start as HTTP server (REST + WebSocket API)
+  ${APP_NAME} --mode server --port 3456
+
   # Export a session file to HTML
   ${APP_NAME} --export ~/${CONFIG_DIR_NAME}/agent/sessions/--path--/session.jsonl
   ${APP_NAME} --export session.jsonl output.html
@@ -310,7 +331,7 @@ ${chalk.bold("Environment Variables:")}
   XAI_AFAN_KEY                      - xAI Grok API key
   OPENROUTER_AFAN_KEY               - OpenRouter API key
   AI_GATEWAY_AFAN_KEY               - Vercel AI Gateway API key
-  ZAI_AFAN_KEY                      - ZAI API key
+  ZAI_API_KEY                        - ZAI API key
   MISTRAL_AFAN_KEY                  - Mistral API key
   MINIMAX_AFAN_KEY                  - MiniMax API key
   OPENCODE_AFAN_KEY                 - OpenCode Zen/OpenCode Go API key

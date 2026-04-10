@@ -3,7 +3,7 @@
 ## Метаданные
 - **Дата**: 2026-04-10
 - **Автор**: Specification Generator
-- **Статус**: В реализации (Phase 1-2 завершены)
+- **Статус**: В реализации (Phase 1-3 завершены)
 - **Версия**: 1.0
 - **Тип**: Модификация (pivot from web SaaS to local runtime-agent)
 
@@ -376,11 +376,24 @@ model ClientToken {
 - [x] Integration with ModelRegistry and AuthStorage
 
 ### Phase 3: Client API (Day 6-8)
-- [ ] stdio RPC mode (extend fan --mode rpc with FAN commands)
-- [ ] HTTP server mode (Hono REST + WebSocket)
-- [ ] API key generation for client connections
-- [ ] Event streaming (agent events + FAN-specific events)
-- [ ] Shared types package for API consumers
+- [x] stdio RPC mode (extend fan --mode rpc with FAN commands)
+- [x] HTTP server mode (Hono REST + WebSocket)
+- [x] API key generation for client connections
+- [x] Event streaming (agent events + FAN-specific events)
+- [x] Shared types package for API consumers
+
+#### Phase 3 Results
+- **Package:** `packages/api-gateway/` (5 source files, 3 test files)
+- **HTTP Server:** Hono REST + WebSocket on configurable port (default: 3456)
+- **Endpoints:** 14 REST routes (health, sessions CRUD, messages, models, budget, tokens)
+- **WebSocket:** `/api/ws/:sessionId` with multi-client broadcast and token auth
+- **Auth:** Bearer token via `Authorization` header or `?token=` query param, `FAN_NO_AUTH` for dev
+- **RPC Extensions:** 6 new commands (get_routing_rules, get_budget_status, get_model_settings, generate_token, list_tokens, revoke_token)
+- **CLI:** `--mode server`, `--port`, `--host` flags added
+- **Tests:** 39 tests (auth: 12, http-server: 24, ws-handler: 3) — all passing
+- **Dependencies:** hono, @hono/node-server, ws, @fan/db, @fan/model-manager
+- **Verified:** Real LLM requests to z.ai (GLM-5-Turbo) via print mode and server mode
+- **Fixed bugs:** ZAI_AFAN_KEY → ZAI_API_KEY, Node.js request body parsing via @hono/node-server
 
 ### Phase 4: Orchestrator (Day 9-11)
 - [ ] Coordinator extension (task decomposition, delegation)

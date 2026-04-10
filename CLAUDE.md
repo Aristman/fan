@@ -7,13 +7,14 @@
 - **Type:** Local AI runtime-agent for developers
 - **Base:** Fork of fan-mono (fan-coding-agent core)
 - **Repo:** Monorepo (npm workspaces, Bun, TypeScript)
-- **Stage:** Phase 1 — Foundation
+- **Stage:** Phase 3 — Client API
 
 ## What It Is
 Runs locally on user's machine. Provides external API for multiple UI clients (TUI, WebView, IDEA plugin, etc.). Built on fan-coding-agent with custom orchestrator extension, model management, and all current extensions/skills.
 
 ## Tech Stack
 Runtime: Bun · Monorepo: npm workspaces · Core: fan-ai + fan-agent-core + fan-coding-agent + fan-tui · API: stdio RPC + Hono HTTP/WS · DB: Prisma+SQLite · Dashboard: Lit+Vite · Build: tsup
+- **API Gateway:** Hono REST + WebSocket, token auth via ClientToken (DB)
 
 ## Git Rules
 - **Prefix:** all branches start with `FAN/`
