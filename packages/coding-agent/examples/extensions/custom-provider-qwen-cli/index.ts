@@ -6,11 +6,11 @@
  *
  * Usage:
  *   pi -e ./packages/coding-agent/examples/extensions/custom-provider-qwen-cli
- *   # Then /login qwen-cli, or set QWEN_CLI_API_KEY=...
+ *   # Then /login qwen-cli, or set QWEN_CLI_AFAN_KEY=...
  */
 
-import type { OAuthCredentials, OAuthLoginCallbacks } from "@mariozechner/pi-ai";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { OAuthCredentials, OAuthLoginCallbacks } from "@itone/fan-ai";
+import type { ExtensionAPI } from "@itone/fan-coding-agent";
 
 // =============================================================================
 // Constants
@@ -297,7 +297,7 @@ function getQwenBaseUrl(resourceUrl?: string): string {
 export default function (pi: ExtensionAPI) {
 	pi.registerProvider("qwen-cli", {
 		baseUrl: QWEN_DEFAULT_BASE_URL,
-		apiKey: "QWEN_CLI_API_KEY",
+		apiKey: "QWEN_CLI_AFAN_KEY",
 		api: "openai-completions",
 
 		models: [

@@ -1,7 +1,7 @@
 {
 	"name": "@fna/model-manager",
 	"version": "0.1.0",
-	"description": "FNA model manager — provider routing, fallback chains, budget tracking",
+	"description": "FAN model manager — provider routing, fallback chains, budget tracking",
 	"type": "module",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -17,7 +17,7 @@
 		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput"
 	},
 	"dependencies": {
-		"@mariozechner/pi-ai": "^0.66.1"
+		"@itone/fan-ai": "^0.66.1"
 	},
 	"devDependencies": {
 		"shx": "^0.4.0"

@@ -11,8 +11,8 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Agent, type ThinkingLevel } from "@mariozechner/pi-agent-core";
-import { getModel, type Model } from "@mariozechner/pi-ai";
+import { Agent, type ThinkingLevel } from "@itone/fan-agent-core";
+import { getModel, type Model } from "@itone/fan-ai";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { AgentSession } from "../src/core/agent-session.js";
 import { ModelRegistry } from "../src/core/model-registry.js";
@@ -20,7 +20,7 @@ import { SessionManager } from "../src/core/session-manager.js";
 import { SettingsManager } from "../src/core/settings-manager.js";
 import { codingTools } from "../src/core/tools/index.js";
 import {
-	API_KEY,
+	AFAN_KEY,
 	createTestResourceLoader,
 	getRealAuthStorage,
 	hasAuthForProvider,
@@ -29,7 +29,7 @@ import {
 
 // Check for auth
 const HAS_ANTIGRAVITY_AUTH = hasAuthForProvider("google-antigravity");
-const HAS_ANTHROPIC_AUTH = !!API_KEY;
+const HAS_ANTHROPIC_AUTH = !!AFAN_KEY;
 
 describe.skipIf(!HAS_ANTIGRAVITY_AUTH)("Compaction with thinking models (Antigravity)", () => {
 	let session: AgentSession;
@@ -164,7 +164,7 @@ describe.skipIf(!HAS_ANTHROPIC_AUTH)("Compaction with thinking models (Anthropic
 
 	function createSession(model: Model<any>, thinkingLevel: ThinkingLevel = "high") {
 		const agent = new Agent({
-			getApiKey: () => API_KEY,
+			getApiKey: () => AFAN_KEY,
 			initialState: {
 				model,
 				systemPrompt: "You are a helpful assistant. Be concise.",

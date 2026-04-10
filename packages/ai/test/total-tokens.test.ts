@@ -104,7 +104,7 @@ describe("totalTokens field", () => {
 	// Anthropic
 	// =========================================================================
 
-	describe.skipIf(!process.env.ANTHROPIC_API_KEY)("Anthropic (API Key)", () => {
+	describe.skipIf(!process.env.ANTHROPIC_AFAN_KEY)("Anthropic (API Key)", () => {
 		it(
 			"claude-3-5-haiku - should return totalTokens equal to sum of components",
 			{ retry: 3, timeout: 60000 },
@@ -112,7 +112,7 @@ describe("totalTokens field", () => {
 				const llm = getModel("anthropic", "claude-3-5-haiku-20241022");
 
 				console.log(`\nAnthropic / ${llm.id}:`);
-				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.ANTHROPIC_API_KEY });
+				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.ANTHROPIC_AFAN_KEY });
 
 				logUsage("First request", first);
 				logUsage("Second request", second);
@@ -154,7 +154,7 @@ describe("totalTokens field", () => {
 	// OpenAI
 	// =========================================================================
 
-	describe.skipIf(!process.env.OPENAI_API_KEY)("OpenAI Completions", () => {
+	describe.skipIf(!process.env.OPENAI_AFAN_KEY)("OpenAI Completions", () => {
 		it(
 			"gpt-4o-mini - should return totalTokens equal to sum of components",
 			{ retry: 3, timeout: 60000 },
@@ -178,7 +178,7 @@ describe("totalTokens field", () => {
 		);
 	});
 
-	describe.skipIf(!process.env.OPENAI_API_KEY)("OpenAI Responses", () => {
+	describe.skipIf(!process.env.OPENAI_AFAN_KEY)("OpenAI Responses", () => {
 		it("gpt-4o - should return totalTokens equal to sum of components", { retry: 3, timeout: 60000 }, async () => {
 			const llm = getModel("openai", "gpt-4o");
 
@@ -218,7 +218,7 @@ describe("totalTokens field", () => {
 	// Google
 	// =========================================================================
 
-	describe.skipIf(!process.env.GEMINI_API_KEY)("Google", () => {
+	describe.skipIf(!process.env.GEMINI_AFAN_KEY)("Google", () => {
 		it(
 			"gemini-2.0-flash - should return totalTokens equal to sum of components",
 			{ retry: 3, timeout: 60000 },
@@ -241,7 +241,7 @@ describe("totalTokens field", () => {
 	// xAI
 	// =========================================================================
 
-	describe.skipIf(!process.env.XAI_API_KEY)("xAI", () => {
+	describe.skipIf(!process.env.XAI_AFAN_KEY)("xAI", () => {
 		it(
 			"grok-3-fast - should return totalTokens equal to sum of components",
 			{ retry: 3, timeout: 60000 },
@@ -249,7 +249,7 @@ describe("totalTokens field", () => {
 				const llm = getModel("xai", "grok-3-fast");
 
 				console.log(`\nxAI / ${llm.id}:`);
-				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.XAI_API_KEY });
+				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.XAI_AFAN_KEY });
 
 				logUsage("First request", first);
 				logUsage("Second request", second);
@@ -264,7 +264,7 @@ describe("totalTokens field", () => {
 	// Groq
 	// =========================================================================
 
-	describe.skipIf(!process.env.GROQ_API_KEY)("Groq", () => {
+	describe.skipIf(!process.env.GROQ_AFAN_KEY)("Groq", () => {
 		it(
 			"openai/gpt-oss-120b - should return totalTokens equal to sum of components",
 			{ retry: 3, timeout: 60000 },
@@ -272,7 +272,7 @@ describe("totalTokens field", () => {
 				const llm = getModel("groq", "openai/gpt-oss-120b");
 
 				console.log(`\nGroq / ${llm.id}:`);
-				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.GROQ_API_KEY });
+				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.GROQ_AFAN_KEY });
 
 				logUsage("First request", first);
 				logUsage("Second request", second);
@@ -287,7 +287,7 @@ describe("totalTokens field", () => {
 	// Cerebras
 	// =========================================================================
 
-	describe.skipIf(!process.env.CEREBRAS_API_KEY)("Cerebras", () => {
+	describe.skipIf(!process.env.CEREBRAS_AFAN_KEY)("Cerebras", () => {
 		it(
 			"gpt-oss-120b - should return totalTokens equal to sum of components",
 			{ retry: 3, timeout: 60000 },
@@ -295,7 +295,7 @@ describe("totalTokens field", () => {
 				const llm = getModel("cerebras", "gpt-oss-120b");
 
 				console.log(`\nCerebras / ${llm.id}:`);
-				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.CEREBRAS_API_KEY });
+				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.CEREBRAS_AFAN_KEY });
 
 				logUsage("First request", first);
 				logUsage("Second request", second);
@@ -329,7 +329,7 @@ describe("totalTokens field", () => {
 	// z.ai
 	// =========================================================================
 
-	describe.skipIf(!process.env.ZAI_API_KEY)("z.ai", () => {
+	describe.skipIf(!process.env.ZAI_AFAN_KEY)("z.ai", () => {
 		it(
 			"glm-4.5-flash - should return totalTokens equal to sum of components",
 			{ retry: 3, timeout: 60000 },
@@ -337,7 +337,7 @@ describe("totalTokens field", () => {
 				const llm = getModel("zai", "glm-4.5-flash");
 
 				console.log(`\nz.ai / ${llm.id}:`);
-				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.ZAI_API_KEY });
+				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.ZAI_AFAN_KEY });
 
 				logUsage("First request", first);
 				logUsage("Second request", second);
@@ -352,7 +352,7 @@ describe("totalTokens field", () => {
 	// Mistral
 	// =========================================================================
 
-	describe.skipIf(!process.env.MISTRAL_API_KEY)("Mistral", () => {
+	describe.skipIf(!process.env.MISTRAL_AFAN_KEY)("Mistral", () => {
 		it(
 			"devstral-medium-latest - should return totalTokens equal to sum of components",
 			{ retry: 3, timeout: 60000 },
@@ -360,7 +360,7 @@ describe("totalTokens field", () => {
 				const llm = getModel("mistral", "devstral-medium-latest");
 
 				console.log(`\nMistral / ${llm.id}:`);
-				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.MISTRAL_API_KEY });
+				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.MISTRAL_AFAN_KEY });
 
 				logUsage("First request", first);
 				logUsage("Second request", second);
@@ -375,7 +375,7 @@ describe("totalTokens field", () => {
 	// MiniMax
 	// =========================================================================
 
-	describe.skipIf(!process.env.MINIMAX_API_KEY)("MiniMax", () => {
+	describe.skipIf(!process.env.MINIMAX_AFAN_KEY)("MiniMax", () => {
 		it(
 			"MiniMax-M2.7 - should return totalTokens equal to sum of components",
 			{ retry: 3, timeout: 60000 },
@@ -383,7 +383,7 @@ describe("totalTokens field", () => {
 				const llm = getModel("minimax", "MiniMax-M2.7");
 
 				console.log(`\nMiniMax / ${llm.id}:`);
-				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.MINIMAX_API_KEY });
+				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.MINIMAX_AFAN_KEY });
 
 				logUsage("First request", first);
 				logUsage("Second request", second);
@@ -398,7 +398,7 @@ describe("totalTokens field", () => {
 	// Kimi For Coding
 	// =========================================================================
 
-	describe.skipIf(!process.env.KIMI_API_KEY)("Kimi For Coding", () => {
+	describe.skipIf(!process.env.KIMI_AFAN_KEY)("Kimi For Coding", () => {
 		it(
 			"kimi-k2-thinking - should return totalTokens equal to sum of components",
 			{ retry: 3, timeout: 60000 },
@@ -406,7 +406,7 @@ describe("totalTokens field", () => {
 				const llm = getModel("kimi-coding", "kimi-k2-thinking");
 
 				console.log(`\nKimi For Coding / ${llm.id}:`);
-				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.KIMI_API_KEY });
+				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.KIMI_AFAN_KEY });
 
 				logUsage("First request", first);
 				logUsage("Second request", second);
@@ -421,7 +421,7 @@ describe("totalTokens field", () => {
 	// Vercel AI Gateway
 	// =========================================================================
 
-	describe.skipIf(!process.env.AI_GATEWAY_API_KEY)("Vercel AI Gateway", () => {
+	describe.skipIf(!process.env.AI_GATEWAY_AFAN_KEY)("Vercel AI Gateway", () => {
 		it(
 			"google/gemini-2.5-flash - should return totalTokens equal to sum of components",
 			{ retry: 3, timeout: 60000 },
@@ -429,7 +429,7 @@ describe("totalTokens field", () => {
 				const llm = getModel("vercel-ai-gateway", "google/gemini-2.5-flash");
 
 				console.log(`\nVercel AI Gateway / ${llm.id}:`);
-				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.AI_GATEWAY_API_KEY });
+				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.AI_GATEWAY_AFAN_KEY });
 
 				logUsage("First request", first);
 				logUsage("Second request", second);
@@ -444,7 +444,7 @@ describe("totalTokens field", () => {
 	// OpenRouter - Multiple backend providers
 	// =========================================================================
 
-	describe.skipIf(!process.env.OPENROUTER_API_KEY)("OpenRouter", () => {
+	describe.skipIf(!process.env.OPENROUTER_AFAN_KEY)("OpenRouter", () => {
 		it(
 			"anthropic/claude-sonnet-4 - should return totalTokens equal to sum of components",
 			{ retry: 3, timeout: 60000 },
@@ -452,7 +452,7 @@ describe("totalTokens field", () => {
 				const llm = getModel("openrouter", "anthropic/claude-sonnet-4");
 
 				console.log(`\nOpenRouter / ${llm.id}:`);
-				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.OPENROUTER_API_KEY });
+				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.OPENROUTER_AFAN_KEY });
 
 				logUsage("First request", first);
 				logUsage("Second request", second);
@@ -469,7 +469,7 @@ describe("totalTokens field", () => {
 				const llm = getModel("openrouter", "deepseek/deepseek-chat");
 
 				console.log(`\nOpenRouter / ${llm.id}:`);
-				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.OPENROUTER_API_KEY });
+				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.OPENROUTER_AFAN_KEY });
 
 				logUsage("First request", first);
 				logUsage("Second request", second);
@@ -486,7 +486,7 @@ describe("totalTokens field", () => {
 				const llm = getModel("openrouter", "mistralai/mistral-small-3.2-24b-instruct");
 
 				console.log(`\nOpenRouter / ${llm.id}:`);
-				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.OPENROUTER_API_KEY });
+				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.OPENROUTER_AFAN_KEY });
 
 				logUsage("First request", first);
 				logUsage("Second request", second);
@@ -503,7 +503,7 @@ describe("totalTokens field", () => {
 				const llm = getModel("openrouter", "google/gemini-2.0-flash-001");
 
 				console.log(`\nOpenRouter / ${llm.id}:`);
-				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.OPENROUTER_API_KEY });
+				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.OPENROUTER_AFAN_KEY });
 
 				logUsage("First request", first);
 				logUsage("Second request", second);
@@ -520,7 +520,7 @@ describe("totalTokens field", () => {
 				const llm = getModel("openrouter", "meta-llama/llama-4-maverick");
 
 				console.log(`\nOpenRouter / ${llm.id}:`);
-				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.OPENROUTER_API_KEY });
+				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.OPENROUTER_AFAN_KEY });
 
 				logUsage("First request", first);
 				logUsage("Second request", second);

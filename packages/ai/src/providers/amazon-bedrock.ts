@@ -59,7 +59,7 @@ export interface BedrockOptions extends StreamOptions {
 	/** Key-value pairs attached to the inference request for cost allocation tagging.
 	 * Keys: max 64 chars, no `aws:` prefix. Values: max 256 chars. Max 50 pairs.
 	 * Tags appear in AWS Cost Explorer split cost allocation data.
-	 * @see https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ConverseStream.html */
+	 * @see https://docs.aws.amazon.com/bedrock/latest/APIReference/AFAN_runtime_ConverseStream.html */
 	requestMetadata?: Record<string, string>;
 }
 
@@ -452,13 +452,13 @@ function mapThinkingLevelToEffort(
 
 /**
  * Resolve cache retention preference.
- * Defaults to "short" and uses PI_CACHE_RETENTION for backward compatibility.
+ * Defaults to "short" and uses FAN_CACHE_RETENTION for backward compatibility.
  */
 function resolveCacheRetention(cacheRetention?: CacheRetention): CacheRetention {
 	if (cacheRetention) {
 		return cacheRetention;
 	}
-	if (typeof process !== "undefined" && process.env.PI_CACHE_RETENTION === "long") {
+	if (typeof process !== "undefined" && process.env.FAN_CACHE_RETENTION === "long") {
 		return "long";
 	}
 	return "short";

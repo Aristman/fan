@@ -22,13 +22,13 @@ const OPENAI_TOOL_CALL_PROVIDERS = new Set(["openai", "openai-codex", "opencode"
 
 /**
  * Resolve cache retention preference.
- * Defaults to "short" and uses PI_CACHE_RETENTION for backward compatibility.
+ * Defaults to "short" and uses FAN_CACHE_RETENTION for backward compatibility.
  */
 function resolveCacheRetention(cacheRetention?: CacheRetention): CacheRetention {
 	if (cacheRetention) {
 		return cacheRetention;
 	}
-	if (typeof process !== "undefined" && process.env.PI_CACHE_RETENTION === "long") {
+	if (typeof process !== "undefined" && process.env.FAN_CACHE_RETENTION === "long") {
 		return "long";
 	}
 	return "short";
@@ -153,12 +153,12 @@ function createClient(
 	optionsHeaders?: Record<string, string>,
 ) {
 	if (!apiKey) {
-		if (!process.env.OPENAI_API_KEY) {
+		if (!process.env.OPENAI_AFAN_KEY) {
 			throw new Error(
-				"OpenAI API key is required. Set OPENAI_API_KEY environment variable or pass it as an argument.",
+				"OpenAI API key is required. Set OPENAI_AFAN_KEY environment variable or pass it as an argument.",
 			);
 		}
-		apiKey = process.env.OPENAI_API_KEY;
+		apiKey = process.env.OPENAI_AFAN_KEY;
 	}
 
 	const headers = { ...model.headers };

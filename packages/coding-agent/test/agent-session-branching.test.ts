@@ -10,7 +10,7 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getModel } from "@mariozechner/pi-ai";
+import { getModel } from "@itone/fan-ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AgentSession } from "../src/core/agent-session.js";
 import {
@@ -23,9 +23,9 @@ import {
 import { AuthStorage } from "../src/core/auth-storage.js";
 import { SessionManager } from "../src/core/session-manager.js";
 import { codingTools } from "../src/core/tools/index.js";
-import { API_KEY } from "./utilities.js";
+import { AFAN_KEY } from "./utilities.js";
 
-describe.skipIf(!API_KEY)("AgentSession forking", () => {
+describe.skipIf(!AFAN_KEY)("AgentSession forking", () => {
 	let session: AgentSession;
 	let runtimeHost: AgentSessionRuntime;
 	let tempDir: string;
@@ -50,7 +50,7 @@ describe.skipIf(!API_KEY)("AgentSession forking", () => {
 		const model = getModel("anthropic", "claude-sonnet-4-5")!;
 		sessionManager = noSession ? SessionManager.inMemory(tempDir) : SessionManager.create(tempDir);
 		const authStorage = AuthStorage.create(join(tempDir, "auth.json"));
-		authStorage.setRuntimeApiKey("anthropic", API_KEY!);
+		authStorage.setRuntimeApiKey("anthropic", AFAN_KEY!);
 
 		const servicesOptions = {
 			agentDir: tempDir,

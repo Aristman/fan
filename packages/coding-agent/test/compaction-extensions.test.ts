@@ -5,8 +5,8 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Agent } from "@mariozechner/pi-agent-core";
-import { getModel } from "@mariozechner/pi-ai";
+import { Agent } from "@itone/fan-agent-core";
+import { getModel } from "@itone/fan-ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AgentSession } from "../src/core/agent-session.js";
 import { AuthStorage } from "../src/core/auth-storage.js";
@@ -24,9 +24,9 @@ import { createSyntheticSourceInfo } from "../src/core/source-info.js";
 import { codingTools } from "../src/core/tools/index.js";
 import { createTestResourceLoader } from "./utilities.js";
 
-const API_KEY = process.env.ANTHROPIC_OAUTH_TOKEN || process.env.ANTHROPIC_API_KEY;
+const AFAN_KEY = process.env.ANTHROPIC_OAUTH_TOKEN || process.env.ANTHROPIC_AFAN_KEY;
 
-describe.skipIf(!API_KEY)("Compaction extensions", () => {
+describe.skipIf(!AFAN_KEY)("Compaction extensions", () => {
 	let session: AgentSession;
 	let tempDir: string;
 	let capturedEvents: SessionEvent[];
@@ -88,7 +88,7 @@ describe.skipIf(!API_KEY)("Compaction extensions", () => {
 	function createSession(extensions: Extension[]) {
 		const model = getModel("anthropic", "claude-sonnet-4-5")!;
 		const agent = new Agent({
-			getApiKey: () => API_KEY,
+			getApiKey: () => AFAN_KEY,
 			initialState: {
 				model,
 				systemPrompt: "You are a helpful assistant. Be concise.",
