@@ -1,3 +1,9 @@
+> ⚠️ **SUPERSEDED** — This specification has been replaced by [spec_runtime-agent_2026-04-10.md](./spec_runtime-agent_2026-04-10.md).
+> The project has pivoted from a web SaaS platform to a local runtime-agent architecture.
+> Archived for reference only.
+
+---
+
 # Filin Next Agent — MVP Specification
 
 **Дата:** 2026-04-10
