@@ -3,7 +3,7 @@
 ## Метаданные
 - **Дата**: 2026-04-10
 - **Автор**: Specification Generator
-- **Статус**: В реализации (Phase 1-2 завершены)
+- **Статус**: В реализации (Phase 1-3 завершены)
 - **Версия**: 1.0
 - **Тип**: Модификация (pivot from web SaaS to local runtime-agent)
 
@@ -376,11 +376,11 @@ model ClientToken {
 - [x] Integration with ModelRegistry and AuthStorage
 
 ### Phase 3: Client API (Day 6-8)
-- [ ] stdio RPC mode (extend fan --mode rpc with FAN commands)
-- [ ] HTTP server mode (Hono REST + WebSocket)
-- [ ] API key generation for client connections
-- [ ] Event streaming (agent events + FAN-specific events)
-- [ ] Shared types package for API consumers
+- [x] stdio RPC mode (extend fan --mode rpc with FAN commands)
+- [x] HTTP server mode (Hono REST + WebSocket)
+- [x] API key generation for client connections
+- [x] Event streaming (agent events + FAN-specific events)
+- [x] Shared types package for API consumers
 
 ### Phase 4: Orchestrator (Day 9-11)
 - [ ] Coordinator extension (task decomposition, delegation)

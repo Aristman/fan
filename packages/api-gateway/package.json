@@ -1,0 +1,33 @@
+{
+	"name": "@fan/api-gateway",
+	"version": "0.1.0",
+	"description": "FAN API Gateway — HTTP/WebSocket server for client connections",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"scripts": {
+		"clean": "shx rm -rf dist",
+		"build": "tsgo -p tsconfig.build.json",
+		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@fan/db": "*",
+		"@fan/model-manager": "*",
+		"@hono/node-server": "^1.13.8",
+		"hono": "^4.6.0",
+		"ws": "^8.18.0"
+	},
+	"devDependencies": {
+		"@types/ws": "^8.5.0",
+		"shx": "^0.4.0",
+		"typescript": "^5.8.0",
+		"vitest": "^3.0.0"
+	}
+}
