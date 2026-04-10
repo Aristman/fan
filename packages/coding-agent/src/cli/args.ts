@@ -331,7 +331,7 @@ ${chalk.bold("Environment Variables:")}
   XAI_AFAN_KEY                      - xAI Grok API key
   OPENROUTER_AFAN_KEY               - OpenRouter API key
   AI_GATEWAY_AFAN_KEY               - Vercel AI Gateway API key
-  ZAI_AFAN_KEY                      - ZAI API key
+  ZAI_API_KEY                        - ZAI API key
   MISTRAL_AFAN_KEY                  - Mistral API key
   MINIMAX_AFAN_KEY                  - MiniMax API key
   OPENCODE_AFAN_KEY                 - OpenCode Zen/OpenCode Go API key

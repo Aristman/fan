@@ -118,7 +118,7 @@ export function getEnvApiKey(provider: any): string | undefined {
 		xai: "XAI_AFAN_KEY",
 		openrouter: "OPENROUTER_AFAN_KEY",
 		"vercel-ai-gateway": "AI_GATEWAY_AFAN_KEY",
-		zai: "ZAI_AFAN_KEY",
+		zai: "ZAI_API_KEY",
 		mistral: "MISTRAL_AFAN_KEY",
 		minimax: "MINIMAX_AFAN_KEY",
 		"minimax-cn": "MINIMAX_CN_AFAN_KEY",
