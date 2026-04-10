@@ -56,7 +56,7 @@ function hasVertexAdcCredentials(): boolean {
 }
 
 /**
- * Get API key for provider from known environment variables, e.g. OPENAI_API_KEY.
+ * Get API key for provider from known environment variables, e.g. OPENAI_AFAN_KEY.
  *
  * Will not return API keys for providers that require OAuth tokens.
  */
@@ -68,16 +68,16 @@ export function getEnvApiKey(provider: any): string | undefined {
 		return process.env.COPILOT_GITHUB_TOKEN || process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
 	}
 
-	// ANTHROPIC_OAUTH_TOKEN takes precedence over ANTHROPIC_API_KEY
+	// ANTHROPIC_OAUTH_TOKEN takes precedence over ANTHROPIC_AFAN_KEY
 	if (provider === "anthropic") {
-		return process.env.ANTHROPIC_OAUTH_TOKEN || process.env.ANTHROPIC_API_KEY;
+		return process.env.ANTHROPIC_OAUTH_TOKEN || process.env.ANTHROPIC_AFAN_KEY;
 	}
 
 	// Vertex AI supports either an explicit API key or Application Default Credentials
 	// Auth is configured via `gcloud auth application-default login`
 	if (provider === "google-vertex") {
-		if (process.env.GOOGLE_CLOUD_API_KEY) {
-			return process.env.GOOGLE_CLOUD_API_KEY;
+		if (process.env.GOOGLE_CLOUD_AFAN_KEY) {
+			return process.env.GOOGLE_CLOUD_AFAN_KEY;
 		}
 
 		const hasCredentials = hasVertexAdcCredentials();
@@ -110,22 +110,22 @@ export function getEnvApiKey(provider: any): string | undefined {
 	}
 
 	const envMap: Record<string, string> = {
-		openai: "OPENAI_API_KEY",
-		"azure-openai-responses": "AZURE_OPENAI_API_KEY",
-		google: "GEMINI_API_KEY",
-		groq: "GROQ_API_KEY",
-		cerebras: "CEREBRAS_API_KEY",
-		xai: "XAI_API_KEY",
-		openrouter: "OPENROUTER_API_KEY",
-		"vercel-ai-gateway": "AI_GATEWAY_API_KEY",
-		zai: "ZAI_API_KEY",
-		mistral: "MISTRAL_API_KEY",
-		minimax: "MINIMAX_API_KEY",
-		"minimax-cn": "MINIMAX_CN_API_KEY",
+		openai: "OPENAI_AFAN_KEY",
+		"azure-openai-responses": "AZURE_OPENAI_AFAN_KEY",
+		google: "GEMINI_AFAN_KEY",
+		groq: "GROQ_AFAN_KEY",
+		cerebras: "CEREBRAS_AFAN_KEY",
+		xai: "XAI_AFAN_KEY",
+		openrouter: "OPENROUTER_AFAN_KEY",
+		"vercel-ai-gateway": "AI_GATEWAY_AFAN_KEY",
+		zai: "ZAI_AFAN_KEY",
+		mistral: "MISTRAL_AFAN_KEY",
+		minimax: "MINIMAX_AFAN_KEY",
+		"minimax-cn": "MINIMAX_CN_AFAN_KEY",
 		huggingface: "HF_TOKEN",
-		opencode: "OPENCODE_API_KEY",
-		"opencode-go": "OPENCODE_API_KEY",
-		"kimi-coding": "KIMI_API_KEY",
+		opencode: "OPENCODE_AFAN_KEY",
+		"opencode-go": "OPENCODE_AFAN_KEY",
+		"kimi-coding": "KIMI_AFAN_KEY",
 	};
 
 	const envVar = envMap[provider];

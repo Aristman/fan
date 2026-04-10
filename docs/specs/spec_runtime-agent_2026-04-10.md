@@ -1,4 +1,4 @@
-# Спецификация: Filin Next Agent — Local Runtime Agent
+# Спецификация: Filin Agent Next (FAN) — Local Runtime Agent
 
 ## Метаданные
 - **Дата**: 2026-04-10
@@ -10,14 +10,14 @@
 ## 1. Обзор
 
 ### 1.1 Цель
-Filin Next Agent (FNA) — локальный AI runtime-agent для разработчиков. Запускается на машине пользователя, предоставляет внешний API для подключения различных UI-клиентов (TUI, WebView, IDEA plugin и т.д.). Основан на pi-coding-agent в ядре, расширен кастомным оркестратором, extensions и skills.
+Filin Agent Next (FAN) — локальный AI runtime-agent для разработчиков. Запускается на машине пользователя, предоставляет внешний API для подключения различных UI-клиентов (TUI, WebView, IDEA plugin и т.д.). Основан на fan-coding-agent в ядре, расширен кастомным оркестратором, extensions и skills.
 
 ### 1.2 Контекст
 Текущая MVP-SPEC описывает web SaaS платформу. Данная спецификация пересматривает архитектуру в сторону local-first runtime-агента, который:
 - Работает локально на машине пользователя
 - Не требует серверной инфраструктуры
 - Предоставляет API для множества UI клиентов
-- Включает кастомный оркестратор как pi extension
+- Включает кастомный оркестратор как fan extension
 - Имеет тонкие настройки моделей (локальные + облачные)
 - Сохраняет все текущие extensions и skills
 
@@ -30,7 +30,7 @@ Filin Next Agent (FNA) — локальный AI runtime-agent для разра
 | Auth | JWT + bcrypt | API key/token для клиентов |
 | Dashboard | Единственный UI | Один из UI клиентов |
 | Deployment | Web server | CLI бинарник + optional desktop wrapper |
-| Orchestrator | Не было | pi extension (coordinator) |
+| Orchestrator | Не было | fan extension (coordinator) |
 | Models | Model Hub (UI выбор) | Fine-tuned: routing, fallback, budgets |
 | DB | Prisma (users, sessions, messages, api_keys) | Prisma (sessions, messages, model_settings, budgets) |
 
@@ -43,7 +43,7 @@ Filin Next Agent (FNA) — локальный AI runtime-agent для разра
 │                     UI Клиенты                              │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐   │
 │  │ TUI      │  │ WebView  │  │ IDEA     │  │ Dashboard│   │
-│  │ (pi-tui) │  │ (Embed)  │  │ Plugin   │  │ (Lit)    │   │
+│  │ (fan-tui) │  │ (Embed)  │  │ Plugin   │  │ (Lit)    │   │
 │  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘   │
 └───────┼──────────────┼──────────────┼──────────────┼────────┘
         │ stdio        │ HTTP        │ stdio        │ HTTP
@@ -51,7 +51,7 @@ Filin Next Agent (FNA) — локальный AI runtime-agent для разра
 ┌───────┴──────────────┴──────────────┴──────────────┴────────┐
 │                                                              │
 │  ┌────────────────────────────────────────────────────────┐  │
-│  │              FNA Runtime Layer                          │  │
+│  │              FAN Runtime Layer                          │  │
 │  │  ┌────────────────┐  ┌─────────────────────────────┐  │  │
 │  │  │ Orchestrator   │  │ Client API Gateway          │  │  │
 │  │  │ (Extension)    │  │ ┌──────────┐ ┌───────────┐  │  │  │
@@ -62,7 +62,7 @@ Filin Next Agent (FNA) — локальный AI runtime-agent для разра
 │  └────────────────────────────────────────────────────────┘  │
 │                                                              │
 │  ┌────────────────────────────────────────────────────────┐  │
-│  │              pi-coding-agent Core                       │  │
+│  │              fan-coding-agent Core                       │  │
 │  │  ┌──────────────┐  ┌──────────────┐  ┌────────────┐  │  │
 │  │  │ AgentSession │  │ SessionMgr   │  │ Settings   │  │  │
 │  │  │ Agent Loop   │  │ JSONL        │  │ Mgr        │  │  │
@@ -86,7 +86,7 @@ Filin Next Agent (FNA) — локальный AI runtime-agent для разра
 │  └────────────────────────────────────────────────────────┘  │
 │                                                              │
 │  ┌──────────────────┐  ┌──────────────────────────────────┐  │
-│  │  pi-ai           │  │  packages/db (Prisma + SQLite)   │  │
+│  │  fan-ai          │  │  packages/db (Prisma + SQLite)   │  │
 │  │  LLM Streaming   │  │  sessions, messages,              │  │
 │  │  20+ Providers   │  │  model_settings, budgets          │  │
 │  │  Local + Cloud   │  │  client_tokens                   │  │
@@ -98,23 +98,23 @@ Filin Next Agent (FNA) — локальный AI runtime-agent для разра
 
 ```
 packages/
-├── ai/              # pi-ai (unchanged from pi-mono)
-├── agent/           # pi-agent-core (unchanged)
-├── tui/             # pi-tui (kept from pi-mono)
-├── web-ui/          # pi-web-ui components (kept, used by dashboard client)
-├── coding-agent/    # pi-coding-agent (modified: add FNA extensions)
+├── ai/              # fan-ai (unchanged from fan-mono)
+├── agent/           # fan-agent-core (unchanged)
+├── tui/             # fan-tui (kept from fan-mono)
+├── web-ui/          # fan-web-ui components (kept, used by dashboard client)
+├── coding-agent/    # fan-coding-agent (modified: add FAN extensions)
 ├── orchestrator/    # NEW: Coordinator extension + subagent management
 ├── model-manager/   # NEW: Provider routing, fallback chains, budget tracking
 ├── api-gateway/     # NEW: Client API — stdio RPC + HTTP REST + WebSocket
 ├── db/              # MODIFIED: Prisma schema (no auth, add model_settings, budgets)
-└── dashboard/       # MODIFIED: Lit UI as client (connects via FNA API)
+└── dashboard/       # MODIFIED: Lit UI as client (connects via FAN API)
 ```
 
 ### 2.3 Deployment Modes
 
 | Mode | Invocation | Description |
 |------|-----------|-------------|
-| TUI (default) | `fna` | Interactive terminal mode with pi-tui |
+| TUI (default) | `fna` | Interactive terminal mode with fan-tui |
 | Print | `fna -p "..."` | Single-shot, then exit |
 | RPC | `fna --mode rpc` | JSON-over-stdio for IDE plugins |
 | Server | `fna --mode server` | HTTP REST + WebSocket on configurable port |
@@ -125,17 +125,17 @@ packages/
 
 ### 3.1 Основные функции
 
-- **Agent Runtime**: Полноценный AI-агент на базе pi-coding-agent с tools (read, write, edit, bash, grep, find, ls)
-- **Orchestrator Extension**: Координация subagents, task management, coordinator mode (как у pi, но расширенный)
+- **Agent Runtime**: Полноценный AI-агент на базе fan-coding-agent с tools (read, write, edit, bash, grep, find, ls)
+- **Orchestrator Extension**: Координация subagents, task management, coordinator mode (как у fan, но расширенный)
 - **Multi-Client API**: Стdio RPC для локальных клиентов, HTTP REST+WS для удалённых
 - **Model Management**: 
   - Per-task provider routing (быстрая задача → локальная модель, сложная → Claude/GPT)
   - Fallback chains (локальная → облачная при неуспехе)
   - Budget tracking (лимиты по токенам/стоимости, ежедневные/месячные бюджеты)
   - Per-model настройки (temperature, thinking level, max tokens, etc.)
-- **Session Persistence**: JSONL сессии pi (tree branching) + Prisma metadata
-- **Extensions & Skills**: Все текущие extensions/skills из ~/.pi/agent/, поддержка pi packages
-- **Dashboard Client**: Lit-based web UI как один из клиентов (подключается через FNA API)
+- **Session Persistence**: JSONL сессии fan (tree branching) + Prisma metadata
+- **Extensions & Skills**: Все текущие extensions/skills из ~/.fan/agent/, поддержка fan packages
+- **Dashboard Client**: Lit-based web UI как один из клиентов (подключается через FAN API)
 - **No Auth**: Локальный runtime, single-user. API key/token для клиентских подключений.
 
 ### 3.2 Model Management Detail
@@ -181,7 +181,7 @@ JSON-over-stdio, совместимый с pi --mode rpc:
 
 #### WebSocket Events
 - Streaming text deltas, tool execution start/end, agent start/end
-- Compatible with pi agent event types + FNA-specific (budget alerts, model switches)
+- Compatible with fan agent event types + FAN-specific (budget alerts, model switches)
 
 ## 4. Database Schema (Adapted Prisma)
 
@@ -260,21 +260,21 @@ model ClientToken {
 
 ### 5.1 Стек технологий
 - **Runtime:** Bun
-- **Core:** pi-ai, pi-agent-core, pi-coding-agent, pi-tui (from pi-mono)
+- **Core:** fan-ai, fan-agent-core, fan-coding-agent, fan-tui (from fan-mono)
 - **Monorepo:** npm workspaces
 - **API:** HTTP (Hono) + stdio RPC + WebSocket
 - **Database:** Prisma + SQLite
-- **Dashboard Client:** Lit + Vite (pi-web-ui components)
+- **Dashboard Client:** Lit + Vite (fan-web-ui components)
 - **Build:** tsup
 - **Language:** TypeScript (strict)
 
-### 5.2 Существующие packages из pi-mono (keep unchanged)
+### 5.2 Существующие packages из fan-mono (keep unchanged)
 - `packages/ai/` — LLM abstraction
 - `packages/agent/` — Agent runtime
 - `packages/tui/` — Terminal UI
 
 ### 5.3 Существующие packages (modify)
-- `packages/coding-agent/` — integrate FNA orchestrator extension, model manager
+- `packages/coding-agent/` — integrate FAN orchestrator extension, model manager
 - `packages/web-ui/` — adapt as client component library for dashboard
 - `packages/db/` — new Prisma schema (see §4)
 
@@ -282,13 +282,13 @@ model ClientToken {
 - `packages/orchestrator/` — coordinator extension, subagent spawning, task management
 - `packages/model-manager/` — provider routing, fallback chains, budget tracking
 - `packages/api-gateway/` — client API: stdio RPC + HTTP REST + WebSocket
-- `packages/dashboard/` — Lit-based UI client (connects via FNA API)
+- `packages/dashboard/` — Lit-based UI client (connects via FAN API)
 
-## 6. Сравнительный анализ: pi modes vs FNA
+## 6. Сравнительный анализ: fan modes vs FAN
 
-| Аспект | pi --mode interactive | pi --mode rpc | FNA TUI | FNA Server |
+| Аспект | fan --mode interactive | fan --mode rpc | FAN TUI | FAN Server |
 |--------|-----------------------|---------------|---------|------------|
-| UI | pi-tui (built-in) | None (external) | pi-tui + extensions | Any HTTP client |
+| UI | fan-tui (built-in) | None (external) | fan-tui + extensions | Any HTTP client |
 | API | None | stdio RPC | stdio RPC + HTTP | HTTP REST+WS |
 | Model routing | Manual in settings | Manual | Automatic (rules) | Automatic (rules) |
 | Budget | None | None | Tracked + alerts | Tracked + alerts |
@@ -300,7 +300,7 @@ model ClientToken {
 
 | Риск | Вероятность | Влияние | Митигация |
 |------|-------------|---------|-----------|
-| pi-coding-agent API changes | Средняя | Высокое | Pin to specific version, cherry-pick updates |
+| fan-coding-agent API changes | Средняя | Высокое | Pin to specific version, cherry-pick updates |
 | Model routing complexity | Средняя | Среднее | Start with simple presets, iterate |
 | HTTP API backward compatibility | Низкая | Среднее | Versioned API (/api/v1/), deprecation policy |
 | Budget tracking accuracy | Низкая | Низкое | Cross-check with provider usage APIs |
@@ -314,9 +314,9 @@ model ClientToken {
 - **Альтернатива**: Web SaaS с multi-user (текущая спека)
 - **Обоснование**: Локальный runtime проще в деплое, не требует серверной инфраструктуры, пользователь владеет данными. Мульти-клиент API даёт тот же UX через разные UI.
 
-- **Решение**: Orchestrator как pi extension, а не кастомный runtime
-- **Альтернатива**: Полностью кастомный runtime поверх pi-agent-core
-- **Обоснование**: Extensions = hot-reload, совместимость с pi ecosystem, меньше кода. Pi extension API достаточно мощный для координации.
+- **Решение**: Orchestrator как fan extension, а не кастомный runtime
+- **Альтернатива**: Полностью кастомный runtime поверх fan-agent-core
+- **Обоснование**: Extensions = hot-reload, совместимость с fan ecosystem, меньше кода. fan extension API достаточно мощный для координации.
 
 - **Решение**: Hybrid stdio + HTTP API
 - **Альтернатива**: Только HTTP или только stdio
@@ -329,7 +329,7 @@ model ClientToken {
 ## 9. Приоритеты
 
 ### Must Have (P0)
-- pi-coding-agent core integration
+- fan-coding-agent core integration
 - TUI mode (interactive)
 - Agent tools (read, write, edit, bash, grep, find, ls)
 - Session persistence (JSONL)
@@ -360,13 +360,13 @@ model ClientToken {
 ## 10. Implementation Phases
 
 ### Phase 1: Foundation (Day 1-3)
-- [ ] Fork pi-mono, set up monorepo structure
+- [ ] Fork fan-mono, set up monorepo structure
 - [ ] Remove packages/mom, packages/pods
 - [ ] Create packages/orchestrator skeleton
 - [ ] Create packages/model-manager skeleton
 - [ ] Integrate all current extensions/skills
 - [ ] Prisma schema (sessions, messages, model_settings, budgets)
-- [ ] TUI mode works with pi-coding-agent
+- [ ] TUI mode works with fan-coding-agent
 
 ### Phase 2: Model Management (Day 4-5)
 - [ ] Provider router implementation (presets + custom rules)
@@ -376,10 +376,10 @@ model ClientToken {
 - [ ] Integration with ModelRegistry and AuthStorage
 
 ### Phase 3: Client API (Day 6-8)
-- [ ] stdio RPC mode (extend pi --mode rpc with FNA commands)
+- [ ] stdio RPC mode (extend fan --mode rpc with FAN commands)
 - [ ] HTTP server mode (Hono REST + WebSocket)
 - [ ] API key generation for client connections
-- [ ] Event streaming (agent events + FNA-specific events)
+- [ ] Event streaming (agent events + FAN-specific events)
 - [ ] Shared types package for API consumers
 
 ### Phase 4: Orchestrator (Day 9-11)
@@ -390,7 +390,7 @@ model ClientToken {
 
 ### Phase 5: Dashboard Client (Day 12-14)
 - [ ] Lit-based dashboard (chat, sessions, settings)
-- [ ] Connection to FNA API (HTTP)
+- [ ] Connection to FAN API (HTTP)
 - [ ] Model settings UI
 - [ ] Budget visualization
 - [ ] Session management UI
@@ -413,4 +413,4 @@ model ClientToken {
 ---
 
 *Создано: research-spec-generator skill*
-*Исходный запрос: Локальный runtime-agent на базе pi с оркестратором, extensions/skills, мульти-клиент API и тонкими настройками моделей*
+*Исходный запрос: Локальный runtime-agent на базе fan с оркестратором, extensions/skills, мульти-клиент API и тонкими настройками моделей*

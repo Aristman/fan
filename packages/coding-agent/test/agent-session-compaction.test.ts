@@ -10,8 +10,8 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Agent } from "@mariozechner/pi-agent-core";
-import { getModel } from "@mariozechner/pi-ai";
+import { Agent } from "@itone/fan-agent-core";
+import { getModel } from "@itone/fan-ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AgentSession, type AgentSessionEvent } from "../src/core/agent-session.js";
 import { AuthStorage } from "../src/core/auth-storage.js";
@@ -19,9 +19,9 @@ import { ModelRegistry } from "../src/core/model-registry.js";
 import { SessionManager } from "../src/core/session-manager.js";
 import { SettingsManager } from "../src/core/settings-manager.js";
 import { codingTools } from "../src/core/tools/index.js";
-import { API_KEY, createTestResourceLoader } from "./utilities.js";
+import { AFAN_KEY, createTestResourceLoader } from "./utilities.js";
 
-describe.skipIf(!API_KEY)("AgentSession compaction e2e", () => {
+describe.skipIf(!AFAN_KEY)("AgentSession compaction e2e", () => {
 	let session: AgentSession;
 	let tempDir: string;
 	let sessionManager: SessionManager;
@@ -48,7 +48,7 @@ describe.skipIf(!API_KEY)("AgentSession compaction e2e", () => {
 	function createSession(inMemory = false) {
 		const model = getModel("anthropic", "claude-sonnet-4-5")!;
 		const agent = new Agent({
-			getApiKey: () => API_KEY,
+			getApiKey: () => AFAN_KEY,
 			initialState: {
 				model,
 				systemPrompt: "You are a helpful assistant. Be concise.",

@@ -1,4 +1,4 @@
-# ARCHITECTURE.md — Filin Next Agent (FNA)
+# ARCHITECTURE.md — Filin Agent Next (FAN)
 
 > Comprehensive architecture reference. For quick context → [CLAUDE.md](./CLAUDE.md)
 
@@ -6,10 +6,10 @@
 
 ## Project Overview
 
-- **Name:** Filin Next Agent (FNA)
+- **Name:** Filin Agent Next (FAN)
 - **Type:** Local AI runtime-agent for developers
-- **Description:** Runs locally on user's machine, provides external API for multiple UI clients (TUI, WebView, IDEA plugin, etc.). Built on pi-coding-agent with custom orchestrator extension, model management, and all current extensions/skills.
-- **Base:** Fork of badlogic/pi-mono (pi-coding-agent core)
+- **Description:** Runs locally on user's machine, provides external API for multiple UI clients (TUI, WebView, IDEA plugin, etc.). Built on fan-coding-agent with custom orchestrator extension, model management, and all current extensions/skills.
+- **Base:** Fork of itone/fan-mono (fan-coding-agent core)
 - **Spec:** docs/specs/spec_runtime-agent_2026-04-10.md
 
 ## Tech Stack
@@ -17,13 +17,13 @@
 | Layer | Technology | Notes |
 |-------|-----------|-------|
 | Runtime | Bun | Fast JS runtime |
-| Core | pi-ai + pi-agent-core + pi-coding-agent | Agent loop, tools, sessions, extensions |
-| TUI | pi-tui | Terminal UI (markdown, editor, autocomplete) |
-| Monorepo | npm workspaces | Consistent with pi-mono |
+| Core | fan-ai + fan-agent-core + fan-coding-agent | Agent loop, tools, sessions, extensions |
+| TUI | fan-tui | Terminal UI (markdown, editor, autocomplete) |
+| Monorepo | npm workspaces | Consistent with fan-mono |
 | API (local) | JSON-over-stdio RPC | For TUI, IDE plugins |
 | API (remote) | Hono (REST + WebSocket) | For WebView, mobile, web clients |
 | Database | Prisma + SQLite | Sessions metadata, model settings, budgets |
-| Dashboard | Lit + Vite + pi-web-ui | Web UI client (connects via FNA API) |
+| Dashboard | Lit + Vite + fan-web-ui | Web UI client (connects via FAN API) |
 | Build | tsup | ESM/CJS, declaration files |
 | Language | TypeScript (strict) | — |
 
@@ -36,7 +36,7 @@
 │                     UI Клиенты                              │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐   │
 │  │ TUI      │  │ WebView  │  │ IDEA     │  │ Dashboard│   │
-│  │ (pi-tui) │  │ (Embed)  │  │ Plugin   │  │ (Lit)    │   │
+│  │ (fan-tui) │  │ (Embed)  │  │ Plugin   │  │ (Lit)    │   │
 │  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘   │
 └───────┼──────────────┼──────────────┼──────────────┼────────┘
         │ stdio        │ HTTP        │ stdio        │ HTTP
@@ -44,7 +44,7 @@
 ┌───────┴──────────────┴──────────────┴──────────────┴────────┐
 │                                                              │
 │  ┌────────────────────────────────────────────────────────┐  │
-│  │              FNA Runtime Layer                          │  │
+│  │              FAN Runtime Layer                          │  │
 │  │  ┌────────────────┐  ┌─────────────────────────────┐  │  │
 │  │  │ Orchestrator   │  │ Client API Gateway          │  │  │
 │  │  │ (Extension)    │  │ ┌──────────┐ ┌───────────┐  │  │  │
@@ -55,7 +55,7 @@
 │  └────────────────────────────────────────────────────────┘  │
 │                                                              │
 │  ┌────────────────────────────────────────────────────────┐  │
-│  │              pi-coding-agent Core                       │  │
+│  │              fan-coding-agent Core                       │  │
 │  │  ┌──────────────┐  ┌──────────────┐  ┌────────────┐  │  │
 │  │  │ AgentSession │  │ SessionMgr   │  │ Settings   │  │  │
 │  │  │ Agent Loop   │  │ JSONL        │  │ Manager    │  │  │
@@ -78,7 +78,7 @@
 │  └────────────────────────────────────────────────────────┘  │
 │                                                              │
 │  ┌──────────────────┐  ┌──────────────────────────────────┐  │
-│  │  pi-ai           │  │  packages/db (Prisma + SQLite)   │  │
+│  │  fan-ai          │  │  packages/db (Prisma + SQLite)   │  │
 │  │  LLM Streaming   │  │  sessions, messages,              │  │
 │  │  20+ Providers   │  │  model_settings, budgets          │  │
 │  │  Local + Cloud   │  │  client_tokens                   │  │
@@ -90,33 +90,33 @@
 
 ## Packages
 
-### packages/ai (pi-ai) — Unchanged
+### packages/ai (fan-ai) — Unchanged
 LLM abstraction layer. Streaming, completions, 20+ providers, OpenAI-compatible endpoints (Ollama, vLLM, LM Studio).
 
-### packages/agent (pi-agent-core) — Unchanged
+### packages/agent (fan-agent-core) — Unchanged
 Agent runtime. Agent class, agentLoop(), tool calling, TypeBox schemas, steer/followUp.
 
-### packages/tui (pi-tui) — Unchanged
+### packages/tui (fan-tui) — Unchanged
 Terminal UI library. Markdown rendering, multi-line editor with autocomplete, loading spinners, differential rendering.
 
-### packages/coding-agent (pi-coding-agent) — Modified
+### packages/coding-agent (fan-coding-agent) — Modified
 Core agent with built-in tools (read, write, edit, bash, grep, find, ls), session persistence (JSONL), extension system, skills.
 
 **Modifications:**
-- Integrate FNA orchestrator extension
+- Integrate FAN orchestrator extension
 - Integrate model manager (routing, fallback, budgets)
-- Add FNA-specific settings
+- Add FAN-specific settings
 
-### packages/web-ui (pi-web-ui) — Modified
+### packages/web-ui (fan-web-ui) — Modified
 Lit web components (ChatPanel with streaming, file attachments, artifact rendering). Used as component library for dashboard client.
 
 ### packages/orchestrator — NEW
-Coordinator extension for pi-coding-agent:
+Coordinator extension for fan-coding-agent:
 - Task decomposition and delegation
 - Subagent spawning (explore, plan, implement, verify workers)
 - Task tracking and status management
 - Integration with session tree branching
-- Uses pi extension API (lifecycle hooks: context, tool_call, session_start)
+- Uses fan extension API (lifecycle hooks: context, tool_call, session_start)
 
 ### packages/model-manager — NEW
 Model management layer:
@@ -124,25 +124,25 @@ Model management layer:
 - **Fallback Chains:** Configurable primary → fallback1 → fallback2, auto-retry, rate limit backoff
 - **Budget Tracker:** Daily/monthly token/cost limits, alerts, auto-switch on exceed
 - **Per-model Settings:** Temperature, thinking level, max tokens per provider/model
-- Integration with pi ModelRegistry and AuthStorage
+- Integration with fan ModelRegistry and AuthStorage
 
 ### packages/api-gateway — NEW
 Client API layer:
-- **stdio RPC:** JSON-over-stdio (extends pi --mode rpc with FNA commands)
+- **stdio RPC:** JSON-over-stdio (extends pi --mode rpc with FAN commands)
 - **HTTP REST:** Hono server (sessions, models, budgets endpoints)
-- **WebSocket:** Real-time streaming (agent events + FNA-specific events)
+- **WebSocket:** Real-time streaming (agent events + FAN-specific events)
 - **API Key:** Token generation for client connections
 
 ### packages/db (Prisma + SQLite) — Modified
 Database schema for metadata (sessions, model settings, budgets). See Database Schema section below.
 
 ### packages/dashboard — NEW (was modified, now new)
-Lit-based web UI client connecting to FNA API:
+Lit-based web UI client connecting to FAN API:
 - Chat panel with streaming
 - Session list and management
 - Model settings UI
 - Budget visualization
-- Built on pi-web-ui components
+- Built on fan-web-ui components
 
 ---
 
@@ -150,7 +150,7 @@ Lit-based web UI client connecting to FNA API:
 
 | Mode | Invocation | Description |
 |------|-----------|-------------|
-| TUI (default) | `fna` | Interactive terminal with pi-tui |
+| TUI (default) | `fna` | Interactive terminal with fan-tui |
 | Print | `fna -p "..."` | Single-shot, then exit |
 | RPC | `fna --mode rpc` | JSON-over-stdio for IDE plugins |
 | Server | `fna --mode server` | HTTP REST + WebSocket on configurable port |
@@ -164,7 +164,7 @@ Lit-based web UI client connecting to FNA API:
 ### stdio RPC Protocol
 JSON-over-stdio, extends pi --mode rpc:
 - Standard pi commands: prompt, steer, followUp, subscribe events
-- FNA additions: list sessions, model routing rules, budget status
+- FAN additions: list sessions, model routing rules, budget status
 
 ### HTTP REST Endpoints
 | Method | Path | Description |
@@ -183,7 +183,7 @@ JSON-over-stdio, extends pi --mode rpc:
 | GET | /api/health | Health check |
 
 ### WebSocket Events
-Standard pi agent events (agent_start, message_update, tool_execution_start/end, agent_end) + FNA-specific events (budget alerts, model switches).
+Standard pi agent events (agent_start, message_update, tool_execution_start/end, agent_end) + FAN-specific events (budget alerts, model switches).
 
 ---
 
@@ -265,9 +265,9 @@ User types in TUI
   → AgentSession.prompt()
   → Orchestrator extension evaluates task type
   → Model Manager selects provider/model via routing rules
-  → Agent calls pi-ai stream()
+  → Agent calls fan-ai stream()
   → On failure → fallback chain activates
-  → pi-tui renders markdown in real-time
+  → fan-tui renders markdown in real-time
   → Message saved to JSONL session + Prisma metadata
   → Budget tracker updates token/cost counters
 ```
@@ -298,18 +298,18 @@ Task received
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | **Runtime** | Local (not web SaaS) | Simpler deployment, user owns data, no server infra |
-| **Core** | pi-coding-agent (not custom) | Proven agent loop, tools, sessions, extensions ecosystem |
-| **Orchestrator** | Pi extension (not custom runtime) | Hot-reload, pi ecosystem compat, less code |
+| **Core** | fan-coding-agent (not custom) | Proven agent loop, tools, sessions, extensions ecosystem |
+| **Orchestrator** | fan extension (not custom runtime) | Hot-reload, fan ecosystem compat, less code |
 | **API** | Hybrid stdio + HTTP | stdio for local (zero latency), HTTP for remote clients |
 | **Auth** | API key only (no user auth) | Local runtime = single user |
 | **DB** | SQLite via Prisma | Zero-config, file-based, sessions in JSONL + metadata in SQLite |
 | **Model routing** | Rule-based presets + custom | Simple to start, extensible for power users |
-| **Monorepo** | npm workspaces | Consistent with pi-mono |
+| **Monorepo** | npm workspaces | Consistent with fan-mono |
 | **Build** | tsup | Fast, ESM/CJS, dts |
 
 ---
 
-## Migration from pi-mono
+## Migration from fan-mono
 
 ### Keep Unchanged
 - `packages/ai/` — LLM abstraction
@@ -317,7 +317,7 @@ Task received
 - `packages/tui/` — TUI library
 
 ### Modify
-- `packages/coding-agent/` — integrate FNA orchestrator + model manager
+- `packages/coding-agent/` — integrate FAN orchestrator + model manager
 - `packages/web-ui/` — adapt as component library for dashboard
 
 ### Remove
@@ -336,7 +336,7 @@ Task received
 
 | Risk | Probability | Impact | Mitigation |
 |------|------------|--------|------------|
-| pi-coding-agent API changes | Medium | High | Pin to specific version, cherry-pick updates |
+| fan-coding-agent API changes | Medium | High | Pin to specific version, cherry-pick updates |
 | Model routing complexity | Medium | Medium | Start with simple presets, iterate |
 | HTTP API backward compat | Low | Medium | Versioned API (/api/v1/), deprecation policy |
 | Budget tracking accuracy | Low | Low | Cross-check with provider usage APIs |

@@ -77,7 +77,7 @@ interface JsonEvent {
 
 function runSubagent(prompt: string, cwd: string): Promise<{ success: boolean }> {
 	return new Promise((resolve) => {
-		const child = spawn("pi", ["--mode", "json", "--tools", "read,write", "-p", prompt], {
+		const child = spawn("fan", ["--mode", "json", "--tools", "read,write", "-p", prompt], {
 			cwd,
 			stdio: ["ignore", "pipe", "pipe"],
 		});
@@ -162,7 +162,7 @@ async function main() {
 	const cwd = resolve(cwdArg || process.cwd());
 
 	mkdirSync(outputDir, { recursive: true });
-	const sessionsBase = join(homedir(), ".pi/agent/sessions");
+	const sessionsBase = join(homedir(), ".fan/agent/sessions");
 	const sessionDirName = cwdToSessionDir(cwd);
 	const sessionDir = join(sessionsBase, sessionDirName);
 
@@ -248,7 +248,7 @@ async function main() {
 	}
 
 	// Find AGENTS.md files to compare against
-	const globalAgentsMd = join(homedir(), ".pi/agent/AGENTS.md");
+	const globalAgentsMd = join(homedir(), ".fan/agent/AGENTS.md");
 	const localAgentsMd = join(cwd, "AGENTS.md");
 	const agentsMdFiles = [globalAgentsMd, localAgentsMd].filter(existsSync);
 	const agentsMdSection =

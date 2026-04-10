@@ -4,11 +4,11 @@
 
 ---
 
-# Filin Next Agent — MVP Specification
+# Filin Agent Next — MVP Specification
 
 **Дата:** 2026-04-10
 **Статус:** Planning
-**База:** Форк badlogic/pi-mono → Aristman/pi-mono
+**База:** Форк itone/fan-mono → Aristman/fan-mono
 
 ---
 
@@ -27,7 +27,7 @@ AI Agent Platform для разработчиков. Web-интерфейс дл
 | **Sessions** | Persistent сессии, история, resume | P0 |
 | **Model Hub** | Выбор модели/провайдера для чата (из pi-ai registry) | P0 |
 | **API Keys** | Управление API-ключами LLM-провайдеров в UI | P0 |
-| **Agent Tools** | bash, read, edit, write, grep, find (из pi-coding-agent) | P0 |
+| **Agent Tools** | bash, read, edit, write, grep, find (из fan-coding-agent) | P0 |
 | **WebSocket** | Real-time streaming ответов, progress, tool execution | P0 |
 
 ### Что НЕ включаем в MVP
@@ -256,8 +256,8 @@ User opens dashboard
 | **WS** | Hono + @hono/websocket | Native, no extra deps |
 | **Streaming** | SSE over WebSocket | Simpler than raw WS, pi-ai EventStream compatible |
 | **File serving** | Vite dev → Hono static in prod | Dev DX + production ready |
-| **Monorepo** | npm workspaces (existing) | Same tooling as pi-mono |
-| **Build** | tsup (consistent with pi-mono) | Fast, esm/cjs, dts |
+| **Monorepo** | npm workspaces (existing) | Same tooling as fan-mono |
+| **Build** | tsup (consistent with fan-mono) | Fast, esm/cjs, dts |
 
 ---
 
@@ -295,7 +295,7 @@ User opens dashboard
 
 ---
 
-## Migration from pi-mono
+## Migration from fan-mono
 
 ### Remove (not needed for SaaS)
 - `packages/mom/` — Slack bot (not relevant)
@@ -325,4 +325,4 @@ User opens dashboard
 | pi-ai API keys in memory | Load from encrypted DB, never log |
 | WebSocket reconnection | Client auto-reconnect with last message ID |
 | Large sessions (context overflow) | Leverage pi compaction algorithm |
-| pi-mono breaking changes | Pin to specific version, cherry-pick updates |
+| fan-mono breaking changes | Pin to specific version, cherry-pick updates |

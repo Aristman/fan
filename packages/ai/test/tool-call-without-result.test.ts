@@ -97,7 +97,7 @@ describe("Tool Call Without Result Tests", () => {
 	// API Key-based providers
 	// =========================================================================
 
-	describe.skipIf(!process.env.GEMINI_API_KEY)("Google Provider", () => {
+	describe.skipIf(!process.env.GEMINI_AFAN_KEY)("Google Provider", () => {
 		const model = getModel("google", "gemini-2.5-flash");
 
 		it("should filter out tool calls without corresponding tool results", { retry: 3, timeout: 30000 }, async () => {
@@ -105,7 +105,7 @@ describe("Tool Call Without Result Tests", () => {
 		});
 	});
 
-	describe.skipIf(!process.env.OPENAI_API_KEY)("OpenAI Completions Provider", () => {
+	describe.skipIf(!process.env.OPENAI_AFAN_KEY)("OpenAI Completions Provider", () => {
 		const { compat: _compat, ...baseModel } = getModel("openai", "gpt-4o-mini")!;
 		void _compat;
 		const model: Model<"openai-completions"> = {
@@ -118,7 +118,7 @@ describe("Tool Call Without Result Tests", () => {
 		});
 	});
 
-	describe.skipIf(!process.env.OPENAI_API_KEY)("OpenAI Responses Provider", () => {
+	describe.skipIf(!process.env.OPENAI_AFAN_KEY)("OpenAI Responses Provider", () => {
 		const model = getModel("openai", "gpt-5-mini");
 
 		it("should filter out tool calls without corresponding tool results", { retry: 3, timeout: 30000 }, async () => {
@@ -136,7 +136,7 @@ describe("Tool Call Without Result Tests", () => {
 		});
 	});
 
-	describe.skipIf(!process.env.ANTHROPIC_API_KEY)("Anthropic Provider", () => {
+	describe.skipIf(!process.env.ANTHROPIC_AFAN_KEY)("Anthropic Provider", () => {
 		const model = getModel("anthropic", "claude-3-5-haiku-20241022");
 
 		it("should filter out tool calls without corresponding tool results", { retry: 3, timeout: 30000 }, async () => {
@@ -144,7 +144,7 @@ describe("Tool Call Without Result Tests", () => {
 		});
 	});
 
-	describe.skipIf(!process.env.XAI_API_KEY)("xAI Provider", () => {
+	describe.skipIf(!process.env.XAI_AFAN_KEY)("xAI Provider", () => {
 		const model = getModel("xai", "grok-3-fast");
 
 		it("should filter out tool calls without corresponding tool results", { retry: 3, timeout: 30000 }, async () => {
@@ -152,7 +152,7 @@ describe("Tool Call Without Result Tests", () => {
 		});
 	});
 
-	describe.skipIf(!process.env.GROQ_API_KEY)("Groq Provider", () => {
+	describe.skipIf(!process.env.GROQ_AFAN_KEY)("Groq Provider", () => {
 		const model = getModel("groq", "openai/gpt-oss-20b");
 
 		it("should filter out tool calls without corresponding tool results", { retry: 3, timeout: 30000 }, async () => {
@@ -160,7 +160,7 @@ describe("Tool Call Without Result Tests", () => {
 		});
 	});
 
-	describe.skipIf(!process.env.CEREBRAS_API_KEY)("Cerebras Provider", () => {
+	describe.skipIf(!process.env.CEREBRAS_AFAN_KEY)("Cerebras Provider", () => {
 		const model = getModel("cerebras", "gpt-oss-120b");
 
 		it("should filter out tool calls without corresponding tool results", { retry: 3, timeout: 30000 }, async () => {
@@ -176,7 +176,7 @@ describe("Tool Call Without Result Tests", () => {
 		});
 	});
 
-	describe.skipIf(!process.env.ZAI_API_KEY)("zAI Provider", () => {
+	describe.skipIf(!process.env.ZAI_AFAN_KEY)("zAI Provider", () => {
 		const model = getModel("zai", "glm-4.5-flash");
 
 		it("should filter out tool calls without corresponding tool results", { retry: 3, timeout: 30000 }, async () => {
@@ -184,7 +184,7 @@ describe("Tool Call Without Result Tests", () => {
 		});
 	});
 
-	describe.skipIf(!process.env.MISTRAL_API_KEY)("Mistral Provider", () => {
+	describe.skipIf(!process.env.MISTRAL_AFAN_KEY)("Mistral Provider", () => {
 		const model = getModel("mistral", "devstral-medium-latest");
 
 		it("should filter out tool calls without corresponding tool results", { retry: 3, timeout: 30000 }, async () => {
@@ -192,7 +192,7 @@ describe("Tool Call Without Result Tests", () => {
 		});
 	});
 
-	describe.skipIf(!process.env.MINIMAX_API_KEY)("MiniMax Provider", () => {
+	describe.skipIf(!process.env.MINIMAX_AFAN_KEY)("MiniMax Provider", () => {
 		const model = getModel("minimax", "MiniMax-M2.7");
 
 		it("should filter out tool calls without corresponding tool results", { retry: 3, timeout: 30000 }, async () => {
@@ -200,7 +200,7 @@ describe("Tool Call Without Result Tests", () => {
 		});
 	});
 
-	describe.skipIf(!process.env.KIMI_API_KEY)("Kimi For Coding Provider", () => {
+	describe.skipIf(!process.env.KIMI_AFAN_KEY)("Kimi For Coding Provider", () => {
 		const model = getModel("kimi-coding", "kimi-k2-thinking");
 
 		it("should filter out tool calls without corresponding tool results", { retry: 3, timeout: 30000 }, async () => {
@@ -208,7 +208,7 @@ describe("Tool Call Without Result Tests", () => {
 		});
 	});
 
-	describe.skipIf(!process.env.AI_GATEWAY_API_KEY)("Vercel AI Gateway Provider", () => {
+	describe.skipIf(!process.env.AI_GATEWAY_AFAN_KEY)("Vercel AI Gateway Provider", () => {
 		const model = getModel("vercel-ai-gateway", "google/gemini-2.5-flash");
 
 		it("should filter out tool calls without corresponding tool results", { retry: 3, timeout: 30000 }, async () => {
@@ -225,7 +225,7 @@ describe("Tool Call Without Result Tests", () => {
 	});
 
 	// =========================================================================
-	// OAuth-based providers (credentials from ~/.pi/agent/oauth.json)
+	// OAuth-based providers (credentials from ~/.fan/agent/oauth.json)
 	// =========================================================================
 
 	describe("Anthropic OAuth Provider", () => {

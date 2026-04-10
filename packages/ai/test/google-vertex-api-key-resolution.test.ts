@@ -51,18 +51,18 @@ const context: Context = {
 	messages: [{ role: "user", content: "hello", timestamp: Date.now() }],
 };
 
-const originalGoogleCloudApiKey = process.env.GOOGLE_CLOUD_API_KEY;
+const originalGoogleCloudApiKey = process.env.GOOGLE_CLOUD_AFAN_KEY;
 
 beforeEach(() => {
 	googleGenAiMock.constructorCalls.length = 0;
-	delete process.env.GOOGLE_CLOUD_API_KEY;
+	delete process.env.GOOGLE_CLOUD_AFAN_KEY;
 });
 
 afterEach(() => {
 	if (originalGoogleCloudApiKey === undefined) {
-		delete process.env.GOOGLE_CLOUD_API_KEY;
+		delete process.env.GOOGLE_CLOUD_AFAN_KEY;
 	} else {
-		process.env.GOOGLE_CLOUD_API_KEY = originalGoogleCloudApiKey;
+		process.env.GOOGLE_CLOUD_AFAN_KEY = originalGoogleCloudApiKey;
 	}
 });
 
@@ -86,8 +86,8 @@ describe("google-vertex api key resolution", () => {
 		expect(googleGenAiMock.constructorCalls[0]).not.toHaveProperty("apiKey");
 	});
 
-	it("falls back to ADC when GOOGLE_CLOUD_API_KEY is a placeholder marker", async () => {
-		process.env.GOOGLE_CLOUD_API_KEY = "<authenticated>";
+	it("falls back to ADC when GOOGLE_CLOUD_AFAN_KEY is a placeholder marker", async () => {
+		process.env.GOOGLE_CLOUD_AFAN_KEY = "<authenticated>";
 
 		const stream = streamGoogleVertex(model, context, {
 			project: "test-project",

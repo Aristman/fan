@@ -1,9 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Api, Context, Model, OpenAICompletionsCompat } from "@mariozechner/pi-ai";
-import { getApiProvider } from "@mariozechner/pi-ai";
-import { getOAuthProvider } from "@mariozechner/pi-ai/oauth";
+import type { Api, Context, Model, OpenAICompletionsCompat } from "@itone/fan-ai";
+import { getApiProvider } from "@itone/fan-ai";
+import { getOAuthProvider } from "@itone/fan-ai/oauth";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.js";
 import { clearApiKeyCache, ModelRegistry } from "../src/core/model-registry.js";
@@ -406,7 +406,7 @@ describe("ModelRegistry", () => {
 			writeRawModelsJson({
 				openrouter: {
 					baseUrl: "https://my-proxy.example.com/v1",
-					apiKey: "OPENROUTER_API_KEY",
+					apiKey: "OPENROUTER_AFAN_KEY",
 					api: "openai-completions",
 					models: [
 						{
@@ -917,12 +917,12 @@ describe("ModelRegistry", () => {
 		});
 
 		test("apiKey as environment variable name resolves to env value", async () => {
-			const originalEnv = process.env.TEST_API_KEY_12345;
-			process.env.TEST_API_KEY_12345 = "env-api-key-value";
+			const originalEnv = process.env.TEST_AFAN_KEY_12345;
+			process.env.TEST_AFAN_KEY_12345 = "env-api-key-value";
 
 			try {
 				writeRawModelsJson({
-					"custom-provider": providerWithApiKey("TEST_API_KEY_12345"),
+					"custom-provider": providerWithApiKey("TEST_AFAN_KEY_12345"),
 				});
 
 				const registry = ModelRegistry.create(authStorage, modelsJsonPath);
@@ -931,9 +931,9 @@ describe("ModelRegistry", () => {
 				expect(apiKey).toBe("env-api-key-value");
 			} finally {
 				if (originalEnv === undefined) {
-					delete process.env.TEST_API_KEY_12345;
+					delete process.env.TEST_AFAN_KEY_12345;
 				} else {
-					process.env.TEST_API_KEY_12345 = originalEnv;
+					process.env.TEST_AFAN_KEY_12345 = originalEnv;
 				}
 			}
 		});
@@ -1040,7 +1040,7 @@ describe("ModelRegistry", () => {
 			});
 
 			test("environment variables are not cached (changes are picked up)", async () => {
-				const envVarName = "TEST_API_KEY_CACHE_TEST_98765";
+				const envVarName = "TEST_AFAN_KEY_CACHE_TEST_98765";
 				const originalEnv = process.env[envVarName];
 
 				try {

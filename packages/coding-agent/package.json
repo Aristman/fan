@@ -1,14 +1,14 @@
 {
-	"name": "@mariozechner/pi-coding-agent",
+	"name": "@itone/fan-coding-agent",
 	"version": "0.66.1",
-	"description": "Coding agent CLI with read, bash, edit, write tools and session management",
+	"description": "Fan coding agent CLI with read, write, edit, bash tools and session management",
 	"type": "module",
-	"piConfig": {
-		"name": "pi",
-		"configDir": ".pi"
+	"fanConfig": {
+		"name": "fan",
+		"configDir": ".fan"
 	},
 	"bin": {
-		"pi": "dist/cli.js"
+		"fan": "dist/cli.js"
 	},
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -40,9 +40,9 @@
 	},
 	"dependencies": {
 		"@mariozechner/jiti": "^2.6.2",
-		"@mariozechner/pi-agent-core": "^0.66.1",
-		"@mariozechner/pi-ai": "^0.66.1",
-		"@mariozechner/pi-tui": "^0.66.1",
+		"@itone/fan-agent-core": "^0.66.1",
+		"@itone/fan-ai": "^0.66.1",
+		"@itone/fan-tui": "^0.66.1",
 		"@silvia-odwyer/photon-node": "^0.3.4",
 		"ajv": "^8.17.1",
 		"chalk": "^5.5.0",
@@ -87,11 +87,11 @@
 		"tui",
 		"agent"
 	],
-	"author": "Mario Zechner",
+	"author": "Filin Agent Next Team",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/badlogic/pi-mono.git",
+		"url": "git+https://github.com/itone/fan-mono.git",
 		"directory": "packages/coding-agent"
 	},
 	"engines": {

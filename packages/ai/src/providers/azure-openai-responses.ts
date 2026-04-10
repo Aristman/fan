@@ -15,7 +15,7 @@ import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { convertResponsesMessages, convertResponsesTools, processResponsesStream } from "./openai-responses-shared.js";
 import { buildBaseOptions, clampReasoning } from "./simple-options.js";
 
-const DEFAULT_AZURE_API_VERSION = "v1";
+const DEFAULT_AZURE_AFAN_VERSION = "v1";
 const AZURE_TOOL_CALL_PROVIDERS = new Set(["openai", "openai-codex", "opencode", "azure-openai-responses"]);
 
 function parseDeploymentNameMap(value: string | undefined): Map<string, string> {
@@ -151,7 +151,7 @@ function resolveAzureConfig(
 	model: Model<"azure-openai-responses">,
 	options?: AzureOpenAIResponsesOptions,
 ): { baseUrl: string; apiVersion: string } {
-	const apiVersion = options?.azureApiVersion || process.env.AZURE_OPENAI_API_VERSION || DEFAULT_AZURE_API_VERSION;
+	const apiVersion = options?.azureApiVersion || process.env.AZURE_OPENAI_AFAN_VERSION || DEFAULT_AZURE_AFAN_VERSION;
 
 	const baseUrl = options?.azureBaseUrl?.trim() || process.env.AZURE_OPENAI_BASE_URL?.trim() || undefined;
 	const resourceName = options?.azureResourceName || process.env.AZURE_OPENAI_RESOURCE_NAME;
@@ -180,12 +180,12 @@ function resolveAzureConfig(
 
 function createClient(model: Model<"azure-openai-responses">, apiKey: string, options?: AzureOpenAIResponsesOptions) {
 	if (!apiKey) {
-		if (!process.env.AZURE_OPENAI_API_KEY) {
+		if (!process.env.AZURE_OPENAI_AFAN_KEY) {
 			throw new Error(
-				"Azure OpenAI API key is required. Set AZURE_OPENAI_API_KEY environment variable or pass it as an argument.",
+				"Azure OpenAI API key is required. Set AZURE_OPENAI_AFAN_KEY environment variable or pass it as an argument.",
 			);
 		}
-		apiKey = process.env.AZURE_OPENAI_API_KEY;
+		apiKey = process.env.AZURE_OPENAI_AFAN_KEY;
 	}
 
 	const headers = { ...model.headers };

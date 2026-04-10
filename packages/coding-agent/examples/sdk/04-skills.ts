@@ -11,7 +11,7 @@ import {
 	DefaultResourceLoader,
 	SessionManager,
 	type Skill,
-} from "@mariozechner/pi-coding-agent";
+} from "@itone/fan-coding-agent";
 
 // Or define custom skills inline
 const customSkill: Skill = {
@@ -34,7 +34,7 @@ const loader = new DefaultResourceLoader({
 });
 await loader.reload();
 
-// Discover all skills from cwd/.pi/skills, ~/.pi/agent/skills, etc.
+// Discover all skills from cwd/.fan/skills, ~/.fan/agent/skills, etc.
 const { skills: allSkills, diagnostics } = loader.getSkills();
 console.log(
 	"Discovered skills:",
