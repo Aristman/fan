@@ -7,202 +7,194 @@
 ## Project Overview
 
 - **Name:** Filin Next Agent (FNA)
-- **Type:** AI Agent web platform for developers
-- **Description:** Web interface for chatting with AI agents, managing models, extensions, and skills. Multi-user, persistent sessions, billing-ready.
-- **Base:** Fork of badlogic/pi-mono → Aristman/pi-mono
-- **MVP Status:** Planning (v0.1)
+- **Type:** Local AI runtime-agent for developers
+- **Description:** Runs locally on user's machine, provides external API for multiple UI clients (TUI, WebView, IDEA plugin, etc.). Built on pi-coding-agent with custom orchestrator extension, model management, and all current extensions/skills.
+- **Base:** Fork of badlogic/pi-mono (pi-coding-agent core)
+- **Spec:** docs/specs/spec_runtime-agent_2026-04-10.md
 
 ## Tech Stack
 
 | Layer | Technology | Notes |
 |-------|-----------|-------|
 | Runtime | Bun | Fast JS runtime |
+| Core | pi-ai + pi-agent-core + pi-coding-agent | Agent loop, tools, sessions, extensions |
+| TUI | pi-tui | Terminal UI (markdown, editor, autocomplete) |
 | Monorepo | npm workspaces | Consistent with pi-mono |
-| API | Hono (REST + WebSocket) | Lightweight, fast |
-| Database | Prisma + SQLite | Zero-config, upgradeable to Postgres |
-| Auth | JWT (httpOnly cookie) + bcrypt | via `Bun.passwordHash` |
-| Dashboard | Lit + Vite | Web components, fast HMR |
+| API (local) | JSON-over-stdio RPC | For TUI, IDE plugins |
+| API (remote) | Hono (REST + WebSocket) | For WebView, mobile, web clients |
+| Database | Prisma + SQLite | Sessions metadata, model settings, budgets |
+| Dashboard | Lit + Vite + pi-web-ui | Web UI client (connects via FNA API) |
 | Build | tsup | ESM/CJS, declaration files |
 | Language | TypeScript (strict) | — |
-| Streaming | SSE over WebSocket | Compatible with pi-ai EventStream |
-| File serving | Vite in dev, Hono static in prod | — |
 
 ---
 
 ## High-Level Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    Browser (Lit)                         │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐              │
-│  │ Chat     │  │ Sessions │  │ Settings │              │
-│  │ Panel    │  │ List     │  │ (Models, │              │
-│  │          │  │          │  │  API Keys│              │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘              │
-└───────┼──────────────┼──────────────┼────────────────────┘
-        │ REST + WS    │              │
-┌───────┼──────────────┼──────────────┼────────────────────┐
-│       ▼              ▼              ▼                     │
-│  ┌─────────────────────────────────────────────────┐    │
-│  │           packages/api (Hono)                    │    │
-│  │  ┌──────────┐  ┌──────────┐  ┌───────────────┐  │    │
-│  │  │ /auth    │  │ /chat    │  │ /models       │  │    │
-│  │  │ /sessions│  │ /ws      │  │ /api-keys     │  │    │
-│  │  └──────────┘  └──────────┘  └───────────────┘  │    │
-│  └────────────────────┬────────────────────────────┘    │
-│                       │                                 │
-│  ┌────────────────────┼────────────────────────────┐    │
-│  │           packages/db (Prisma + SQLite)          │    │
-│  │  users, sessions, messages, api_keys, models     │    │
-│  └──────────────────────────────────────────────────┘    │
-│                                                         │
-│  ┌──────────────────────────────────────────────────┐    │
-│  │           pi-ai (LLM abstraction)                │    │
-│  │  stream(), complete(), 20+ providers              │    │
-│  └──────────────────────────────────────────────────┘    │
-│                                                         │
-│  ┌──────────────────────────────────────────────────┐    │
-│  │           pi-agent-core (Agent loop)             │    │
-│  │  Agent, agentLoop(), tools, streaming            │    │
-│  └──────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                     UI Клиенты                              │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐   │
+│  │ TUI      │  │ WebView  │  │ IDEA     │  │ Dashboard│   │
+│  │ (pi-tui) │  │ (Embed)  │  │ Plugin   │  │ (Lit)    │   │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘   │
+└───────┼──────────────┼──────────────┼──────────────┼────────┘
+        │ stdio        │ HTTP        │ stdio        │ HTTP
+        │ RPC          │ REST+WS     │ RPC          │ REST+WS
+┌───────┴──────────────┴──────────────┴──────────────┴────────┐
+│                                                              │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │              FNA Runtime Layer                          │  │
+│  │  ┌────────────────┐  ┌─────────────────────────────┐  │  │
+│  │  │ Orchestrator   │  │ Client API Gateway          │  │  │
+│  │  │ (Extension)    │  │ ┌──────────┐ ┌───────────┐  │  │  │
+│  │  │ • coordinator  │  │ │ stdio    │ │ HTTP      │  │  │  │
+│  │  │ • subagents    │  │ │ RPC      │ │ REST+WS   │  │  │  │
+│  │  │ • task mgmt    │  │ └──────────┘ └───────────┘  │  │  │
+│  │  └────────────────┘  └─────────────────────────────┘  │  │
+│  └────────────────────────────────────────────────────────┘  │
+│                                                              │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │              pi-coding-agent Core                       │  │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌────────────┐  │  │
+│  │  │ AgentSession │  │ SessionMgr   │  │ Settings   │  │  │
+│  │  │ Agent Loop   │  │ JSONL        │  │ Manager    │  │  │
+│  │  │ Compaction   │  │ Tree Branch  │  │            │  │  │
+│  │  └──────────────┘  └──────────────┘  └────────────┘  │  │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌────────────┐  │  │
+│  │  │ ModelRegistry│  │ Extension    │  │ Tool       │  │  │
+│  │  │ 2000+ models │  │ Runner       │  │ Manager    │  │  │
+│  │  │ Custom defs  │  │ Hot-reload   │  │ r/w/bash   │  │  │
+│  │  └──────────────┘  └──────────────┘  └────────────┘  │  │
+│  └────────────────────────────────────────────────────────┘  │
+│                                                              │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │              Model Management Layer                     │  │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌────────────┐  │  │
+│  │  │ Provider     │  │ Fallback     │  │ Budget     │  │  │
+│  │  │ Router       │  │ Chain        │  │ Tracker    │  │  │
+│  │  │ (per-task)   │  │ (local→cloud)│  │ (limits)   │  │  │
+│  │  └──────────────┘  └──────────────┘  └────────────┘  │  │
+│  └────────────────────────────────────────────────────────┘  │
+│                                                              │
+│  ┌──────────────────┐  ┌──────────────────────────────────┐  │
+│  │  pi-ai           │  │  packages/db (Prisma + SQLite)   │  │
+│  │  LLM Streaming   │  │  sessions, messages,              │  │
+│  │  20+ Providers   │  │  model_settings, budgets          │  │
+│  │  Local + Cloud   │  │  client_tokens                   │  │
+│  └──────────────────┘  └──────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
 ```
-
-**Architecture summary:** Monorepo with `packages/` directory. The API server (Hono) serves the Dashboard (Lit) frontend. Agent logic is powered by pi-ai (LLM abstraction with 20+ providers) and pi-agent-core (agent loop). Data is persisted via Prisma + SQLite.
 
 ---
 
 ## Packages
 
-### packages/api (Hono)
+### packages/ai (pi-ai) — Unchanged
+LLM abstraction layer. Streaming, completions, 20+ providers, OpenAI-compatible endpoints (Ollama, vLLM, LM Studio).
 
-REST API server + WebSocket for streaming.
+### packages/agent (pi-agent-core) — Unchanged
+Agent runtime. Agent class, agentLoop(), tool calling, TypeBox schemas, steer/followUp.
 
-```
-packages/api/
-├── src/
-│   ├── index.ts              # Hono app entry
-│   ├── routes/
-│   │   ├── auth.ts           # POST /auth/register, /auth/login
-│   │   ├── sessions.ts       # GET/POST/DELETE /sessions
-│   │   ├── chat.ts           # POST /chat/:sessionId/messages
-│   │   ├── models.ts         # GET /models, /models/:id
-│   │   └── api-keys.ts       # GET/POST/DELETE /api-keys
-│   ├── ws/
-│   │   └── chat.ts           # WebSocket handler for streaming
-│   ├── middleware/
-│   │   ├── auth.ts           # JWT validation
-│   │   └── error.ts          # Error handler
-│   ├── services/
-│   │   ├── agent.ts          # Agent session management
-│   │   ├── session.ts        # Session CRUD + persistence
-│   │   └── model.ts          # Model resolution
-│   └── utils/
-│       └── jwt.ts            # JWT sign/verify
-├── package.json
-└── tsconfig.json
-```
+### packages/tui (pi-tui) — Unchanged
+Terminal UI library. Markdown rendering, multi-line editor with autocomplete, loading spinners, differential rendering.
 
-### packages/db (Prisma + SQLite)
+### packages/coding-agent (pi-coding-agent) — Modified
+Core agent with built-in tools (read, write, edit, bash, grep, find, ls), session persistence (JSONL), extension system, skills.
 
-Database schema and client.
+**Modifications:**
+- Integrate FNA orchestrator extension
+- Integrate model manager (routing, fallback, budgets)
+- Add FNA-specific settings
 
-```
-packages/db/
-├── prisma/
-│   └── schema.prisma
-├── src/
-│   ├── client.ts             # PrismaClient singleton
-│   └── index.ts              # Re-exports
-├── package.json
-└── tsconfig.json
-```
+### packages/web-ui (pi-web-ui) — Modified
+Lit web components (ChatPanel with streaming, file attachments, artifact rendering). Used as component library for dashboard client.
 
-### packages/dashboard (Lit + Vite)
+### packages/orchestrator — NEW
+Coordinator extension for pi-coding-agent:
+- Task decomposition and delegation
+- Subagent spawning (explore, plan, implement, verify workers)
+- Task tracking and status management
+- Integration with session tree branching
+- Uses pi extension API (lifecycle hooks: context, tool_call, session_start)
 
-Web UI built on pi-web-ui components.
+### packages/model-manager — NEW
+Model management layer:
+- **Provider Router:** Per-task routing (coding → Claude, quick → local, analysis → GPT-4)
+- **Fallback Chains:** Configurable primary → fallback1 → fallback2, auto-retry, rate limit backoff
+- **Budget Tracker:** Daily/monthly token/cost limits, alerts, auto-switch on exceed
+- **Per-model Settings:** Temperature, thinking level, max tokens per provider/model
+- Integration with pi ModelRegistry and AuthStorage
 
-```
-packages/dashboard/
-├── src/
-│   ├── index.ts              # Entry point, mount
-│   ├── components/
-│   │   ├── app.ts            # Root shell (sidebar + main)
-│   │   ├── sidebar.ts        # Navigation, session list
-│   │   ├── chat-panel.ts     # Chat messages + input
-│   │   ├── message.ts        # Single message (user/assistant/tool)
-│   │   ├── settings.ts       # Settings panel (models, API keys)
-│   │   └── login.ts          # Auth form
-│   ├── services/
-│   │   ├── api.ts            # REST client
-│   │   └── ws.ts             # WebSocket client
-│   └── styles/
-│       └── theme.ts          # CSS custom properties
-├── index.html
-├── vite.config.ts
-├── package.json
-└── tsconfig.json
-```
+### packages/api-gateway — NEW
+Client API layer:
+- **stdio RPC:** JSON-over-stdio (extends pi --mode rpc with FNA commands)
+- **HTTP REST:** Hono server (sessions, models, budgets endpoints)
+- **WebSocket:** Real-time streaming (agent events + FNA-specific events)
+- **API Key:** Token generation for client connections
 
-### packages/ai (pi-ai)
+### packages/db (Prisma + SQLite) — Modified
+Database schema for metadata (sessions, model settings, budgets). See Database Schema section below.
 
-LLM abstraction layer — unchanged from pi-mono. Provides `stream()`, `complete()`, 20+ providers.
-
-### packages/agent (pi-agent-core)
-
-Agent runtime — unchanged from pi-mono. Provides Agent, `agentLoop()`, tools, streaming.
-
-### packages/tui (kept from pi-mono)
-
-TUI library — kept for CLI mode.
-
-### packages/web-ui (from pi-mono, modified)
-
-Used as component library for the dashboard.
-
-### packages/coding-agent (from pi-mono, modified)
-
-Extract reusable parts, adapt for multi-user.
+### packages/dashboard — NEW (was modified, now new)
+Lit-based web UI client connecting to FNA API:
+- Chat panel with streaming
+- Session list and management
+- Model settings UI
+- Budget visualization
+- Built on pi-web-ui components
 
 ---
 
-## API Endpoints
+## Deployment Modes
 
+| Mode | Invocation | Description |
+|------|-----------|-------------|
+| TUI (default) | `fna` | Interactive terminal with pi-tui |
+| Print | `fna -p "..."` | Single-shot, then exit |
+| RPC | `fna --mode rpc` | JSON-over-stdio for IDE plugins |
+| Server | `fna --mode server` | HTTP REST + WebSocket on configurable port |
+| SDK | `import { createFnaSession }` | Programmatic use as library |
+| Desktop | Electron/Tauri wrapper | Windowed app with embedded runtime |
+
+---
+
+## Client API
+
+### stdio RPC Protocol
+JSON-over-stdio, extends pi --mode rpc:
+- Standard pi commands: prompt, steer, followUp, subscribe events
+- FNA additions: list sessions, model routing rules, budget status
+
+### HTTP REST Endpoints
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | /auth/register | Register user |
-| POST | /auth/login | Login, return JWT |
-| GET | /sessions | List user sessions |
-| POST | /sessions | Create session |
-| GET | /sessions/:id | Get session with messages |
-| DELETE | /sessions/:id | Delete session |
-| WS | /ws/chat/:sessionId | WebSocket for streaming |
-| GET | /models | Available models |
-| GET | /api-keys | User's API keys (masked) |
-| POST | /api-keys | Add API key |
-| DELETE | /api-keys/:id | Remove API key |
+| POST | /api/sessions | Create session |
+| GET | /api/sessions | List sessions |
+| GET | /api/sessions/:id | Get session with messages |
+| DELETE | /api/sessions/:id | Delete session |
+| POST | /api/sessions/:id/messages | Send message |
+| WS | /api/ws/:sessionId | WebSocket streaming |
+| GET | /api/models | Available models + routing rules |
+| GET | /api/models/settings | Model settings |
+| PUT | /api/models/settings | Update model settings |
+| GET | /api/budget | Budget status |
+| PUT | /api/budget | Update budget limits |
+| GET | /api/health | Health check |
+
+### WebSocket Events
+Standard pi agent events (agent_start, message_update, tool_execution_start/end, agent_end) + FNA-specific events (budget alerts, model switches).
 
 ---
 
 ## Database Schema
 
 ```prisma
-model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  password  String   // bcrypt hash
-  name      String?
-  createdAt DateTime @default(now())
-  sessions  Session[]
-  apiKeys   ApiKey[]
-}
-
 model Session {
   id        String    @id @default(cuid())
-  userId    String
-  user      User      @relation(fields: [userId], references: [id])
-  title     String    @default("New Chat")
-  model     String    // model identifier
+  title     String    @default("New Session")
+  model     String?
+  provider  String?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   messages  Message[]
@@ -214,53 +206,89 @@ model Message {
   session   Session  @relation(fields: [sessionId], references: [id])
   role      String   // "user" | "assistant" | "tool"
   content   String
-  toolCalls Json?    // tool call metadata
+  toolCalls Json?
+  model     String?
+  tokens    Int?
+  cost      Float?
   createdAt DateTime @default(now())
 }
 
-model ApiKey {
+model ModelSetting {
+  id          String   @id @default(cuid())
+  provider    String
+  model       String
+  temperature Float?   @default(0.7)
+  maxTokens   Int?
+  thinking    String?
+  isDefault   Boolean  @default(false)
+  priority    Int?     @default(0)
+  updatedAt   DateTime @updatedAt
+}
+
+model RoutingRule {
+  id        String  @id @default(cuid())
+  name      String
+  provider  String
+  model     String
+  fallback  String?
+  enabled   Boolean @default(true)
+}
+
+model Budget {
+  id         String   @id @default(cuid())
+  provider   String?
+  period     String   // "daily" | "monthly"
+  tokenLimit Int?
+  costLimit  Float?
+  tokensUsed Int      @default(0)
+  costUsed   Float    @default(0)
+  resetAt    DateTime
+  createdAt  DateTime @default(now())
+}
+
+model ClientToken {
   id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
-  provider  String   // "openai", "anthropic", etc.
-  key       String   // encrypted at rest
-  label     String?
+  name      String
+  token     String   @unique
   createdAt DateTime @default(now())
+  lastUsed  DateTime?
 }
 ```
-
-**Relationships:**
-- User → has many Sessions and ApiKeys
-- Session → belongs to User, has many Messages
-- Message → belongs to Session
 
 ---
 
 ## Data Flow
 
-### Chat Message Flow
-
+### Chat Message Flow (TUI)
 ```
-User types message in browser
-  → POST /chat/:sessionId/messages  (or WS message)
-  → API validates JWT, loads session
-  → API creates Message(role: "user") in DB
-  → API sends message to pi-agent-core Agent
+User types in TUI
+  → AgentSession.prompt()
+  → Orchestrator extension evaluates task type
+  → Model Manager selects provider/model via routing rules
   → Agent calls pi-ai stream()
-  → API streams chunks via WebSocket
-  → Dashboard renders markdown in real-time
-  → On completion: save Message(role: "assistant") in DB
-  → If tool calls: stream tool execution events via WS
+  → On failure → fallback chain activates
+  → pi-tui renders markdown in real-time
+  → Message saved to JSONL session + Prisma metadata
+  → Budget tracker updates token/cost counters
 ```
 
-### Session Lifecycle
-
+### Chat Message Flow (External Client via HTTP)
 ```
-User opens dashboard
-  → GET /sessions → list
-  → Click session → GET /sessions/:id → load messages
-  → Type message → chat flow (above)
-  → New session → POST /sessions → redirect
+Client sends POST /api/sessions/:id/messages
+  → API Gateway validates client token
+  → AgentSession.prompt() (same flow as TUI)
+  → Events streamed via WebSocket /api/ws/:sessionId
+  → Client receives text_delta, tool_execution events
+```
+
+### Model Routing Flow
+```
+Task received
+  → Orchestrator classifies task type (coding, quick, analysis, chat)
+  → RoutingRule matched by task type
+  → Primary model selected from ModelSetting
+  → If model fails → fallback chain: try next model
+  → Budget check: if limit exceeded → alert + auto-switch to cheaper model
 ```
 
 ---
@@ -269,100 +297,47 @@ User opens dashboard
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| **Auth** | JWT (httpOnly cookie) | Simple, stateless, works with Hono |
-| **Password** | bcrypt via Bun.passwordHash | Built-in to Bun, fast |
-| **DB** | SQLite via Prisma | Zero-config, file-based, upgradeable to Postgres |
-| **WS** | Hono + @hono/websocket | Native, no extra deps |
-| **Streaming** | SSE over WebSocket | Simpler than raw WS, pi-ai EventStream compatible |
-| **File serving** | Vite dev → Hono static in prod | Dev DX + production ready |
-| **Monorepo** | npm workspaces (existing) | Same tooling as pi-mono |
-| **Build** | tsup (consistent with pi-mono) | Fast, esm/cjs, dts |
-
----
-
-## MVP Scope (v0.1)
-
-### Included
-
-| Feature | Priority |
-|---------|----------|
-| Auth (register/login via email+password, JWT) | P0 |
-| Chat (web UI, streaming responses) | P0 |
-| Sessions (persistent, history, resume) | P0 |
-| Model Hub (model/provider selection from pi-ai registry) | P0 |
-| API Keys (manage LLM provider keys in UI) | P0 |
-| Agent Tools (bash, read, edit, write, grep, find) | P0 |
-| WebSocket (real-time streaming, progress, tool execution) | P0 |
-
-### Not Included (future versions)
-
-| Feature | Target Version |
-|---------|---------------|
-| Multi-tenant billing | v0.2 |
-| Extension marketplace | v0.2 |
-| Agent orchestration | v0.2 |
-| Team/organization | v0.3 |
-| Mobile app | v0.3+ |
-| CI/CD integration | v0.3 |
-
----
-
-## Implementation Phases
-
-| Phase | Days | Focus | Tasks |
-|-------|------|-------|-------|
-| 1. Foundation | 1–2 | Core packages + auth | Create api/db/dashboard packages, Prisma schema, Hono + /auth, JWT middleware |
-| 2. Agent Integration | 3–4 | Agent + chat endpoint | pi-agent-core integration, pi-ai provider setup, chat endpoint, save messages |
-| 3. WebSocket Streaming | 5–6 | Real-time streaming | WS endpoint, real-time agent streaming, tool execution events |
-| 4. Dashboard | 7–9 | Web UI | Lit shell, session list, chat panel, login, settings |
-| 5. Polish | 10 | Quality | Error handling, loading states, mobile responsiveness, rate limiting |
+| **Runtime** | Local (not web SaaS) | Simpler deployment, user owns data, no server infra |
+| **Core** | pi-coding-agent (not custom) | Proven agent loop, tools, sessions, extensions ecosystem |
+| **Orchestrator** | Pi extension (not custom runtime) | Hot-reload, pi ecosystem compat, less code |
+| **API** | Hybrid stdio + HTTP | stdio for local (zero latency), HTTP for remote clients |
+| **Auth** | API key only (no user auth) | Local runtime = single user |
+| **DB** | SQLite via Prisma | Zero-config, file-based, sessions in JSONL + metadata in SQLite |
+| **Model routing** | Rule-based presets + custom | Simple to start, extensible for power users |
+| **Monorepo** | npm workspaces | Consistent with pi-mono |
+| **Build** | tsup | Fast, ESM/CJS, dts |
 
 ---
 
 ## Migration from pi-mono
 
+### Keep Unchanged
+- `packages/ai/` — LLM abstraction
+- `packages/agent/` — Agent runtime
+- `packages/tui/` — TUI library
+
+### Modify
+- `packages/coding-agent/` — integrate FNA orchestrator + model manager
+- `packages/web-ui/` — adapt as component library for dashboard
+
 ### Remove
 - `packages/mom/` — Slack bot (not relevant)
 - `packages/pods/` — vLLM management (not relevant)
 
-### Keep (core libraries)
-- `packages/ai/` — LLM abstraction (unchanged)
-- `packages/agent/` — Agent runtime (unchanged)
-- `packages/tui/` — TUI library (keep for CLI mode)
-
-### Modify
-- `packages/coding-agent/` — extract reusable parts, adapt for multi-user
-- `packages/web-ui/` — use as component library for dashboard
-
 ### Add
-- `packages/api/` — Hono API server
-- `packages/db/` — Prisma + SQLite
-- `packages/dashboard/` — Filin web UI
-
----
-
-## Conventions
-
-| Area | Convention |
-|------|-----------|
-| **Monorepo tooling** | npm workspaces (consistent with pi-mono) |
-| **Build system** | tsup — fast, ESM/CJS, declaration files |
-| **Auth approach** | Stateless JWT in httpOnly cookies; passwords hashed with `Bun.passwordHash` |
-| **DB approach** | SQLite for zero-config; Prisma schema upgradeable to Postgres later |
-| **Agent isolation** | Each user gets an isolated Agent instance per session (multi-user safety) |
-| **API key security** | Keys encrypted at rest in DB, loaded into memory on demand, never logged |
-| **WebSocket resilience** | Client auto-reconnects with last message ID on disconnect |
-| **Context management** | Use pi compaction algorithm to handle large sessions and avoid context overflow |
-| **Dependency management** | Pin to specific pi-mono version; cherry-pick updates to avoid breaking changes |
+- `packages/orchestrator/` — coordinator extension
+- `packages/model-manager/` — routing, fallback, budgets
+- `packages/api-gateway/` — client API (stdio + HTTP)
+- `packages/dashboard/` — Lit UI client
 
 ---
 
 ## Risks
 
-| Risk | Mitigation |
-|------|-----------|
-| pi-agent-core not designed for multi-user | Each user gets isolated Agent instance per session |
-| pi-ai API keys in memory | Load from encrypted DB, never log |
-| WebSocket reconnection | Client auto-reconnect with last message ID |
-| Large sessions (context overflow) | Leverage pi compaction algorithm |
-| pi-mono breaking changes | Pin to specific version, cherry-pick updates |
+| Risk | Probability | Impact | Mitigation |
+|------|------------|--------|------------|
+| pi-coding-agent API changes | Medium | High | Pin to specific version, cherry-pick updates |
+| Model routing complexity | Medium | Medium | Start with simple presets, iterate |
+| HTTP API backward compat | Low | Medium | Versioned API (/api/v1/), deprecation policy |
+| Budget tracking accuracy | Low | Low | Cross-check with provider usage APIs |
+| stdio/HTTP protocol drift | Low | Medium | Shared types package, auto-generated clients |
