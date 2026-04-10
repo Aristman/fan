@@ -1,5 +1,5 @@
 {
-	"name": "@fna/orchestrator",
+	"name": "@fan/orchestrator",
 	"version": "0.1.0",
 	"description": "FAN orchestrator — multi-agent task decomposition and coordination",
 	"type": "module",

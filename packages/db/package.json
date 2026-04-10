@@ -1,5 +1,5 @@
 {
-	"name": "@fna/db",
+	"name": "@fan/db",
 	"version": "0.1.0",
 	"description": "FAN database layer — Prisma + SQLite",
 	"type": "module",

@@ -2135,6 +2135,21 @@ export class InteractiveMode {
 				await this.handleModelCommand(searchTerm);
 				return;
 			}
+			if (text === "/model-settings") {
+				this.editor.setText("");
+				await this.handleModelSettingsCommand();
+				return;
+			}
+			if (text === "/routing-rules") {
+				this.editor.setText("");
+				await this.handleRoutingRulesCommand();
+				return;
+			}
+			if (text === "/budget") {
+				this.editor.setText("");
+				await this.handleBudgetCommand();
+				return;
+			}
 			if (text.startsWith("/export")) {
 				await this.handleExportCommand(text);
 				this.editor.setText("");
@@ -3489,6 +3504,117 @@ export class InteractiveMode {
 		}
 
 		this.showModelSelector(searchTerm);
+	}
+
+	private async handleModelSettingsCommand(): Promise<void> {
+		const mm = this.session.modelManager;
+		if (!mm) {
+			this.chatContainer.addChild(new Spacer(1));
+			this.chatContainer.addChild(new Text(theme.fg("warning", "⚠ ModelManager not available"), 1, 0));
+			this.ui.requestRender();
+			return;
+		}
+
+		const settings = await mm.getAllModelSettings();
+		if (settings.length === 0) {
+			let info = `${theme.bold("Per-Model Settings")}\n\n`;
+			info += theme.fg("dim", "No per-model settings configured.\n");
+			info += theme.fg("dim", "Use the API to set model settings.");
+			this.chatContainer.addChild(new Spacer(1));
+			this.chatContainer.addChild(new Text(info, 1, 0));
+			this.ui.requestRender();
+			return;
+		}
+
+		let info = `${theme.bold("Per-Model Settings")}\n\n`;
+		for (const s of settings) {
+			info += `${theme.fg("accent", `${s.provider}/${s.model}`)}\n`;
+			info += `  ${theme.fg("dim", "temp=")}${s.temperature ?? "default"} `;
+			info += `${theme.fg("dim", "maxTokens=")}${s.maxTokens ?? "default"} `;
+			info += `${theme.fg("dim", "thinking=")}${s.thinking ?? "off"}\n`;
+		}
+
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(info, 1, 0));
+		this.ui.requestRender();
+	}
+
+	private async handleRoutingRulesCommand(): Promise<void> {
+		const mm = this.session.modelManager;
+		if (!mm) {
+			this.chatContainer.addChild(new Spacer(1));
+			this.chatContainer.addChild(new Text(theme.fg("warning", "⚠ ModelManager not available"), 1, 0));
+			this.ui.requestRender();
+			return;
+		}
+
+		const presets = await mm.getRouter().listPresets();
+		const rules = await mm.getRoutingRules();
+
+		let info = `${theme.bold("Routing Rules")}\n\n`;
+		info += `${theme.bold("Presets:")}\n`;
+		for (const p of presets) {
+			const fallbackStr = p.fallback ? ` ${theme.fg("dim", "→")} ${p.fallback.provider}/${p.fallback.model}` : "";
+			info += `  ${theme.fg("accent", `• ${p.name}`)}: ${p.route.provider}/${p.route.model}${fallbackStr}\n`;
+		}
+
+		if (rules.length > 0) {
+			info += `\n${theme.bold("Custom Rules (DB):")}\n`;
+			for (const r of rules) {
+				const status = r.enabled ? "✅" : "❌";
+				const fallbackStr = r.fallback ? ` ${theme.fg("dim", "→")} ${r.fallback}` : "";
+				info += `  ${status} ${theme.fg("accent", r.name)}: ${r.provider}/${r.model}${fallbackStr}\n`;
+			}
+		}
+
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(info, 1, 0));
+		this.ui.requestRender();
+	}
+
+	private async handleBudgetCommand(): Promise<void> {
+		const mm = this.session.modelManager;
+		if (!mm) {
+			this.chatContainer.addChild(new Spacer(1));
+			this.chatContainer.addChild(new Text(theme.fg("warning", "⚠ ModelManager not available"), 1, 0));
+			this.ui.requestRender();
+			return;
+		}
+
+		const statuses = await mm.getBudgetStatus();
+		const statusArray = Array.isArray(statuses) ? statuses : [statuses];
+
+		let info = `${theme.bold("Budget Status")}\n\n`;
+
+		if (statusArray.length === 0 || statusArray.every((s) => !s.tokenLimit && !s.costLimit)) {
+			info += theme.fg("dim", "No budget limits configured.\n");
+			info += theme.fg("dim", "Use modelManager.configureBudget() to set limits.");
+			this.chatContainer.addChild(new Spacer(1));
+			this.chatContainer.addChild(new Text(info, 1, 0));
+			this.ui.requestRender();
+			return;
+		}
+
+		for (const s of statusArray) {
+			if (!s.tokenLimit && !s.costLimit) continue;
+
+			const emoji = s.exceeded ? "🔴" : "🟢";
+			info += `${emoji} ${theme.bold(s.provider)} ${theme.fg("dim", `(${s.period})`)}\n`;
+			info += `  ${theme.fg("dim", "Tokens:")} ${s.tokensUsed.toLocaleString()}${s.tokenLimit ? ` ${theme.fg("dim", "/")} ${s.tokenLimit.toLocaleString()}` : ""}\n`;
+			info += `  ${theme.fg("dim", "Cost:")}   $${s.costUsed.toFixed(2)}${s.costLimit ? ` ${theme.fg("dim", "/")} $${s.costLimit.toFixed(2)}` : ""}\n`;
+
+			if (s.costLimit && s.costLimit > 0) {
+				const pct = ((s.costUsed / s.costLimit) * 100).toFixed(1);
+				const filled = Math.min(Math.round(Number(pct) / 5), 20);
+				const bar = "█".repeat(filled) + "░".repeat(Math.max(20 - filled, 0));
+				info += `  [${bar}] ${pct}%\n`;
+			}
+			info += "\n";
+		}
+
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(info, 1, 0));
+		this.ui.requestRender();
 	}
 
 	private async findExactModelMatch(searchTerm: string): Promise<Model<any> | undefined> {

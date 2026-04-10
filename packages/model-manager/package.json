@@ -1,5 +1,5 @@
 {
-	"name": "@fna/model-manager",
+	"name": "@fan/model-manager",
 	"version": "0.1.0",
 	"description": "FAN model manager — provider routing, fallback chains, budget tracking",
 	"type": "module",
@@ -14,12 +14,15 @@
 	"scripts": {
 		"clean": "shx rm -rf dist",
 		"build": "tsgo -p tsconfig.build.json",
-		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput"
+		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
+		"test": "vitest run"
 	},
 	"dependencies": {
+		"@fan/db": "^0.1.0",
 		"@itone/fan-ai": "^0.66.1"
 	},
 	"devDependencies": {
-		"shx": "^0.4.0"
+		"shx": "^0.4.0",
+		"vitest": "^3.2.4"
 	}
 }

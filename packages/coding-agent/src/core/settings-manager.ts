@@ -84,6 +84,30 @@ export interface Settings {
 	prompts?: string[]; // Array of local prompt template paths or directories
 	themes?: string[]; // Array of local theme file paths or directories
 	enableSkillCommands?: boolean; // default: true - register skills as /skill:name commands
+	/** Per-model settings keyed by "provider/model" */
+	modelSettings?: Record<string, {
+		temperature?: number;
+		maxTokens?: number;
+		thinking?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+	}>;
+
+	/** Custom routing rules */
+	routingRules?: Array<{
+		name: string;
+		provider: string;
+		model: string;
+		fallback?: string;
+		enabled?: boolean;
+	}>;
+
+	/** Budget configuration */
+	budget?: {
+		dailyTokenLimit?: number;
+		dailyCostLimit?: number;
+		monthlyTokenLimit?: number;
+		monthlyCostLimit?: number;
+	};
+
 	terminal?: TerminalSettings;
 	images?: ImageSettings;
 	enabledModels?: string[]; // Model patterns for cycling (same format as --models CLI flag)
@@ -955,5 +979,79 @@ export class SettingsManager {
 
 	getCodeBlockIndent(): string {
 		return this.settings.markdown?.codeBlockIndent ?? "  ";
+	}
+
+	// --- Model Settings ---
+	getModelSettings(): Record<string, { temperature?: number; maxTokens?: number; thinking?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" }> {
+		return this.settings.modelSettings ?? {};
+	}
+
+	setModelSetting(key: string, value: { temperature?: number; maxTokens?: number; thinking?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" }): void {
+		if (!this.globalSettings.modelSettings) {
+			this.globalSettings.modelSettings = {};
+		}
+		this.globalSettings.modelSettings[key] = value;
+		this.markModified("modelSettings", key);
+		this.save();
+	}
+
+	removeModelSetting(key: string): void {
+		if (!this.globalSettings.modelSettings) {
+			return;
+		}
+		delete this.globalSettings.modelSettings[key];
+		if (Object.keys(this.globalSettings.modelSettings).length === 0) {
+			this.globalSettings.modelSettings = undefined;
+		}
+		this.markModified("modelSettings", key);
+		this.save();
+	}
+
+	// --- Routing Rules ---
+	getRoutingRules(): Array<{ name: string; provider: string; model: string; fallback?: string; enabled?: boolean }> {
+		return this.settings.routingRules ?? [];
+	}
+
+	setRoutingRules(rules: Array<{ name: string; provider: string; model: string; fallback?: string; enabled?: boolean }>): void {
+		this.globalSettings.routingRules = rules;
+		this.markModified("routingRules");
+		this.save();
+	}
+
+	addRoutingRule(rule: { name: string; provider: string; model: string; fallback?: string; enabled?: boolean }): void {
+		if (!this.globalSettings.routingRules) {
+			this.globalSettings.routingRules = [];
+		}
+		const idx = this.globalSettings.routingRules.findIndex(r => r.name === rule.name);
+		if (idx >= 0) {
+			this.globalSettings.routingRules[idx] = rule;
+		} else {
+			this.globalSettings.routingRules.push(rule);
+		}
+		this.markModified("routingRules");
+		this.save();
+	}
+
+	removeRoutingRule(name: string): void {
+		if (!this.globalSettings.routingRules) {
+			return;
+		}
+		this.globalSettings.routingRules = this.globalSettings.routingRules.filter(r => r.name !== name);
+		if (this.globalSettings.routingRules.length === 0) {
+			this.globalSettings.routingRules = undefined;
+		}
+		this.markModified("routingRules");
+		this.save();
+	}
+
+	// --- Budget ---
+	getBudgetConfig(): { dailyTokenLimit?: number; dailyCostLimit?: number; monthlyTokenLimit?: number; monthlyCostLimit?: number } {
+		return this.settings.budget ?? {};
+	}
+
+	setBudgetConfig(config: { dailyTokenLimit?: number; dailyCostLimit?: number; monthlyTokenLimit?: number; monthlyCostLimit?: number }): void {
+		this.globalSettings.budget = config;
+		this.markModified("budget");
+		this.save();
 	}
 }

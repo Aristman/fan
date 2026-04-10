@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { Agent, type AgentMessage, type ThinkingLevel } from "@itone/fan-agent-core";
 import { type Message, type Model, streamSimple } from "@itone/fan-ai";
+import { ModelManager } from "@fan/model-manager";
 import { getAgentDir, getDocsPath } from "../config.js";
 import { AgentSession } from "./agent-session.js";
 import { AuthStorage } from "./auth-storage.js";
@@ -72,6 +73,9 @@ export interface CreateAgentSessionOptions {
 	settingsManager?: SettingsManager;
 	/** Session start event metadata for extension runtime startup. */
 	sessionStartEvent?: SessionStartEvent;
+
+	/** ModelManager instance for budget tracking, routing, and per-model settings. Created automatically if not provided. */
+	modelManager?: ModelManager;
 }
 
 /** Result from createAgentSession */
@@ -242,6 +246,22 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		thinkingLevel = "off";
 	}
 
+	// Create or use provided ModelManager
+	const modelManager = options.modelManager ?? new ModelManager();
+
+	// Sync settings to DB if settingsManager is available
+	if (settingsManager && options.modelManager === undefined) {
+		try {
+			await modelManager.syncFromSettings({
+				modelSettings: settingsManager.getModelSettings(),
+				routingRules: settingsManager.getRoutingRules(),
+				budget: settingsManager.getBudgetConfig(),
+			});
+		} catch {
+			// Settings sync is best-effort — don't fail session creation
+		}
+	}
+
 	const defaultActiveToolNames: ToolName[] = ["read", "bash", "edit", "write"];
 	const initialActiveToolNames: ToolName[] = options.tools
 		? options.tools.map((t) => t.name).filter((n): n is ToolName => n in allTools)
@@ -301,11 +321,16 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			if (!auth.ok) {
 				throw new Error(auth.error);
 			}
-			return streamSimple(model, context, {
+
+			// Apply per-model settings from ModelManager
+			const route = { provider: model.provider, model: model.id };
+			const mergedOptions = modelManager.applySettingsToOptions(route, {
 				...options,
 				apiKey: auth.apiKey,
 				headers: auth.headers || options?.headers ? { ...auth.headers, ...options?.headers } : undefined,
 			});
+
+			return streamSimple(model, context, mergedOptions);
 		},
 		onPayload: async (payload, _model) => {
 			const runner = extensionRunnerRef.current;
@@ -353,6 +378,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		initialActiveToolNames,
 		extensionRunnerRef,
 		sessionStartEvent: options.sessionStartEvent,
+		modelManager,
 	});
 	const extensionsResult = resourceLoader.getExtensions();
 

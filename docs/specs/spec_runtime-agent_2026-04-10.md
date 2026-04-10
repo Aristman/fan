@@ -3,7 +3,7 @@
 ## Метаданные
 - **Дата**: 2026-04-10
 - **Автор**: Specification Generator
-- **Статус**: Черновик
+- **Статус**: В реализации (Phase 1-2 завершены)
 - **Версия**: 1.0
 - **Тип**: Модификация (pivot from web SaaS to local runtime-agent)
 
@@ -360,20 +360,20 @@ model ClientToken {
 ## 10. Implementation Phases
 
 ### Phase 1: Foundation (Day 1-3)
-- [ ] Fork fan-mono, set up monorepo structure
-- [ ] Remove packages/mom, packages/pods
-- [ ] Create packages/orchestrator skeleton
-- [ ] Create packages/model-manager skeleton
-- [ ] Integrate all current extensions/skills
-- [ ] Prisma schema (sessions, messages, model_settings, budgets)
-- [ ] TUI mode works with fan-coding-agent
+- [x] Fork fan-mono, set up monorepo structure
+- [x] Remove packages/mom, packages/pods
+- [x] Create packages/orchestrator skeleton
+- [x] Create packages/model-manager skeleton
+- [x] Integrate all current extensions/skills
+- [x] Prisma schema (sessions, messages, model_settings, budgets)
+- [x] TUI mode works with fan-coding-agent
 
 ### Phase 2: Model Management (Day 4-5)
-- [ ] Provider router implementation (presets + custom rules)
-- [ ] Fallback chain logic
-- [ ] Budget tracker (tracking + alerts)
-- [ ] Per-model settings UI (in TUI)
-- [ ] Integration with ModelRegistry and AuthStorage
+- [x] Provider router implementation (presets + custom rules)
+- [x] Fallback chain logic
+- [x] Budget tracker (tracking + alerts)
+- [x] Per-model settings UI (in TUI)
+- [x] Integration with ModelRegistry and AuthStorage
 
 ### Phase 3: Client API (Day 6-8)
 - [ ] stdio RPC mode (extend fan --mode rpc with FAN commands)
@@ -404,11 +404,11 @@ model ClientToken {
 
 ## 11. Следующие шаги
 
-- [ ] Review and approve this specification
-- [ ] Update CLAUDE.md with new project type (local runtime-agent)
-- [ ] Update ARCHITECTURE.md with new architecture
-- [ ] Archive or update MVP-SPEC.md (mark as superseded)
-- [ ] Start Phase 1 implementation
+- [x] Review and approve this specification
+- [x] Update CLAUDE.md with new project type (local runtime-agent)
+- [x] Update ARCHITECTURE.md with new architecture
+- [x] Archive or update MVP-SPEC.md (mark as superseded)
+- [x] Start Phase 1 implementation
 
 ---
 

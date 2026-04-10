@@ -23,6 +23,7 @@ dist/
 *.db
 *.db-shm
 *.db-wal
+*.db-journal
 
 # OS
 .DS_Store

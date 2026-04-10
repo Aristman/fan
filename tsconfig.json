@@ -18,12 +18,12 @@
 			"@itone/fan-tui/*": ["./packages/tui/src/*"],
 			"@itone/fan-web-ui": ["./packages/web-ui/src/index.ts"],
 			"@itone/fan-web-ui/*": ["./packages/web-ui/src/*"],
-			"@fna/db": ["./packages/db/src/index.ts"],
-			"@fna/db/*": ["./packages/db/src/*"],
-			"@fna/orchestrator": ["./packages/orchestrator/src/index.ts"],
-			"@fna/orchestrator/*": ["./packages/orchestrator/src/*"],
-			"@fna/model-manager": ["./packages/model-manager/src/index.ts"],
-			"@fna/model-manager/*": ["./packages/model-manager/src/*"]
+			"@fan/db": ["./packages/db/src/index.ts"],
+			"@fan/db/*": ["./packages/db/src/*"],
+			"@fan/orchestrator": ["./packages/orchestrator/src/index.ts"],
+			"@fan/orchestrator/*": ["./packages/orchestrator/src/*"],
+			"@fan/model-manager": ["./packages/model-manager/src/index.ts"],
+			"@fan/model-manager/*": ["./packages/model-manager/src/*"]
 		}
 	},
 	"include": [

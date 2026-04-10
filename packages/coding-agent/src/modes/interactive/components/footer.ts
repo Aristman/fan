@@ -1,6 +1,7 @@
 import { type Component, truncateToWidth, visibleWidth } from "@itone/fan-tui";
 import type { AgentSession } from "../../../core/agent-session.js";
 import type { ReadonlyFooterDataProvider } from "../../../core/footer-data-provider.js";
+import type { ThemeColor } from "../theme/theme.js";
 import { theme } from "../theme/theme.js";
 
 /**
@@ -120,6 +121,24 @@ export class FooterComponent implements Component {
 		if (totalCost || usingSubscription) {
 			const costStr = `$${totalCost.toFixed(3)}${usingSubscription ? " (sub)" : ""}`;
 			statsParts.push(costStr);
+		}
+
+		// Budget indicator
+		if (state.model && this.session.modelManager) {
+			try {
+				const budgetStatus = this.session.modelManager.getCachedBudgetStatus(state.model.provider, "daily");
+				if (budgetStatus && budgetStatus.costLimit && budgetStatus.costLimit > 0) {
+					const budgetStr = `💰 $${budgetStatus.costUsed.toFixed(2)}/$${budgetStatus.costLimit.toFixed(2)}`;
+					const ratio = budgetStatus.costUsed / budgetStatus.costLimit;
+					let budgetColor: ThemeColor;
+					if (ratio >= 0.9) budgetColor = "error";
+					else if (ratio >= 0.6) budgetColor = "warning";
+					else budgetColor = "success";
+					statsParts.push(theme.fg(budgetColor, budgetStr));
+				}
+			} catch {
+				// Budget check failed — don't show indicator
+			}
 		}
 
 		// Colorize context percentage based on usage

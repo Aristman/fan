@@ -80,6 +80,7 @@ import { buildSystemPrompt } from "./system-prompt.js";
 import { type BashOperations, createLocalBashOperations } from "./tools/bash.js";
 import { createAllToolDefinitions } from "./tools/index.js";
 import { createToolDefinitionFromAgentTool, wrapToolDefinition } from "./tools/tool-definition-wrapper.js";
+import type { ModelManager } from "@fan/model-manager";
 
 // ============================================================================
 // Skill Block Parsing
@@ -161,6 +162,8 @@ export interface AgentSessionConfig {
 	extensionRunnerRef?: { current?: ExtensionRunner };
 	/** Session start event metadata emitted when extensions bind to this runtime. */
 	sessionStartEvent?: SessionStartEvent;
+	/** ModelManager instance for budget tracking, routing, and per-model settings. */
+	modelManager?: ModelManager;
 }
 
 export interface ExtensionBindings {
@@ -287,6 +290,9 @@ export class AgentSession {
 	// Model registry for API key resolution
 	private _modelRegistry: ModelRegistry;
 
+	// ModelManager for budget tracking and per-model settings
+	private _modelManager?: ModelManager;
+
 	// Tool registry for extension getTools/setTools
 	private _toolRegistry: Map<string, AgentTool> = new Map();
 	private _toolDefinitions: Map<string, ToolDefinitionEntry> = new Map();
@@ -309,6 +315,7 @@ export class AgentSession {
 		this._initialActiveToolNames = config.initialActiveToolNames;
 		this._baseToolsOverride = config.baseToolsOverride;
 		this._sessionStartEvent = config.sessionStartEvent ?? { type: "session_start", reason: "startup" };
+		this._modelManager = config.modelManager;
 
 		// Always subscribe to agent events for internal handling
 		// (session persistence, extensions, auto-compaction, retry logic)
@@ -324,6 +331,11 @@ export class AgentSession {
 	/** Model registry for API key resolution and model discovery */
 	get modelRegistry(): ModelRegistry {
 		return this._modelRegistry;
+	}
+
+	/** ModelManager for budget tracking, routing, and per-model settings */
+	get modelManager(): ModelManager | undefined {
+		return this._modelManager;
 	}
 
 	private async _getRequiredRequestAuth(model: Model<any>): Promise<{
@@ -549,6 +561,17 @@ export class AgentSession {
 						attempt: this._retryAttempt,
 					});
 					this._retryAttempt = 0;
+				}
+
+				// Track usage for budget management
+				if (this._modelManager) {
+					const usage = assistantMsg.usage;
+					const totalTokens = usage.totalTokens;
+					const totalCost = usage.cost.total;
+					if (totalTokens > 0 || totalCost > 0) {
+						// Fire and forget — don't block message processing
+						this._modelManager.trackUsage(assistantMsg.provider, totalTokens, totalCost).catch(() => {});
+					}
 				}
 			}
 		}
