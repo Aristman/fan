@@ -1,3 +1,4 @@
+export type { BudgetStatus, BudgetConfig, ModelSettingData, BudgetAlert, BudgetAlertHandler } from "@fan/model-manager";
 import type { BudgetStatus, BudgetConfig, ModelSettingData } from "@fan/model-manager";
 
 // ============================================================================
