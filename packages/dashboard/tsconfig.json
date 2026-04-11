@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "preserve",
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": [],
+    "paths": {
+      "@fan/api-gateway": ["../api-gateway/src/index.ts"],
+      "@fan/api-gateway/*": ["../api-gateway/src/*"]
+    }
+  },
+  "include": ["src"]
+}
