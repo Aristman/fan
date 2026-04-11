@@ -1,6 +1,8 @@
 # Phase 4 — Orchestrator: Инструкция по проверке
 
-> Пакет: `packages/orchestrator/` · Ветка: `develop`
+> Пакет: `packages/orchestrator/` · Ветка: `develop` (2026-04-11)
+
+**Статус:** Все 18 критериев выполнены ✅ (2026-04-11)
 
 ## Автоматически проверено ✅
 
@@ -98,7 +100,7 @@ TUI: 511 pass, 0 fail, 8 skip (стабильно). Полная сборка: 1
 
 ---
 
-## Ручная проверка (требует TUI) 🔧
+## Ручные (TUI) ✅
 
 Следующие кейсы требуют интерактивного терминала с TUI. Запусти:
 
@@ -188,11 +190,11 @@ Available agents (4):
 - [x] Custom agent discovery — `.fan/agents/*.md` обнаруживается как (project)
 - [x] Regression — TUI 511 pass, 0 fail
 
-### Ручные (TUI) 🔧
-- [ ] TUI `/orchestrator` — показывает статус
-- [ ] TUI `/agents` — показывает 4+ builtin агента
-- [ ] TUI `/tasks` — показывает "No tasks found"
-- [ ] TUI `/delegate unknown test` — "Unknown agent"
-- [ ] `delegate_task` single mode — explore агент выполняет задачу
-- [ ] `delegate_task` chain mode — 2+ шага последовательно
-- [ ] `delegate_task` parallel mode — 2+ агента конкурентно
+### Ручные (TUI) ✅
+- [x] TUI `/orchestrator` — показывает статус
+- [x] TUI `/agents` — показывает 4+ builtin агента
+- [x] TUI `/tasks` — показывает "No tasks found"
+- [x] TUI `/delegate unknown test` — "Unknown agent"
+- [x] `delegate_task` single mode — explore агент выполняет задачу
+- [x] `delegate_task` chain mode — 2+ шага последовательно
+- [x] `delegate_task` parallel mode — 2+ агента конкурентно

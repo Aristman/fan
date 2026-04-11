@@ -3,7 +3,7 @@
 ## Метаданные
 - **Дата**: 2026-04-10
 - **Автор**: Specification Generator
-- **Статус**: В реализации (Phase 1-3 завершены)
+- **Статус**: В реализации (Phase 1-4 завершены, Phase 5 в процессе)
 - **Версия**: 1.0
 - **Тип**: Модификация (pivot from web SaaS to local runtime-agent)
 
@@ -396,19 +396,134 @@ model ClientToken {
 - **Fixed bugs:** ZAI_AFAN_KEY → ZAI_API_KEY, Node.js request body parsing via @hono/node-server
 
 ### Phase 4: Orchestrator (Day 9-11)
-- [ ] Coordinator extension (task decomposition, delegation)
-- [ ] Subagent spawning (explore, plan, implement, verify workers)
-- [ ] Task tracking and status management
-- [ ] Integration with session tree branching
+- [x] Coordinator extension (task decomposition, delegation)
+- [x] Subagent spawning (explore, plan, implement, verify workers)
+- [x] Task tracking and status management
+- [x] Integration with session tree branching
 
-### Phase 5: Dashboard Client (Day 12-14)
+#### Phase 4 Results
+- **Package:** `packages/orchestrator/` (8 source files, 3 test files, 4 agent .md, 3 prompt .md)
+- **Core components:** types.ts, agents.ts, subagent-runner.ts, task-manager.ts, orchestrator-tools.ts, orchestrator-extension.ts
+- **Tools:** delegate_task (single/parallel/chain), list_tasks, cancel_task, classify_task
+- **Built-in workers (4):** explore, plan, implement, verify
+- **Workflow prompts (3):** implement, plan-only, verify chains
+- **Slash commands:** /orchestrator, /tasks, /agents, /delegate
+- **Agent discovery:** builtin → user → project with priority override
+- **Tests:** 29 tests (task-manager: 17, subagent-runner: 11, agents: 1) — all passing
+- **Verification:** All 18 criteria passed (11 automated + 7 manual TUI)
+- **Fixed bugs:** agent discovery path (dist→src), chain/parallel details shape mismatch
+- **Dependencies:** @itone/fan-ai, @itone/fan-agent-core, @itone/fan-coding-agent, @itone/fan-tui, @sinclair/typebox
+
+### Phase 5: Orchestrator Hardening (Day 12-16)
+
+> Сравнительный анализ: `~/.pi/agent/extensions/orchestrator/` (Pi sample) vs `packages/orchestrator/` (FAN).
+> Подробный документ: `docs/orchestrator-comparison.md`.
+> Цель: довести FAN orchestrator до паритета с Pi sample, сохранив уникальные FAN-фичи (parallel, chain, agent discovery, usage tracking).
+
+#### 5.1 Configuration & Infrastructure
+- [ ] Создать `src/config.ts` — загрузка из `config.json` с defaults
+- [ ] `OrchestratorConfig`: cloud/local/auto providerMode, model overrides, timeouts, maxRetries, dangerousCommands
+- [ ] `resolveModel()` — выбор модели по agentType + providerMode (интеграция с ModelManager из Phase 2)
+- [ ] `getCloudHealth()` / `getCloudStatus()` — health check с 5-минутным кэшем
+- [ ] Defaults: `parallelWorkers=3`, `workerTimeout=300s`, `planTimeout=300s`, `maxRetries=2`, `agentTimeouts` per type
+- [ ] Создать `src/workers.ts` — Worker Registry + Slot Pool
+  - Registry: `genWorkerId`, `registerWorker`, `getWorker`, `listWorkers`, `activeWorkers`
+  - Slot pool: `acquireSlot()` (Promise-based FIFO queue), `releaseSlot()`
+  - Write slot: максимум 1 implement worker одновременно
+  - `statusIcon()`, `statusColor()` helpers
+- [ ] Создать `src/permissions.ts` — `isDangerousCommand()` (8 regex patterns)
+- [ ] Handler для `tool_call` event → `ctx.ui.select("Block", "Allow")` для опасных команд
+
+#### 5.2 Coordinator Mode
+- [ ] Флаг `coordinatorActive` в extension state
+- [ ] Shortcut `Alt+O` — toggle coordinator ON/OFF
+- [ ] Status bar update (`ctx.ui.setStatus`) при toggle и в `session_start`
+- [ ] Добавить `COORDINATOR_PROMPT` — system prompt для coordinator mode (адаптирован под FAN tool names: delegate_task вместо Agent)
+- [ ] Handler для `before_agent_start` event — inject COORDINATOR_PROMPT when coordinator active
+- [ ] Coordinator prompt запрещает прямое использование read/write/edit/bash и заставляет делегировать через `delegate_task`
+- [ ] Зарегистрировать LLM-callable `TaskCreate` tool (делегирует в TaskManager, параметры: subject, description, owner, blocks[])
+- [ ] Зарегистрировать LLM-callable `TaskUpdate` tool (status, subject, description, blocks[]; auto-unblock при complete)
+- [ ] Обновить `TaskManager` для поддержки поля `owner`
+
+#### 5.3 /plan Command
+- [ ] Добавить `PLANNING_PROMPT` в agents.ts (адаптированный plan-agent prompt из Pi sample)
+- [ ] Регистрация `/plan <task description>` slash command
+- [ ] Spawn explore worker с PLANNING_PROMPT → генерация плана
+- [ ] `approveOrRevise()` — интерактивный UI select (✅ Approve / ✏️ Revise / ❌ Reject)
+- [ ] On Approve: auto-enable coordinator, inject approved plan в conversation через `pi.sendUserMessage`
+- [ ] On Revise: `ctx.ui.input()` для feedback → re-run с revision
+- [ ] Live progress widget во время планирования (статус, tool calls, elapsed time)
+- [ ] Timer в status bar пока worker работает
+
+#### 5.4 Retry & Fallback
+- [ ] `runWorkerWithRetry()` — retry до `config.maxRetries` раз, не retry на AbortSignal
+- [ ] `runWorkerWithFallback()` — try cloud, fallback to local при providerMode="auto"
+- [ ] Проверка `getCloudStatus()` перед попыткой cloud
+- [ ] Интегрировать retry/fallback в `delegate_task` tool (single mode)
+
+#### 5.5 Interactive Task Widget
+- [ ] `updateTaskWidget()` — collapsible checklist widget above editor (`ctx.ui.setWidget("orchestrator-tasks", ...)`)
+- [ ] Авто-скрытие виджета когда нет активных задач (все completed/failed)
+- [ ] Expanded state — иконки по статусу:
+  - ◐ in_progress (warning, bold)
+  - ⛔ blocked (dim)
+  - ☐ pending (muted)
+  - ✗ failed (error)
+  - ☑ completed (success, strikethrough)
+- [ ] Сортировка: активные сверху → failed → completed внизу
+- [ ] Truncate длинных subject до 55 символов с ellipsis
+- [ ] Collapsed state — summary line: `📋 3/5 tasks [Alt+T to expand]`
+- [ ] Shortcut `Alt+T` — toggle collapse/expand
+- [ ] Update on `turn_end` event
+- [ ] Update на `TaskCreate`/`TaskUpdate` tool calls (queueMicrotask)
+
+#### 5.6 Enhanced /orchestrator Command
+- [ ] `/orchestrator stop` — abort all active workers через registry
+- [ ] `/orchestrator config` — показать текущий конфиг (provider, models, timeouts, dangerous patterns count)
+- [ ] `/orchestrator mode cloud|local|auto` — переключить providerMode
+- [ ] `/orchestrator retry` — retry последнего failed worker
+- [ ] `/orchestrator status` — расширенный вывод: workers + tasks + queue + health
+
+#### 5.7 Notifications & Verification
+- [ ] `formatTaskNotification()` — XML format (task-id, status, agent-type, model, summary, result, message_count, duration_ms)
+- [ ] Использовать notification в `delegate_task` result для coordinator parsing
+- [ ] `parseVerdict()` — извлечь `VERDICT: PASS|FAIL|PARTIAL` из verify worker output
+- [ ] Показать verdict в delegate_task result когда agentType="verify"
+- [ ] `SendMessage` tool — отправить follow-up message running worker (требует поддержки steer в subprocess)
+
+#### 5.8 Session Lifecycle
+- [ ] `session_start`: восстановить status bar + task widget
+- [ ] `session_shutdown`: abort all active workers, clear widgets (orchestrator, orchestrator-tasks), clear status bar, reset coordinator flag
+- [ ] Хранить `lastCtx` reference для cleanup на shutdown
+
+#### Phase 5 Критерии готовности
+- [ ] `config.json` загружается с fallback на defaults
+- [ ] `resolveModel()` корректно резолвит модель по agentType + mode
+- [ ] Worker registry корректно регистрирует/обновляет/списывает воркеров
+- [ ] Slot pool ограничивает параллельность, write slot = 1 implement max
+- [ ] Опасные команды блокируются с UI prompt
+- [ ] Alt+O включает/выключает coordinator mode, status bar обновляется
+- [ ] Coordinator prompt инжектится при `before_agent_start`, LLM делегирует через delegate_task
+- [ ] TaskCreate/TaskUpdate tools доступны LLM, корректно работают с TaskManager
+- [ ] `/plan` spawns explore worker, генерирует план, show approve/revise/reject UI
+- [ ] На approve coordinator auto-enabled, план инжектится в conversation
+- [ ] `runWorkerWithRetry` делает до N retries, не retry на abort
+- [ ] `runWorkerWithFallback` tries cloud → fallback local
+- [ ] Task widget отображается выше editor, автоскрытие без активных задач
+- [ ] Alt+T toggles collapse/expand
+- [ ] Widget обновляется на turn_end и на TaskCreate/TaskUpdate
+- [ ] `/orchestrator stop/config/mode/retry/status` работают корректно
+- [ ] `parseVerdict()` извлекает PASS/FAIL/PARTIAL, показывается в result
+- [ ] `session_shutdown` корректно чистит всё (workers, widgets, status)
+
+### Phase 6: Dashboard Client (Day 17-19)
 - [ ] Lit-based dashboard (chat, sessions, settings)
 - [ ] Connection to FAN API (HTTP)
 - [ ] Model settings UI
 - [ ] Budget visualization
 - [ ] Session management UI
 
-### Phase 6: Polish & Packaging (Day 15-16)
+### Phase 7: Polish & Packaging (Day 20-22)
 - [ ] CLI binary packaging (`fna` command)
 - [ ] Settings management (global + project)
 - [ ] Error handling and resilience
@@ -422,6 +537,8 @@ model ClientToken {
 - [x] Update ARCHITECTURE.md with new architecture
 - [x] Archive or update MVP-SPEC.md (mark as superseded)
 - [x] Start Phase 1 implementation
+- [x] Phase 4 completed — orchestrator baseline functional
+- [ ] Phase 5 — orchestrator hardening (parity with Pi sample)
 
 ---
 
