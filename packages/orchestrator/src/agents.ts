@@ -92,10 +92,10 @@ function findNearestProjectAgentsDir(cwd: string): string | null {
  * Get the directory containing built-in agent definitions.
  */
 function getBuiltinAgentsDir(): string {
-	// Resolve relative to this source file
 	const currentFile = fileURLToPath(import.meta.url);
-	const srcDir = path.dirname(currentFile);
-	return path.join(srcDir, "agents");
+	const distDir = path.dirname(currentFile);
+	// At runtime, this file is in dist/, but agent .md files are in src/agents/
+	return path.join(distDir, "..", "src", "agents");
 }
 
 /**

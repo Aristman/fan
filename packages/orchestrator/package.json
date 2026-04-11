@@ -13,7 +13,8 @@
 	},
 	"scripts": {
 		"clean": "shx rm -rf dist",
-		"build": "tsgo -p tsconfig.build.json",
+		"copy-assets": "shx mkdir -p dist/agents dist/prompts && shx cp src/agents/*.md dist/agents/ && shx cp src/prompts/*.md dist/prompts/",
+		"build": "tsgo -p tsconfig.build.json && npm run copy-assets",
 		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
 		"test": "vitest run"
 	},
