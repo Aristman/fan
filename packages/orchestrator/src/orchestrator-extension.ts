@@ -95,16 +95,11 @@ export const orchestratorExtension: ExtensionFactory = (pi) => {
 		handler: async (args, ctx) => {
 			const scope = (args.trim() === "project" ? "project" : args.trim() === "user" ? "user" : "both") as "user" | "project" | "both";
 			const discovery = discoverAgents(ctx.cwd, scope);
-			const formatted = formatAgentList(discovery.agents, 20);
 
 			const lines = [
 				`Available agents (${discovery.agents.length}):`,
-				formatted.text,
+				...discovery.agents.map((a) => `  ${a.name} (${a.source}): ${a.description}`),
 			];
-
-			if (formatted.remaining > 0) {
-				lines.push(`  ... +${formatted.remaining} more`);
-			}
 
 			if (discovery.projectAgentsDir) {
 				lines.push(`\nProject agents dir: ${discovery.projectAgentsDir}`);
