@@ -7,13 +7,13 @@
 - **Type:** Local AI runtime-agent for developers
 - **Base:** Fork of fan-mono (fan-coding-agent core)
 - **Repo:** Monorepo (npm workspaces, Bun, TypeScript)
-- **Stage:** Phase 3 — Client API
+- **Stage:** Phase 4 — Orchestrator
 
 ## What It Is
 Runs locally on user's machine. Provides external API for multiple UI clients (TUI, WebView, IDEA plugin, etc.). Built on fan-coding-agent with custom orchestrator extension, model management, and all current extensions/skills.
 
 ## Tech Stack
-Runtime: Bun · Monorepo: npm workspaces · Core: fan-ai + fan-agent-core + fan-coding-agent + fan-tui · API: stdio RPC + Hono HTTP/WS · DB: Prisma+SQLite · Dashboard: Lit+Vite · Build: tsup
+Runtime: Bun · Monorepo: npm workspaces · Core: fan-ai + fan-agent-core + fan-coding-agent + fan-tui · API: stdio RPC + Hono HTTP/WS · DB: Prisma+SQLite · Dashboard: Lit+Vite · Build: tsgo
 - **API Gateway:** Hono REST + WebSocket, token auth via ClientToken (DB)
 
 ## Git Rules
@@ -36,3 +36,16 @@ Runtime: Bun · Monorepo: npm workspaces · Core: fan-ai + fan-agent-core + fan-
 - `docs/specs/spec_runtime-agent_2026-04-10.md` — current specification (runtime-agent)
 - `docs/specs/MVP-SPEC.md` — superseded (web SaaS concept, archived)
 - `ARCHITECTURE.md` — architecture, packages, data flow
+
+## Phase Progress
+- [x] Phase 1 — Project fork & setup (monorepo, renamed @fan/*, build pipeline)
+- [x] Phase 2 — Model Management (ProviderRouter, FallbackChain, BudgetTracker, ModelManager)
+- [x] Phase 3 — Client API Gateway (Hono REST+WS, auth, 14 endpoints, server mode)
+- [x] Phase 4 — Orchestrator (delegate_task tool, 4 workers, 3 workflows, slash commands, 29 tests)
+- [ ] Phase 5 — Dashboard (Lit web UI, model settings, budget viz)
+- [ ] Phase 6 — Polish & release (docs, examples, migration guide)
+
+## Test Instructions
+- Orchestrator: `docs/develop/tests/orchestrator-phase4.md`
+- Quick build: `npm run build` (10 packages, 0 errors)
+- Quick test: `cd packages/orchestrator && npx vitest run` (29 tests)

@@ -24,7 +24,7 @@
 | API (remote) | Hono (REST + WebSocket) | For WebView, mobile, web clients |
 | Database | Prisma + SQLite | Sessions metadata, model settings, budgets |
 | Dashboard | Lit + Vite + fan-web-ui | Web UI client (connects via FAN API) |
-| Build | tsup | ESM/CJS, declaration files |
+| Build | tsgo (native TypeScript Go compiler) | ESM/CJS, declaration files |
 | Language | TypeScript (strict) | — |
 
 ---
@@ -111,12 +111,30 @@ Core agent with built-in tools (read, write, edit, bash, grep, find, ls), sessio
 Lit web components (ChatPanel with streaming, file attachments, artifact rendering). Used as component library for dashboard client.
 
 ### packages/orchestrator — NEW
-Coordinator extension for fan-coding-agent:
-- Task decomposition and delegation
-- Subagent spawning (explore, plan, implement, verify workers)
-- Task tracking and status management
-- Integration with session tree branching
-- Uses fan extension API (lifecycle hooks: context, tool_call, session_start)
+Coordinator extension for fan-coding-agent. Multi-agent task decomposition and
+coordination via subprocess-based subagent delegation.
+
+**Components:**
+- **types.ts** — Core types (WorkerType, ExecutionMode, AgentConfig, UsageStats, SubagentTask)
+- **agents.ts** — Agent discovery from builtin/user/project dirs with priority override
+- **subagent-runner.ts** — Spawns fna subprocesses with JSON streaming, abort support, usage tracking
+- **task-manager.ts** — Task lifecycle (CRUD, status transitions, blocking, serialization)
+- **orchestrator-tools.ts** — LLM-callable tools (delegate_task, list_tasks, cancel_task, classify_task)
+- **orchestrator-extension.ts** — Extension wiring with 4 slash commands
+
+**Built-in workers (4):** explore (fast recon), plan (implementation plans),
+implement (general-purpose), verify (code review).
+
+**Execution modes:** single (agent+task), parallel (up to 8 tasks, 4 concurrent),
+chain (sequential with {previous} placeholder).
+
+**Workflow prompts (3):** implement (explore→plan→implement), plan-only (explore→plan),
+verify (implement→verify→fix).
+
+**Slash commands:** /orchestrator, /tasks, /agents, /delegate
+
+**Dependencies:** @itone/fan-ai, @itone/fan-agent-core, @itone/fan-coding-agent,
+@itone/fan-tui, @sinclair/typebox
 
 ### packages/model-manager — NEW
 Model management layer:
@@ -135,6 +153,8 @@ Client API Gateway — HTTP REST + WebSocket server mode for FAN.
 - **types.ts** — Shared request/response types for REST + WebSocket events.
 
 **Dependencies:** `hono`, `@hono/node-server`, `ws`, `@fan/db`, `@fan/model-manager`
+
+**Note:** Uses @hono/node-server (not manual createServer) for proper request body parsing on Node.js.
 
 ### packages/db (Prisma + SQLite) — Modified
 Database schema for metadata (sessions, model settings, budgets). See Database Schema section below.
