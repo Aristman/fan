@@ -14,11 +14,15 @@
 	"scripts": {
 		"clean": "shx rm -rf dist",
 		"build": "tsgo -p tsconfig.build.json",
-		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput"
+		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
+		"test": "vitest run"
 	},
 	"dependencies": {
+		"@itone/fan-ai": "^0.66.1",
 		"@itone/fan-coding-agent": "^0.66.1",
-		"@itone/fan-agent-core": "^0.66.1"
+		"@itone/fan-agent-core": "^0.66.1",
+		"@itone/fan-tui": "^0.66.1",
+		"@sinclair/typebox": "^0.34.0"
 	},
 	"devDependencies": {
 		"shx": "^0.4.0"
