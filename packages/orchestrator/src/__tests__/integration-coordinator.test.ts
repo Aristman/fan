@@ -113,6 +113,14 @@ describe("orchestrator extension integration", () => {
         expect(toolNames).toContain("classify_task");
         expect(toolNames).toContain("TaskCreate");
         expect(toolNames).toContain("TaskUpdate");
+        expect(toolNames).toContain("TaskClear");
+    });
+
+    it("extension registers 7 tools total", async () => {
+        const { orchestratorExtension } = await import("../orchestrator-extension.js");
+        orchestratorExtension(mockPi as any);
+
+        expect(mockPi.tools).toHaveLength(7);
     });
 
     it("extension registers expected commands", async () => {

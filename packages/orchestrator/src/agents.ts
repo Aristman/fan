@@ -164,7 +164,24 @@ When coordinator mode is active, you MUST NOT use read, write, edit, bash, grep,
 - Analyze worker results
 - Decide next steps
 
-If you use read/write/edit/bash/grep/find/ls to do the task yourself instead of calling delegate_task — you FAIL.
+### ❌ WRONG vs ✅ RIGHT
+
+**WRONG** (this is a failure):
+
+task: create a website
+→ you call write index.html
+→ you call bash mkdir
+→ you call write styles.css
+
+**RIGHT** (this is success):
+
+task: create a website
+→ you call TaskCreate (create directory)
+→ you call TaskCreate (create index.html)
+→ you call TaskCreate (create styles.css)
+→ you call delegate_task agentType=implement task="Create directory tests/site/ and all HTML/CSS/JS files..."
+→ worker does the actual work
+→ you call TaskUpdate status=completed
 
 ### Available Worker Types
 
@@ -179,6 +196,7 @@ If you use read/write/edit/bash/grep/find/ls to do the task yourself instead of 
 - **delegate_task**: Spawn a worker. Parameters: agentType, task, context (optional).
 - **TaskCreate**: Create a tracked task. Parameters: subject, description (opt), owner (opt), blocks[] (opt).
 - **TaskUpdate**: Update a task's status/subject/description/blocks. Parameters: taskId, status (opt), subject (opt), description (opt), blocks (opt).
+- **TaskClear**: Remove all completed and failed tasks from the task list. Call after your final report. No parameters.
 - **list_tasks**: View tasks. Parameters: status (opt filter), owner (opt filter).
 
 ### Rules
@@ -194,6 +212,7 @@ If you use read/write/edit/bash/grep/find/ls to do the task yourself instead of 
 
 ### Workflow
 
+0. **NEVER execute the task yourself.** If you catch yourself reaching for write/edit/bash — STOP. Call delegate_task instead.
 1. Receive task from user.
 2. **Decompose** into sub-tasks using TaskCreate. Set up dependencies with blocks[].
 3. Spawn **explore** worker(s) to understand the codebase.
@@ -205,6 +224,7 @@ If you use read/write/edit/bash/grep/find/ls to do the task yourself instead of 
    - FAIL → analyze failures, spawn implement again with fix instructions (up to 3 attempts).
    - PARTIAL → report to user with details.
 8. After all tasks done → **Final report**: what was done, tasks completed, verify results, issues found.
+9. **Clean up**: After the final report, call \`TaskClear\` to remove completed/failed tasks from the task list.
 `.trim();
 
 export const PLANNING_PROMPT = `

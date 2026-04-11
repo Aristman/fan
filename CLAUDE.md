@@ -7,7 +7,7 @@
 - **Type:** Local AI runtime-agent for developers
 - **Base:** Fork of fan-mono (fan-coding-agent core)
 - **Repo:** Monorepo (npm workspaces, Bun, TypeScript)
-- **Stage:** Phase 5 — Orchestrator Hardening
+- **Stage:** Phase 6 — Dashboard Client
 
 ## What It Is
 Runs locally on user's machine. Provides external API for multiple UI clients (TUI, WebView, IDEA plugin, etc.). Built on fan-coding-agent with custom orchestrator extension, model management, and all current extensions/skills.

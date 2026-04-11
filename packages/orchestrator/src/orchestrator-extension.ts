@@ -52,16 +52,11 @@ export const orchestratorExtension: ExtensionFactory = (pi) => {
 
     // ---- Helper: updateTaskWidget ----
     function updateTaskWidget(ctx: any): void {
-        const tasks = taskManager.getTasks();
-        const activeOrFailed = tasks.filter(
-            (t) =>
-                t.status === "in_progress" ||
-                t.status === "pending" ||
-                t.status === "blocked" ||
-                t.status === "failed",
-        );
+        if (!ctx?.ui?.setWidget) return;
 
-        if (activeOrFailed.length === 0) {
+        const tasks = taskManager.getTasks();
+
+        if (tasks.length === 0) {
             ctx.ui.setWidget("orchestrator-tasks", undefined);
             return;
         }
@@ -74,21 +69,26 @@ export const orchestratorExtension: ExtensionFactory = (pi) => {
             failed: "✗",
         };
 
-        const sorted = [...activeOrFailed].sort((a, b) => {
+        const isDone = (t: any) => t.status === "completed" || t.status === "failed";
+
+        const sorted = [...tasks].sort((a, b) => {
             const order: Record<string, number> = {
                 in_progress: 0,
-                blocked: 1,
-                pending: 2,
-                failed: 3,
-                completed: 4,
+                pending: 1,
+                blocked: 2,
+                completed: 3,
+                failed: 4,
             };
             return (order[a.status] ?? 5) - (order[b.status] ?? 5);
         });
 
+        const activeCount = tasks.filter((t) => !isDone(t)).length;
+        const doneCount = tasks.filter((t) => isDone(t)).length;
+
         const lines: string[] = taskWidgetCollapsed
-            ? [`Orchestrator Tasks (${activeOrFailed.length}) — Alt+T to expand`]
+            ? [`Orchestrator Tasks (${activeCount} active, ${doneCount} done) — Alt+T to expand`]
             : [
-                  `Orchestrator Tasks (${activeOrFailed.length}):`,
+                  `Orchestrator Tasks (${activeCount} active, ${doneCount} done):`,
                   ...sorted.map((t) => {
                       const icon = statusIcons[t.status] ?? "?";
                       const desc =
@@ -99,6 +99,13 @@ export const orchestratorExtension: ExtensionFactory = (pi) => {
                           ? ` (blocked by ${t.blockedBy.length})`
                           : "";
                       const owner = t.owner ? ` [${t.owner}]` : "";
+
+                      if (isDone(t)) {
+                          return `  \x1b[2m\x1b[9m${icon} ${desc}${deps}${owner}\x1b[0m`;
+                      }
+                      if (t.status === "in_progress") {
+                          return `  \x1b[92m${icon} ${desc}${deps}${owner}\x1b[0m`;
+                      }
                       return `  ${icon} ${desc}${deps}${owner}`;
                   }),
               ];
@@ -109,6 +116,7 @@ export const orchestratorExtension: ExtensionFactory = (pi) => {
     // ---- Helper: setCoordinatorStatus ----
     function setCoordinatorStatus(ctx: any, active: boolean): void {
         coordinatorActive = active;
+        if (!ctx?.ui?.setStatus) return;
         if (active) {
             ctx.ui.setStatus("2-orchestrator", "🔄 Coordinator");
         } else {
@@ -140,7 +148,8 @@ export const orchestratorExtension: ExtensionFactory = (pi) => {
 
     // ---- Coordinator mode: inject prompt ----
 
-    pi.on("before_agent_start", (event: any) => {
+    pi.on("before_agent_start", (event: any, ctx: any) => {
+        lastCtx = ctx;
         if (coordinatorActive) {
             return {
                 systemPrompt: event.systemPrompt + "\n\n" + COORDINATOR_PROMPT,
@@ -151,31 +160,31 @@ export const orchestratorExtension: ExtensionFactory = (pi) => {
 
     // ---- Events ----
 
-    pi.on("turn_end", () => {
-        if (lastCtx) {
-            updateTaskWidget(lastCtx);
-        }
+    pi.on("turn_end", (_event: any, ctx: any) => {
+        updateTaskWidget(ctx);
     });
 
-    pi.on("session_start", (event: any) => {
-        lastCtx = event.ctx ?? event;
+    pi.on("session_start", (_event: any, ctx: any) => {
+        lastCtx = ctx;
 
         // Restore status bar and widget
         if (coordinatorActive) {
-            lastCtx.ui.setStatus("2-orchestrator", "🔄 Coordinator");
+            ctx.ui.setStatus("2-orchestrator", "🔄 Coordinator");
         }
-        updateTaskWidget(lastCtx);
+        updateTaskWidget(ctx);
 
         console.log("[FAN Orchestrator] Session started");
         console.log(
-            "[FAN Orchestrator] Tools: delegate_task, list_tasks, cancel_task, classify_task, TaskCreate, TaskUpdate",
+            "[FAN Orchestrator] Tools: delegate_task, list_tasks, cancel_task, classify_task, TaskCreate, TaskUpdate, TaskClear",
         );
         if (coordinatorActive) {
             console.log("[FAN Orchestrator] Coordinator mode: ACTIVE");
         }
     });
 
-    pi.on("session_shutdown", () => {
+    pi.on("session_shutdown", (_event: any, ctx: any) => {
+        lastCtx = ctx;
+
         // Abort all active workers
         const active = activeWorkers();
         for (const w of active) {
@@ -184,10 +193,8 @@ export const orchestratorExtension: ExtensionFactory = (pi) => {
         _resetRegistry();
 
         // Clear widgets and status
-        if (lastCtx) {
-            lastCtx.ui.setWidget("orchestrator-tasks", undefined);
-            lastCtx.ui.setStatus("2-orchestrator", undefined);
-        }
+        ctx.ui.setWidget("orchestrator-tasks", undefined);
+        ctx.ui.setStatus("2-orchestrator", undefined);
 
         const counts = taskManager.getStatusCounts();
         console.log(
@@ -197,14 +204,7 @@ export const orchestratorExtension: ExtensionFactory = (pi) => {
 
     // ---- Permission system ----
 
-    pi.on("tool_call", (event: any) => {
-        // Update widget on TaskCreate/TaskUpdate
-        if (event.toolName === "TaskCreate" || event.toolName === "TaskUpdate") {
-            queueMicrotask(() => {
-                if (lastCtx) updateTaskWidget(lastCtx);
-            });
-        }
-
+    pi.on("tool_call", (event: any, _ctx: any) => {
         // Block dangerous bash commands
         if (event.toolName === "bash") {
             const cmd = event.args?.command as string | undefined;
@@ -217,6 +217,21 @@ export const orchestratorExtension: ExtensionFactory = (pi) => {
         }
 
         return {};
+    });
+
+    // Update widget AFTER tool execution (tool_result), when state has actually changed
+    pi.on("tool_result", (event: any, ctx: any) => {
+        if (
+            event.toolName === "TaskCreate" ||
+            event.toolName === "TaskUpdate" ||
+            event.toolName === "TaskClear" ||
+            event.toolName === "delegate_task" ||
+            event.toolName === "cancel_task"
+        ) {
+            queueMicrotask(() => {
+                updateTaskWidget(ctx);
+            });
+        }
     });
 
     // ---- Slash Command: /orchestrator (enhanced) ----
@@ -378,95 +393,148 @@ export const orchestratorExtension: ExtensionFactory = (pi) => {
                 return;
             }
 
-            ctx.ui.setWorkingMessage("Generating plan...");
+            /** Extract tool call previews from accumulated messages */
+            function extractToolCalls(messages: any[]): string[] {
+                const calls: string[] = [];
+                for (const msg of messages) {
+                    if (msg.role !== "assistant" || !msg.content) continue;
+                    for (const part of msg.content) {
+                        if (part.type === "toolCall") {
+                            const name = part.name;
+                            const args = part.arguments;
+                            let preview = name;
+                            if (name === "bash") preview = `${name} ${((args?.command as string) ?? "").slice(0, 50)}`;
+                            else if (name === "read") preview = `${name} ${((args?.file_path ?? args?.path) ?? "...").slice(0, 50)}`;
+                            else if (name === "grep") preview = `${name} /${((args?.pattern as string) ?? "")}/`;
+                            else if (name === "find") preview = `${name} ${(args?.pattern ?? "*")}`;
+                            else if (name === "ls") preview = `${name} ${(args?.path ?? ".")}`;
+                            else if (name === "edit") preview = `${name} ${(args?.file_path ?? args?.path) ?? "..."}`;
+                            else if (name === "write") preview = `${name} ${(args?.file_path ?? args?.path) ?? "..."} (${((args?.content as string)?.split("\n").length ?? 0)} lines)`;
+                            if (preview.length > 60) preview = preview.slice(0, 60) + "...";
+                            calls.push(`  → ${preview}`);
+                        }
+                    }
+                }
+                return calls.slice(-8);
+            }
 
-            const workerId = genWorkerId();
-            registerWorker({
-                id: workerId,
-                agentType: "plan",
-                status: "spawning",
-                startTime: Date.now(),
-                task: taskDescription,
-            });
-            updateWorker(workerId, { status: "running" });
+            /** Run plan worker with live progress widget */
+            async function runPlanWorker(
+                        agentCfg: any,
+                        task: string,
+                        signal: AbortSignal | undefined,
+                        headerPrefix: string,
+                    ): Promise<{ output: string; exitCode: number; stderr: string }> {
+                const planStartTime = Date.now();
+                const statusTimer = setInterval(() => {
+                    const elapsed = Math.round((Date.now() - planStartTime) / 1000);
+                    ctx.ui.setStatus("2-orchestrator", `⏳ ${headerPrefix}... ${elapsed}s`);
+                }, 3000);
 
-            try {
-                const result = await runSingleAgent(
-                    ctx.cwd,
-                    [planAgent],
-                    planAgent.name,
-                    taskDescription,
-                    undefined,
-                    undefined,
-                    ctx.signal,
-                    undefined,
+                try {
+                    let result: any;
+                    await runSingleAgent(
+                        ctx.cwd,
+                        [agentCfg],
+                        agentCfg.name,
+                        task,
+                        undefined, undefined, signal,
+                        // onUpdate — live progress callback
+                        (partial: any) => {
+                            const details = Array.isArray(partial.details)
+                                ? partial.details[0]
+                                : partial.details?.results?.[0];
+                            const msgs = details?.messages ?? [];
+                            const elapsed = Math.round((Date.now() - planStartTime) / 1000);
+                            const toolLines = extractToolCalls(msgs);
+
+                            const widgetLines: string[] = [
+                                `📋 ${headerPrefix} · ⏳ ${toolLines.length > 0 ? "Working" : "Thinking"} · ${elapsed}s`,
+                            ];
+                            if (toolLines.length > 0) {
+                                widgetLines.push(...toolLines);
+                            }
+                            ctx.ui.setWidget("orchestrator-plan", widgetLines);
+                        },
+                    ).then((r) => { result = r; });
+
+                    return { output: getFinalOutput(result.messages), exitCode: result.exitCode, stderr: result.stderr };
+                } finally {
+                    clearInterval(statusTimer);
+                }
+            }
+
+            async function approveOrRevise(
+                planText: string,
+                signal: AbortSignal | undefined,
+            ): Promise<boolean> {
+                // Show plan in UI + conversation context WITHOUT triggering an LLM turn
+                pi.sendMessage(
+                    { customType: "orchestrator-plan-draft", content: planText, display: true },
+                    { triggerTurn: false },
                 );
 
-                const output = getFinalOutput(result.messages);
-                const isSuccess = result.exitCode === 0 && output;
-
-                updateWorker(workerId, {
-                    status: isSuccess ? "completed" : "failed",
-                    endTime: Date.now(),
-                    result: output,
-                    error: isSuccess
-                        ? undefined
-                        : result.stderr || "No output from plan agent",
-                });
-
-                if (!isSuccess) {
-                    ctx.ui.notify(
-                        "Plan generation failed: " +
-                            (result.stderr || "no output"),
-                        "error",
-                    );
-                    return;
-                }
-
-                // Show plan to user
-                ctx.ui.setWorkingMessage(undefined);
-                pi.sendUserMessage(output);
-
-                // Ask for approval
-                const choice = await ctx.ui.select("Plan Review", [
-                    "Approve",
-                    "Revise",
-                    "Reject",
+                const choice = await ctx.ui.select!("Plan Review", [
+                    "✅ Approve",
+                    "✏️ Revise",
+                    "❌ Reject",
                 ]);
 
-                if (choice === "Approve") {
-                    setCoordinatorStatus(ctx, true);
-                    ctx.ui.notify(
-                        "Plan approved. Coordinator mode enabled. Decomposing into tasks...",
-                    );
-                    pi.sendUserMessage(
-                        "The plan has been approved. Decompose it into tasks using TaskCreate, then implement step by step.",
-                        { deliverAs: "steer" },
-                    );
-                } else if (choice === "Revise") {
-                    const feedback = await ctx.ui.input(
+                if (choice === "✅ Approve") {
+                    return true;
+                }
+
+                if (choice === "✏️ Revise") {
+                    const feedback = await ctx.ui.input!(
                         "Revision Feedback",
                         "What should be changed in the plan?",
                     );
                     if (feedback) {
-                        pi.sendUserMessage(
-                            `Please revise the plan with this feedback: ${feedback}\n\nOriginal plan:\n${output}`,
-                            { deliverAs: "steer" },
+                        const revised = await runPlanWorker(
+                            planAgent!,
+                            `${taskDescription}\n\n--- Revision Feedback ---\n${feedback}\n\n--- Original Plan ---\n${planText}`,
+                            signal,
+                            "Re-plan",
                         );
+                        if (revised.output) {
+                            return await approveOrRevise(revised.output, signal);
+                        }
                     }
-                } else {
-                    ctx.ui.notify("Plan rejected.");
                 }
-            } catch (e: any) {
-                updateWorker(workerId, {
-                    status: "aborted",
-                    endTime: Date.now(),
-                    error: e.message,
-                });
-                ctx.ui.notify("Plan generation failed: " + e.message, "error");
-            } finally {
-                ctx.ui.setWorkingMessage(undefined);
+
+                ctx.ui.notify("Plan rejected.");
+                ctx.ui.setWidget("orchestrator-plan", undefined);
+                ctx.ui.setStatus("2-orchestrator", coordinatorActive ? "🎭 Coordinator ON" : "");
+                return false;
             }
+
+            // Run planning worker with live progress
+            const { output, exitCode, stderr } = await runPlanWorker(
+                planAgent, taskDescription, ctx.signal, "Plan",
+            );
+
+            ctx.ui.setWidget("orchestrator-plan", undefined);
+            ctx.ui.setWorkingMessage(undefined);
+
+            if (exitCode !== 0 || !output) {
+                ctx.ui.notify(
+                    "Plan generation failed: " + (stderr || "no output"),
+                    "error",
+                );
+                return;
+            }
+
+            // Approval flow
+            const approved = await approveOrRevise(output, ctx.signal);
+
+            if (!approved) return;
+
+            // Enable coordinator, then trigger a new turn with coordinator prompt active
+            setCoordinatorStatus(ctx, true);
+            pi.sendUserMessage(
+                "The plan has been approved. Review the plan above and start implementing it step by step. Use delegate_task to spawn workers for each task. Decompose the plan into tasks using TaskCreate, then implement each one.",
+                { deliverAs: "followUp" },
+            );
         },
     });
 

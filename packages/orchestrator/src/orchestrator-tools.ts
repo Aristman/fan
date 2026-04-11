@@ -781,4 +781,27 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 			}
 		},
 	});
+
+	// ---- TaskClear ----
+
+	pi.registerTool({
+		name: "TaskClear",
+		label: "Clear Completed Tasks",
+		description: "Remove all completed and failed tasks from the task list. Call this after your final report when all work is done.",
+		parameters: Type.Object({}),
+
+		async execute(_toolCallId, _params, _signal, _onUpdate, _ctx) {
+			const counts = taskManager.getStatusCounts();
+			const removed = taskManager.clearCompleted();
+			return {
+				content: [{
+					type: "text",
+					text: removed > 0
+						? `Cleared ${removed} task(s) from task list. Remaining: ${taskManager.size} tasks.`
+						: "No completed or failed tasks to clear.",
+				}],
+				details: undefined,
+			};
+		},
+	});
 }

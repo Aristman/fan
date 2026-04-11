@@ -330,11 +330,29 @@ export function formatTaskList(tasks: SubagentTask[]): string {
 		failed: "✗",
 	};
 
-	return tasks.map((t) => {
+	const isDone = (t: SubagentTask) => t.status === "completed" || t.status === "failed";
+
+	const order: Record<string, number> = {
+		in_progress: 0,
+		pending: 1,
+		blocked: 2,
+		completed: 3,
+		failed: 4,
+	};
+
+	const sorted = [...tasks].sort((a, b) => (order[a.status] ?? 5) - (order[b.status] ?? 5));
+
+	return sorted.map((t) => {
 		const icon = statusIcons[t.status] ?? "?";
 		const desc = t.description.length > 55 ? t.description.slice(0, 55) + "..." : t.description;
 		const deps = t.blockedBy?.length ? ` (blocked by ${t.blockedBy.length})` : "";
 		const owner = t.owner ? ` [${t.owner}]` : "";
+		if (isDone(t)) {
+			return `\x1b[2m\x1b[9m${icon} ${desc}${deps}${owner}\x1b[0m`;
+		}
+		if (t.status === "in_progress") {
+			return `\x1b[92m${icon} ${desc}${deps}${owner}\x1b[0m`;
+		}
 		return `${icon} ${desc}${deps}${owner}`;
 	}).join("\n");
 }
