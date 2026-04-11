@@ -6,12 +6,11 @@
  */
 
 import * as os from "node:os";
-import * as path from "node:path";
 import { StringEnum } from "@itone/fan-ai";
 import { type ExtensionAPI, getMarkdownTheme } from "@itone/fan-coding-agent";
 import { Container, Markdown, Spacer, Text } from "@itone/fan-tui";
 import { Type } from "@sinclair/typebox";
-import { discoverAgents, formatAgentList } from "./agents.js";
+import { discoverAgents } from "./agents.js";
 import {
 	MAX_PARALLEL_TASKS,
 	MAX_CONCURRENCY,
@@ -693,6 +692,93 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 				}],
 				details: undefined,
 			};
+		},
+	});
+
+	// ---- TaskCreate ----
+
+	pi.registerTool({
+		name: "TaskCreate",
+		label: "Create Task",
+		description: "Create a tracked task for decomposition. Tasks can block each other via blocks[].",
+		parameters: Type.Object({
+			subject: Type.String({ description: "Short description of the task" }),
+			description: Type.Optional(Type.String({ description: "Detailed description of the task" })),
+			owner: Type.Optional(Type.String({ description: "Worker ID that owns this task" })),
+			blocks: Type.Optional(Type.Array(Type.String(), { description: "Task IDs this task blocks (creates dependency)" })),
+		}),
+
+		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+			try {
+				const task = taskManager.createTask({
+					description: params.subject,
+					agentType: "implement",
+					blocks: params.blocks,
+					owner: params.owner,
+				});
+
+				return {
+					content: [{
+						type: "text",
+						text: `Task created: ${task.id}\nSubject: ${params.subject}${task.status === "blocked" ? "\nStatus: blocked (waiting for dependencies)" : "\nStatus: pending"}${params.description ? `\nDescription: ${params.description}` : ""}${params.blocks?.length ? `\nBlocks: ${params.blocks.join(", ")}` : ""}`,
+					}],
+					details: undefined,
+				};
+			} catch (e: any) {
+				return {
+					content: [{ type: "text", text: `Failed to create task: ${e.message}` }],
+					isError: true,
+					details: undefined,
+				};
+			}
+		},
+	});
+
+	// ---- TaskUpdate ----
+
+	pi.registerTool({
+		name: "TaskUpdate",
+		label: "Update Task",
+		description: "Update a task's status, subject, description, or blocks. Completing a task auto-unblocks dependents.",
+		parameters: Type.Object({
+			taskId: Type.String({ description: "The ID of the task to update" }),
+			status: Type.Optional(Type.String({ description: "New status: pending, in_progress, completed, blocked, failed" })),
+			subject: Type.Optional(Type.String({ description: "New subject/description" })),
+			description: Type.Optional(Type.String({ description: "New detailed description" })),
+			blocks: Type.Optional(Type.Array(Type.String(), { description: "New blocks array (replaces existing)" })),
+		}),
+
+		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+			try {
+				const updates: any = {};
+				if (params.status) updates.status = params.status;
+				if (params.subject) updates.subject = params.subject;
+				if (params.description) updates.description = params.description;
+				if (params.blocks !== undefined) updates.blocks = params.blocks;
+
+				const task = taskManager.updateTask(params.taskId, updates);
+
+				// Check if any dependents were unblocked
+				const unblockedCount = task.status === "completed"
+					? taskManager.getTasks().filter(t =>
+						t.blockedBy?.includes(task.id) && t.status !== "blocked"
+					).length
+					: 0;
+
+				return {
+					content: [{
+						type: "text",
+						text: `Task updated: ${task.id.slice(0, 8)}\nStatus: ${task.status}${params.subject ? `\nSubject: ${params.subject}` : ""}${unblockedCount > 0 ? `\nDependents unblocked: ${unblockedCount}` : ""}`,
+					}],
+					details: undefined,
+				};
+			} catch (e: any) {
+				return {
+					content: [{ type: "text", text: `Failed to update task: ${e.message}` }],
+					isError: true,
+					details: undefined,
+				};
+			}
 		},
 	});
 }

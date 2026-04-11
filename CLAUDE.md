@@ -7,7 +7,7 @@
 - **Type:** Local AI runtime-agent for developers
 - **Base:** Fork of fan-mono (fan-coding-agent core)
 - **Repo:** Monorepo (npm workspaces, Bun, TypeScript)
-- **Stage:** Phase 4 — Orchestrator
+- **Stage:** Phase 5 — Orchestrator Hardening
 
 ## What It Is
 Runs locally on user's machine. Provides external API for multiple UI clients (TUI, WebView, IDEA plugin, etc.). Built on fan-coding-agent with custom orchestrator extension, model management, and all current extensions/skills.
@@ -42,10 +42,12 @@ Runtime: Bun · Monorepo: npm workspaces · Core: fan-ai + fan-agent-core + fan-
 - [x] Phase 2 — Model Management (ProviderRouter, FallbackChain, BudgetTracker, ModelManager)
 - [x] Phase 3 — Client API Gateway (Hono REST+WS, auth, 14 endpoints, server mode)
 - [x] Phase 4 — Orchestrator (delegate_task tool, 4 workers, 3 workflows, slash commands, 29 tests)
-- [ ] Phase 5 — Dashboard (Lit web UI, model settings, budget viz)
-- [ ] Phase 6 — Polish & release (docs, examples, migration guide)
+- [x] Phase 5 — Orchestrator Hardening (coordinator mode, task widget, /plan, config, workers, permissions, retry/fallback)
+- [ ] Phase 6 — Dashboard Client (Lit web UI, model settings, budget viz)
+- [ ] Phase 7 — Polish & release (docs, examples, migration guide)
 
 ## Test Instructions
 - Orchestrator: `docs/develop/tests/orchestrator-phase4.md`
 - Quick build: `npm run build` (10 packages, 0 errors)
-- Quick test: `cd packages/orchestrator && npx vitest run` (29 tests)
+- Quick test: `cd packages/orchestrator && npx vitest run` (95 tests)
+- Orchestrator comparison: `docs/orchestrator-comparison.md`

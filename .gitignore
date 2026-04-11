@@ -35,3 +35,6 @@ npm-debug.log*
 
 # Coverage
 coverage/
+
+# Orchestrator local config (keep config.example.json as template)
+packages/orchestrator/src/config.json

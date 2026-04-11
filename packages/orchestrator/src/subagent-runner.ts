@@ -11,7 +11,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { Message } from "@itone/fan-ai";
 import type { AgentConfig } from "./types.js";
-import type { UsageStats, SingleResult } from "./types.js";
+import type { UsageStats, SingleResult, OrchestratorConfig } from "./types.js";
 
 export const MAX_PARALLEL_TASKS = 8;
 export const MAX_CONCURRENCY = 4;
@@ -290,5 +290,154 @@ export async function runSingleAgent(
 			} catch {
 				/* ignore */
 			}
+	}
+}
+
+/**
+ * Run a single agent with retry logic.
+ * Retries up to config.maxRetries times.
+ * Does NOT retry on abort signals.
+ */
+export async function runSingleAgentWithRetry(
+	defaultCwd: string,
+	agents: AgentConfig[],
+	agentName: string,
+	task: string,
+	config: OrchestratorConfig,
+	cwd: string | undefined,
+	step: number | undefined,
+	signal: AbortSignal | undefined,
+	onUpdate: OnUpdateCallback | undefined,
+): Promise<SingleResult> {
+	let lastError: SingleResult | undefined;
+	const maxAttempts = 1 + (config.maxRetries ?? 0);
+
+	for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+		try {
+			const result = await runSingleAgent(
+				defaultCwd, agents, agentName, task, cwd, step, signal, onUpdate,
+			);
+
+			if (result.exitCode === 0) {
+				return result;
+			}
+
+			// Check if it was aborted — don't retry
+			if (signal?.aborted) {
+				return result;
+			}
+
+			lastError = result;
+
+			if (attempt < maxAttempts) {
+				// Add retry info to the task for the next attempt
+				task += `\n\n[Retry ${attempt}/${config.maxRetries} — previous attempt failed: ${result.errorMessage || result.stderr || "exit code " + result.exitCode}]`;
+			}
+		} catch (e: any) {
+			// Don't retry on abort
+			if (signal?.aborted) {
+				throw e;
+			}
+
+			if (attempt < maxAttempts) {
+				lastError = undefined; // Will retry
+				task += `\n\n[Retry ${attempt}/${config.maxRetries} — previous attempt threw: ${e.message}]`;
+			} else {
+				// Final attempt failed
+				return {
+					agent: agentName,
+					agentSource: "unknown",
+					task,
+					exitCode: 1,
+					messages: [],
+					stderr: e.message,
+					usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
+					errorMessage: e.message,
+					step,
+				};
+			}
+		}
+	}
+
+	return lastError ?? {
+		agent: agentName,
+		agentSource: "unknown",
+		task,
+		exitCode: 1,
+		messages: [],
+		stderr: "All retry attempts exhausted",
+		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
+		errorMessage: "All retry attempts exhausted",
+		step,
+	};
+}
+
+/**
+ * Run a single agent with cloud/local fallback.
+ * - "cloud": try cloud, retry cloud
+ * - "local": try local, retry local
+ * - "auto": try cloud first, fallback to local on failure
+ */
+export async function runSingleAgentWithFallback(
+	defaultCwd: string,
+	agents: AgentConfig[],
+	agentName: string,
+	task: string,
+	config: OrchestratorConfig,
+	cwd: string | undefined,
+	step: number | undefined,
+	signal: AbortSignal | undefined,
+	onUpdate: OnUpdateCallback | undefined,
+): Promise<SingleResult> {
+	const mode = config.providerMode;
+	const timeout = config.workerTimeout ?? 300_000;
+
+	// Set up abort timeout
+	let timeoutId: ReturnType<typeof setTimeout> | undefined;
+	const abortController = new AbortController();
+
+	const timeoutPromise = new Promise<never>((_, reject) => {
+		timeoutId = setTimeout(() => {
+			abortController.abort();
+			reject(new Error(`Worker timed out after ${timeout}ms`));
+		}, timeout);
+	});
+
+	const cleanup = () => {
+		if (timeoutId) clearTimeout(timeoutId);
+		// If external signal aborts, clear our timeout
+	};
+
+	if (signal) {
+		signal.addEventListener("abort", () => {
+			abortController.abort();
+			cleanup();
+		}, { once: true });
+	}
+
+	try {
+		const result = await Promise.race([
+			runSingleAgentWithRetry(
+				defaultCwd, agents, agentName, task, config,
+				cwd, step, abortController.signal, onUpdate,
+			),
+			timeoutPromise,
+		]);
+		cleanup();
+		return result;
+	} catch (e: any) {
+		cleanup();
+
+		// In auto mode, try fallback
+		if (mode === "auto") {
+			const fallbackConfig = { ...config, providerMode: "local" as const };
+			return runSingleAgentWithRetry(
+				defaultCwd, agents, agentName, task, fallbackConfig,
+				cwd, step, signal, onUpdate,
+			);
+		}
+
+		// Re-throw for cloud/local mode
+		throw e;
 	}
 }
