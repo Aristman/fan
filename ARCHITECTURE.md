@@ -116,11 +116,14 @@ coordination via subprocess-based subagent delegation.
 
 **Components:**
 - **types.ts** — Core types (WorkerType, ExecutionMode, AgentConfig, UsageStats, SubagentTask)
-- **agents.ts** — Agent discovery from builtin/user/project dirs with priority override
-- **subagent-runner.ts** — Spawns fna subprocesses with JSON streaming, abort support, usage tracking
+- **config.ts** — Configuration loading from config.json with defaults, model resolution (resolveModel), cloud health check with caching
+- **agents.ts** — Agent discovery from builtin/user/project dirs with priority override, coordinator/planning prompts
+- **workers.ts** — Worker registry and slot pool (acquireSlot/releaseSlot FIFO queue, write slot limiting)
+- **permissions.ts** — Dangerous command detection (8 regex patterns), tool_call event handler with block/allow UI
+- **subagent-runner.ts** — Spawns fna subprocesses with JSON streaming, abort support, usage tracking, retry/fallback logic
 - **task-manager.ts** — Task lifecycle (CRUD, status transitions, blocking, serialization)
-- **orchestrator-tools.ts** — LLM-callable tools (delegate_task, list_tasks, cancel_task, classify_task)
-- **orchestrator-extension.ts** — Extension wiring with 4 slash commands
+- **orchestrator-tools.ts** — LLM-callable tools (delegate_task, list_tasks, cancel_task, classify_task, TaskCreate, TaskUpdate)
+- **orchestrator-extension.ts** — Extension wiring with slash commands (/orchestrator, /tasks, /agents, /delegate, /plan), coordinator mode, task widget
 
 **Built-in workers (4):** explore (fast recon), plan (implementation plans),
 implement (general-purpose), verify (code review).
@@ -131,7 +134,11 @@ chain (sequential with {previous} placeholder).
 **Workflow prompts (3):** implement (explore→plan→implement), plan-only (explore→plan),
 verify (implement→verify→fix).
 
-**Slash commands:** /orchestrator, /tasks, /agents, /delegate
+**Slash commands:** /orchestrator (on/off/stop/config/mode/retry/status), /tasks, /agents, /delegate, /plan
+
+**Coordinator mode:** Alt+O toggle, system prompt injection, auto-delegation via delegate_task
+
+**Task widget:** Collapsible checklist above editor (Alt+T toggle), auto-hide on no active tasks
 
 **Dependencies:** @itone/fan-ai, @itone/fan-agent-core, @itone/fan-coding-agent,
 @itone/fan-tui, @sinclair/typebox

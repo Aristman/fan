@@ -14,6 +14,12 @@ export type TaskType = "coding" | "quick" | "analysis" | "chat";
 /** Task lifecycle status */
 export type TaskStatus = "pending" | "in_progress" | "completed" | "blocked" | "failed";
 
+/** Worker execution state */
+export type WorkerState = "spawning" | "running" | "completed" | "failed" | "aborted";
+
+/** Provider selection mode */
+export type ProviderMode = "cloud" | "local" | "auto";
+
 /** Agent definition loaded from .md file */
 export interface AgentConfig {
 	name: string;
@@ -31,6 +37,52 @@ export interface AgentDiscoveryResult {
 	projectAgentsDir: string | null;
 }
 
+/** Orchestrator configuration */
+export interface OrchestratorConfig {
+	cloud: { model: string; provider?: string };
+	local: { model: string; provider?: string };
+	providerMode: ProviderMode;
+	parallelWorkers: number;
+	workerTimeout: number;
+	maxRetries: number;
+	planTimeout: number;
+	agentTimeouts: Partial<Record<WorkerType, number>>;
+	dangerousCommands: string[];
+}
+
+/** A registered worker instance */
+export interface WorkerHandle {
+	id: string;
+	agentType: WorkerType;
+	model?: string;
+	status: WorkerState;
+	startTime: number;
+	endTime?: number;
+	result?: string;
+	error?: string;
+	task?: string;
+}
+
+/** A queued slot request */
+export interface Waiter {
+	agentType: WorkerType;
+	resolve: () => void;
+}
+
+/** Tool call metadata for notifications */
+export interface ToolCallInfo {
+	name: string;
+	preview: string;
+}
+
+/** Worker progress snapshot */
+export interface WorkerProgress {
+	status: WorkerState;
+	messageCount: number;
+	toolCalls?: ToolCallInfo[];
+	model?: string;
+}
+
 /** A single tracked task */
 export interface SubagentTask {
 	id: string;
@@ -40,6 +92,8 @@ export interface SubagentTask {
 	agentType: WorkerType;
 	parentTaskId?: string;
 	blocks?: string[];
+	owner?: string;
+	blockedBy?: string[];
 	result?: string;
 	error?: string;
 	usage?: UsageStats;

@@ -23,6 +23,7 @@ export interface CreateTaskConfig {
 	agentType: WorkerType;
 	parentTaskId?: string;
 	blocks?: string[];
+	owner?: string;
 }
 
 export class TaskManager {
@@ -40,10 +41,33 @@ export class TaskManager {
 			agentType: config.agentType,
 			parentTaskId: config.parentTaskId,
 			blocks: config.blocks,
+			owner: config.owner,
 			createdAt: new Date(),
 			updatedAt: new Date(),
 		};
 		this.tasks.set(task.id, task);
+
+		// Bidirectional linking: add this task to blockedBy of tasks it references in blocks[]
+		if (task.blocks && task.blocks.length > 0) {
+			for (const blockId of task.blocks) {
+				const blocker = this.tasks.get(blockId);
+				if (blocker) {
+					if (!blocker.blockedBy) blocker.blockedBy = [];
+					if (!blocker.blockedBy.includes(task.id)) {
+						blocker.blockedBy.push(task.id);
+					}
+				}
+			}
+			// Check if any blocking tasks are not completed → auto-block
+			const hasIncompleteBlocker = task.blocks.some((blockId) => {
+				const blocker = this.tasks.get(blockId);
+				return !blocker || blocker.status !== "completed";
+			});
+			if (hasIncompleteBlocker) {
+				task.status = "blocked";
+			}
+		}
+
 		return task;
 	}
 
@@ -113,6 +137,63 @@ export class TaskManager {
 	}
 
 	/**
+	 * Update a task's fields.
+	 * When status changes to "completed", auto-unblocks dependents.
+	 */
+	updateTask(
+		id: string,
+		updates: {
+			status?: TaskStatus;
+			subject?: string;
+			description?: string;
+			blocks?: string[];
+		},
+	): SubagentTask {
+		const task = this.getTaskOrThrow(id);
+
+		if (updates.status !== undefined && updates.status !== task.status) {
+			this.validateTransition(task.status, updates.status);
+			task.status = updates.status;
+			if (updates.status === "completed") {
+				this.unblockDependents(id);
+			}
+		}
+
+		if (updates.subject !== undefined) {
+			task.description = updates.subject;
+		}
+		if (updates.description !== undefined) {
+			task.description = updates.description;
+		}
+		if (updates.blocks !== undefined) {
+			// Update blocks and relink blockedBy
+			// Remove from old blockers' blockedBy
+			if (task.blocks) {
+				for (const oldBlockId of task.blocks) {
+					const oldBlocker = this.tasks.get(oldBlockId);
+					if (oldBlocker?.blockedBy) {
+						oldBlocker.blockedBy = oldBlocker.blockedBy.filter((bid) => bid !== task.id);
+					}
+				}
+			}
+			task.blocks = updates.blocks;
+			// Add to new blockers' blockedBy
+			for (const newBlockId of updates.blocks) {
+				const newBlocker = this.tasks.get(newBlockId);
+				if (newBlocker) {
+					if (!newBlocker.blockedBy) newBlocker.blockedBy = [];
+					if (!newBlocker.blockedBy.includes(task.id)) {
+						newBlocker.blockedBy.push(task.id);
+				}
+				}
+			}
+		}
+
+		task.updatedAt = new Date();
+		return task;
+	}
+
+	/**
 	 * Get a task by ID.
 	 */
 	getTask(id: string): SubagentTask | undefined {
@@ -122,13 +203,16 @@ export class TaskManager {
 	/**
 	 * Get all tasks, optionally filtered by status.
 	 */
-	getTasks(filter?: { status?: TaskStatus; agentType?: WorkerType }): SubagentTask[] {
+	getTasks(filter?: { status?: TaskStatus; agentType?: WorkerType; owner?: string }): SubagentTask[] {
 		let result = Array.from(this.tasks.values());
 		if (filter?.status) {
 			result = result.filter((t) => t.status === filter.status);
 		}
 		if (filter?.agentType) {
 			result = result.filter((t) => t.agentType === filter.agentType);
+		}
+		if (filter?.owner) {
+			result = result.filter((t) => t.owner === filter.owner);
 		}
 		// Sort by creation time, newest first
 		return result.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
@@ -230,4 +314,45 @@ export class TaskManager {
 			}
 		}
 	}
+}
+
+/**
+ * Format a task list for display.
+ */
+export function formatTaskList(tasks: SubagentTask[]): string {
+	if (tasks.length === 0) return "No tasks.";
+
+	const statusIcons: Record<string, string> = {
+		pending: "☐",
+		in_progress: "◐",
+		completed: "☑",
+		blocked: "⛔",
+		failed: "✗",
+	};
+
+	const isDone = (t: SubagentTask) => t.status === "completed" || t.status === "failed";
+
+	const order: Record<string, number> = {
+		in_progress: 0,
+		pending: 1,
+		blocked: 2,
+		completed: 3,
+		failed: 4,
+	};
+
+	const sorted = [...tasks].sort((a, b) => (order[a.status] ?? 5) - (order[b.status] ?? 5));
+
+	return sorted.map((t) => {
+		const icon = statusIcons[t.status] ?? "?";
+		const desc = t.description.length > 55 ? t.description.slice(0, 55) + "..." : t.description;
+		const deps = t.blockedBy?.length ? ` (blocked by ${t.blockedBy.length})` : "";
+		const owner = t.owner ? ` [${t.owner}]` : "";
+		if (isDone(t)) {
+			return `\x1b[2m\x1b[9m${icon} ${desc}${deps}${owner}\x1b[0m`;
+		}
+		if (t.status === "in_progress") {
+			return `\x1b[92m${icon} ${desc}${deps}${owner}\x1b[0m`;
+		}
+		return `${icon} ${desc}${deps}${owner}`;
+	}).join("\n");
 }

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { TaskManager } from "../task-manager.js";
+import { TaskManager, formatTaskList } from "../task-manager.js";
+import { parseVerdict } from "../agents.js";
 
 describe("TaskManager", () => {
 	let tm: TaskManager;
@@ -148,8 +149,9 @@ describe("TaskManager", () => {
 		it("auto-unblocks when all blockers complete", () => {
 			const parent = tm.createTask({ description: "parent", agentType: "plan" });
 			const child = tm.createTask({ description: "child", agentType: "implement", blocks: [parent.id] });
+			// Child is auto-blocked by createTask since parent is not completed
+			expect(tm.getTask(child.id)!.status).toBe("blocked");
 			tm.startTask(parent.id);
-			tm.blockTask(child.id, "waiting");
 			tm.completeTask(parent.id, "done");
 			expect(tm.getTask(child.id)!.status).toBe("pending");
 		});
@@ -166,5 +168,136 @@ describe("TaskManager", () => {
 			expect(serialized[0]).toHaveProperty("status");
 			expect(serialized[0]).toHaveProperty("description");
 		});
+	});
+
+	describe("owner field", () => {
+		it("owner field in createTask", () => {
+			const task = tm.createTask({
+				description: "test task",
+				agentType: "implement",
+				owner: "worker-001",
+			});
+			expect(task.owner).toBe("worker-001");
+		});
+
+		it("owner filter in getTasks", () => {
+			tm.createTask({ description: "t1", agentType: "implement", owner: "worker-001" });
+			tm.createTask({ description: "t2", agentType: "explore", owner: "worker-002" });
+			tm.createTask({ description: "t3", agentType: "plan" }); // no owner
+
+			const byOwner1 = tm.getTasks({ owner: "worker-001" });
+			expect(byOwner1).toHaveLength(1);
+			expect(byOwner1[0].description).toBe("t1");
+
+			const byOwner2 = tm.getTasks({ owner: "worker-002" });
+			expect(byOwner2).toHaveLength(1);
+			expect(byOwner2[0].description).toBe("t2");
+
+			const byNoOwner = tm.getTasks().filter((t) => t.owner === undefined);
+			expect(byNoOwner).toHaveLength(1);
+			expect(byNoOwner[0].description).toBe("t3");
+		});
+	});
+
+	describe("updateTask", () => {
+		it("updateTask changes status", () => {
+			const task = tm.createTask({ description: "test", agentType: "implement" });
+			tm.updateTask(task.id, { status: "in_progress" });
+			expect(tm.getTask(task.id)!.status).toBe("in_progress");
+		});
+
+		it("updateTask changes description", () => {
+			const task = tm.createTask({ description: "old desc", agentType: "implement" });
+			tm.updateTask(task.id, { description: "new desc" });
+			expect(tm.getTask(task.id)!.description).toBe("new desc");
+		});
+
+		it("updateTask with invalid transition throws", () => {
+			const task = tm.createTask({ description: "test", agentType: "implement" });
+			expect(() => tm.updateTask(task.id, { status: "completed" })).toThrow("Invalid task transition");
+		});
+
+		it("updateTask completes and auto-unblocks", () => {
+			const parent = tm.createTask({ description: "parent", agentType: "plan" });
+			const child = tm.createTask({
+				description: "child",
+				agentType: "implement",
+				blocks: [parent.id],
+			});
+			// Child is auto-blocked because parent is not completed
+			expect(tm.getTask(child.id)!.status).toBe("blocked");
+
+			// Start and complete parent via updateTask
+			tm.updateTask(parent.id, { status: "in_progress" });
+			tm.updateTask(parent.id, { status: "completed" });
+
+			// Child should be unblocked
+			expect(tm.getTask(child.id)!.status).toBe("pending");
+		});
+	});
+
+	describe("bidirectional linking", () => {
+		it("bidirectional linking on createTask", () => {
+			const taskA = tm.createTask({ description: "A", agentType: "implement" });
+			const taskB = tm.createTask({
+				description: "B",
+				agentType: "implement",
+				blocks: [taskA.id],
+			});
+
+			// B.blockedBy should include A
+			expect(taskA.blockedBy).toBeDefined();
+			expect(taskA.blockedBy!).toContain(taskB.id);
+		});
+
+		it("auto-block when creating task with incomplete blocker", () => {
+			const taskA = tm.createTask({ description: "A", agentType: "plan" });
+			// A is pending, not completed
+			const taskB = tm.createTask({
+				description: "B",
+				agentType: "implement",
+				blocks: [taskA.id],
+			});
+			// B should be auto-blocked
+			expect(taskB.status).toBe("blocked");
+		});
+	});
+
+	describe("formatTaskList", () => {
+		it("renders correctly", () => {
+			const t1 = tm.createTask({ description: "Implement feature X", agentType: "implement", owner: "w1" });
+			const t2 = tm.createTask({ description: "Plan architecture", agentType: "plan", owner: "w2" });
+			tm.startTask(t1.id);
+
+			const tasks = tm.getTasks();
+			const output = formatTaskList(tasks);
+			expect(output).toContain("Implement feature X");
+			expect(output).toContain("Plan architecture");
+			expect(output).toContain("[w1]");
+			expect(output).toContain("[w2]");
+		});
+	});
+});
+
+describe("parseVerdict", () => {
+	it("extracts PASS", () => {
+		expect(parseVerdict("Tests passed. VERDICT: PASS")).toBe("PASS");
+		expect(parseVerdict("VERDICT: pass")).toBe("PASS");
+		expect(parseVerdict("VERDICT: Pass")).toBe("PASS");
+	});
+
+	it("extracts FAIL", () => {
+		expect(parseVerdict("Found errors. VERDICT: FAIL")).toBe("FAIL");
+		expect(parseVerdict("verdict: fail")).toBe("FAIL");
+	});
+
+	it("extracts PARTIAL", () => {
+		expect(parseVerdict("Some tests passed. VERDICT: PARTIAL")).toBe("PARTIAL");
+	});
+
+	it("returns null for no match", () => {
+		expect(parseVerdict("No verdict here")).toBeNull();
+		expect(parseVerdict("")).toBeNull();
+		expect(parseVerdict("VERDICT: UNKNOWN")).toBeNull();
 	});
 });
