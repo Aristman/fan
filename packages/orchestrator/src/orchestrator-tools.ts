@@ -260,7 +260,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 
 					const chainUpdate: OnUpdateCallback | undefined = onUpdate
 						? (partial) => {
-								const currentResult = partial.details?.results[0];
+								const currentResult = Array.isArray(partial.details) ? partial.details[0] : partial.details?.results?.[0];
 								if (currentResult) {
 									onUpdate({
 										content: partial.content,
@@ -331,8 +331,9 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 						ctx.cwd, agents, t.agent, t.task, t.cwd,
 						undefined, signal,
 						(partial) => {
-							if (partial.details?.results[0]) {
-								allResults[index] = partial.details.results[0];
+							const _cr = Array.isArray(partial.details) ? partial.details[0] : partial.details?.results?.[0];
+							if (_cr) {
+								allResults[index] = _cr;
 								emitParallelUpdate();
 							}
 						},
