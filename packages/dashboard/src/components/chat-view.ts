@@ -5,7 +5,7 @@ import { customElement, property, state, query } from "lit/decorators.js";
 import type { FanApiClient } from "../api/client.js";
 import type { FanWsClient } from "../api/ws-client.js";
 import type { SessionMessage, GetSessionResponse } from "@fan/api-gateway/types";
-import { Send, Loader2, Terminal, FileText, Copy, Check, ChevronRight } from "lucide";
+import { Send, Loader2, Terminal, FileText, Copy, Check, ChevronRight, Brain } from "lucide";
 import { icon } from "../lib/icon.js";
 
 // ---------------------------------------------------------------------------
@@ -45,6 +45,7 @@ export class ChatView extends LitElement {
   @state() sendingMessage = false;
   @state() inputValue = "";
   @state() streamingContent = "";
+  @state() thinkingContent = "";
   @state() isStreaming = false;
   @state() currentToolName: string | null = null;
   @state() isThinking = false;
@@ -97,6 +98,7 @@ export class ChatView extends LitElement {
       // Reload session and reconnect WS when sessionId changes
       this.session = null;
       this.streamingContent = "";
+      this.thinkingContent = "";
       this.isStreaming = false;
       this.currentToolName = null;
       this.isThinking = false;
@@ -120,6 +122,22 @@ export class ChatView extends LitElement {
     this.loading = true;
     try {
       this.session = await this.apiClient.getSession(this.sessionId);
+
+      // Normalize message content: fan-agent-core returns content as array of objects,
+      // but dashboard expects content as plain string
+      if (this.session.messages) {
+        this.session.messages = this.session.messages.map((msg) => {
+          if (typeof msg.content === "object" && Array.isArray(msg.content)) {
+            const blocks = msg.content as Array<Record<string, unknown>>;
+            const textParts = blocks
+              .filter((b) => b.type === "text")
+              .map((b) => (b.text as string) || "");
+            return { ...msg, content: textParts.join("") };
+          }
+          return msg;
+        });
+      }
+
       this.autoScrollEnabled = true;
     } catch (err) {
       console.error("Failed to load session:", err);
@@ -150,6 +168,7 @@ export class ChatView extends LitElement {
     });
 
     this.unsubStatus = this.wsClient.onStatusChange((status) => {
+      console.log("[chat-view] WS status:", status);
       if (status === "connected") {
         // Re-subscribe to this session on reconnect
         this.wsClient.send({ type: "subscribe", sessionId: this.sessionId });
@@ -158,6 +177,9 @@ export class ChatView extends LitElement {
   }
 
   private handleWsMessage(msg: unknown): void {
+    // Debug: log all WS messages
+    console.log("[chat-view] WS message:", JSON.stringify(msg));
+
     // Narrow to WsAgentEvent
     if (!msg || typeof msg !== "object") return;
     const m = msg as Record<string, unknown>;
@@ -171,44 +193,108 @@ export class ChatView extends LitElement {
     if (!eventType) return;
 
     switch (eventType) {
-      case "message_update":
-        this.streamingContent = (event.content as string) || "";
-        this.isStreaming = true;
+      case "agent_start":
+      case "turn_start":
+        this.isThinking = true;
         break;
 
+      case "message_start": {
+        const msg = event.message as Record<string, unknown> | undefined;
+        const role = (msg?.role as string) || "assistant";
+        if (role === "assistant") {
+          this.isThinking = false;
+          this.isStreaming = true;
+          this.streamingContent = "";
+          this.thinkingContent = "";
+        }
+        break;
+      }
+
+      case "message_update": {
+        // Agent events carry an assistantMessageEvent with sub-types
+        const sub = event.assistantMessageEvent as Record<string, unknown> | undefined;
+        if (!sub) break;
+        const subType = sub.type as string | undefined;
+
+        switch (subType) {
+          case "thinking_start":
+            this.thinkingContent = (sub.delta as string) || "";
+            break;
+          case "thinking_delta":
+            this.thinkingContent += (sub.delta as string) || "";
+            break;
+          case "thinking_end":
+            // Thinking done, content stays in thinkingContent for rendering
+            break;
+          case "text_start":
+            // Start of text content block — streaming begins
+            break;
+          case "text_delta": {
+            const delta = (sub.delta as string) || "";
+            this.streamingContent += delta;
+            break;
+          }
+          case "text_end":
+            // Text block complete
+            break;
+          default:
+            break;
+        }
+        break;
+      }
+
       case "message_end": {
-        // Append the streaming content as a final assistant message
-        const content = this.streamingContent || (event.content as string) || "";
-        if (content && this.session) {
-          const newMsg: SessionMessage = {
-            id: `stream-${Date.now()}`,
-            role: "assistant",
-            content,
-            model: (event.model as string) || undefined,
-            tokens: (event.tokens as number) || undefined,
-            cost: (event.cost as number) || undefined,
-            createdAt: new Date().toISOString(),
-          };
-          this.session = {
-            ...this.session,
-            messages: [...this.session.messages, newMsg],
-          };
+        const msg = event.message as Record<string, unknown> | undefined;
+        const role = (msg?.role as string) || "";
+        if (role !== "assistant") break; // Only process assistant messages
+        // Finalize: build a complete assistant message from streaming content
+        if (msg) {
+          const contentBlocks = msg.content as Array<Record<string, unknown>> | undefined;
+          // Extract text from content blocks [{type:"thinking",...},{type:"text",text:"..."}]
+          let textContent = "";
+          let thinkingText = "";
+          if (Array.isArray(contentBlocks)) {
+            for (const block of contentBlocks) {
+              if (block.type === "text") {
+                textContent += (block.text as string) || "";
+              } else if (block.type === "thinking") {
+                thinkingText += (block.thinking as string) || "";
+              }
+            }
+          }
+          // Use streaming content as fallback
+          const finalContent = textContent || this.streamingContent;
+          if (finalContent && this.session) {
+            const newMsg: SessionMessage = {
+              id: `stream-${Date.now()}`,
+              role: "assistant",
+              content: finalContent,
+              model: (msg.model as string) || undefined,
+              createdAt: new Date().toISOString(),
+            };
+            this.session = {
+              ...this.session,
+              messages: [...this.session.messages, newMsg],
+            };
+          }
         }
         this.streamingContent = "";
+        this.thinkingContent = "";
         this.isStreaming = false;
         break;
       }
 
-      case "agent_start":
-        this.isThinking = true;
+      case "turn_end":
+        // Turn complete
         break;
 
       case "agent_end":
         this.isThinking = false;
         this.isStreaming = false;
         this.streamingContent = "";
-        // Reload session to get all final messages
-        this.loadSession();
+        this.thinkingContent = "";
+        // Do NOT call loadSession() here — it replaces our locally-built
+        // assistant message with server data in wrong format (content as array)
         break;
 
       case "tool_execution_start":
@@ -220,7 +306,7 @@ export class ChatView extends LitElement {
         break;
 
       default:
-        // Ignore unknown event types
+        // Ignore unknown event types (e.g. turn_start)
         break;
     }
   }
@@ -512,12 +598,21 @@ export class ChatView extends LitElement {
   }
 
   private renderThinkingIndicator() {
-    if (!this.isThinking) return nothing;
+    if (!this.isThinking && !this.thinkingContent) return nothing;
+
+    const showText = this.thinkingContent || "";
 
     return html`
-      <div class="flex items-center gap-2 py-2 text-muted-foreground text-sm">
-        ${icon(Loader2, "w-4 h-4 animate-spin")}
-        <span>Thinking...</span>
+      <div class="flex items-start gap-2 py-2 text-muted-foreground text-sm">
+        ${this.isThinking ? html`<span class="mt-0.5">${icon(Loader2, "w-4 h-4 animate-spin")}</span>` : html`<span class="mt-0.5">${icon(Brain, "w-4 h-4")}</span>`}
+        <div class="flex-1 min-w-0">
+          <details class="group">
+            <summary class="cursor-pointer text-xs opacity-70 hover:opacity-100 transition-opacity">
+              ${this.isThinking ? "Thinking..." : "Thoughts"}
+            </summary>
+            <div class="mt-1 text-xs opacity-60 italic leading-relaxed whitespace-pre-wrap break-words">${showText}</div>
+          </details>
+        </div>
       </div>
     `;
   }
