@@ -159,16 +159,14 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 			return sessions.delete(id);
 		},
 		async sendMessage(sessionId: string, message: string, streamingBehavior?: "steer" | "followUp") {
-			if (sessionId !== runtime.session.sessionId) return false;
+			// All sessions route to the runtime agent (single-agent MVP)
 			await runtime.session.prompt(message, {
 				streamingBehavior: streamingBehavior ?? "followUp",
 			});
 			return true;
 		},
 		subscribeToSession(sessionId: string, handler: (event: any) => void) {
-			if (sessionId !== runtime.session.sessionId) {
-				return () => {};
-			}
+			// All sessions subscribe to the runtime agent's events
 			return runtime.session.subscribe(handler);
 		},
 		async getAvailableModels() {
