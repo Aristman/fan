@@ -27,3 +27,4 @@ export function icon(iconNode: IconNode, className = "w-4 h-4"): ReturnType<type
     class="inline-flex items-center justify-center shrink-0 ${className}"
     .innerHTML=${iconNodeToSvg(iconNode)}
   ></span>`;
+}
