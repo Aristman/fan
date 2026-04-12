@@ -94,35 +94,69 @@ function isTruthyEnvFlag(value: string | undefined): boolean {
 }
 
 function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
+	// In-memory session store for dashboard-created sessions.
+	// The runtime session is the only one that can send/receive messages.
+	const sessions = new Map<string, {
+		title: string;
+		model?: string;
+		provider?: string;
+		createdAt: string;
+		updatedAt: string;
+		messages: Array<{ id: string; role: string; content: string; createdAt: string }>;
+	}>();
+
+	// Seed the runtime's current session
+	sessions.set(runtime.session.sessionId, {
+		title: runtime.session.sessionName || "Current Session",
+		model: runtime.session.model?.id,
+		provider: runtime.session.model?.provider,
+		createdAt: new Date().toISOString(),
+		updatedAt: new Date().toISOString(),
+		messages: [],
+	});
+
 	return {
 		async listSessions() {
-			return [{
-				id: runtime.session.sessionId,
-				title: runtime.session.sessionName || "Current Session",
-				model: runtime.session.model?.id,
-				provider: runtime.session.model?.provider,
-				createdAt: new Date().toISOString(),
-				updatedAt: new Date().toISOString(),
-				messageCount: 0,
-			}];
+			return Array.from(sessions.entries()).map(([id, s]) => ({
+				id,
+				title: s.title,
+				model: s.model,
+				provider: s.provider,
+				createdAt: s.createdAt,
+				updatedAt: s.updatedAt,
+				messageCount: s.messages.length,
+			}));
 		},
 		async getSession(id: string) {
-			if (id !== runtime.session.sessionId) return null;
+			const s = sessions.get(id);
+			if (!s) return null;
 			return {
-				id: runtime.session.sessionId,
-				title: runtime.session.sessionName || "Current Session",
-				model: runtime.session.model?.id,
-				provider: runtime.session.model?.provider,
-				createdAt: new Date().toISOString(),
-				updatedAt: new Date().toISOString(),
-				messages: [],
+				id,
+				title: s.title,
+				model: s.model,
+				provider: s.provider,
+				createdAt: s.createdAt,
+				updatedAt: s.updatedAt,
+				messages: s.messages,
 			};
 		},
-		async createSession() {
-			throw new Error("Session creation via HTTP is not yet supported in server mode");
+		async createSession(opts?: { title?: string }) {
+			const id = crypto.randomUUID();
+			const now = new Date().toISOString();
+			sessions.set(id, {
+				title: opts?.title || "New Session",
+				model: runtime.session.model?.id,
+				provider: runtime.session.model?.provider,
+				createdAt: now,
+				updatedAt: now,
+				messages: [],
+			});
+			return { id, title: opts?.title || "New Session", createdAt: now };
 		},
-		async deleteSession() {
-			return false;
+		async deleteSession(id: string) {
+			// Cannot delete the runtime's own session
+			if (id === runtime.session.sessionId) return false;
+			return sessions.delete(id);
 		},
 		async sendMessage(sessionId: string, message: string, streamingBehavior?: "steer" | "followUp") {
 			if (sessionId !== runtime.session.sessionId) return false;
