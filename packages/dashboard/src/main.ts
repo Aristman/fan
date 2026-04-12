@@ -45,12 +45,12 @@ function clearConfig(): void {
 }
 
 // ---------------------------------------------------------------------------
-// Dynamic import pattern — components will register themselves
+// Static imports — must complete before DOMContentLoaded fires
+// (type="module" scripts block DOMContentLoaded for static deps only)
 // ---------------------------------------------------------------------------
 
-import("./components/dashboard-app.js");
-// connection-setup will be created in a later step; suppress until then
-import("./components/connection-setup.js");
+import "./components/dashboard-app.js";
+import "./components/connection-setup.js";
 
 // ---------------------------------------------------------------------------
 // Boot
