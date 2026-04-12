@@ -52,11 +52,20 @@ export class ConnectionSetup extends LitElement {
     this.success = false;
     this.healthInfo = null;
 
+    if (!this.token.trim()) {
+      this.error = "API token is required";
+      this.testing = false;
+      return;
+    }
+
     try {
       const client = new FanApiClient({
         baseUrl: this.apiUrl,
-        token: this.token || undefined,
+        token: this.token,
       });
+      // Use listSessions (authenticated) to validate both server + token
+      const sessions = await client.listSessions();
+      // Also grab health info if possible
       const health = await client.health();
       this.success = true;
       this.healthInfo = {
@@ -69,7 +78,11 @@ export class ConnectionSetup extends LitElement {
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Unknown error occurred";
-      this.error = message;
+      if (message.includes("401")) {
+        this.error = "Invalid API token";
+      } else {
+        this.error = message;
+      }
     } finally {
       this.testing = false;
     }
@@ -219,14 +232,11 @@ export class ConnectionSetup extends LitElement {
 
           <!-- Tip -->
           <div class="mt-6 pt-5 border-t border-border">
-            <p class="text-xs text-muted-foreground text-center">
-              Tip: Generate a token with
-              <code
-                class="px-1 py-0.5 rounded bg-foreground/5 text-foreground/80 text-xs font-mono"
-              >
-                /tokens
+            <p class="text-xs text-muted-foreground text-center leading-relaxed">
+              Generate a token via API:<br>
+              <code class="px-1 py-0.5 rounded bg-foreground/5 text-foreground/80 text-xs font-mono">
+                Invoke-RestMethod -Method POST -Uri http://localhost:3456/api/tokens -ContentType application/json -Body '{"name":"dashboard"}'
               </code>
-              command in the FAN TUI
             </p>
           </div>
         </div>

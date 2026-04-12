@@ -1,12 +1,10 @@
 // @fan/dashboard/lib — shared icon helper for Lucide SVGs in Lit templates
 
-import { html } from "lit";
-import { unsafeSVG } from "lit/directives/unsafe-svg.js";
+import { html, nothing } from "lit";
 import type { IconNode } from "lucide";
 
 /**
  * Serialize a Lucide IconNode (array of [tag, attrs] tuples) into an SVG string.
- * The root <svg> element with standard Lucide attributes is added automatically.
  */
 function iconNodeToSvg(node: IconNode): string {
   const elements = node.map((el) => {
@@ -22,10 +20,10 @@ function iconNodeToSvg(node: IconNode): string {
 
 /**
  * Render a Lucide icon inside an inline-flex span.
- *
- * @param iconNode  Icon value exported from the `lucide` package (e.g. `Send`)
- * @param className Tailwind size / utility classes. Defaults to `w-4 h-4`.
+ * Uses direct innerHTML assignment (trusted Lucide SVG data, no user input).
  */
 export function icon(iconNode: IconNode, className = "w-4 h-4"): ReturnType<typeof html> {
-  return html`<span class="inline-flex items-center justify-center shrink-0 ${className}" .innerHTML=${unsafeSVG(iconNodeToSvg(iconNode))}></span>`;
-}
+  return html`<span
+    class="inline-flex items-center justify-center shrink-0 ${className}"
+    .innerHTML=${iconNodeToSvg(iconNode)}
+  ></span>`;
