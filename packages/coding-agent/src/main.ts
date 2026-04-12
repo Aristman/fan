@@ -130,6 +130,36 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 		async getSession(id: string) {
 			const s = sessions.get(id);
 			if (!s) return null;
+
+			// Read live messages from runtime (single-agent MVP — all sessions
+			// share the same runtime, so use runtime.session.messages)
+			const apiMessages = runtime.session.messages.map((msg, idx) => {
+				const role = msg.role as "user" | "assistant" | "toolResult";
+				// Extract text content based on message type
+				let text = "";
+				if (role === "user") {
+					const c = (msg as any).content;
+					text = typeof c === "string" ? c : Array.isArray(c) ? c.map((b: any) => b.text || "").join("") : "";
+				} else if (role === "assistant") {
+					const blocks = (msg as any).content || [];
+					text = blocks
+						.filter((b: any) => b.type === "text")
+						.map((b: any) => b.text || "")
+						.join("");
+				} else if (role === "toolResult") {
+					const c = (msg as any).content;
+					text = Array.isArray(c) ? c.map((b: any) => b.text || "").join("") : String(c || "");
+				}
+
+				return {
+					id: `${id}-${idx}`,
+					role: (role === "toolResult" ? "tool" : role) as "user" | "assistant" | "tool",
+					content: text,
+					model: role === "assistant" ? (msg as any).model : undefined,
+					createdAt: new Date((msg as any).timestamp || Date.now()).toISOString(),
+				};
+			});
+
 			return {
 				id,
 				title: s.title,
@@ -137,7 +167,7 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 				provider: s.provider,
 				createdAt: s.createdAt,
 				updatedAt: s.updatedAt,
-				messages: s.messages,
+				messages: apiMessages,
 			};
 		},
 		async createSession(opts?: { title?: string }) {
