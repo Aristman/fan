@@ -161,12 +161,21 @@ git status --short
    node packages/coding-agent/dist/cli.js  # интерактивный режим
    ```
 
-2. В TUI сгенерировать API-токен:
+2. Сгенерировать API-токен. В TUI нет `/tokens` команды.
+   Первый токен создаётся через API с отключённой авторизацией:
+   ```powershell
+   # В одном терминале — FAN runtime с отключённой авторизацией
+   $env:FAN_NO_AUTH = "1"
+   node packages/coding-agent/dist/cli.js
+
+   # В другом терминале — создать токен
+   Invoke-RestMethod -Method POST -Uri http://localhost:3456/api/tokens `
+     -ContentType application/json -Body '{"name":"dashboard"}' | `
+     Select-Object -ExpandProperty token
    ```
-   /tokens
-   /tokens generate dashboard
-   ```
-   Скопировать сгенерированный токен.
+   Скопировать полученный токен.
+   Затем перезапустить FAN runtime **без** `FAN_NO_AUTH` (авторизация включена,
+   токен уже в БД и будет валидироваться).
 
 3. Запустить dashboard dev server:
    ```powershell
