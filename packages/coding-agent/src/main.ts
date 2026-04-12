@@ -102,7 +102,7 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 		provider?: string;
 		createdAt: string;
 		updatedAt: string;
-		messages: Array<{ id: string; role: string; content: string; createdAt: string }>;
+		messages: Array<{ id: string; role: "user" | "assistant" | "tool"; content: string; createdAt: string }>;
 	}>();
 
 	// Seed the runtime's current session
