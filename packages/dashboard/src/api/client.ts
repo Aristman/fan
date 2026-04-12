@@ -49,12 +49,13 @@ export class FanApiClient {
   constructor(opts: { baseUrl: string; token?: string }) {
     // Ensure trailing slash is removed so path joining is clean
     this.baseUrl = opts.baseUrl.replace(/\/+$/, "");
-    this.token = opts.token;
+    // Strip any non-ASCII characters that may have been pasted from terminals
+    this.token = opts.token?.replace(/[^\x20-\x7E]/g, "") ?? "";
   }
 
   /** Update the bearer token (e.g. after generating a new one). */
   setToken(token: string | undefined): void {
-    this.token = token;
+    this.token = token?.replace(/[^\x20-\x7E]/g, "") ?? "";
   }
 
   // -----------------------------------------------------------------------
