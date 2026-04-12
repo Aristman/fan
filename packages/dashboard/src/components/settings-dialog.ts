@@ -1,4 +1,4 @@
-// @fan/dashboard/components — <settings-dialog> tabbed settings overlay
+// @fan/dashboard/components — <fan-settings-dialog> tabbed settings overlay
 
 import { LitElement, html, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
@@ -56,7 +56,7 @@ function formatUptime(seconds: number): string {
 // Component
 // ---------------------------------------------------------------------------
 
-@customElement("settings-dialog")
+@customElement("fan-settings-dialog")
 export class SettingsDialog extends LitElement {
   // -----------------------------------------------------------------------
   // Static API — imperative creation
