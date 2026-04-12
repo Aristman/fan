@@ -77,18 +77,21 @@ export class FanApiClient {
     authenticated = true,
   ): Promise<T> {
     const url = `${this.baseUrl}${path}`;
+    const isWrite = method === "POST" || method === "PUT" || method === "PATCH";
+    const jsonBody = body !== undefined ? body : (isWrite ? {} : undefined);
+
     const h: Record<string, string> = {
       ...this.headers(authenticated),
     } as Record<string, string>;
 
-    if (body !== undefined) {
+    if (isWrite) {
       h["Content-Type"] = "application/json";
     }
 
     const init: RequestInit = {
       method,
       headers: h,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      body: jsonBody !== undefined ? JSON.stringify(jsonBody) : undefined,
     };
 
     const res = await fetch(url, init);
