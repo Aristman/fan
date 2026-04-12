@@ -1,6 +1,7 @@
 // @fan/dashboard/components — <chat-view> element
 
 import { LitElement, html, nothing } from "lit";
+import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { customElement, property, state, query } from "lit/decorators.js";
 import type { FanApiClient } from "../api/client.js";
 import type { FanWsClient } from "../api/ws-client.js";
@@ -327,6 +328,20 @@ export class ChatView extends LitElement {
       this.messageInput.style.height = "auto";
     }
 
+    // Add user message locally immediately (don't wait for WS round-trip)
+    if (this.session) {
+      const userMsg: SessionMessage = {
+        id: `user-${Date.now()}`,
+        role: "user",
+        content: text,
+        createdAt: new Date().toISOString(),
+      };
+      this.session = {
+        ...this.session,
+        messages: [...this.session.messages, userMsg],
+      };
+    }
+
     try {
       await this.apiClient.sendMessage(this.sessionId, text);
       // WS will stream the response
@@ -463,7 +478,7 @@ export class ChatView extends LitElement {
     // Line breaks
     escaped = escaped.replace(/\n/g, "<br>");
 
-    return html`${[escaped]}`; // lit unsafeHTML alternative using template
+    return unsafeHTML(escaped);
   }
 
   // -----------------------------------------------------------------------
