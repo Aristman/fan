@@ -9,6 +9,20 @@ export default defineConfig({
       "@fan/api-gateway": new URL("../api-gateway/src/index.ts", import.meta.url).pathname,
     },
   },
+  build: {
+    outDir: "dist",
+    sourcemap: true,
+    rollupOptions: {
+      // Suppress warnings from server-side dynamic imports in fan-ai
+      onwarn(warning, warn) {
+        if (warning.code === "MODULE_LEVEL_DIRECTIVE" ||
+            (warning.message?.includes("dynamic import cannot be analyzed"))) {
+          return;
+        }
+        warn(warning);
+      },
+    },
+  },
   server: {
     port: 5174,
     proxy: {
