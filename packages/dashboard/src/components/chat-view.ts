@@ -658,7 +658,7 @@ export class ChatView extends LitElement {
     const messages = this.session?.messages ?? [];
 
     return html`
-      <div class="flex flex-col h-full">
+      <div class="flex flex-col flex-1 min-h-0">
         <!-- ── Messages area ──────────────────────────────────────────── -->
         <div
           id="messages-container"
