@@ -63,6 +63,61 @@ Create `.fan/settings.json` in project root:
 }
 ```
 
+### Custom Models
+
+Add custom providers and models in `.fan/models.json` (project root):
+
+```json
+{
+  "providers": {
+    "<provider-id>": {
+      "baseUrl": "https://api.example.com/v1",
+      "api": "openai-completions",
+      "apiKey": "your-key-or-env-var-name",
+      "compat": {
+        "supportsDeveloperRole": false,
+        "thinkingFormat": "openai"
+      },
+      "models": [
+        {
+          "id": "model-id",
+          "name": "Display Name",
+          "reasoning": false,
+          "input": ["text"],
+          "cost": {
+            "input": 0.0,
+            "output": 0.0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "contextWindow": 128000,
+          "maxTokens": 4096
+        }
+      ]
+    }
+  }
+}
+```
+
+**Fields:**
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `baseUrl` | ✅ | API endpoint URL |
+| `api` | ✅ | API protocol: `openai-completions`, `anthropic`, `google` |
+| `apiKey` | ✅ | API key string or `${ENV_VAR_NAME}` for env reference |
+| `compat.supportsDeveloperRole` | | Enable `developer` system role (Anthropic) |
+| `compat.thinkingFormat` | | Thinking format: `openai`, `anthropic`, `zai`, `deepseek` |
+| `models[].id` | ✅ | Model identifier used in routing |
+| `models[].name` | ✅ | Human-readable display name |
+| `models[].reasoning` | | `true` if model supports extended thinking |
+| `models[].input` | | Input modalities: `["text"]`, `["text", "image"]` |
+| `models[].cost` | | Token costs for budget tracking |
+| `models[].contextWindow` | | Max context window size |
+| `models[].maxTokens` | | Max output tokens |
+
+Referenced in `.fan/settings.json` as `"<provider-id>/<model-id>"`.
+
 ## Packages
 
 | Package | Scope | Description |
