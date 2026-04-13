@@ -94,52 +94,226 @@ function isTruthyEnvFlag(value: string | undefined): boolean {
 }
 
 function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
+	// Single source of truth: JSONL files on disk.
+	// Runtime is only the execution engine — one active session at a time.
+
+	// --- Disk cache (3s TTL) ---
+	let diskCacheTime = 0;
+	const DISK_CACHE_TTL = 3_000;
+	let cachedDiskSessions: Array<{ id: string; path: string; title: string; modified: Date; messageCount: number }> = [];
+
+	// --- WS subscription forwarding ---
+	// runtime has ONE AgentSession at a time. When runtime switches session,
+	// old AgentSession.subscribe handlers stop receiving events.
+	// We maintain a global listener on runtime.session that forwards to
+	// per-sessionId handler maps. On switch, we resubscribe.
+	const sessionSubscribers = new Map<string, Set<(event: any) => void>>();
+	let _unsubscribeRuntime: (() => void) | null = null;
+
+	function ensureRuntimeSubscription() {
+		if (_unsubscribeRuntime) return;
+		_unsubscribeRuntime = runtime.session.subscribe((event: any) => {
+			// Forward to all handlers registered for the current runtime sessionId
+			const id = runtime.session.sessionId;
+			const handlers = sessionSubscribers.get(id);
+			if (handlers) {
+				for (const h of handlers) h(event);
+			}
+		});
+	}
+
+	function resubscribeAfterSwitch() {
+		// Old subscribe is dead after switchSession — resubscribe
+		if (_unsubscribeRuntime) {
+			_unsubscribeRuntime();
+			_unsubscribeRuntime = null;
+		}
+		ensureRuntimeSubscription();
+	}
+
+	// --- Helpers ---
+	function convertMessage(msg: any, idx: number, prefix: string): { id: string; role: "user" | "assistant" | "tool"; content: string; createdAt: string; model?: string; tokens?: number; cost?: number } {
+		const role = msg.role as "user" | "assistant" | "toolResult";
+		let text = "";
+		if (role === "user") {
+			const c = msg.content;
+			text = typeof c === "string" ? c : Array.isArray(c) ? c.map((b: any) => b.text || "").join("") : "";
+		} else if (role === "assistant") {
+			const blocks = msg.content || [];
+			text = blocks.filter((b: any) => b.type === "text").map((b: any) => b.text || "").join("");
+		} else if (role === "toolResult") {
+			const c = msg.content;
+			text = Array.isArray(c) ? c.map((b: any) => b.text || "").join("") : String(c || "");
+		}
+		return {
+			id: `${prefix}-${idx}`,
+			role: (role === "toolResult" ? "tool" : role) as "user" | "assistant" | "tool",
+			content: text,
+			model: role === "assistant" ? msg.model : undefined,
+			tokens: role === "assistant" ? msg.usage?.totalTokens : undefined,
+			cost: role === "assistant" ? msg.usage?.cost?.total : undefined,
+			createdAt: new Date(msg.timestamp || Date.now()).toISOString(),
+		};
+	}
+
+	async function loadDiskSessions(): Promise<typeof cachedDiskSessions> {
+		const now = Date.now();
+		if (now - diskCacheTime < DISK_CACHE_TTL && cachedDiskSessions.length > 0) {
+			return cachedDiskSessions;
+		}
+		diskCacheTime = now;
+		try {
+			cachedDiskSessions = (await SessionManager.listAll())
+				.map((s) => ({
+					id: s.id,
+					path: s.path,
+					title: s.name || s.firstMessage || "Untitled",
+					modified: s.modified,
+					messageCount: s.messageCount,
+				}));
+			return cachedDiskSessions;
+		} catch (err) {
+			console.error("[session-adapter] Failed to list disk sessions:", err);
+			return cachedDiskSessions;
+		}
+	}
+
+	function readDiskSessionMessages(sessionPath: string): Array<{ id: string; role: "user" | "assistant" | "tool"; content: string; createdAt: string; model?: string }> {
+		try {
+			const mgr = SessionManager.open(sessionPath);
+			return mgr.buildSessionContext().messages.map((msg, idx) => convertMessage(msg, idx, "disk"));
+		} catch (err) {
+			console.error(`[session-adapter] Failed to read disk session: ${sessionPath}`, err);
+			return [];
+		}
+	}
+
+	// Resolve session path by id (from disk cache)
+	async function resolveSessionPath(sessionId: string): Promise<string | null> {
+		if (sessionId === runtime.session.sessionId) {
+			return runtime.session.sessionFile || null;
+		}
+		const diskSessions = await loadDiskSessions();
+		const info = diskSessions.find((s) => s.id === sessionId);
+		return info?.path ?? null;
+	}
+
+	// Ensure runtime is on the target session. Returns false if session not found.
+	async function ensureSession(sessionId: string): Promise<boolean> {
+		if (sessionId === runtime.session.sessionId) return true;
+		const path = await resolveSessionPath(sessionId);
+		if (!path) return false;
+		console.log(`[session-adapter] Switching runtime to session ${sessionId} (${path})`);
+		await runtime.switchSession(path);
+		diskCacheTime = 0; // invalidate cache after switch
+		resubscribeAfterSwitch();
+		return true;
+	}
+
 	return {
+		// --- listSessions: ALL from disk (JSONL files, same as TUI /resume) ---
 		async listSessions() {
-			return [{
-				id: runtime.session.sessionId,
-				title: runtime.session.sessionName || "Current Session",
-				model: runtime.session.model?.id,
-				provider: runtime.session.model?.provider,
-				createdAt: new Date().toISOString(),
-				updatedAt: new Date().toISOString(),
-				messageCount: 0,
-			}];
+			const diskSessions = await loadDiskSessions();
+			return diskSessions.map((s) => ({
+				id: s.id,
+				title: s.title,
+				createdAt: s.modified.toISOString(),
+				updatedAt: s.modified.toISOString(),
+				messageCount: s.messageCount,
+				sessionFile: s.path,
+			})).sort(
+				(a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+			);
 		},
+
+		// --- getSession: ALWAYS from disk (single source of truth) ---
 		async getSession(id: string) {
-			if (id !== runtime.session.sessionId) return null;
+			// Flush runtime session to disk first if it matches
+			if (id === runtime.session.sessionId && runtime.session.sessionFile) {
+				return {
+					id,
+					title: runtime.session.sessionName || "Current Session",
+					model: runtime.session.model?.id,
+					provider: runtime.session.model?.provider,
+					createdAt: new Date().toISOString(),
+					updatedAt: new Date().toISOString(),
+					messages: readDiskSessionMessages(runtime.session.sessionFile),
+					sessionFile: runtime.session.sessionFile,
+				};
+			}
+
+			const diskSessions = await loadDiskSessions();
+			const diskInfo = diskSessions.find((s) => s.id === id);
+			if (!diskInfo) return null;
+
 			return {
-				id: runtime.session.sessionId,
-				title: runtime.session.sessionName || "Current Session",
-				model: runtime.session.model?.id,
-				provider: runtime.session.model?.provider,
-				createdAt: new Date().toISOString(),
-				updatedAt: new Date().toISOString(),
-				messages: [],
+				id,
+				title: diskInfo.title,
+				createdAt: diskInfo.modified.toISOString(),
+				updatedAt: diskInfo.modified.toISOString(),
+				messages: readDiskSessionMessages(diskInfo.path),
+				sessionFile: diskInfo.path,
 			};
 		},
-		async createSession() {
-			throw new Error("Session creation via HTTP is not yet supported in server mode");
+
+		// --- createSession: new session on disk via runtime ---
+		async createSession(opts?: { title?: string }) {
+			await runtime.newSession();
+			diskCacheTime = 0;
+			resubscribeAfterSwitch();
+			return {
+				id: runtime.session.sessionId,
+				title: opts?.title || runtime.session.sessionName || "New Session",
+				createdAt: new Date().toISOString(),
+				updatedAt: new Date().toISOString(),
+			};
 		},
-		async deleteSession() {
-			return false;
+
+		// --- deleteSession: remove JSONL file ---
+		async deleteSession(id: string) {
+			if (id === runtime.session.sessionId) return false;
+			const diskSessions = await loadDiskSessions();
+			const info = diskSessions.find((s) => s.id === id);
+			if (!info) return false;
+			try {
+				const { unlinkSync } = await import("fs");
+				unlinkSync(info.path);
+				diskCacheTime = 0;
+				return true;
+			} catch {
+				return false;
+			}
 		},
+
+		// --- sendMessage: switch runtime to target session, then prompt ---
 		async sendMessage(sessionId: string, message: string, streamingBehavior?: "steer" | "followUp") {
-			if (sessionId !== runtime.session.sessionId) return false;
+			const switched = await ensureSession(sessionId);
+			if (!switched) return false;
 			await runtime.session.prompt(message, {
 				streamingBehavior: streamingBehavior ?? "followUp",
 			});
 			return true;
 		},
+
+		// --- subscribeToSession: forward events via adapter-level routing ---
 		subscribeToSession(sessionId: string, handler: (event: any) => void) {
-			if (sessionId !== runtime.session.sessionId) {
-				return () => {};
+			ensureRuntimeSubscription();
+			let handlers = sessionSubscribers.get(sessionId);
+			if (!handlers) {
+				handlers = new Set();
+				sessionSubscribers.set(sessionId, handlers);
 			}
-			return runtime.session.subscribe(handler);
+			handlers.add(handler);
+		return () => {
+				handlers.delete(handler);
+			if (handlers.size === 0) {
+					sessionSubscribers.delete(sessionId);
+			}
+			};
 		},
+
+		// --- getAvailableModels ---
 		async getAvailableModels() {
-			const registry = runtime.services.modelRegistry;
-			if (!registry) return [];
 			const current = runtime.session.model;
 			if (!current) return [];
 			return [{
@@ -277,6 +451,7 @@ async function createSessionManager(
 	cwd: string,
 	sessionDir: string | undefined,
 	settingsManager: SettingsManager,
+	appMode: AppMode,
 ): Promise<SessionManager> {
 	if (parsed.noSession) {
 		return SessionManager.inMemory();
@@ -339,6 +514,11 @@ async function createSessionManager(
 	}
 
 	if (parsed.continue) {
+		return SessionManager.continueRecent(cwd, sessionDir);
+	}
+
+	// Server mode: continue most recent session (or create new if none exist)
+	if (appMode === "server") {
 		return SessionManager.continueRecent(cwd, sessionDir);
 	}
 
@@ -554,7 +734,7 @@ export async function main(args: string[]) {
 	// the target session cwd is known. The startup-cwd settings manager is used only for
 	// sessionDir lookup during session selection.
 	const sessionDir = parsed.sessionDir ?? startupSettingsManager.getSessionDir();
-	let sessionManager = await createSessionManager(parsed, cwd, sessionDir, startupSettingsManager);
+	let sessionManager = await createSessionManager(parsed, cwd, sessionDir, startupSettingsManager, appMode);
 	const missingSessionCwdIssue = getMissingSessionCwdIssue(sessionManager, cwd);
 	if (missingSessionCwdIssue) {
 		if (appMode === "interactive") {

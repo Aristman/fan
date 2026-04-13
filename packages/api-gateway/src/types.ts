@@ -1,3 +1,4 @@
+export type { BudgetStatus, BudgetConfig, ModelSettingData, BudgetAlert, BudgetAlertHandler } from "@fan/model-manager";
 import type { BudgetStatus, BudgetConfig, ModelSettingData } from "@fan/model-manager";
 
 // ============================================================================
@@ -30,6 +31,7 @@ export interface CreateSessionResponse {
   model?: string;
   provider?: string;
   createdAt: string;
+  updatedAt: string;
 }
 
 export interface SessionSummary {
@@ -40,6 +42,8 @@ export interface SessionSummary {
   createdAt: string;
   updatedAt: string;
   messageCount: number;
+  /** Path to JSONL file on disk (for disk-based sessions) */
+  sessionFile?: string;
 }
 
 export interface ListSessionsResponse {
@@ -64,6 +68,8 @@ export interface GetSessionResponse {
   createdAt: string;
   updatedAt: string;
   messages: SessionMessage[];
+  /** Path to JSONL file on disk (for disk-based sessions) */
+  sessionFile?: string;
 }
 
 export interface DeleteSessionResponse {
