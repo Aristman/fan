@@ -166,9 +166,9 @@ git status --short
 2. Сгенерировать API-токен. В TUI нет `/tokens` команды.
    Первый токен создаётся через API с отключённой авторизацией:
    ```powershell
-   # В одном терминале — FAN runtime с отключённой авторизацией
+   # В одном терминале — FAN server с отключённой авторизацией
    $env:FAN_NO_AUTH = "1"
-   node packages/coding-agent/dist/cli.js
+   node packages/coding-agent/dist/cli.js --mode server --port 3456
 
    # В другом терминале — создать токен
    Invoke-RestMethod -Method POST -Uri http://localhost:3456/api/tokens `
@@ -199,8 +199,8 @@ git status --short
 
 2. Сгенерировать API-токен:
    ```bash
-   # В одном терминале — FAN runtime с отключённой авторизацией
-   FAN_NO_AUTH=1 node packages/coding-agent/dist/cli.js
+   # В одном терминале — FAN server с отключённой авторизацией
+   FAN_NO_AUTH=1 node packages/coding-agent/dist/cli.js --mode server --port 3456
 
    # В другом терминале — создать токен
    curl -s -X POST http://localhost:3456/api/tokens \
