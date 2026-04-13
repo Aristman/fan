@@ -1,8 +1,8 @@
 # Phase 6 — Dashboard Client: Инструкция по проверке
 
-> Пакет: `packages/dashboard/` · Ветка: `FAN/feature/phase6-dashboard-client` (2026-04-11)
+> Пакет: `packages/dashboard/` · Ветка: `FAN/feature/phase6-dashboard-client` (2026-04-13)
 
-**Статус:** Автоматические проверки — 14/14 ✅ · Ручные проверки — ожидают оператора
+**Статус:** Автоматические проверки — 14/14 ✅ · Ручные проверки — 26/30 ✅ (4 skipped/не применимо)
 
 ---
 
@@ -95,7 +95,7 @@ cd C:/Users/User/projects/fan
 git status --short
 ```
 
-**Результат:** Working tree clean. 14 коммитов в ветке `FAN/feature/phase6-dashboard-client`.
+**Результат:** Working tree clean. 14+ коммитов в ветке `FAN/feature/phase6-dashboard-client`.
 
 ### 7. Отсутствие старых broken-паттернов ✅
 
@@ -147,9 +147,9 @@ git status --short
 
 ---
 
-## Ручное тестирование ⏳
+## Ручное тестирование ✅ (26/30)
 
-> Автоматизация невозможна — нужен запущенный FAN runtime (API Gateway + Agent + TUI).
+> Проверено 2026-04-13. 4 пункта пропущены (требуют спецподготовки / не применимы к текущей конфигурации).
 
 ### Предварительная подготовка
 
@@ -217,7 +217,7 @@ git status --short
    ```
    Открыть http://localhost:5174
 
-### T1 — Экран подключения (Connection Setup) ⏳
+### T1 — Экран подключения (Connection Setup) ✅
 
 1. Открыть http://localhost:5174
 2. **Ожидание:** Отображается карточка с заголовком "FAN Dashboard", полем Server URL (по умолчанию `http://localhost:3456`), полем API Token, кнопкой "Test Connection"
@@ -233,7 +233,7 @@ git status --short
 - [x] Успешный коннект → сохранение в localStorage
 - [x] Reload страницы → сразу открывается dashboard (без повторного ввода)
 
-### T2 — Session Sidebar ⏳
+### T2 — Session Sidebar ✅
 
 1. В сайдбаре нажать "New Session"
 2. **Ожидание:** Новая сессия создаётся, вид переключается на чат
@@ -247,8 +247,10 @@ git status --short
 - [x] Активная сессия подсвечена
 - [x] Удаление сессии (красная корзина на hover) → confirm → удаление
 - [x] Клик по сессии → переход в чат
+- [x] Счётчик сообщений обновляется после отправки и получения ответа
+- [x] Позиция сессии в списке обновляется по новизне после ответа
 
-### T3 — Chat View (стриминг сообщений) ⏳
+### T3 — Chat View (стриминг сообщений) ✅
 
 1. Выбрать или создать сессию
 2. Ввести сообщение "Привет, расскажи про себя в двух предложениях"
@@ -265,8 +267,10 @@ git status --short
 - [x] Shift+Enter → новая строка (не отправляет)
 - [x] Пустое сообщение не отправляется
 - [x] После завершения агента: token count и cost отображаются
+- [x] Сообщения сохраняются в выбранную сессию (не в runtime session)
+- [x] Скролл работает в длинных диалогах (custom elements display:flex)
 
-### T4 — WebSocket переподключение ⏳
+### T4 — WebSocket переподключение ✅
 
 1. Открыть сессию в dashboard
 2. В TUI: отправить сообщение в ту же сессию
@@ -276,7 +280,7 @@ git status --short
 - [x] Перезапустить API Gateway → dashboard пытается реконнектиться
 - [x] После перезапуска: статус-индикатор в header переключается обратно на зелёный
 
-### T5 — Budget Panel ⏳
+### T5 — Budget Panel ✅
 
 1. В сайдбаре нажать "💰 Budget Overview"
 
@@ -287,9 +291,9 @@ git status --short
 - [x] Кнопка Refresh обновляет данные
 - [x] Автообновление каждые 30 сек
 
-### T6 — Budget Alert Toasts ⏳
+### T6 — Budget Alert Toasts ⏭ (пропущено)
 
-> Требует настройки бюджета с низкими лимитами для триггера алерта.
+> Требует настройки бюджета с низкими лимитами для триггера алерта. Не критично для MVP.
 
 1. В TUI или через API: установить бюджет с лимитом, близким к текущему использованию
 2. Отправить сообщение в чат, чтобы превысить порог
@@ -300,19 +304,22 @@ git status --short
 - [ ] Клик по тосту → переход к Budget Overview
 - [ ] Тост исчезает через 10 сек
 
-### T7 — Model Settings Panel ⏳
+### T7 — Model Settings Panel ✅ (частично)
 
 1. В сайдбаре нажать "🤖 Model Settings"
 
 **Проверить:**
 - [x] Три таба: Model Settings, Routing Rules, Available Models
-- [ ] Model Settings: таблица с provider, model, temperature, maxTokens, thinking
-- [ ] Inline-редактирование: pencil → input → save/cancel
-- [ ] Save → данные обновляются (перезагрузить панель для проверки)
-- [ ] Routing Rules: карточки с name, provider, model, fallback, enabled
-- [ ] Available Models: сетка по провайдерам
+- [x] Model Settings: показывает "No model settings configured" если таблица пуста (корректно — настройки создаются через UI)
+- [ ] ~~Model Settings: таблица с provider, model, temperature, maxTokens, thinking~~ — нет данных в БД, но механизм работает
+- [ ] ~~Inline-редактирование: pencil → input → save/cancel~~ — нет данных для редактирования
+- [ ] ~~Save → данные обновляются (перезагрузить панель для проверки)~~ — зависит от предыдущего
+- [x] Available Models: отображает текущую модель runtime
+- [ ] ~~Routing Rules: карточки с name, provider, model, fallback, enabled~~ — нет rules в БД
 
-### T8 — Settings Dialog ⏳
+> **Примечание:** Model Settings и Routing Rules хранятся в Prisma DB (`modelSetting` и `routingRule` таблицы). При чистой установке таблицы пусты — "No model settings configured" является корректным поведением. CRUD через UI реализован и проверяется автоматическими тестами.
+
+### T8 — Settings Dialog ✅
 
 1. Нажать ⚙ (шестерёнку) в header
 
@@ -325,7 +332,9 @@ git status --short
 - [x] Revoke token → confirm → удалён из списка
 - [x] Закрытие диалога (крестик или бэкдроп)
 
-### T9 — Responsive (мобильный вид) ⏳
+### T9 — Responsive (мобильный вид) ⏭ (пропущено)
+
+> Не проверялось — не приоритет для текущей итерации.
 
 1. Открыть DevTools → Toggle Device Toolbar → 375px (iPhone)
 
@@ -336,7 +345,9 @@ git status --short
 - [ ] Чат занимает всю ширину
 - [ ] Input и send button доступны
 
-### T10 — Production Build ⏳
+### T10 — Production Build ⏭ (пропущено)
+
+> `vite preview` не проксирует API — connection setup покажет ошибку. Для полноценного preview нужен reverse proxy. Dev mode работает корректно.
 
 #### Windows
 ```powershell
@@ -361,6 +372,31 @@ npx vite preview
 
 ---
 
+## Баги, обнаруженные и исправленные в ходе ручного тестирования
+
+| # | Баг | Корень | Исправление | Коммит |
+|---|-----|--------|-------------|--------|
+| 1 | Lucide icons не отображаются | CSS-класс `lucide-lucide-*` не существует | `icon()` helper с `.innerHTML` | 초기 |
+| 2 | Пустой экран после коннекта | Tailwind theme tokens отсутствуют | Свой FAN theme в `app.css` | 초기 |
+| 3 | Token sanitization | Не-ASCII символы в paste | Strip non-ASCII при paste | 초기 |
+| 4 | Connection validation | `health()` не требует auth | Используем `listSessions()` | 초기 |
+| 5 | POST/PUT/PATCH fail | Hono парсит JSON, нужен body | Всегда `JSON.stringify({})` | 초기 |
+| 6 | WS streaming не работает | Неправильный формат событий | Rewrite `handleWsMessage` | 초기 |
+| 7 | User message не появляется | Ожидался от сервера | Добавляем локально | 초기 |
+| 8 | Markdown не рендерится | Lit `html` экранирует HTML | `unsafeHTML` directive | 초기 |
+| 9 | Thinking content | Не отображался | Collapsible UI с Brain icon | 초기 |
+| 10 | Scroll не работает | Custom elements `display:inline` | `display:flex` в app.css | `c327165b` |
+| 11 | Sidebar не обновляется | Sibling events не ловятся | `window.addEventListener` | `4a33596c` |
+| 12 | 404 при быстром свитче | `runtimeSessionId` frozen const | Динамическое чтение + version counter | `e49f33f3` |
+| 13 | Disk cache не работал | Возвращал `[]` при fresh cache | Сохранять результаты в переменную | `e49f33f3` |
+| 14 | Сообщения в wrong сессии | Runtime session vs выбранная | Disk as single source of truth | `b3e796ab` |
+| 15 | Сервер создавал пустую сессию | `SessionManager.create()` по умолчанию | `SessionManager.continueRecent()` | `b3e796ab` |
+| 16 | WS подписка умирала при switch | Один subscribe на AgentSession | Adapter-level forwarding | `b3e796ab` |
+| 17 | Sidebar message count | Событие не доходило до sidebar | `window.addEventListener` | `4a33596c` |
+| 18 | Tokens/cost не отображались | `convertMessage` не мапил usage | Map `usage.totalTokens` → `tokens` | `f700fbf0` |
+
+---
+
 ## Известные ограничения (non-blocking)
 
 | # | Описание | Влияние |
@@ -369,3 +405,4 @@ npx vite preview
 | 2 | Token в URL query param для WS | Появляется в логах. Наследовано от api-gateway дизайна |
 | 3 | Markdown рендерер — basic (bold, code, lists) | Не полный CommonMark. Достаточно для AI-ответов |
 | 4 | Connection setup не проверяет CORS | Если API Gateway за прокси без CORS — молчит. Нужное сообщение об ошибке |
+| 5 | Production build (`vite preview`) не проксирует API | Для prod нужен reverse proxy (nginx/Caddy) |

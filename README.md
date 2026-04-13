@@ -6,6 +6,7 @@
 
 FAN runs locally on your machine and provides an external API for multiple UI clients:
 - **TUI** — Interactive terminal interface (built-in)
+- **Dashboard** — Lit-based web UI (browser, http://localhost:5174)
 - **Server mode** — HTTP REST + WebSocket for web/mobile/IDE clients
 - **RPC mode** — JSON-over-stdio for IDE plugins
 - **SDK** — Programmatic use as a library
@@ -27,8 +28,12 @@ npm run build
 # Run in interactive mode
 node packages/coding-agent/dist/cli.js
 
-# Run as API server
+# Run as API server (with Web Dashboard)
 node packages/coding-agent/dist/cli.js --mode server --port 3456
+
+# Run dashboard dev server (in separate terminal)
+cd packages/dashboard && npm run dev
+# Open http://localhost:5174
 
 # Single prompt
 node packages/coding-agent/dist/cli.js -p "Hello, world!"
@@ -133,6 +138,46 @@ Referenced in `.fan/settings.json` (project or global) as `"<provider-id>/<model
 | [db](packages/db/) | `@fan/db` | Prisma + SQLite schema and migrations |
 | [dashboard](packages/dashboard/) | `@fan/dashboard` | Lit-based web dashboard client |
 
+## Dashboard
+
+Web UI for FAN runtime — session management, chat with streaming, budget visualization, model settings.
+
+### Features
+- **Session sidebar** — create, delete, search, message count
+- **Chat view** — streaming responses, markdown, thinking blocks, tool calls, auto-scroll
+- **Budget panel** — per-provider budget cards with progress bars
+- **Model settings** — per-model overrides (temperature, maxTokens, thinking)
+- **Settings dialog** — connection config, API token management
+- **WebSocket** — real-time streaming with auto-reconnect
+- **Light/Dark theme** — custom FAN theme (oklch hue 260°)
+
+### Architecture
+- **Thin frontend.** All session data lives in JSONL files on disk.
+- Runtime engine switches sessions on demand (`switchSession`), disk is single source of truth.
+- WS subscription forwarding with adapter-level routing (resubscribes on session switch).
+- Server starts with `continueRecent` — opens last session, or creates new if empty.
+
+### Running
+
+```powershell
+# Start FAN server
+node packages/coding-agent/dist/cli.js --mode server --port 3456
+
+# Start dashboard (separate terminal)
+cd packages/dashboard && npm run dev
+# Open http://localhost:5174
+```
+
+First launch shows connection setup — enter server URL and API token. Token is saved in localStorage.
+
+### Token Generation
+
+```powershell
+# Create token (with auth disabled)
+FAN_NO_AUTH=1 node packages/coding-agent/dist/cli.js --mode server --port 3456
+curl -s -X POST http://localhost:3456/api/tokens -H "Content-Type: application/json" -d '{"name":"dashboard"}' | jq -r '.token'
+```
+
 ## Orchestrator
 
 FAN includes a multi-agent orchestrator that can delegate tasks to specialized workers:
@@ -174,7 +219,7 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for full API documentation.
 ## Testing
 
 ```powershell
-# All orchestrator tests (29 tests)
+# All orchestrator tests (95 tests)
 cd packages/orchestrator && npx vitest run
 
 # All model-manager tests (42 tests)
@@ -183,11 +228,14 @@ cd packages/model-manager && npx vitest run
 # All api-gateway tests (39 tests)
 cd packages/api-gateway && npx vitest run
 
+# All dashboard tests (23 tests)
+cd packages/dashboard && npx vitest run
+
 # Full build (10 packages)
 npm run build
 ```
 
-See [docs/develop/tests/orchestrator-phase4.md](./docs/develop/tests/orchestrator-phase4.md) for detailed verification instructions.
+See [docs/develop/tests/dashboard-phase6.md](./docs/develop/tests/dashboard-phase6.md) for detailed dashboard verification instructions.
 
 ## Development
 
@@ -202,7 +250,7 @@ Branch types: `feature`, `fix`, `hotfix`. Commits: conventional commits.
 ### Build
 
 Uses [tsgo](https://github.com/nicholasgasior/ts-go) (native TypeScript Go compiler).
-All packages build to `dist/` with ESM output.
+All packages build to `dist/` with ESM output. Dashboard uses Vite separately.
 
 ### Environment
 
@@ -218,6 +266,7 @@ All packages build to `dist/` with ESM output.
 |------|-------------|
 | [CLAUDE.md](./CLAUDE.md) | Quick context for LLM sessions |
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | Full architecture reference |
+| [SETUP.md](./SETUP.md) | Installation guide (Windows/Ubuntu/macOS) |
 | [docs/specs/](./docs/specs/) | Feature specifications |
 | [docs/develop/tests/](./docs/develop/tests/) | Test instructions |
 
