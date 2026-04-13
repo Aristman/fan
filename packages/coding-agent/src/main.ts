@@ -263,19 +263,8 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 			}
 		},
 
-		// --- sendMessage: switch runtime to target session if needed, then prompt ---
+		// --- sendMessage: route to runtime agent ---
 		async sendMessage(sessionId: string, message: string, streamingBehavior?: "steer" | "followUp") {
-			// If the target session is not the current runtime session, switch to it
-			if (sessionId !== runtime.session.sessionId) {
-				const diskSessions = await loadDiskSessions();
-				const target = diskSessions.find((s) => s.id === sessionId);
-				if (target) {
-					await runtime.switchSession(target.path);
-					diskCacheTime = 0; // invalidate cache
-				} else {
-					return false;
-				}
-			}
 			await runtime.session.prompt(message, {
 				streamingBehavior: streamingBehavior ?? "followUp",
 			});
@@ -428,7 +417,6 @@ async function createSessionManager(
 	cwd: string,
 	sessionDir: string | undefined,
 	settingsManager: SettingsManager,
-	appMode: AppMode,
 ): Promise<SessionManager> {
 	if (parsed.noSession) {
 		return SessionManager.inMemory();
@@ -491,11 +479,6 @@ async function createSessionManager(
 	}
 
 	if (parsed.continue) {
-		return SessionManager.continueRecent(cwd, sessionDir);
-	}
-
-	// Server mode: continue most recent session, don't force-create
-	if (appMode === "server") {
 		return SessionManager.continueRecent(cwd, sessionDir);
 	}
 
@@ -711,7 +694,7 @@ export async function main(args: string[]) {
 	// the target session cwd is known. The startup-cwd settings manager is used only for
 	// sessionDir lookup during session selection.
 	const sessionDir = parsed.sessionDir ?? startupSettingsManager.getSessionDir();
-	let sessionManager = await createSessionManager(parsed, cwd, sessionDir, startupSettingsManager, appMode);
+	let sessionManager = await createSessionManager(parsed, cwd, sessionDir, startupSettingsManager);
 	const missingSessionCwdIssue = getMissingSessionCwdIssue(sessionManager, cwd);
 	if (missingSessionCwdIssue) {
 		if (appMode === "interactive") {
