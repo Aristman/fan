@@ -114,18 +114,19 @@ export class SessionSidebar extends LitElement {
     super.connectedCallback();
 
     this.addEventListener("fan:session-selected", this._onSessionSelected);
-    this.addEventListener("fan:session-created", this._onSessionRefresh);
-    this.addEventListener("fan:session-deleted", this._onSessionRefresh);
-    this.addEventListener("fan:session-updated", this._onSessionRefresh);
+    // Listen on window for cross-component events (session-sidebar and chat-view are siblings)
+    window.addEventListener("fan:session-created", this._onSessionRefresh);
+    window.addEventListener("fan:session-deleted", this._onSessionRefresh);
+    window.addEventListener("fan:session-updated", this._onSessionRefresh);
 
     await this.loadSessions();
   }
 
   override disconnectedCallback(): void {
     this.removeEventListener("fan:session-selected", this._onSessionSelected);
-    this.removeEventListener("fan:session-created", this._onSessionRefresh);
-    this.removeEventListener("fan:session-deleted", this._onSessionRefresh);
-    this.removeEventListener("fan:session-updated", this._onSessionRefresh);
+    window.removeEventListener("fan:session-created", this._onSessionRefresh);
+    window.removeEventListener("fan:session-deleted", this._onSessionRefresh);
+    window.removeEventListener("fan:session-updated", this._onSessionRefresh);
 
     super.disconnectedCallback();
   }
