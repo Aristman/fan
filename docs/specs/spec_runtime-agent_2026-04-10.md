@@ -3,7 +3,7 @@
 ## Метаданные
 - **Дата**: 2026-04-10
 - **Автор**: Specification Generator
-- **Статус**: В реализации (Phase 1-5 завершены, Phase 6 в процессе)
+- **Статус**: Phase 1-6 завершены, Phase 7 в планировании
 - **Версия**: 1.0
 - **Тип**: Модификация (pivot from web SaaS to local runtime-agent)
 
@@ -517,11 +517,30 @@ model ClientToken {
 - [x] `session_shutdown` корректно чистит всё (workers, widgets, status)
 
 ### Phase 6: Dashboard Client (Day 17-19)
-- [ ] Lit-based dashboard (chat, sessions, settings)
-- [ ] Connection to FAN API (HTTP)
-- [ ] Model settings UI
-- [ ] Budget visualization
-- [ ] Session management UI
+- [x] Lit-based dashboard (chat, sessions, settings)
+- [x] Connection to FAN API (HTTP)
+- [x] Model settings UI
+- [x] Budget visualization
+- [x] Session management UI
+
+#### Phase 6 Results
+- **Package:** `packages/dashboard/` (22 source files, 2 test files)
+- **Core components:** dashboard-app, session-sidebar, chat-view, budget-panel, budget-alert-toast, model-settings-panel, settings-dialog, connection-setup
+- **API client:** `FanApiClient` — 14 REST methods, typed with `@fan/api-gateway` types
+- **WS client:** `FanWsClient` — auto-reconnect, 6 event types (connected, pong, agent_event, budget_alert, model_switch, error)
+- **Chat features:** streaming responses, markdown rendering (unsafeHTML), thinking blocks (collapsible), tool calls (collapsible), auto-scroll, shift+enter
+- **Session management:** create, delete, search, message count, sort by recency
+- **Budget:** per-provider cards with progress bars (green <60%, yellow 60-85%, red >85%), 30s auto-refresh
+- **Model settings:** per-model overrides (temperature, maxTokens, thinking), routing rules, available models
+- **Settings dialog:** connection config, API token CRUD (generate, copy, revoke)
+- **Theme:** Custom FAN theme (oklch hue 260°, light/dark), no shadow DOM for Tailwind compatibility
+- **Architecture:** Thin frontend — disk (JSONL) = single source of truth, runtime = execution engine only
+- **Server startup:** `SessionManager.continueRecent()` — opens last session, creates new only if empty
+- **WS subscription:** adapter-level forwarding, resubscribes after `runtime.switchSession()`
+- **Build:** Vite (separate from tsgo monorepo build), 3.4MB bundle (gzip 964KB)
+- **Tests:** 23 unit tests (api-client: 14, ws-client: 9) + 39 api-gateway + 42 model-manager = 104 total
+- **Manual testing:** 26/30 passed (4 skipped: budget alerts, responsive, prod build, model settings data)
+- **Bugs fixed during testing:** 18 (icons, theme, token sanitization, WS streaming, scroll, race conditions, session routing, sidebar events, tokens/cost display)
 
 ### Phase 7: Polish & Packaging (Day 20-22)
 - [ ] CLI binary packaging (`fna` command)
@@ -539,7 +558,7 @@ model ClientToken {
 - [x] Start Phase 1 implementation
 - [x] Phase 4 completed — orchestrator baseline functional
 - [x] Phase 5 — orchestrator hardening (parity with Pi sample)
-- [ ] Phase 6 — Dashboard Client (Lit web UI, model settings, budget viz)
+- [x] Phase 6 — Dashboard Client (Lit web UI, model settings, budget viz)
 
 ---
 
