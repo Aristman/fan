@@ -302,6 +302,12 @@ export class ChatView extends LitElement {
         this.thinkingContent = "";
         // Do NOT call loadSession() here — it replaces our locally-built
         // assistant message with server data in wrong format (content as array)
+        // Notify sidebar to refresh message count
+        this.dispatchEvent(new CustomEvent("fan:session-updated", {
+          detail: { sessionId: this.sessionId },
+          bubbles: true,
+          composed: true,
+        }));
         break;
 
       case "tool_execution_start":

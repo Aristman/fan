@@ -116,6 +116,7 @@ export class SessionSidebar extends LitElement {
     this.addEventListener("fan:session-selected", this._onSessionSelected);
     this.addEventListener("fan:session-created", this._onSessionRefresh);
     this.addEventListener("fan:session-deleted", this._onSessionRefresh);
+    this.addEventListener("fan:session-updated", this._onSessionRefresh);
 
     await this.loadSessions();
   }
@@ -124,6 +125,7 @@ export class SessionSidebar extends LitElement {
     this.removeEventListener("fan:session-selected", this._onSessionSelected);
     this.removeEventListener("fan:session-created", this._onSessionRefresh);
     this.removeEventListener("fan:session-deleted", this._onSessionRefresh);
+    this.removeEventListener("fan:session-updated", this._onSessionRefresh);
 
     super.disconnectedCallback();
   }
