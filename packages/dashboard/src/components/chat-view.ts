@@ -59,6 +59,7 @@ export class ChatView extends LitElement {
   private unsubMessage: (() => void) | null = null;
   private unsubStatus: (() => void) | null = null;
   private autoScrollEnabled = true;
+  private loadVersion = 0;
 
   @query("#messages-container") private messagesContainer!: HTMLElement;
   @query("#message-input") private messageInput!: HTMLTextAreaElement;
@@ -97,6 +98,7 @@ export class ChatView extends LitElement {
   override willUpdate(changed: Map<string, unknown>): void {
     if (changed.has("sessionId") && this.sessionId) {
       // Reload session and reconnect WS when sessionId changes
+      this.loadVersion++;
       this.session = null;
       this.streamingContent = "";
       this.thinkingContent = "";
@@ -120,9 +122,13 @@ export class ChatView extends LitElement {
 
   async loadSession(): Promise<void> {
     if (!this.sessionId || !this.apiClient) return;
+    const expectedVersion = this.loadVersion;
     this.loading = true;
     try {
-      this.session = await this.apiClient.getSession(this.sessionId);
+      const result = await this.apiClient.getSession(this.sessionId);
+      // Discard stale response if sessionId changed while loading
+      if (expectedVersion !== this.loadVersion) return;
+      this.session = result;
 
       // Normalize message content: fan-agent-core returns content as array of objects,
       // but dashboard expects content as plain string

@@ -94,13 +94,11 @@ function isTruthyEnvFlag(value: string | undefined): boolean {
 }
 
 function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
-	const runtimeSessionId = runtime.session.sessionId;
-	const runtimeSessionFile = runtime.session.sessionFile;
-
 	// Cache for disk sessions (refreshed on each listSessions call).
 	// Single source of truth: JSONL files on disk, same as TUI.
 	let diskCacheTime = 0;
 	const DISK_CACHE_TTL = 3_000; // 3 seconds
+	let cachedDiskSessions: Array<{ id: string; path: string; title: string; modified: Date; messageCount: number }> = [];
 
 	// Helper: convert agent message to dashboard SessionMessage format
 	function convertMessage(msg: any, idx: number, prefix: string): { id: string; role: "user" | "assistant" | "tool"; content: string; createdAt: string; model?: string } {
@@ -131,14 +129,14 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 	}
 
 	// Helper: read all disk sessions via SessionManager (same source as TUI /resume)
-	async function loadDiskSessions(): Promise<Array<{ id: string; path: string; title: string; modified: Date; messageCount: number }>> {
+	async function loadDiskSessions(): Promise<typeof cachedDiskSessions> {
 		const now = Date.now();
-		if (now - diskCacheTime < DISK_CACHE_TTL) {
-			return [];
+		if (now - diskCacheTime < DISK_CACHE_TTL && cachedDiskSessions.length > 0) {
+			return cachedDiskSessions;
 		}
 		diskCacheTime = now;
 		try {
-			return (await SessionManager.listAll())
+			cachedDiskSessions = (await SessionManager.listAll())
 				.map((s) => ({
 					id: s.id,
 					path: s.path,
@@ -146,9 +144,10 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 					modified: s.modified,
 					messageCount: s.messageCount,
 				}));
+			return cachedDiskSessions;
 		} catch (err) {
 			console.error("[session-adapter] Failed to list disk sessions:", err);
-			return [];
+			return cachedDiskSessions; // return stale cache on error
 		}
 	}
 
@@ -179,21 +178,24 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 			}));
 
 			// Runtime session (live, may or may not be in disk list yet)
+			// Use runtime.session.sessionId dynamically — it changes after newSession()
+			const rtId = runtime.session.sessionId;
+			const rtFile = runtime.session.sessionFile;
 			const rtEntry = {
-				id: runtimeSessionId,
+				id: rtId,
 				title: runtime.session.sessionName || "Current Session",
 				model: runtime.session.model?.id,
 				provider: runtime.session.model?.provider,
 				createdAt: new Date().toISOString(),
 				updatedAt: new Date().toISOString(),
 				messageCount: getRuntimeMessages().length,
-				sessionFile: runtimeSessionFile || undefined,
+				sessionFile: rtFile || undefined,
 			};
 
 			// Merge: runtime first if not already in disk list, then deduplicate by id
 			const all = new Map<string, typeof rtEntry>();
 			for (const s of diskEntries) all.set(s.id, s);
-			all.set(runtimeSessionId, rtEntry); // runtime always wins
+			all.set(rtId, rtEntry); // runtime always wins
 
 			return [...all.values()].sort(
 				(a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
@@ -202,8 +204,8 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 
 		// --- getSession: read from runtime or disk, never from in-memory ---
 		async getSession(id: string) {
-			// Current runtime session: live messages
-			if (id === runtimeSessionId) {
+			// Current runtime session: live messages (read sessionId dynamically)
+			if (id === runtime.session.sessionId) {
 				return {
 					id,
 					title: runtime.session.sessionName || "Current Session",
@@ -212,7 +214,7 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 					createdAt: new Date().toISOString(),
 					updatedAt: new Date().toISOString(),
 					messages: getRuntimeMessages(),
-					sessionFile: runtimeSessionFile || undefined,
+					sessionFile: runtime.session.sessionFile || undefined,
 				};
 			}
 
@@ -247,7 +249,7 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 
 		// --- deleteSession: remove JSONL file from disk ---
 		async deleteSession(id: string) {
-			if (id === runtimeSessionId) return false;
+			if (id === runtime.session.sessionId) return false;
 			const diskSessions = await loadDiskSessions();
 			const info = diskSessions.find((s) => s.id === id);
 			if (!info) return false;
