@@ -146,11 +146,13 @@ Create `.fan/settings.json` in project root to set default provider and model:
 | `hideThinkingBlock` | Hide thinking blocks in TUI | `true` / `false` |
 | `transport` | LLM transport protocol | `sse`, `streaming` |
 
-### 3. Custom Models (`.fan/models.json`)
+### 3. Custom Models (`~/.fan/agent/models.json`)
 
-Add custom providers not in the built-in registry (2000+ models). Create `.fan/models.json` in project root:
+Add custom providers not in the built-in registry (2000+ models). Create `~/.fan/agent/models.json`:
 
-```json
+```bash
+mkdir -p ~/.fan/agent
+cat > ~/.fan/agent/models.json << 'EOF'
 {
   "providers": {
     "zai": {
@@ -175,6 +177,7 @@ Add custom providers not in the built-in registry (2000+ models). Create `.fan/m
     }
   }
 }
+EOF
 ```
 
 **Key fields:**
@@ -189,17 +192,15 @@ Add custom providers not in the built-in registry (2000+ models). Create `.fan/m
 | `models[].reasoning` | `true` for thinking/reasoning models |
 | `models[].cost` | Per-token costs for budget tracking |
 
-### `.fan/` Directory Structure
+### Configuration File Locations
 
-```
-.fan/
-├── models.json          # Custom provider/model definitions
-├── settings.json        # Default provider, model, thinking settings
-├── extensions/          # Installed extensions
-│   └── fna-orchestrator.ts
-└── memory/              # Auto-created at runtime
-    └── project.db       # SQLite database (Prisma)
-```
+| File | Global Location | Project-Level |
+|------|-----------------|---------------|
+| `models.json` | `~/.fan/agent/models.json` | ❌ Not supported |
+| `settings.json` | `~/.fan/agent/settings.json` | `<project>/.fan/settings.json` |
+| `auth.json` | `~/.fan/agent/auth.json` | ❌ Not supported |
+| `extensions/` | `~/.fan/agent/extensions/` | `<project>/.fan/extensions/` |
+| `memory/` | `~/.fan/agent/memory/` | `<project>/.fan/memory/` |
 
 ## Run
 

@@ -65,7 +65,7 @@ Create `.fan/settings.json` in project root:
 
 ### Custom Models
 
-Add custom providers and models in `.fan/models.json` (project root):
+Add custom providers and models in `~/.fan/agent/models.json`:
 
 ```json
 {
@@ -116,7 +116,7 @@ Add custom providers and models in `.fan/models.json` (project root):
 | `models[].contextWindow` | | Max context window size |
 | `models[].maxTokens` | | Max output tokens |
 
-Referenced in `.fan/settings.json` as `"<provider-id>/<model-id>"`.
+Referenced in `.fan/settings.json` (project or global) as `"<provider-id>/<model-id>"`.
 
 ## Packages
 

@@ -9,7 +9,7 @@
 New users face a friction-heavy setup:
 1. Clone repo → `npm install` → build errors (missing native bindings, permission issues)
 2. No `.env.example` — must read source code to discover env var names
-3. `.fan/models.json` schema undocumented — trial and error for custom providers
+3. `~/.fan/agent/models.json` schema undocumented — trial and error for custom providers
 4. `.fan/settings.json` must be created manually
 5. Platform-specific issues (Linux permissions, Windows CRLF, macOS ARM) have no guided resolution
 
@@ -25,7 +25,7 @@ Create an interactive `fan init` command that guides users through first-time se
 4. **Permission fix** — Auto-fix `chmod +x node_modules/.bin/*` on Linux/macOS
 5. **`.env` generation** — Interactive provider selection → generate `.env` with correct var names
 6. **`.fan/settings.json` generation** — Select default provider/model from available options
-7. **`.fan/models.json` generation** — Interactive wizard for adding custom providers:
+7. **`~/.fan/agent/models.json` generation** — Interactive wizard for adding custom providers:
    - Provider ID, base URL, API protocol
    - API key (masked input or env var reference)
    - Add models (ID, name, reasoning, context window)
@@ -46,7 +46,8 @@ Create an interactive `fan init` command that guides users through first-time se
 
 - [ ] `fan init` (or `node scripts/setup-wizard.ts`) runs on fresh clone
 - [ ] Detects and installs correct native TypeScript binding
-- [ ] Generates valid `.env`, `.fan/settings.json`, `.fan/models.json`
+- [ ] Generates valid `.env`, `.fan/settings.json`, `~/.fan/agent/models.json`
+- [ ] `models.json` written to `~/.fan/agent/` (NOT project `.fan/` — project-level not supported)
 - [ ] Generated config passes `npm run build` without errors
 - [ ] Smoke test sends a prompt and receives a response
 - [ ] Works on Windows, Ubuntu, macOS
