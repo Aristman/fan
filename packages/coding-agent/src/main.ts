@@ -94,13 +94,44 @@ function isTruthyEnvFlag(value: string | undefined): boolean {
 }
 
 function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
-	// Cache for disk sessions (refreshed on each listSessions call).
-	// Single source of truth: JSONL files on disk, same as TUI.
+	// Single source of truth: JSONL files on disk.
+	// Runtime is only the execution engine — one active session at a time.
+
+	// --- Disk cache (3s TTL) ---
 	let diskCacheTime = 0;
-	const DISK_CACHE_TTL = 3_000; // 3 seconds
+	const DISK_CACHE_TTL = 3_000;
 	let cachedDiskSessions: Array<{ id: string; path: string; title: string; modified: Date; messageCount: number }> = [];
 
-	// Helper: convert agent message to dashboard SessionMessage format
+	// --- WS subscription forwarding ---
+	// runtime has ONE AgentSession at a time. When runtime switches session,
+	// old AgentSession.subscribe handlers stop receiving events.
+	// We maintain a global listener on runtime.session that forwards to
+	// per-sessionId handler maps. On switch, we resubscribe.
+	const sessionSubscribers = new Map<string, Set<(event: any) => void>>();
+	let _unsubscribeRuntime: (() => void) | null = null;
+
+	function ensureRuntimeSubscription() {
+		if (_unsubscribeRuntime) return;
+		_unsubscribeRuntime = runtime.session.subscribe((event: any) => {
+			// Forward to all handlers registered for the current runtime sessionId
+			const id = runtime.session.sessionId;
+			const handlers = sessionSubscribers.get(id);
+			if (handlers) {
+				for (const h of handlers) h(event);
+			}
+		});
+	}
+
+	function resubscribeAfterSwitch() {
+		// Old subscribe is dead after switchSession — resubscribe
+		if (_unsubscribeRuntime) {
+			_unsubscribeRuntime();
+			_unsubscribeRuntime = null;
+		}
+		ensureRuntimeSubscription();
+	}
+
+	// --- Helpers ---
 	function convertMessage(msg: any, idx: number, prefix: string): { id: string; role: "user" | "assistant" | "tool"; content: string; createdAt: string; model?: string } {
 		const role = msg.role as "user" | "assistant" | "toolResult";
 		let text = "";
@@ -123,12 +154,6 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 		};
 	}
 
-	// Helper: get live runtime messages
-	function getRuntimeMessages() {
-		return runtime.session.messages.map((msg, idx) => convertMessage(msg, idx, "rt"));
-	}
-
-	// Helper: read all disk sessions via SessionManager (same source as TUI /resume)
 	async function loadDiskSessions(): Promise<typeof cachedDiskSessions> {
 		const now = Date.now();
 		if (now - diskCacheTime < DISK_CACHE_TTL && cachedDiskSessions.length > 0) {
@@ -147,11 +172,10 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 			return cachedDiskSessions;
 		} catch (err) {
 			console.error("[session-adapter] Failed to list disk sessions:", err);
-			return cachedDiskSessions; // return stale cache on error
+			return cachedDiskSessions;
 		}
 	}
 
-	// Helper: read messages from a JSONL session file
 	function readDiskSessionMessages(sessionPath: string): Array<{ id: string; role: "user" | "assistant" | "tool"; content: string; createdAt: string; model?: string }> {
 		try {
 			const mgr = SessionManager.open(sessionPath);
@@ -162,50 +186,48 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 		}
 	}
 
+	// Resolve session path by id (from disk cache)
+	async function resolveSessionPath(sessionId: string): Promise<string | null> {
+		if (sessionId === runtime.session.sessionId) {
+			return runtime.session.sessionFile || null;
+		}
+		const diskSessions = await loadDiskSessions();
+		const info = diskSessions.find((s) => s.id === sessionId);
+		return info?.path ?? null;
+	}
+
+	// Ensure runtime is on the target session. Returns false if session not found.
+	async function ensureSession(sessionId: string): Promise<boolean> {
+		if (sessionId === runtime.session.sessionId) return true;
+		const path = await resolveSessionPath(sessionId);
+		if (!path) return false;
+		console.log(`[session-adapter] Switching runtime to session ${sessionId} (${path})`);
+		await runtime.switchSession(path);
+		diskCacheTime = 0; // invalidate cache after switch
+		resubscribeAfterSwitch();
+		return true;
+	}
+
 	return {
-		// --- listSessions: disk (all JSONL) + runtime (current live session) ---
+		// --- listSessions: ALL from disk (JSONL files, same as TUI /resume) ---
 		async listSessions() {
 			const diskSessions = await loadDiskSessions();
-			const diskEntries = diskSessions.map((s) => ({
+			return diskSessions.map((s) => ({
 				id: s.id,
 				title: s.title,
-				model: undefined,
-				provider: undefined,
 				createdAt: s.modified.toISOString(),
 				updatedAt: s.modified.toISOString(),
 				messageCount: s.messageCount,
 				sessionFile: s.path,
-			}));
-
-			// Runtime session (live, may or may not be in disk list yet)
-			// Use runtime.session.sessionId dynamically — it changes after newSession()
-			const rtId = runtime.session.sessionId;
-			const rtFile = runtime.session.sessionFile;
-			const rtEntry = {
-				id: rtId,
-				title: runtime.session.sessionName || "Current Session",
-				model: runtime.session.model?.id,
-				provider: runtime.session.model?.provider,
-				createdAt: new Date().toISOString(),
-				updatedAt: new Date().toISOString(),
-				messageCount: getRuntimeMessages().length,
-				sessionFile: rtFile || undefined,
-			};
-
-			// Merge: runtime first if not already in disk list, then deduplicate by id
-			const all = new Map<string, typeof rtEntry>();
-			for (const s of diskEntries) all.set(s.id, s);
-			all.set(rtId, rtEntry); // runtime always wins
-
-			return [...all.values()].sort(
+			})).sort(
 				(a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
 			);
 		},
 
-		// --- getSession: read from runtime or disk, never from in-memory ---
+		// --- getSession: ALWAYS from disk (single source of truth) ---
 		async getSession(id: string) {
-			// Current runtime session: live messages (read sessionId dynamically)
-			if (id === runtime.session.sessionId) {
+			// Flush runtime session to disk first if it matches
+			if (id === runtime.session.sessionId && runtime.session.sessionFile) {
 				return {
 					id,
 					title: runtime.session.sessionName || "Current Session",
@@ -213,32 +235,30 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 					provider: runtime.session.model?.provider,
 					createdAt: new Date().toISOString(),
 					updatedAt: new Date().toISOString(),
-					messages: getRuntimeMessages(),
-					sessionFile: runtime.session.sessionFile || undefined,
+					messages: readDiskSessionMessages(runtime.session.sessionFile),
+					sessionFile: runtime.session.sessionFile,
 				};
 			}
 
-			// Disk session: read JSONL via SessionManager
 			const diskSessions = await loadDiskSessions();
 			const diskInfo = diskSessions.find((s) => s.id === id);
-			if (diskInfo) {
-				return {
-					id,
-					title: diskInfo.title,
-					createdAt: diskInfo.modified.toISOString(),
-					updatedAt: diskInfo.modified.toISOString(),
-					messages: readDiskSessionMessages(diskInfo.path),
-					sessionFile: diskInfo.path,
-				};
-			}
+			if (!diskInfo) return null;
 
-			return null;
+			return {
+				id,
+				title: diskInfo.title,
+				createdAt: diskInfo.modified.toISOString(),
+				updatedAt: diskInfo.modified.toISOString(),
+				messages: readDiskSessionMessages(diskInfo.path),
+				sessionFile: diskInfo.path,
+			};
 		},
 
-		// --- createSession: delegate to runtime.newSession() (creates JSONL on disk) ---
+		// --- createSession: new session on disk via runtime ---
 		async createSession(opts?: { title?: string }) {
 			await runtime.newSession();
-			diskCacheTime = 0; // invalidate cache
+			diskCacheTime = 0;
+			resubscribeAfterSwitch();
 			return {
 				id: runtime.session.sessionId,
 				title: opts?.title || runtime.session.sessionName || "New Session",
@@ -247,7 +267,7 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 			};
 		},
 
-		// --- deleteSession: remove JSONL file from disk ---
+		// --- deleteSession: remove JSONL file ---
 		async deleteSession(id: string) {
 			if (id === runtime.session.sessionId) return false;
 			const diskSessions = await loadDiskSessions();
@@ -263,23 +283,35 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 			}
 		},
 
-		// --- sendMessage: route to runtime agent ---
+		// --- sendMessage: switch runtime to target session, then prompt ---
 		async sendMessage(sessionId: string, message: string, streamingBehavior?: "steer" | "followUp") {
+			const switched = await ensureSession(sessionId);
+			if (!switched) return false;
 			await runtime.session.prompt(message, {
 				streamingBehavior: streamingBehavior ?? "followUp",
 			});
 			return true;
 		},
 
-		// --- subscribeToSession: all subscribe to runtime events ---
+		// --- subscribeToSession: forward events via adapter-level routing ---
 		subscribeToSession(sessionId: string, handler: (event: any) => void) {
-			return runtime.session.subscribe(handler);
+			ensureRuntimeSubscription();
+			let handlers = sessionSubscribers.get(sessionId);
+			if (!handlers) {
+				handlers = new Set();
+				sessionSubscribers.set(sessionId, handlers);
+			}
+			handlers.add(handler);
+		return () => {
+				handlers.delete(handler);
+			if (handlers.size === 0) {
+					sessionSubscribers.delete(sessionId);
+			}
+			};
 		},
 
 		// --- getAvailableModels ---
 		async getAvailableModels() {
-			const registry = runtime.services.modelRegistry;
-			if (!registry) return [];
 			const current = runtime.session.model;
 			if (!current) return [];
 			return [{
@@ -417,6 +449,7 @@ async function createSessionManager(
 	cwd: string,
 	sessionDir: string | undefined,
 	settingsManager: SettingsManager,
+	appMode: AppMode,
 ): Promise<SessionManager> {
 	if (parsed.noSession) {
 		return SessionManager.inMemory();
@@ -479,6 +512,11 @@ async function createSessionManager(
 	}
 
 	if (parsed.continue) {
+		return SessionManager.continueRecent(cwd, sessionDir);
+	}
+
+	// Server mode: continue most recent session (or create new if none exist)
+	if (appMode === "server") {
 		return SessionManager.continueRecent(cwd, sessionDir);
 	}
 
@@ -694,7 +732,7 @@ export async function main(args: string[]) {
 	// the target session cwd is known. The startup-cwd settings manager is used only for
 	// sessionDir lookup during session selection.
 	const sessionDir = parsed.sessionDir ?? startupSettingsManager.getSessionDir();
-	let sessionManager = await createSessionManager(parsed, cwd, sessionDir, startupSettingsManager);
+	let sessionManager = await createSessionManager(parsed, cwd, sessionDir, startupSettingsManager, appMode);
 	const missingSessionCwdIssue = getMissingSessionCwdIssue(sessionManager, cwd);
 	if (missingSessionCwdIssue) {
 		if (appMode === "interactive") {
