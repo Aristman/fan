@@ -97,54 +97,48 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 	const runtimeSessionId = runtime.session.sessionId;
 	const runtimeSessionFile = runtime.session.sessionFile;
 
-	// In-memory store for dashboard-only sessions (created from WebUI)
-	const memorySessions = new Map<string, {
-		title: string;
-		model?: string;
-		provider?: string;
-		createdAt: string;
-		updatedAt: string;
-		messages: Array<{ id: string; role: "user" | "assistant" | "tool"; content: string; createdAt: string; model?: string }>;
-	}>();
-
-	// Cache for disk session info (path → SessionInfo). Refreshed on listSessions.
-	let diskSessionsCache: Array<{ id: string; path: string; title: string; modified: Date; messageCount: number }> = [];
+	// Cache for disk sessions (refreshed on each listSessions call).
+	// Single source of truth: JSONL files on disk, same as TUI.
 	let diskCacheTime = 0;
-	const DISK_CACHE_TTL = 5_000; // 5 seconds
+	const DISK_CACHE_TTL = 3_000; // 3 seconds
 
-	// Helper: convert runtime messages to SessionMessage format
-	function getRuntimeMessages(): Array<{ id: string; role: "user" | "assistant" | "tool"; content: string; createdAt: string; model?: string }> {
-		return runtime.session.messages.map((msg, idx) => {
-			const role = msg.role as "user" | "assistant" | "toolResult";
-			let text = "";
-			if (role === "user") {
-				const c = (msg as any).content;
-				text = typeof c === "string" ? c : Array.isArray(c) ? c.map((b: any) => b.text || "").join("") : "";
-			} else if (role === "assistant") {
-				const blocks = (msg as any).content || [];
-				text = blocks.filter((b: any) => b.type === "text").map((b: any) => b.text || "").join("");
-			} else if (role === "toolResult") {
-				const c = (msg as any).content;
-				text = Array.isArray(c) ? c.map((b: any) => b.text || "").join("") : String(c || "");
-			}
-			return {
-				id: `rt-${idx}`,
-				role: (role === "toolResult" ? "tool" : role) as "user" | "assistant" | "tool",
-				content: text,
-				model: role === "assistant" ? (msg as any).model : undefined,
-				createdAt: new Date((msg as any).timestamp || Date.now()).toISOString(),
-			};
-		});
+	// Helper: convert agent message to dashboard SessionMessage format
+	function convertMessage(msg: any, idx: number, prefix: string): { id: string; role: "user" | "assistant" | "tool"; content: string; createdAt: string; model?: string } {
+		const role = msg.role as "user" | "assistant" | "toolResult";
+		let text = "";
+		if (role === "user") {
+			const c = msg.content;
+			text = typeof c === "string" ? c : Array.isArray(c) ? c.map((b: any) => b.text || "").join("") : "";
+		} else if (role === "assistant") {
+			const blocks = msg.content || [];
+			text = blocks.filter((b: any) => b.type === "text").map((b: any) => b.text || "").join("");
+		} else if (role === "toolResult") {
+			const c = msg.content;
+			text = Array.isArray(c) ? c.map((b: any) => b.text || "").join("") : String(c || "");
+		}
+		return {
+			id: `${prefix}-${idx}`,
+			role: (role === "toolResult" ? "tool" : role) as "user" | "assistant" | "tool",
+			content: text,
+			model: role === "assistant" ? msg.model : undefined,
+			createdAt: new Date(msg.timestamp || Date.now()).toISOString(),
+		};
 	}
 
-	// Helper: refresh disk sessions cache from SessionManager.listAll()
-	async function refreshDiskCache(): Promise<void> {
+	// Helper: get live runtime messages
+	function getRuntimeMessages() {
+		return runtime.session.messages.map((msg, idx) => convertMessage(msg, idx, "rt"));
+	}
+
+	// Helper: read all disk sessions via SessionManager (same source as TUI /resume)
+	async function loadDiskSessions(): Promise<Array<{ id: string; path: string; title: string; modified: Date; messageCount: number }>> {
 		const now = Date.now();
-		if (now - diskCacheTime < DISK_CACHE_TTL) return;
+		if (now - diskCacheTime < DISK_CACHE_TTL) {
+			return [];
+		}
+		diskCacheTime = now;
 		try {
-			const allSessions = await SessionManager.listAll();
-			diskSessionsCache = allSessions
-				.filter((s) => s.id !== runtimeSessionId) // exclude current runtime session (handled separately)
+			return (await SessionManager.listAll())
 				.map((s) => ({
 					id: s.id,
 					path: s.path,
@@ -152,38 +146,17 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 					modified: s.modified,
 					messageCount: s.messageCount,
 				}));
-			diskCacheTime = now;
 		} catch (err) {
 			console.error("[session-adapter] Failed to list disk sessions:", err);
+			return [];
 		}
 	}
 
-	// Helper: read messages from a disk session file
-	async function getDiskSessionMessages(sessionPath: string): Promise<Array<{ id: string; role: "user" | "assistant" | "tool"; content: string; createdAt: string; model?: string }>> {
+	// Helper: read messages from a JSONL session file
+	function readDiskSessionMessages(sessionPath: string): Array<{ id: string; role: "user" | "assistant" | "tool"; content: string; createdAt: string; model?: string }> {
 		try {
 			const mgr = SessionManager.open(sessionPath);
-			const context = mgr.buildSessionContext();
-			return context.messages.map((msg, idx) => {
-				const role = msg.role as "user" | "assistant" | "toolResult";
-				let text = "";
-				if (role === "user") {
-					const c = (msg as any).content;
-					text = typeof c === "string" ? c : Array.isArray(c) ? c.map((b: any) => b.text || "").join("") : "";
-				} else if (role === "assistant") {
-					const blocks = (msg as any).content || [];
-					text = blocks.filter((b: any) => b.type === "text").map((b: any) => b.text || "").join("");
-				} else if (role === "toolResult") {
-					const c = (msg as any).content;
-					text = Array.isArray(c) ? c.map((b: any) => b.text || "").join("") : String(c || "");
-				}
-				return {
-					id: `disk-${idx}`,
-					role: (role === "toolResult" ? "tool" : role) as "user" | "assistant" | "tool",
-					content: text,
-					model: role === "assistant" ? (msg as any).model : undefined,
-					createdAt: new Date((msg as any).timestamp || Date.now()).toISOString(),
-				};
-			});
+			return mgr.buildSessionContext().messages.map((msg, idx) => convertMessage(msg, idx, "disk"));
 		} catch (err) {
 			console.error(`[session-adapter] Failed to read disk session: ${sessionPath}`, err);
 			return [];
@@ -191,57 +164,45 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 	}
 
 	return {
+		// --- listSessions: disk (all JSONL) + runtime (current live session) ---
 		async listSessions() {
-			// 1. Disk sessions (from JSONL files, same data TUI uses)
-			await refreshDiskCache();
+			const diskSessions = await loadDiskSessions();
+			const diskEntries = diskSessions.map((s) => ({
+				id: s.id,
+				title: s.title,
+				model: undefined,
+				provider: undefined,
+				createdAt: s.modified.toISOString(),
+				updatedAt: s.modified.toISOString(),
+				messageCount: s.messageCount,
+				sessionFile: s.path,
+			}));
 
-			// 2. Runtime session (current live session)
-			const runtimeMsgs = getRuntimeMessages();
-			const runtimeEntry = {
+			// Runtime session (live, may or may not be in disk list yet)
+			const rtEntry = {
 				id: runtimeSessionId,
 				title: runtime.session.sessionName || "Current Session",
 				model: runtime.session.model?.id,
 				provider: runtime.session.model?.provider,
 				createdAt: new Date().toISOString(),
 				updatedAt: new Date().toISOString(),
-				messageCount: runtimeMsgs.length,
+				messageCount: getRuntimeMessages().length,
 				sessionFile: runtimeSessionFile || undefined,
 			};
 
-			// 3. Merge: disk sessions + runtime session + in-memory sessions
-			const result = [
-				...diskSessionsCache.map((s) => ({
-					id: s.id,
-					title: s.title,
-					createdAt: s.modified.toISOString(),
-					updatedAt: s.modified.toISOString(),
-					messageCount: s.messageCount,
-					sessionFile: s.path,
-				})),
-				runtimeEntry,
-			];
+			// Merge: runtime first if not already in disk list, then deduplicate by id
+			const all = new Map<string, typeof rtEntry>();
+			for (const s of diskEntries) all.set(s.id, s);
+			all.set(runtimeSessionId, rtEntry); // runtime always wins
 
-			// Add dashboard-only (in-memory) sessions
-			for (const [id, s] of memorySessions.entries()) {
-				result.push({
-					id,
-					title: s.title,
-					model: s.model,
-					provider: s.provider,
-					createdAt: s.createdAt,
-					updatedAt: s.updatedAt,
-					messageCount: s.messages.length,
-					sessionFile: undefined,
-				});
-			}
-
-			// Sort by updatedAt descending
-			result.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-			return result;
+			return [...all.values()].sort(
+				(a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+			);
 		},
 
+		// --- getSession: read from runtime or disk, never from in-memory ---
 		async getSession(id: string) {
-			// Runtime session: read live from runtime
+			// Current runtime session: live messages
 			if (id === runtimeSessionId) {
 				return {
 					id,
@@ -255,32 +216,16 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 				};
 			}
 
-			// In-memory dashboard session
-			if (memorySessions.has(id)) {
-				const s = memorySessions.get(id)!;
-				return {
-					id,
-					title: s.title,
-					model: s.model,
-					provider: s.provider,
-					createdAt: s.createdAt,
-					updatedAt: s.updatedAt,
-					messages: s.messages,
-				sessionFile: undefined,
-				};
-			}
-
-			// Disk session: read from JSONL file
-			await refreshDiskCache();
-			const diskInfo = diskSessionsCache.find((s) => s.id === id);
+			// Disk session: read JSONL via SessionManager
+			const diskSessions = await loadDiskSessions();
+			const diskInfo = diskSessions.find((s) => s.id === id);
 			if (diskInfo) {
-				const messages = await getDiskSessionMessages(diskInfo.path);
 				return {
 					id,
 					title: diskInfo.title,
 					createdAt: diskInfo.modified.toISOString(),
 					updatedAt: diskInfo.modified.toISOString(),
-					messages,
+					messages: readDiskSessionMessages(diskInfo.path),
 					sessionFile: diskInfo.path,
 				};
 			}
@@ -288,66 +233,48 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 			return null;
 		},
 
+		// --- createSession: delegate to runtime.newSession() (creates JSONL on disk) ---
 		async createSession(opts?: { title?: string }) {
-			const id = crypto.randomUUID();
-			const now = new Date().toISOString();
-			memorySessions.set(id, {
-				title: opts?.title || "New Session",
-				model: runtime.session.model?.id,
-				provider: runtime.session.model?.provider,
-				createdAt: now,
-				updatedAt: now,
-				messages: [],
-			});
-			// Invalidate disk cache so next listSessions picks it up
-			diskCacheTime = 0;
-			return { id, title: opts?.title || "New Session", createdAt: now, updatedAt: now };
+			await runtime.newSession();
+			diskCacheTime = 0; // invalidate cache
+			return {
+				id: runtime.session.sessionId,
+				title: opts?.title || runtime.session.sessionName || "New Session",
+				createdAt: new Date().toISOString(),
+				updatedAt: new Date().toISOString(),
+			};
 		},
 
+		// --- deleteSession: remove JSONL file from disk ---
 		async deleteSession(id: string) {
-			// Cannot delete the runtime session
 			if (id === runtimeSessionId) return false;
-			// In-memory session
-			if (memorySessions.has(id)) return memorySessions.delete(id);
-			// Disk session — find and delete JSONL file
-			await refreshDiskCache();
-			const diskInfo = diskSessionsCache.find((s) => s.id === id);
-			if (diskInfo) {
+			const diskSessions = await loadDiskSessions();
+			const info = diskSessions.find((s) => s.id === id);
+			if (!info) return false;
+			try {
 				const { unlinkSync } = await import("fs");
-				try {
-					unlinkSync(diskInfo.path);
-					diskCacheTime = 0; // invalidate cache
-					return true;
-				} catch {
-					return false;
-				}
+				unlinkSync(info.path);
+				diskCacheTime = 0;
+				return true;
+			} catch {
+				return false;
 			}
-			return false;
 		},
 
+		// --- sendMessage: route to runtime agent ---
 		async sendMessage(sessionId: string, message: string, streamingBehavior?: "steer" | "followUp") {
-			const s = memorySessions.get(sessionId);
-			if (s) {
-				s.messages.push({
-					id: `user-${Date.now()}`,
-					role: "user",
-					content: message,
-					createdAt: new Date().toISOString(),
-				});
-				s.updatedAt = new Date().toISOString();
-			}
-			// All messages route to the single runtime agent
 			await runtime.session.prompt(message, {
 				streamingBehavior: streamingBehavior ?? "followUp",
 			});
 			return true;
 		},
 
+		// --- subscribeToSession: all subscribe to runtime events ---
 		subscribeToSession(sessionId: string, handler: (event: any) => void) {
-			// All sessions subscribe to the runtime agent's events
 			return runtime.session.subscribe(handler);
 		},
 
+		// --- getAvailableModels ---
 		async getAvailableModels() {
 			const registry = runtime.services.modelRegistry;
 			if (!registry) return [];
