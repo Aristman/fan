@@ -94,71 +94,90 @@ function isTruthyEnvFlag(value: string | undefined): boolean {
 }
 
 function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
-	// In-memory session store for dashboard-created sessions.
-	// The runtime session is the only one that can send/receive messages.
+	// Track which session ID is the "real" runtime session
+	const runtimeSessionId = runtime.session.sessionId;
+
+	// In-memory store for dashboard-only sessions
 	const sessions = new Map<string, {
 		title: string;
 		model?: string;
 		provider?: string;
 		createdAt: string;
 		updatedAt: string;
-		messages: Array<{ id: string; role: "user" | "assistant" | "tool"; content: string; createdAt: string }>;
+		messages: Array<{ id: string; role: "user" | "assistant" | "tool"; content: string; createdAt: string; model?: string }>;
 	}>();
 
-	// Seed the runtime's current session
-	sessions.set(runtime.session.sessionId, {
+	// Seed the runtime session entry
+	sessions.set(runtimeSessionId, {
 		title: runtime.session.sessionName || "Current Session",
 		model: runtime.session.model?.id,
 		provider: runtime.session.model?.provider,
 		createdAt: new Date().toISOString(),
 		updatedAt: new Date().toISOString(),
-		messages: [],
+		messages: [],  // Will be read from runtime on demand
 	});
+
+	// Helper: read runtime messages and convert to SessionMessage format
+	function getRuntimeMessages(): Array<{ id: string; role: "user" | "assistant" | "tool"; content: string; createdAt: string; model?: string }> {
+		return runtime.session.messages.map((msg, idx) => {
+			const role = msg.role as "user" | "assistant" | "toolResult";
+			let text = "";
+			if (role === "user") {
+				const c = (msg as any).content;
+				text = typeof c === "string" ? c : Array.isArray(c) ? c.map((b: any) => b.text || "").join("") : "";
+			} else if (role === "assistant") {
+				const blocks = (msg as any).content || [];
+				text = blocks.filter((b: any) => b.type === "text").map((b: any) => b.text || "").join("");
+			} else if (role === "toolResult") {
+				const c = (msg as any).content;
+				text = Array.isArray(c) ? c.map((b: any) => b.text || "").join("") : String(c || "");
+			}
+			return {
+				id: `rt-${idx}`,
+				role: (role === "toolResult" ? "tool" : role) as "user" | "assistant" | "tool",
+				content: text,
+				model: role === "assistant" ? (msg as any).model : undefined,
+				createdAt: new Date((msg as any).timestamp || Date.now()).toISOString(),
+			};
+		});
+	}
 
 	return {
 		async listSessions() {
-			return Array.from(sessions.entries()).map(([id, s]) => ({
-				id,
-				title: s.title,
-				model: s.model,
-				provider: s.provider,
-				createdAt: s.createdAt,
-				updatedAt: s.updatedAt,
-				messageCount: s.messages.length,
-			}));
+			// Always include runtime session with live data
+			const runtimeData = sessions.get(runtimeSessionId)!;
+			const runtimeMsgs = getRuntimeMessages();
+			const result = [{
+				id: runtimeSessionId,
+				title: runtime.session.sessionName || runtimeData.title,
+				model: runtime.session.model?.id || runtimeData.model,
+				provider: runtime.session.model?.provider || runtimeData.provider,
+				createdAt: runtimeData.createdAt,
+				updatedAt: new Date().toISOString(),
+				messageCount: runtimeMsgs.length,
+			}];
+			// Add dashboard sessions
+			for (const [id, s] of sessions.entries()) {
+				if (id === runtimeSessionId) continue;
+				result.push({
+					id,
+					title: s.title,
+					model: s.model,
+					provider: s.provider,
+					createdAt: s.createdAt,
+					updatedAt: s.updatedAt,
+					messageCount: s.messages.length,
+				});
+			}
+			return result;
 		},
+
 		async getSession(id: string) {
-			const s = sessions.get(id);
-			if (!s) return null;
+			if (!sessions.has(id)) return null;
+			const s = sessions.get(id)!;
 
-			// Read live messages from runtime (single-agent MVP — all sessions
-			// share the same runtime, so use runtime.session.messages)
-			const apiMessages = runtime.session.messages.map((msg, idx) => {
-				const role = msg.role as "user" | "assistant" | "toolResult";
-				// Extract text content based on message type
-				let text = "";
-				if (role === "user") {
-					const c = (msg as any).content;
-					text = typeof c === "string" ? c : Array.isArray(c) ? c.map((b: any) => b.text || "").join("") : "";
-				} else if (role === "assistant") {
-					const blocks = (msg as any).content || [];
-					text = blocks
-						.filter((b: any) => b.type === "text")
-						.map((b: any) => b.text || "")
-						.join("");
-				} else if (role === "toolResult") {
-					const c = (msg as any).content;
-					text = Array.isArray(c) ? c.map((b: any) => b.text || "").join("") : String(c || "");
-				}
-
-				return {
-					id: `${id}-${idx}`,
-					role: (role === "toolResult" ? "tool" : role) as "user" | "assistant" | "tool",
-					content: text,
-					model: role === "assistant" ? (msg as any).model : undefined,
-					createdAt: new Date((msg as any).timestamp || Date.now()).toISOString(),
-				};
-			});
+			// For runtime session: read live from runtime
+			const messages = id === runtimeSessionId ? getRuntimeMessages() : s.messages;
 
 			return {
 				id,
@@ -167,9 +186,10 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 				provider: s.provider,
 				createdAt: s.createdAt,
 				updatedAt: s.updatedAt,
-				messages: apiMessages,
+				messages,
 			};
 		},
+
 		async createSession(opts?: { title?: string }) {
 			const id = crypto.randomUUID();
 			const now = new Date().toISOString();
@@ -181,24 +201,38 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 				updatedAt: now,
 				messages: [],
 			});
-			return { id, title: opts?.title || "New Session", createdAt: now };
+			return { id, title: opts?.title || "New Session", createdAt: now, updatedAt: now };
 		},
+
 		async deleteSession(id: string) {
-			// Cannot delete the runtime's own session
-			if (id === runtime.session.sessionId) return false;
+			if (id === runtimeSessionId) return false;
 			return sessions.delete(id);
 		},
+
 		async sendMessage(sessionId: string, message: string, streamingBehavior?: "steer" | "followUp") {
-			// All sessions route to the runtime agent (single-agent MVP)
+			// Store user message in the session's message array
+			const s = sessions.get(sessionId);
+			if (s) {
+				s.messages.push({
+					id: `user-${Date.now()}`,
+					role: "user",
+					content: message,
+					createdAt: new Date().toISOString(),
+				});
+				s.updatedAt = new Date().toISOString();
+			}
+			// All messages route to the single runtime agent
 			await runtime.session.prompt(message, {
 				streamingBehavior: streamingBehavior ?? "followUp",
 			});
 			return true;
 		},
+
 		subscribeToSession(sessionId: string, handler: (event: any) => void) {
 			// All sessions subscribe to the runtime agent's events
 			return runtime.session.subscribe(handler);
 		},
+
 		async getAvailableModels() {
 			const registry = runtime.services.modelRegistry;
 			if (!registry) return [];

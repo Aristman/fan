@@ -184,13 +184,14 @@ export class SessionSidebar extends LitElement {
 
   async deleteSession(id: string, event: Event): Promise<void> {
     event.stopPropagation();
-
     if (!window.confirm("Delete this session? This cannot be undone.")) return;
 
     try {
-      await this.apiClient.deleteSession(id);
-
-      // If the deleted session was active, clear the selection
+      const res = await this.apiClient.deleteSession(id);
+      if (!res.success) {
+        alert("Cannot delete this session (it may be the active runtime session).");
+        return;
+      }
       if (this.activeSessionId === id) {
         this.dispatchEvent(
           new CustomEvent("fan:session-selected", {
@@ -200,10 +201,11 @@ export class SessionSidebar extends LitElement {
           }),
         );
       }
-
-      await this.loadSessions();
     } catch (err) {
       console.error("session-sidebar: deleteSession failed", err);
+      alert(`Failed to delete session: ${err instanceof Error ? err.message : "Unknown error"}`);
+    } finally {
+      await this.loadSessions();
     }
   }
 
@@ -365,7 +367,7 @@ export class SessionSidebar extends LitElement {
 
           <!-- Delete button — only visible on hover -->
           <button
-            class="shrink-0 p-1 rounded opacity-0 group-hover:opacity-100
+            class="shrink-0 p-1 rounded opacity-40 hover:!opacity-100
                    hover:bg-red-500/20 text-muted-foreground hover:text-red-400
                    transition-all"
             title="Delete session"
