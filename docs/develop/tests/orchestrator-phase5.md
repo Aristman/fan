@@ -9,7 +9,7 @@
 ### 1. Сборка + type-check ✅
 
 ```powershell
-cd C:/Users/User/projects/filin-next-agent
+cd C:/Users/User/projects/fan
 cd packages/orchestrator && npx tsgo -p tsconfig.build.json --noEmit
 cd packages/orchestrator && npm run build
 ```
@@ -377,7 +377,7 @@ Type exports checked via tsgo (not runtime): OK
 Следующие кейсы требуют интерактивного терминала с TUI. Запусти:
 
 ```powershell
-cd C:/Users/User/projects/filin-next-agent
+cd C:/Users/User/projects/fan
 node packages/coding-agent/dist/cli.js
 ```
 

@@ -13,7 +13,7 @@
 ### 1. Сборка монорепо ✅
 
 ```powershell
-cd C:/Users/User/projects/filin-next-agent
+cd C:/Users/User/projects/fan
 npm run build
 ```
 
@@ -22,7 +22,7 @@ npm run build
 ### 2. Сборка Dashboard (Vite) ✅
 
 ```powershell
-cd C:/Users/User/projects/filin-next-agent/packages/dashboard
+cd C:/Users/User/projects/fan/packages/dashboard
 npx vite build
 ```
 
@@ -31,7 +31,7 @@ npx vite build
 ### 3. TypeScript type-check ✅
 
 ```powershell
-cd C:/Users/User/projects/filin-next-agent/packages/dashboard
+cd C:/Users/User/projects/fan/packages/dashboard
 npx tsc --noEmit
 ```
 
@@ -91,7 +91,7 @@ packages/dashboard/
 ### 6. Git-чистота ✅
 
 ```powershell
-cd C:/Users/User/projects/filin-next-agent
+cd C:/Users/User/projects/fan
 git status --short
 ```
 
@@ -155,7 +155,7 @@ git status --short
 
 1. Поднять FAN runtime:
    ```powershell
-   cd C:/Users/User/projects/filin-next-agent
+   cd C:/Users/User/projects/fan
    npm run build
    npx prisma db push  # в packages/db
    node packages/coding-agent/dist/cli.js  # интерактивный режим
@@ -179,7 +179,7 @@ git status --short
 
 3. Запустить dashboard dev server:
    ```powershell
-   cd C:/Users/User/projects/filin-next-agent/packages/dashboard
+   cd C:/Users/User/projects/fan/packages/dashboard
    npm run dev
    ```
    Открыть http://localhost:5174

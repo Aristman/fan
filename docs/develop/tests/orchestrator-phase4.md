@@ -11,7 +11,7 @@
 ### 1. Сборка ✅
 
 ```powershell
-cd C:/Users/User/projects/filin-next-agent
+cd C:/Users/User/projects/fan
 npm run build
 ```
 
@@ -40,7 +40,7 @@ cd ../tui && npm run test
 ### 3. RPC mode — Session lifecycle ✅
 
 ```powershell
-cd C:/Users/User/projects/filin-next-agent
+cd C:/Users/User/projects/fan
 node -e "require('fs').writeFileSync('tmp.json', JSON.stringify({type:'get_state'}))" ; node packages/coding-agent/dist/cli.js --mode rpc < tmp.json ; rm tmp.json
 ```
 
@@ -82,7 +82,7 @@ Sessions: 1 session с `zai/glm-5`.
 ```powershell
 node --input-type=module -e "
 import('./packages/orchestrator/dist/agents.js').then(m => {
-  const r = m.discoverAgents('C:/Users/User/projects/filin-next-agent', 'user');
+  const r = m.discoverAgents('C:/Users/User/projects/fan', 'user');
   console.log('Agents:', r.agents.length);
   r.agents.forEach(a => console.log(' -', a.name, '(' + a.source + ')'));
 });"
@@ -105,7 +105,7 @@ TUI: 511 pass, 0 fail, 8 skip (стабильно). Полная сборка: 1
 Следующие кейсы требуют интерактивного терминала с TUI. Запусти:
 
 ```powershell
-cd C:/Users/User/projects/filin-next-agent
+cd C:/Users/User/projects/fan
 node packages/coding-agent/dist/cli.js
 ```
 
