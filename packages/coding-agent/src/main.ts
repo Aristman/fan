@@ -132,7 +132,7 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 	}
 
 	// --- Helpers ---
-	function convertMessage(msg: any, idx: number, prefix: string): { id: string; role: "user" | "assistant" | "tool"; content: string; createdAt: string; model?: string } {
+	function convertMessage(msg: any, idx: number, prefix: string): { id: string; role: "user" | "assistant" | "tool"; content: string; createdAt: string; model?: string; tokens?: number; cost?: number } {
 		const role = msg.role as "user" | "assistant" | "toolResult";
 		let text = "";
 		if (role === "user") {
@@ -150,6 +150,8 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 			role: (role === "toolResult" ? "tool" : role) as "user" | "assistant" | "tool",
 			content: text,
 			model: role === "assistant" ? msg.model : undefined,
+			tokens: role === "assistant" ? msg.usage?.totalTokens : undefined,
+			cost: role === "assistant" ? msg.usage?.cost?.total : undefined,
 			createdAt: new Date(msg.timestamp || Date.now()).toISOString(),
 		};
 	}
