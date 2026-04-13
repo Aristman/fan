@@ -153,11 +153,13 @@ git status --short
 
 ### Предварительная подготовка
 
+#### Windows (PowerShell)
+
 1. Поднять FAN runtime:
    ```powershell
    cd C:/Users/User/projects/fan
    npm run build
-   npx prisma db push  # в packages/db
+   npx prisma db push --schema packages/db/prisma/schema.prisma
    node packages/coding-agent/dist/cli.js  # интерактивный режим
    ```
 
@@ -184,6 +186,37 @@ git status --short
    ```
    Открыть http://localhost:5174
 
+#### Ubuntu (bash)
+
+1. Поднять FAN runtime:
+   ```bash
+   cd ~/projects/fan
+   npm run build
+   chmod +x node_modules/.bin/*  # если permissions сбиты после install
+   npx prisma db push --schema packages/db/prisma/schema.prisma
+   node packages/coding-agent/dist/cli.js  # интерактивный режим
+   ```
+
+2. Сгенерировать API-токен:
+   ```bash
+   # В одном терминале — FAN runtime с отключённой авторизацией
+   FAN_NO_AUTH=1 node packages/coding-agent/dist/cli.js
+
+   # В другом терминале — создать токен
+   curl -s -X POST http://localhost:3456/api/tokens \
+     -H "Content-Type: application/json" \
+     -d '{"name":"dashboard"}' | jq -r '.token'
+   ```
+   Скопировать полученный токен.
+   Затем перезапустить FAN runtime **без** `FAN_NO_AUTH`.
+
+3. Запустить dashboard dev server:
+   ```bash
+   cd ~/projects/fan/packages/dashboard
+   npm run dev
+   ```
+   Открыть http://localhost:5174
+
 ### T1 — Экран подключения (Connection Setup) ⏳
 
 1. Открыть http://localhost:5174
@@ -194,11 +227,11 @@ git status --short
 6. Через ~1 сек автоматически переходит к основному интерфейсу
 
 **Проверить:**
-- [ ] Карточка отображается корректно, иконки видны
-- [ ] Пустой token → ошибка валидации
-- [ ] Неверный token → красная ошибка "Connection failed"
-- [ ] Успешный коннект → сохранение в localStorage
-- [ ] Reload страницы → сразу открывается dashboard (без повторного ввода)
+- [x] Карточка отображается корректно, иконки видны
+- [x] Пустой token → ошибка валидации
+- [x] Неверный token → красная ошибка "Connection failed"
+- [x] Успешный коннект → сохранение в localStorage
+- [x] Reload страницы → сразу открывается dashboard (без повторного ввода)
 
 ### T2 — Session Sidebar ⏳
 
@@ -305,8 +338,16 @@ git status --short
 
 ### T10 — Production Build ⏳
 
+#### Windows
 ```powershell
-cd packages/dashboard
+cd C:/Users/User/projects/fan/packages/dashboard
+npx vite build
+npx vite preview
+```
+
+#### Ubuntu
+```bash
+cd ~/projects/fan/packages/dashboard
 npx vite build
 npx vite preview
 ```
