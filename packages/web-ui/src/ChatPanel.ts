@@ -14,7 +14,7 @@ import { i18n } from "./utils/i18n.js";
 
 const BREAKPOINT = 800; // px - switch between overlay and side-by-side
 
-@customElement("pi-chat-panel")
+@customElement("fan-chat-panel")
 export class ChatPanel extends LitElement {
 	@state() public agent?: Agent;
 	@state() public agentInterface?: AgentInterface;

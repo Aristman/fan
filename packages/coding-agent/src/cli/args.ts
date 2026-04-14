@@ -372,7 +372,7 @@ ${chalk.bold("Environment Variables:")}
   ${ENV_AGENT_DIR.padEnd(32)} - Session storage directory (default: ~/${CONFIG_DIR_NAME}/agent)
   FAN_PACKAGE_DIR                   - Override package directory (for Nix/Guix store paths)
   FAN_OFFLINE                       - Disable startup network operations when set to 1/true/yes
-  FAN_SHARE_VIEWER_URL              - Base URL for /share command (default: https://pi.dev/session/)
+  FAN_SHARE_VIEWER_URL              - Base URL for /share command (default: https://fan.dev/session/)
   FAN_AI_ANTIGRAVITY_VERSION        - Override Antigravity User-Agent version (e.g., 1.23.0)
 
 ${chalk.bold("Available Tools (default: read, bash, edit, write):")}

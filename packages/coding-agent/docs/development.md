@@ -14,10 +14,10 @@ npm run build
 Run from source:
 
 ```bash
-/path/to/fan-mono/pi-test.sh
+/path/to/fan-mono/fan-test.sh
 ```
 
-The script can be run from any directory. Pi keeps the caller's current working directory.
+The script can be run from any directory. FAN keeps the caller's current working directory.
 
 ## Forking / Rebranding
 
@@ -26,7 +26,7 @@ Configure via `package.json`:
 ```json
 {
   "piConfig": {
-    "name": "pi",
+    "name": "fan",
     "configDir": ".fan"
   }
 }
@@ -48,7 +48,7 @@ Never use `__dirname` directly for package assets.
 
 ## Debug Command
 
-`/debug` (hidden) writes to `~/.fan/agent/pi-debug.log`:
+`/debug` (hidden) writes to `~/.fan/agent/fan-debug.log`:
 - Rendered TUI lines with ANSI codes
 - Last messages sent to the LLM
 
