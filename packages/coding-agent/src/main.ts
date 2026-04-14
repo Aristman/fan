@@ -47,6 +47,20 @@ import { handleConfigCommand, handlePackageCommand } from "./package-manager-cli
 import { isLocalPath } from "./utils/paths.js";
 import { startServer, type SessionAdapter } from "@fan/api-gateway";
 
+async function handleInitCommand(args: string[]): Promise<boolean> {
+	if (!args.includes("init")) return false;
+	const { runInitWizard } = await import("./cli/init-wizard.js");
+	await runInitWizard();
+	return true;
+}
+
+async function handleDoctorCommand(args: string[]): Promise<boolean> {
+	if (!args.includes("doctor")) return false;
+	const { runDiagnostics } = await import("./cli/diagnostics.js");
+	const ok = await runDiagnostics();
+	process.exit(ok ? 0 : 1);
+}
+
 /**
  * Read all content from piped stdin.
  * Returns undefined if stdin is a TTY (interactive terminal).
@@ -672,6 +686,14 @@ export async function main(args: string[]) {
 		return;
 	}
 
+	if (await handleInitCommand(args)) {
+		return;
+	}
+
+	if (await handleDoctorCommand(args)) {
+		return;
+	}
+
 	if (await handleConfigCommand(args)) {
 		return;
 	}
@@ -901,10 +923,42 @@ export async function main(args: string[]) {
 	time("createAgentSession");
 
 	if (appMode !== "interactive" && appMode !== "server" && !session.model) {
+		// Detect which providers have API keys configured
+		const providerEnvVars: Record<string, string[]> = {
+			OpenAI: ["OPENAI_API_KEY", "OPENAI_AFAN_KEY"],
+			Anthropic: ["ANTHROPIC_API_KEY", "ANTHROPIC_AFAN_KEY", "ANTHROPIC_OAUTH_TOKEN"],
+			Google: ["GOOGLE_API_KEY", "GEMINI_AFAN_KEY", "GOOGLE_GENERATIVE_AI_API_KEY"],
+			Groq: ["GROQ_AFAN_KEY"],
+			xAI: ["XAI_AFAN_KEY"],
+			OpenRouter: ["OPENROUTER_AFAN_KEY"],
+			Mistral: ["MISTRAL_AFAN_KEY"],
+			Cerebras: ["CEREBRAS_AFAN_KEY"],
+			"Z.AI": ["ZAI_API_KEY"],
+			"GitHub Copilot": ["COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"],
+			OpenCode: ["OPENCODE_AFAN_KEY"],
+			HuggingFace: ["HF_TOKEN"],
+		};
+		const configuredProviders: string[] = [];
+		for (const [provider, envVars] of Object.entries(providerEnvVars)) {
+			if (envVars.some(v => process.env[v])) {
+				configuredProviders.push(provider);
+			}
+		}
+
 		console.error(chalk.red("No models available."));
-		console.error(chalk.yellow("\nSet an API key environment variable:"));
-		console.error("  ANTHROPIC_AFAN_KEY, OPENAI_AFAN_KEY, GEMINI_AFAN_KEY, etc.");
-		console.error(chalk.yellow(`\nOr create ${getModelsPath()}`));
+		if (configuredProviders.length > 0) {
+			console.error(chalk.yellow(`\nAPI keys found for: ${configuredProviders.join(", ")}`));
+			console.error(chalk.yellow("But no models matched. Check your provider configuration or models.json."));
+		} else {
+			console.error(chalk.yellow("\nNo API keys configured for any provider."));
+		}
+		console.error(chalk.yellow("\nTo fix this:"));
+		console.error("  1. Set an API key environment variable (see .env.example for available providers)");
+		console.error("  2. Run \"fna init\" to create a default configuration");
+		console.error("  3. Or create models.json manually:");
+		console.error(chalk.dim(`     ${getModelsPath()}`));
+		console.error(chalk.yellow("\nAvailable env vars: ANTHROPIC_AFAN_KEY, OPENAI_AFAN_KEY, GEMINI_AFAN_KEY, GROQ_AFAN_KEY, etc."));
+		console.error(chalk.dim("See .env.example in the project root for the full list."));
 		process.exit(1);
 	}
 

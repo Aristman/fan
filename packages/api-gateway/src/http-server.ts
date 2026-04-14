@@ -48,6 +48,48 @@ export interface ServerOptions {
 }
 
 // ============================================================================
+// Error Classification Helpers
+// ============================================================================
+
+/** Classify an error into an appropriate HTTP status code. */
+function classifyErrorStatus(err: unknown): number {
+  const msg = err instanceof Error ? err.message : String(err);
+  const name = err instanceof Error ? err.constructor.name : "";
+
+  // Client input errors
+  if (name === "SyntaxError" && msg.includes("JSON")) return 400;
+  if (msg.match(/invalid.*body|malformed.*json|unexpected.*token/i)) return 400;
+
+  // Authentication / Authorization
+  if (msg.match(/unauthorized|invalid.*token|token.*expired|not authenticated/i)) return 401;
+  if (msg.match(/forbidden|insufficient.*permission|not authorized/i)) return 403;
+
+  // Not Found
+  if (msg.match(/not found|does not exist|no such/i)) return 404;
+
+  // Conflict
+  if (msg.match(/already exists|conflict|duplicate/i)) return 409;
+
+  // Unprocessable Entity (validation)
+  if (msg.match(/validation|invalid.*field|missing.*required|bad.*request/i)) return 422;
+
+  // Default: server error
+  return 500;
+}
+
+/** Classify an error into an ApiError code string. */
+function classifyErrorCode(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err);
+
+  if (msg.match(/unauthorized|invalid.*token|token.*expired/i)) return "UNAUTHORIZED";
+  if (msg.match(/forbidden|insufficient.*permission/i)) return "FORBIDDEN";
+  if (msg.match(/not found|does not exist/i)) return "NOT_FOUND";
+  if (msg.match(/already exists|conflict|duplicate/i)) return "CONFLICT";
+  if (msg.match(/validation|invalid.*field|missing.*required|malformed.*json/i)) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}
+
+// ============================================================================
 // Create Hono App
 // ============================================================================
 
@@ -218,8 +260,19 @@ function createApp(modelManager: ModelManager, sessionAdapter: SessionAdapter): 
 
   // --- Global error handler ---
   app.onError((err, c) => {
-    console.error("[api-gateway] Unhandled error:", err);
-    return c.json({ error: "Internal server error", code: "INTERNAL_ERROR" } satisfies ApiError, 500);
+    const status = classifyErrorStatus(err);
+    const code = classifyErrorCode(err);
+    const message = status === 500
+      ? "Internal server error"
+      : (err instanceof Error ? err.message : "Request error");
+
+    if (status >= 500) {
+      console.error("[api-gateway] Unhandled error:", err);
+    } else {
+      console.warn(`[api-gateway] Client error (${status}):`, err.message);
+    }
+
+    return c.json({ error: message, code } satisfies ApiError, status as 400 | 401 | 403 | 404 | 409 | 422 | 500);
   });
 
   return app;
