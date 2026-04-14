@@ -7,7 +7,13 @@ REST API and WebSocket protocol for FAN server mode.
 Start the FAN server:
 
 ```bash
-fna server
+fna --web
+```
+
+Or equivalently:
+
+```bash
+fna --mode server
 ```
 
 The API is available at:
@@ -18,10 +24,12 @@ The API is available at:
 | WebSocket   | `ws://localhost:3456/api/ws/{sessionId}` |
 | Health      | `http://localhost:3456/api/health`     |
 
-Change the port with the `PORT` environment variable:
+Change the port with the `--port` flag or `PORT` environment variable:
 
 ```bash
-PORT=8080 fna server
+fna --web --port 8080
+# Or:
+PORT=8080 fna --web
 ```
 
 ## Authentication
@@ -47,7 +55,7 @@ curl http://localhost:3456/api/sessions?token=fan_tk_abc123...
 For local development or trusted networks, disable auth entirely:
 
 ```bash
-FAN_NO_AUTH=1 fna server
+FAN_NO_AUTH=1 fna --web
 ```
 
 > ⚠️ Disabling auth exposes all endpoints without any access control. Use only in trusted environments.

@@ -56,7 +56,7 @@ Runtime: Bun · Monorepo: npm workspaces · Core: fan-ai + fan-agent-core + fan-
 - [x] Phase 4 — Orchestrator (delegate_task tool, 4 workers, 3 workflows, slash commands, 29 tests)
 - [x] Phase 5 — Orchestrator Hardening (coordinator mode, task widget, /plan, config, workers, permissions, retry/fallback)
 - [x] Phase 6 — Dashboard Client (Lit web UI, model settings, budget viz)
-- [x] Phase 7 — Polish & release (CLI packaging, init wizard, doctor, docs, migration)
+- [x] Phase 7 — Polish & release (CLI packaging, init wizard, doctor, docs, migration, `--web` flag, CI/CD delivery)
 
 ## Phase 6 Dashboard — Architecture Notes
 - **WebUI is a thin frontend.** Disk (JSONL) = single source of truth. No in-memory session stores.
@@ -70,6 +70,10 @@ Runtime: Bun · Monorepo: npm workspaces · Core: fan-ai + fan-agent-core + fan-
 - **`models.json`** is global-only: `~/.fan/agent/models.json` (hardcoded path). Project `.fan/models.json` is unread.
 - **Model Settings** (temperature, maxTokens, thinking): stored in Prisma DB, not in models.json. Created via WebUI.
 
+## CLI Flags
+- `--web` — Start API server + web dashboard (recommended entry point)
+- `--mode server` — Equivalent to `--web`
+
 ## Test Instructions
 - Dashboard: `docs/develop/tests/dashboard-phase6.md`
 - Orchestrator: `docs/develop/tests/orchestrator-phase4.md`
@@ -79,4 +83,4 @@ Runtime: Bun · Monorepo: npm workspaces · Core: fan-ai + fan-agent-core + fan-
 - CLI: `fna` — interactive TUI mode
 - Setup wizard: `fna init` — first-time configuration
 - Diagnostics: `fna doctor` — environment and dependency checks
-- Server mode: `fna --mode server` — API server + dashboard
+- Server mode: `fna --web` (or `fna --mode server`) — API server + dashboard

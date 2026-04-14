@@ -37,7 +37,8 @@ fna doctor        # Verify installation
 ```bash
 fna               # Interactive TUI mode
 fna -p "prompt"   # Single prompt
-fna --mode server # Start API server + dashboard
+fna --web         # Start API server + dashboard (easiest way)
+fna --mode server # Start API server + dashboard (equivalent to --web)
 ```
 
 ## Documentation
@@ -121,13 +122,21 @@ budget)  │
 Server mode exposes 14 REST endpoints + WebSocket streaming:
 
 ```bash
-fna --mode server --port 3456
+fna --web              # Start API server + dashboard (recommended)
+fna --mode server      # Equivalent to --web
+fna --web --port 3000  # Custom port
 ```
 
 Key endpoints: `GET /api/health`, `POST /api/sessions/:id/messages`,
 `GET /api/models`, `GET /api/budget`, `WS /api/ws/:sessionId`
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) for full details.
+
+### Delivery
+
+Pre-built binaries for all platforms (Windows, Linux, macOS) are available from
+[GitHub Releases](https://github.com/user/fan/releases), created automatically
+by CI/CD on every release. See [INSTALL.md](INSTALL.md) for download links.
 
 ## Development
 

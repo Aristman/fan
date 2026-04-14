@@ -12,13 +12,29 @@ The FAN dashboard is a Lit-based web UI that connects to the FAN server via HTTP
 
 ## Starting the Dashboard
 
-### Server Mode (Integrated)
+### `--web` Flag (Recommended)
+
+```bash
+fna --web
+```
+
+Dashboard available at **http://localhost:3456**. This is the easiest way — starts both the API server and the dashboard frontend in one command.
+
+### Server Mode (Equivalent)
 
 ```bash
 fna --mode server
 ```
 
-Dashboard available at **http://localhost:3456**. This is the recommended way — the FAN server hosts both the API and the dashboard frontend.
+Same as `--web` — starts the API server with the integrated dashboard at **http://localhost:3456**.
+
+### API-Only Server
+
+If you want the API server without the dashboard frontend (e.g., for headless or IDE-only usage):
+
+```bash
+fna --mode server --no-dashboard
+```
 
 ### Dev Mode (Separate)
 
@@ -26,7 +42,7 @@ Dashboard available at **http://localhost:3456**. This is the recommended way �
 cd packages/dashboard && npm run dev
 ```
 
-Dashboard available at **http://localhost:5174**. Requires a running FAN server (`fna --mode server`) for the API backend. Use this during development to get HMR and Vite tooling.
+Dashboard available at **http://localhost:5174**. Requires a running FAN server (`fna --web` or `fna --mode server`) for the API backend. Use this during development to get HMR and Vite tooling.
 
 ## First Launch
 

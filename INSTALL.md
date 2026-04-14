@@ -23,6 +23,7 @@ Complete installation instructions for FAN (Filin Agent Next) — a local AI run
 
 ### Step 1: Download
 
+Pre-built binaries are created automatically by CI/CD on every release.
 Go to [GitHub Releases](https://github.com/user/fan/releases) and download for your platform:
 
 | Platform | File |
@@ -100,6 +101,10 @@ $env:Path += ";$env:USERPROFILE\bin\fna"
 ```bash
 fna --version
 # fna v1.0.0
+
+# Verify the web dashboard works
+fna --web
+# → Dashboard available at http://localhost:3456
 ```
 
 ---
@@ -236,14 +241,17 @@ Checks binary version, config files, API key reachability, default model respons
 ## Quick Start
 
 ```bash
+# Web dashboard (recommended — API server + UI)
+fna --web
+
 # Interactive TUI
 fna
 
-# API server with web dashboard (http://localhost:5174)
+# API server with web dashboard (equivalent to --web)
 fna --mode server
 
 # Custom port
-fna --mode server --port 3000
+fna --web --port 3000
 
 # Run diagnostics
 fna doctor

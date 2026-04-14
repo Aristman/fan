@@ -17,6 +17,12 @@ The fastest way to get started:
    ```
 4. Start using FAN:
    ```bash
+   # Web dashboard (recommended)
+   fna --web
+   # → Dashboard available at http://localhost:3456
+   ```
+   Or use the interactive TUI:
+   ```bash
    fna
    ```
 
@@ -247,19 +253,22 @@ EOF
 ## Run
 
 ```bash
+# Web dashboard (recommended — API server + UI)
+fna --web
+
 # Interactive TUI
 fna
 
-# Server mode (REST + WebSocket)
+# Server mode (API-only, equivalent to --web)
 fna --mode server --port 3456
 
 # Single prompt
 fna -p "Hello, world!"
 
 # Server without auth (dev)
-FAN_NO_AUTH=1 fna --mode server --port 3456
+FAN_NO_AUTH=1 fna --web --port 3456
 
-# Dashboard (separate terminal)
+# Dashboard dev mode (separate terminal, HMR)
 cd packages/dashboard && npm run dev
 # → http://localhost:5174
 ```
