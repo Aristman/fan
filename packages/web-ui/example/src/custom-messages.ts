@@ -1,7 +1,7 @@
-import { Alert } from "@mariozechner/mini-lit/dist/Alert.js";
 import type { Message } from "@itone/fan-ai";
 import type { AgentMessage, MessageRenderer } from "@itone/fan-web-ui";
 import { defaultConvertToLlm, registerMessageRenderer } from "@itone/fan-web-ui";
+import { Alert } from "@mariozechner/mini-lit/dist/Alert.js";
 import { html } from "lit";
 
 // ============================================================================

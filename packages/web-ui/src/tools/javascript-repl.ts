@@ -1,6 +1,6 @@
-import { i18n } from "@mariozechner/mini-lit";
 import type { AgentTool } from "@itone/fan-agent-core";
 import type { ToolResultMessage } from "@itone/fan-ai";
+import { i18n } from "@mariozechner/mini-lit";
 import { type Static, Type } from "@sinclair/typebox";
 import { html } from "lit";
 import { createRef, ref } from "lit/directives/ref.js";
