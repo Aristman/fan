@@ -1,3 +1,3 @@
-export { getPrismaClient, closePrismaClient } from "./client.js";
-export { Prisma } from "@prisma/client";
 export type { PrismaClient } from "@prisma/client";
+export { Prisma } from "@prisma/client";
+export { closePrismaClient, getPrismaClient } from "./client.js";

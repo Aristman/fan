@@ -1,7 +1,7 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { FallbackChain } from "../fallback.js";
-import { FallbackError } from "../types.js";
 import type { ModelRoute } from "../types.js";
+import { FallbackError } from "../types.js";
 
 describe("FallbackChain", () => {
 	const primary: ModelRoute = { provider: "anthropic", model: "claude-sonnet" };
@@ -22,10 +22,7 @@ describe("FallbackChain", () => {
 
 	it("falls back on retryable error", async () => {
 		const chain = new FallbackChain({ config: { maxRetries: 1, baseDelayMs: 1 } }); // minimal delay for tests
-		const fn = vi
-			.fn()
-			.mockRejectedValueOnce(new Error("429 rate limit exceeded"))
-			.mockResolvedValueOnce("recovered");
+		const fn = vi.fn().mockRejectedValueOnce(new Error("429 rate limit exceeded")).mockResolvedValueOnce("recovered");
 
 		const result = await chain.execute(primary, [fallback1], fn);
 		expect(result.result).toBe("recovered");

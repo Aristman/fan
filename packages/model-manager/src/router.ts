@@ -1,5 +1,12 @@
-import type { TaskType, ModelRoute, RoutingPreset, RoutingRuleData, ModelSettingData, ProviderRouterOptions } from "./types.js";
 import * as db from "./db.js";
+import type {
+	ModelRoute,
+	ModelSettingData,
+	ProviderRouterOptions,
+	RoutingPreset,
+	RoutingRuleData,
+	TaskType,
+} from "./types.js";
 
 /** Default routing presets as fallback when no DB rules match */
 const DEFAULT_PRESETS: RoutingPreset[] = [
@@ -43,30 +50,62 @@ export class ProviderRouter {
 	}
 
 	/** Map raw DB rule to RoutingRuleData (normalizes null → undefined) */
-	private normalizeRule(raw: { id: string; name: string; provider: string; model: string; fallback?: string | null; enabled: boolean }): RoutingRuleData {
+	private normalizeRule(raw: {
+		id: string;
+		name: string;
+		provider: string;
+		model: string;
+		fallback?: string | null;
+		enabled: boolean;
+	}): RoutingRuleData {
 		return { ...raw, fallback: raw.fallback ?? undefined };
 	}
 
 	/** Map raw DB setting to ModelSettingData (normalizes null → undefined) */
-	private normalizeSetting(raw: { id: string; provider: string; model: string; temperature: number | null; maxTokens: number | null; thinking: string | null; isDefault: boolean; priority: number | null }): ModelSettingData {
+	private normalizeSetting(raw: {
+		id: string;
+		provider: string;
+		model: string;
+		temperature: number | null;
+		maxTokens: number | null;
+		thinking: string | null;
+		isDefault: boolean;
+		priority: number | null;
+	}): ModelSettingData {
 		return { ...raw, priority: raw.priority ?? 0 };
 	}
 
 	/** Load rules and settings from DB. Called lazily or via rebuild(). */
 	async load(): Promise<void> {
 		try {
-			let rawRules: Array<{ id: string; name: string; provider: string; model: string; fallback: string | null | undefined; enabled: boolean }>;
-			let rawSettings: Array<{ id: string; provider: string; model: string; temperature: number | null; maxTokens: number | null; thinking: string | null; isDefault: boolean; priority: number | null }>;
+			let rawRules: Array<{
+				id: string;
+				name: string;
+				provider: string;
+				model: string;
+				fallback: string | null | undefined;
+				enabled: boolean;
+			}>;
+			let rawSettings: Array<{
+				id: string;
+				provider: string;
+				model: string;
+				temperature: number | null;
+				maxTokens: number | null;
+				thinking: string | null;
+				isDefault: boolean;
+				priority: number | null;
+			}>;
 
 			if (this.dbAdapter) {
-				rawRules = await this.dbAdapter.getRoutingRules() as typeof rawRules;
-				rawSettings = await this.dbAdapter.getAllModelSettings() as typeof rawSettings;
+				rawRules = (await this.dbAdapter.getRoutingRules()) as typeof rawRules;
+				rawSettings = (await this.dbAdapter.getAllModelSettings()) as typeof rawSettings;
 			} else {
-				rawRules = await db.getRoutingRules() as typeof rawRules;
-				rawSettings = await db.getAllModelSettings() as typeof rawSettings;
+				rawRules = (await db.getRoutingRules()) as typeof rawRules;
+				rawSettings = (await db.getAllModelSettings()) as typeof rawSettings;
 			}
 
-			this.dbRules = rawRules.map(r => this.normalizeRule(r));
+			this.dbRules = rawRules.map((r) => this.normalizeRule(r));
 			this.modelSettings.clear();
 			for (const s of rawSettings) {
 				const normalized = this.normalizeSetting(s);
@@ -97,22 +136,24 @@ export class ProviderRouter {
 		if (customPreset) return customPreset.route;
 
 		// 2. Check enabled DB rules matching taskType
-		const dbRule = this.dbRules.find(r => r.name === taskType && r.enabled);
+		const dbRule = this.dbRules.find((r) => r.name === taskType && r.enabled);
 		if (dbRule) {
 			return { provider: dbRule.provider, model: dbRule.model };
 		}
 
 		// 3. Check DEFAULT_PRESETS
-		const defaultPreset = DEFAULT_PRESETS.find(p => p.name === taskType);
+		const defaultPreset = DEFAULT_PRESETS.find((p) => p.name === taskType);
 		if (defaultPreset) return defaultPreset.route;
 
 		// 4. Fallback to "coding"
-		const codingPreset = this.customPresets.get("coding") ?? DEFAULT_PRESETS.find(p => p.name === "coding");
+		const codingPreset = this.customPresets.get("coding") ?? DEFAULT_PRESETS.find((p) => p.name === "coding");
 		return codingPreset?.route ?? { provider: "anthropic", model: "claude-sonnet-4-20250514" };
 	}
 
 	/** Resolve route and also get model settings overrides */
-	async resolveWithSettings(taskType: TaskType | string): Promise<{ route: ModelRoute; settings: Partial<ModelSettingData> | null }> {
+	async resolveWithSettings(
+		taskType: TaskType | string,
+	): Promise<{ route: ModelRoute; settings: Partial<ModelSettingData> | null }> {
 		const route = await this.resolve(taskType);
 		const settingKey = `${route.provider}/${route.model}`;
 		const setting = this.modelSettings.get(settingKey);
@@ -123,7 +164,7 @@ export class ProviderRouter {
 					temperature: setting.temperature,
 					maxTokens: setting.maxTokens,
 					thinking: setting.thinking ?? undefined,
-				}
+				},
 			};
 		}
 		return { route, settings: null };
@@ -138,13 +179,13 @@ export class ProviderRouter {
 		if (customPreset?.fallback) return customPreset.fallback;
 
 		// Check DB rules
-		const dbRule = this.dbRules.find(r => r.name === taskType && r.enabled);
+		const dbRule = this.dbRules.find((r) => r.name === taskType && r.enabled);
 		if (dbRule?.fallback) {
 			return this.parseFallbackString(dbRule.fallback, dbRule.provider);
 		}
 
 		// Check DEFAULT_PRESETS
-		const defaultPreset = DEFAULT_PRESETS.find(p => p.name === taskType);
+		const defaultPreset = DEFAULT_PRESETS.find((p) => p.name === taskType);
 		if (defaultPreset?.fallback) return defaultPreset.fallback;
 
 		return null;
@@ -157,7 +198,7 @@ export class ProviderRouter {
 		const customPreset = this.customPresets.get(taskType);
 		if (customPreset) return customPreset;
 
-		return DEFAULT_PRESETS.find(p => p.name === taskType) ?? null;
+		return DEFAULT_PRESETS.find((p) => p.name === taskType) ?? null;
 	}
 
 	/** List all available presets (default + custom + DB rules) */
@@ -169,7 +210,7 @@ export class ProviderRouter {
 			presets.push(custom);
 		}
 		for (const rule of this.dbRules) {
-			if (!presets.find(p => p.name === rule.name)) {
+			if (!presets.find((p) => p.name === rule.name)) {
 				presets.push({
 					name: rule.name as TaskType,
 					route: { provider: rule.provider, model: rule.model },

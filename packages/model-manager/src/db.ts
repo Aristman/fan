@@ -1,5 +1,5 @@
-import { getPrismaClient } from "@fan/db";
 import type { PrismaClient } from "@fan/db";
+import { getPrismaClient } from "@fan/db";
 
 /** Get Prisma client, throws if DB not available */
 function db(): PrismaClient {

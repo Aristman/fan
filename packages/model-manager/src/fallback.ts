@@ -1,4 +1,4 @@
-import type { ModelRoute, FallbackConfig, FallbackResult, FallbackChainOptions } from "./types.js";
+import type { FallbackChainOptions, FallbackConfig, FallbackResult, ModelRoute } from "./types.js";
 import { FallbackError } from "./types.js";
 
 const DEFAULT_CONFIG: FallbackConfig = {
@@ -70,18 +70,12 @@ export class FallbackChain {
 
 				// If this is the last attempt, throw FallbackError
 				if (i === maxAttempts - 1) {
-					throw new FallbackError(
-						allRoutes.slice(0, maxAttempts),
-						errors,
-					);
+					throw new FallbackError(allRoutes.slice(0, maxAttempts), errors);
 				}
 
 				// Classify error — if not retryable, throw immediately
 				if (!this.isRetryable(error, execConfig)) {
-					throw new FallbackError(
-						allRoutes.slice(0, i + 1),
-						errors,
-					);
+					throw new FallbackError(allRoutes.slice(0, i + 1), errors);
 				}
 
 				// Wait with exponential backoff + jitter before next attempt
@@ -127,7 +121,10 @@ export class FallbackChain {
 				return true;
 			}
 		}
-		if (typeof status === "string" && ["ECONNRESET", "ECONNREFUSED", "ETIMEDOUT", "ENOTFOUND"].includes(status.toUpperCase())) {
+		if (
+			typeof status === "string" &&
+			["ECONNRESET", "ECONNREFUSED", "ETIMEDOUT", "ENOTFOUND"].includes(status.toUpperCase())
+		) {
 			return true;
 		}
 
@@ -156,7 +153,7 @@ export class FallbackChain {
 	 * Calculate delay with exponential backoff + jitter.
 	 */
 	private calculateDelay(attempt: number, config: FallbackConfig): number {
-		const baseDelay = config.baseDelayMs * Math.pow(config.backoffFactor, attempt);
+		const baseDelay = config.baseDelayMs * config.backoffFactor ** attempt;
 		const clampedDelay = Math.min(baseDelay, config.maxDelayMs);
 		// Add jitter: ±25%
 		const jitter = clampedDelay * 0.25;
@@ -165,6 +162,6 @@ export class FallbackChain {
 	}
 
 	private sleep(ms: number): Promise<void> {
-		return new Promise(resolve => setTimeout(resolve, ms));
+		return new Promise((resolve) => setTimeout(resolve, ms));
 	}
 }

@@ -103,7 +103,10 @@ export class FallbackError extends Error {
 	public readonly errors: Array<{ route: ModelRoute; error: unknown }>;
 
 	constructor(attemptedRoutes: ModelRoute[], errors: Array<{ route: ModelRoute; error: unknown }>) {
-		const messages = errors.map((e, i) => `  [${i}] ${e.route.provider}/${e.route.model}: ${e.error instanceof Error ? e.error.message : String(e.error)}`);
+		const messages = errors.map(
+			(e, i) =>
+				`  [${i}] ${e.route.provider}/${e.route.model}: ${e.error instanceof Error ? e.error.message : String(e.error)}`,
+		);
 		super(`All fallback routes exhausted:\n${messages.join("\n")}`);
 		this.name = "FallbackError";
 		this.attemptedRoutes = attemptedRoutes;
@@ -123,16 +126,21 @@ export interface BudgetTrackerOptions {
 		getBudget: (provider: string | null, period: string) => Promise<any>;
 		getAllBudgets: () => Promise<any[]>;
 		updateBudgetUsage: (id: string, tokens: number, cost: number) => Promise<any>;
-		upsertBudgetConfig: (data: { provider?: string; period: string; tokenLimit?: number | null; costLimit?: number | null }) => Promise<any>;
+		upsertBudgetConfig: (data: {
+			provider?: string;
+			period: string;
+			tokenLimit?: number | null;
+			costLimit?: number | null;
+		}) => Promise<any>;
 		resetBudget: (id: string) => Promise<any>;
 	};
 	/** Alert handler called when thresholds are crossed */
 	onAlert?: BudgetAlertHandler;
 	/** Thresholds for alerts (as fractions of limit) */
 	thresholds?: {
-		warning: number;   // default: 0.8
-		critical: number;  // default: 0.95
-		exceeded: number;  // default: 1.0
+		warning: number; // default: 0.8
+		critical: number; // default: 0.95
+		exceeded: number; // default: 1.0
 	};
 }
 

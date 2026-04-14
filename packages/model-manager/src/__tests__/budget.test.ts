@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { BudgetTracker } from "../budget.js";
 import type { BudgetAlert } from "../types.js";
 
@@ -83,7 +83,7 @@ describe("BudgetTracker", () => {
 		// Configure limit
 		await tracker.configure({ provider: "anthropic", period: "daily", costLimit: 1.0 });
 		// Track to 80% = $0.80
-		await tracker.track("anthropic", 1000, 0.80);
+		await tracker.track("anthropic", 1000, 0.8);
 		expect(alertHandler).toHaveBeenCalledTimes(1);
 		expect((alertHandler.mock.calls[0][0] as BudgetAlert).type).toBe("warning");
 	});
@@ -119,7 +119,7 @@ describe("BudgetTracker", () => {
 	it("checkAll returns all configured budgets", async () => {
 		const tracker = new BudgetTracker({ db: mockDb });
 		await tracker.track("anthropic", 100, 0.05);
-		await tracker.track("openai", 200, 0.10);
+		await tracker.track("openai", 200, 0.1);
 		const all = await tracker.checkAll();
 		expect(all.length).toBeGreaterThanOrEqual(2);
 	});
