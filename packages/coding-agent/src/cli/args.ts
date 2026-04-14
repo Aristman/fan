@@ -177,6 +177,9 @@ export function parseArgs(args: string[]): Args {
 			} else {
 				result.host = hostStr;
 			}
+		} else if (arg === "--_server-daemon") {
+			// Internal flag: run server in daemon mode. Consumed silently.
+			result.mode = "server";
 		} else if (arg === "--offline") {
 			result.offline = true;
 		} else if (arg.startsWith("@")) {
@@ -230,6 +233,10 @@ ${chalk.bold("Commands:")}
   ${APP_NAME} config                    Open TUI to enable/disable package resources
   ${APP_NAME} init                      Run interactive setup wizard
   ${APP_NAME} doctor                    Run diagnostics and print health report
+  ${APP_NAME} server                Start API server
+  ${APP_NAME} server start         Start server as background daemon
+  ${APP_NAME} server stop          Stop background server
+  ${APP_NAME} server status        Check server status (use --json for machine-readable output)
   ${APP_NAME} <command> --help          Show help for install/remove/uninstall/update/list
 
 ${chalk.bold("Options:")}
@@ -317,6 +324,17 @@ ${chalk.bold("Examples:")}
 
   # Start as HTTP server (REST + WebSocket API)
   ${APP_NAME} --mode server --port 3456
+  ${APP_NAME} server --port 3456
+
+  # Start server as background daemon
+  ${APP_NAME} server start --port 8080
+
+  # Check if background server is running
+  ${APP_NAME} server status
+  ${APP_NAME} server status --json
+
+  # Stop background server
+  ${APP_NAME} server stop
 
   # Start server with dashboard (opens browser)
   ${APP_NAME} --web

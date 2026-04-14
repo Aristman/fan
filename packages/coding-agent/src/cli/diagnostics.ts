@@ -3,6 +3,7 @@
 
 import { accessSync, constants, existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { join } from "node:path";
 import { APP_NAME, getAgentDir, getModelsPath, getSessionsDir, getSettingsPath, VERSION } from "../config.js";
 
 interface DiagnosticResult {
@@ -196,7 +197,39 @@ export async function runDiagnostics(): Promise<boolean> {
 		});
 	}
 
-	// 9. Port availability (3456)
+	// 9. Background server status
+	const serverInfoPath = join(getAgentDir(), "server.json");
+	if (existsSync(serverInfoPath)) {
+		try {
+			const serverInfo = JSON.parse(readFileSync(serverInfoPath, "utf-8"));
+			// Import isProcessAlive from server-command
+			const { isProcessAlive } = await import("./server-command.js");
+			if (isProcessAlive(serverInfo.pid)) {
+				results.push({
+					name: "Background server",
+					status: "ok",
+					message: `Running (PID ${serverInfo.pid}, http://${serverInfo.host}:${serverInfo.port})`,
+				});
+			} else {
+				results.push({
+					name: "Background server",
+					status: "warn",
+					message: "Stale PID file found (server not running)",
+					detail: "Run 'fan server stop' or delete ~/.fan/agent/server.json manually",
+				});
+			}
+		} catch {
+			// ignore parse errors
+		}
+	} else {
+		results.push({
+			name: "Background server",
+			status: "ok",
+			message: "Not running (no server.json found)",
+		});
+	}
+
+	// 10. Port availability (3456)
 	try {
 		const net = await import("node:net");
 		const isAvailable = await new Promise<boolean>((resolve) => {
@@ -222,7 +255,7 @@ export async function runDiagnostics(): Promise<boolean> {
 		});
 	}
 
-	// 10. Version
+	// 11. Version
 	results.push({
 		name: "Version",
 		status: "ok",

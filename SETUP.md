@@ -9,24 +9,24 @@ The fastest way to get started:
 1. Install FAN (see [INSTALL.md](INSTALL.md) for platform-specific instructions)
 2. Run the setup wizard:
    ```bash
-   fna init
+   fan init
    ```
 3. Verify everything works:
    ```bash
-   fna doctor
+   fan doctor
    ```
 4. Start using FAN:
    ```bash
    # Web dashboard (recommended)
-   fna --web
+   fan --web
    # → Dashboard available at http://localhost:3456
    ```
    Or use the interactive TUI:
    ```bash
-   fna
+   fan
    ```
 
-The `fna init` wizard walks you through provider selection, API key configuration, budget limits, and thinking level. All settings are saved to `~/.fan/agent/` and can be edited manually later (see [Configuration](#configuration) below).
+The `fan init` wizard walks you through provider selection, API key configuration, budget limits, and thinking level. All settings are saved to `~/.fan/agent/` and can be edited manually later (see [Configuration](#configuration) below).
 
 ---
 
@@ -76,7 +76,7 @@ nvm use 24
 
 ## Manual Setup (Advanced)
 
-If you prefer to set up manually instead of using `fna init`, follow the steps below.
+If you prefer to set up manually instead of using `fan init`, follow the steps below.
 
 ### Clone & Install
 
@@ -127,7 +127,7 @@ Builds 10 packages sequentially: db → tui → ai → agent → model-manager �
 ### Verify installation
 
 ```bash
-fna doctor
+fan doctor
 ```
 
 This runs diagnostics on your Node version, native modules, configuration files, API keys, and available models. Fix any reported issues before proceeding.
@@ -168,7 +168,7 @@ FAN_OFFLINE=1           # Skip version checks
 | HuggingFace | `HF_TOKEN` |
 | Ollama / LM Studio | _(no key needed)_ |
 
-> **Tip:** Run `fna init` to configure API keys interactively instead of editing `.env` manually.
+> **Tip:** Run `fan init` to configure API keys interactively instead of editing `.env` manually.
 
 ### 2. Project Settings (`.fan/settings.json`)
 
@@ -253,20 +253,29 @@ EOF
 ## Run
 
 ```bash
-# Web dashboard (recommended — API server + UI)
-fna --web
-
 # Interactive TUI
-fna
+fan
+
+# Web dashboard (recommended — API server + UI)
+fan --web
+
+# Server in foreground
+fan server
+
+# Background daemon (for IDE plugins)
+fan server start
+
+# Check server status
+fan server status
 
 # Server mode (API-only, equivalent to --web)
-fna --mode server --port 3456
+fan --mode server --port 3456
 
 # Single prompt
-fna -p "Hello, world!"
+fan -p "Hello, world!"
 
 # Server without auth (dev)
-FAN_NO_AUTH=1 fna --web --port 3456
+FAN_NO_AUTH=1 fan --web --port 3456
 
 # Dashboard dev mode (separate terminal, HMR)
 cd packages/dashboard && npm run dev
@@ -292,11 +301,11 @@ chmod +x node_modules/.bin/*
 Make sure you run from project root, not from a subdirectory:
 ```bash
 # ❌ Wrong (from packages/db/)
-fna
+fan
 
 # ✅ Correct (from project root)
 cd ~/projects/fan
-fna
+fan
 ```
 
 ### Empty sessions in dashboard
@@ -317,7 +326,7 @@ export ANTHROPIC_AFAN_KEY=sk-...
 
 Exception: Z.AI uses `ZAI_API_KEY` (no suffix).
 
-### `fna init` fails
+### `fan init` fails
 - **Check Node version:** FAN requires Node.js ≥ 24.0. Run `node --version` to verify.
 - **Check disk permissions:** Ensure `~/.fan/agent/` is writable. Run:
   ```bash
@@ -325,11 +334,11 @@ Exception: Z.AI uses `ZAI_API_KEY` (no suffix).
   ```
 - **Check npm install:** If native modules are missing, run `npm install` from the project root first.
 
-### `fna doctor` shows errors
-Run `fna doctor` and follow the specific diagnostic advice for each item. Common fixes:
-- **"No config found"** → Run `fna init` to create default configuration.
+### `fan doctor` shows errors
+Run `fan doctor` and follow the specific diagnostic advice for each item. Common fixes:
+- **"No config found"** → Run `fan init` to create default configuration.
 - **"Native module missing"** → Install platform binding (see above).
-- **"No API keys configured"** → Add keys to `.env` or run `fna init`.
+- **"No API keys configured"** → Add keys to `.env` or run `fan init`.
 - **"No models available"** → Check API keys (see below) or add entries to `~/.fan/agent/models.json`.
 
 ### No models available
@@ -346,7 +355,7 @@ Run `fna doctor` and follow the specific diagnostic advice for each item. Common
 ### Port 3456 already in use
 Use the `--port` flag to specify a different port:
 ```bash
-fna --mode server --port 8080
+fan --mode server --port 8080
 ```
 
 To find what's using port 3456:
@@ -357,3 +366,8 @@ lsof -i :3456
 # Windows
 netstat -ano | findstr :3456
 ```
+
+### `fan server start` doesn't write PID file
+- Check that the binary has write access to ~/.fan/agent/
+- Check server.log in ~/.fan/agent/ for startup errors
+- Try running `fan server` in foreground first to see errors

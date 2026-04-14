@@ -114,10 +114,10 @@ packages/
 
 | Mode | Invocation | Description |
 |------|-----------|-------------|
-| TUI (default) | `fna` | Interactive terminal mode with fan-tui |
-| Print | `fna -p "..."` | Single-shot, then exit |
-| RPC | `fna --mode rpc` | JSON-over-stdio for IDE plugins |
-| Server | `fna --mode server` | HTTP REST + WebSocket on configurable port |
+| TUI (default) | `fan` | Interactive terminal mode with fan-tui |
+| Print | `fan -p "..."` | Single-shot, then exit |
+| RPC | `fan --mode rpc` | JSON-over-stdio for IDE plugins |
+| Server | `fan --mode server` | HTTP REST + WebSocket on configurable port |
 | SDK | `import { createFnaSession }` | Programmatic use as library |
 | Desktop | Electron/Tauri wrapper | Windowed app with embedded runtime |
 
@@ -543,16 +543,17 @@ model ClientToken {
 - **Bugs fixed during testing:** 18 (icons, theme, token sanitization, WS streaming, scroll, race conditions, session routing, sidebar events, tokens/cost display)
 
 ### Phase 7: Polish & Packaging (Day 20-22)
-- [x] CLI binary packaging (`fna` command)
+- [x] CLI binary packaging (`fan` command)
 - [x] Settings management (global + project)
 - [x] Error handling and resilience
 - [x] Documentation
 - [x] Optional: desktop wrapper prototype
 
 #### Phase 7 Results
-- **CLI binary:** `fna` command (renamed from `fan`), binary packaging via `scripts/build-binaries.sh`
-- **Setup wizard:** `fna init` — interactive first-time configuration (API keys, model defaults, preferences)
-- **Diagnostics:** `fna doctor` — environment and dependency health checks
+- **CLI binary:** `fan` command, binary packaging via `scripts/build-binaries.sh`
+- **Setup wizard:** `fan init` — interactive first-time configuration (API keys, model defaults, preferences)
+- **Diagnostics:** `fan doctor` — environment and dependency health checks
+- **Server command:** `fan server` — foreground server (full runtime), `fan server start/stop/status` — background daemon management for IDE plugins
 - **Environment template:** `.env.example` with all required/optional variables documented
 - **Installation guide:** `INSTALL.md` — Windows, Linux, macOS instructions
 - **Contributing guide:** `CONTRIBUTING.md` — development workflow, branch strategy, commit conventions
@@ -562,7 +563,7 @@ model ClientToken {
 - **Dashboard guide:** `docs/guides/dashboard.md` — WebUI features, settings, budget visualization
 - **API reference:** `docs/guides/api-reference.md` — REST + WebSocket endpoints, auth, events
 - **Updated core docs:** README.md, SETUP.md, CLAUDE.md, ARCHITECTURE.md — all reflect FAN branding and Phase 1-7 deliverables
-- **Build scripts:** `scripts/build-binaries.sh` updated for FAN branding and `fna` binary name
+- **Build scripts:** `scripts/build-binaries.sh` updated for FAN branding and `fan` binary name
 
 ## 11. Следующие шаги
 

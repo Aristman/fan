@@ -12,29 +12,37 @@ The FAN dashboard is a Lit-based web UI that connects to the FAN server via HTTP
 
 ## Starting the Dashboard
 
-### `--web` Flag (Recommended)
+### `fan --web` (Recommended)
 
 ```bash
-fna --web
+fan --web
 ```
 
-Dashboard available at **http://localhost:3456**. This is the easiest way — starts both the API server and the dashboard frontend in one command.
+Dashboard available at **http://localhost:3456**. This is the easiest way — starts both the API server and the dashboard frontend in one command, and auto-opens the browser.
 
-### Server Mode (Equivalent)
+### `fan server` (Foreground)
 
 ```bash
-fna --mode server
+fan server
 ```
 
-Same as `--web` — starts the API server with the integrated dashboard at **http://localhost:3456**.
+Starts the API server with the integrated dashboard in the foreground. Equivalent to `fan --web`.
 
-### API-Only Server
-
-If you want the API server without the dashboard frontend (e.g., for headless or IDE-only usage):
+### `fan --mode server` (API-Only, No Browser)
 
 ```bash
-fna --mode server --no-dashboard
+fan --mode server
 ```
+
+Starts the API server at **http://localhost:3456** without auto-opening the browser. Useful for headless or IDE-only usage.
+
+### `fan server start` (Background Daemon)
+
+```bash
+fan server start
+```
+
+Starts the server as a background daemon for IDE plugins and long-running sessions. Use `fan server stop` to stop and `fan server status` to check.
 
 ### Dev Mode (Separate)
 
@@ -42,7 +50,7 @@ fna --mode server --no-dashboard
 cd packages/dashboard && npm run dev
 ```
 
-Dashboard available at **http://localhost:5174**. Requires a running FAN server (`fna --web` or `fna --mode server`) for the API backend. Use this during development to get HMR and Vite tooling.
+Dashboard available at **http://localhost:5174**. Requires a running FAN server (`fan --web` or `fan --mode server`) for the API backend. Use this during development to get HMR and Vite tooling.
 
 ## First Launch
 

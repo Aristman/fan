@@ -94,7 +94,7 @@ Each step receives the previous step's output via the `{previous}` placeholder i
 
 ### Worker Isolation
 
-Workers run in separate `fna` subprocesses. They cannot see:
+Workers run in separate `fan` subprocesses. They cannot see:
 
 - The main conversation history
 - Other workers' outputs (unless passed via `context` or `{previous}`)

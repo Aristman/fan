@@ -28,25 +28,25 @@ Go to [GitHub Releases](https://github.com/user/fan/releases) and download for y
 
 | Platform | File |
 |----------|------|
-| macOS ARM (Apple Silicon) | `fna-darwin-arm64.tar.gz` |
-| macOS Intel | `fna-darwin-x64.tar.gz` |
-| Linux x64 | `fna-linux-x64.tar.gz` |
-| Linux ARM64 | `fna-linux-arm64.tar.gz` |
-| Windows x64 | `fna-windows-x64.zip` |
+| macOS ARM (Apple Silicon) | `fan-darwin-arm64.tar.gz` |
+| macOS Intel | `fan-darwin-x64.tar.gz` |
+| Linux x64 | `fan-linux-x64.tar.gz` |
+| Linux ARM64 | `fan-linux-arm64.tar.gz` |
+| Windows x64 | `fan-windows-x64.zip` |
 
 Or via command line:
 
 ```bash
 # macOS ARM
-curl -LO https://github.com/user/fan/releases/latest/download/fna-darwin-arm64.tar.gz
+curl -LO https://github.com/user/fan/releases/latest/download/fan-darwin-arm64.tar.gz
 # macOS Intel
-curl -LO https://github.com/user/fan/releases/latest/download/fna-darwin-x64.tar.gz
+curl -LO https://github.com/user/fan/releases/latest/download/fan-darwin-x64.tar.gz
 # Linux x64
-curl -LO https://github.com/user/fan/releases/latest/download/fna-linux-x64.tar.gz
+curl -LO https://github.com/user/fan/releases/latest/download/fan-linux-x64.tar.gz
 # Linux ARM64
-curl -LO https://github.com/user/fan/releases/latest/download/fna-linux-arm64.tar.gz
+curl -LO https://github.com/user/fan/releases/latest/download/fan-linux-arm64.tar.gz
 # Windows (PowerShell)
-Invoke-WebRequest -Uri https://github.com/user/fan/releases/latest/download/fna-windows-x64.zip -OutFile fna-windows-x64.zip
+Invoke-WebRequest -Uri https://github.com/user/fan/releases/latest/download/fan-windows-x64.zip -OutFile fan-windows-x64.zip
 ```
 
 > **Tip:** Check your architecture: `uname -m` on Linux/macOS (`arm64` = Apple Silicon/ARM64, `x86_64` = Intel/x64). On Windows: `echo %PROCESSOR_ARCHITECTURE%`.
@@ -57,13 +57,13 @@ Invoke-WebRequest -Uri https://github.com/user/fan/releases/latest/download/fna-
 
 ```bash
 mkdir -p ~/.local/bin && cd ~/.local/bin
-tar xzf ~/Downloads/fna-darwin-arm64.tar.gz   # replace with your platform file
+tar xzf ~/Downloads/fan-darwin-arm64.tar.gz   # replace with your platform file
 ```
 
 **Windows:**
 
 ```powershell
-Expand-Archive -Path .\fna-windows-x64.zip -DestinationPath $env:USERPROFILE\bin\fna
+Expand-Archive -Path .\fan-windows-x64.zip -DestinationPath $env:USERPROFILE\bin\fan
 ```
 
 ### Step 3: Add to PATH
@@ -83,27 +83,27 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
 **Linux (system-wide, no PATH editing needed):**
 
 ```bash
-sudo cp ~/.local/bin/fna /usr/local/bin/fna
+sudo cp ~/.local/bin/fan /usr/local/bin/fan
 ```
 
 **Windows (PowerShell — permanent):**
 
 ```powershell
 $currentPath = [Environment]::GetEnvironmentVariable("Path", "User")
-[Environment]::SetEnvironmentVariable("Path", "$currentPath;$env:USERPROFILE\bin\fna", "User")
-$env:Path += ";$env:USERPROFILE\bin\fna"
+[Environment]::SetEnvironmentVariable("Path", "$currentPath;$env:USERPROFILE\bin\fan", "User")
+$env:Path += ";$env:USERPROFILE\bin\fan"
 ```
 
-**Windows (GUI):** `Win+R` → `sysdm.cpl` → **Advanced** → **Environment Variables** → Edit user `Path` → Add `%USERPROFILE%\bin\fna` → Restart terminals.
+**Windows (GUI):** `Win+R` → `sysdm.cpl` → **Advanced** → **Environment Variables** → Edit user `Path` → Add `%USERPROFILE%\bin\fan` → Restart terminals.
 
 ### Step 4: Verify
 
 ```bash
-fna --version
-# fna v1.0.0
+fan --version
+# fan v1.0.0
 
 # Verify the web dashboard works
-fna --web
+fan --web
 # → Dashboard available at http://localhost:3456
 ```
 
@@ -160,24 +160,24 @@ Builds all 10 monorepo packages (1–3 minutes). Output should end with: `Build 
 ```bash
 # User-level
 mkdir -p ~/.local/bin
-ln -sf "$(pwd)/packages/fan-tui/dist/index.js" ~/.local/bin/fna
+ln -sf "$(pwd)/packages/fan-tui/dist/index.js" ~/.local/bin/fan
 # Or system-wide
-sudo ln -sf "$(pwd)/packages/fan-tui/dist/index.js" /usr/local/bin/fna
+sudo ln -sf "$(pwd)/packages/fan-tui/dist/index.js" /usr/local/bin/fan
 ```
 
 **Windows:**
 
 ```powershell
-$binDir = "$env:USERPROFILE\bin\fna"
+$binDir = "$env:USERPROFILE\bin\fan"
 New-Item -ItemType Directory -Force -Path $binDir | Out-Null
 @"
 @echo off
 node "$(Get-Location)\packages\fan-tui\dist\index.js" %*
-"@ | Out-File -Encoding ascii "$binDir\fna.cmd"
+"@ | Out-File -Encoding ascii "$binDir\fan.cmd"
 # Then add to PATH (see Method A, Step 3)
 ```
 
-Verify: `fna --version`.
+Verify: `fan --version`.
 
 ---
 
@@ -186,7 +186,7 @@ Verify: `fna --version`.
 ### Option A: Setup Wizard (Recommended)
 
 ```bash
-fna init
+fan init
 ```
 
 Interactive wizard guides you through provider selection, API key entry, model choice, and settings. Creates `~/.fan/agent/settings.json`, `~/.fan/agent/models.json`, and optionally `.env`.
@@ -231,7 +231,7 @@ EOF
 ## Verify Installation
 
 ```bash
-fna doctor
+fan doctor
 ```
 
 Checks binary version, config files, API key reachability, default model response, file permissions, and disk space. All checks should pass.
@@ -242,26 +242,35 @@ Checks binary version, config files, API key reachability, default model respons
 
 ```bash
 # Web dashboard (recommended — API server + UI)
-fna --web
+fan --web
 
 # Interactive TUI
-fna
+fan
+
+# Background daemon (for IDE plugins)
+fan server start
+
+# Server in foreground
+fan server
+
+# Check server status
+fan server status
 
 # API server with web dashboard (equivalent to --web)
-fna --mode server
+fan --mode server
 
 # Custom port
-fna --web --port 3000
+fan --web --port 3000
 
 # Run diagnostics
-fna doctor
+fan doctor
 
 # Interactive setup
-fna init
+fan init
 
 # Version / help
-fna --version
-fna --help
+fan --version
+fan --help
 ```
 
 **Slash commands (inside TUI):** `/plan <task>`, `/delegate <task>`, `/model <name>`, `/budget`, `/settings`, `/clear`, `/help`, `/quit`.
@@ -301,7 +310,7 @@ winget install Microsoft.VCRedist.2015+.x64
 **Gatekeeper blocking unsigned binary:**
 
 ```bash
-xattr -d com.apple.quarantine /path/to/fna
+xattr -d com.apple.quarantine /path/to/fan
 # Or: System Preferences → Security & Privacy → "Open Anyway"
 ```
 
@@ -309,7 +318,7 @@ xattr -d com.apple.quarantine /path/to/fna
 
 ### Linux
 
-**Permission denied:** `chmod +x ~/.local/bin/fna`
+**Permission denied:** `chmod +x ~/.local/bin/fan`
 
 **Missing image libraries:**
 
@@ -335,7 +344,7 @@ If `libvips.so` not found: `export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PA
 **macOS / Linux:**
 
 ```bash
-rm ~/.local/bin/fna                    # or: sudo rm /usr/local/bin/fna
+rm ~/.local/bin/fan                    # or: sudo rm /usr/local/bin/fan
 rm -rf ~/.fan/                         # config, sessions, database
 # In each project directory:
 rm -rf .fan/                           # project-level config
@@ -344,8 +353,8 @@ rm -rf .fan/                           # project-level config
 **Windows:**
 
 ```powershell
-Remove-Item -Recurse -Force "$env:USERPROFILE\bin\fna"
-# Remove from PATH: edit user Path variable, remove the fna entry
+Remove-Item -Recurse -Force "$env:USERPROFILE\bin\fan"
+# Remove from PATH: edit user Path variable, remove the fan entry
 Remove-Item -Recurse -Force "$env:USERPROFILE\.fan"
 # In each project directory:
 Remove-Item -Recurse -Force .fan
@@ -357,7 +366,7 @@ Remove-Item -Recurse -Force .fan
 
 | Removed item | Location | Contents |
 |-------------|----------|----------|
-| Binary | `~/.local/bin/fna` or `/usr/local/bin/fna` | Executable |
+| Binary | `~/.local/bin/fan` or `/usr/local/bin/fan` | Executable |
 | Config | `~/.fan/agent/` | Settings, models, API keys |
 | Sessions | `~/.fan/agent/sessions/` | Chat history (JSONL) |
 | Database | `~/.fan/agent/prisma/` | SQLite metadata |

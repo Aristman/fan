@@ -12,8 +12,10 @@
 - Web dashboard (Lit-based, real-time streaming)
 - Extension system & skill system
 - Session persistence (JSONL + SQLite metadata)
-- `fna init` setup wizard
-- `fna doctor` diagnostics
+- `fan init` setup wizard
+- `fan doctor` diagnostics
+- `fan server` command with start/stop/status subcommands (background daemon management)
+- Pre-built binary delivery (GitHub Releases, CI/CD)
 
 ## Quick Start
 
@@ -28,17 +30,20 @@ git clone <repo> && cd fan && npm install && npm run build
 ### Setup
 
 ```bash
-fna init          # Interactive setup wizard
-fna doctor        # Verify installation
+fan init          # Interactive setup wizard
+fan doctor        # Verify installation
 ```
 
 ### Use
 
 ```bash
-fna               # Interactive TUI mode
-fna -p "prompt"   # Single prompt
-fna --web         # Start API server + dashboard (easiest way)
-fna --mode server # Start API server + dashboard (equivalent to --web)
+fan               # Interactive TUI mode
+fan -p "prompt"   # Single prompt
+fan --web         # Server + dashboard (auto-opens browser)
+fan server        # Server in foreground (full runtime)
+fan server start  # Background daemon (for IDE plugins)
+fan server status # Check if server is running
+fan server stop   # Stop background server
 ```
 
 ## Documentation
@@ -63,11 +68,11 @@ fna --mode server # Start API server + dashboard (equivalent to --web)
 | @itone/fan-tui | 0.66.1 | Terminal UI components |
 | @itone/fan-web-ui | 0.66.1 | Web UI components |
 | @itone/fan-coding-agent | 0.66.1 | Main CLI package |
-| @fan/orchestrator | 0.1.0 | Multi-agent coordination |
-| @fan/model-manager | 0.1.0 | Model routing & budget |
-| @fan/api-gateway | 0.1.0 | REST/WS API server |
-| @fan/dashboard | 0.1.0 | Web dashboard |
-| @fan/db | 0.1.0 | Prisma/SQLite database |
+| @fan/orchestrator | 1.0.0 | Multi-agent coordination |
+| @fan/model-manager | 1.0.0 | Model routing & budget |
+| @fan/api-gateway | 1.0.0 | REST/WS API server |
+| @fan/dashboard | 1.0.0 | Web dashboard |
+| @fan/db | 1.0.0 | Prisma/SQLite database |
 
 ## Architecture
 
@@ -122,10 +127,14 @@ budget)  │
 Server mode exposes 14 REST endpoints + WebSocket streaming:
 
 ```bash
-fna --web              # Start API server + dashboard (recommended)
-fna --mode server      # Equivalent to --web
-fna --web --port 3000  # Custom port
+fan --web                  # Server + dashboard (auto-opens browser)
+fan server                 # Server in foreground
+fan server start           # Background daemon
+fan server start --port 3000  # Custom port
+fan --mode server          # API server only (no browser auto-open)
 ```
+
+`fan server` runs the **full runtime** (sessions, extensions, models, orchestrator) — all connected clients (dashboard, IDE plugins, API consumers) get the complete agent capabilities. Use `fan server start` for background daemon mode — ideal for IDE plugin integration. The daemon writes PID and metadata to `~/.fan/agent/server.json`.
 
 Key endpoints: `GET /api/health`, `POST /api/sessions/:id/messages`,
 `GET /api/models`, `GET /api/budget`, `WS /api/ws/:sessionId`
@@ -137,6 +146,8 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for full details.
 Pre-built binaries for all platforms (Windows, Linux, macOS) are available from
 [GitHub Releases](https://github.com/user/fan/releases), created automatically
 by CI/CD on every release. See [INSTALL.md](INSTALL.md) for download links.
+
+For IDE plugin integration, use `fan server start` to run the agent as a background daemon — it registers its PID and WebSocket endpoint so plugins can auto-connect.
 
 ## Development
 

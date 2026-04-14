@@ -8,7 +8,7 @@
 
 | Item          | Upstream (fan/pi) | FAN  |
 |---------------|--------------------|------|
-| Binary        | `fan` / `pi`       | `fna` |
+| Binary        | `fan` / `pi`       | `fan` |
 | Config dir    | `~/.fan/agent/`    | `~/.fan/agent/` (unchanged) |
 | Project config| `.fan/`            | `.fan/` (unchanged) |
 | Env vars      | `FAN_*`            | `FAN_*` (unchanged) |
@@ -21,8 +21,8 @@
 - **API gateway** — REST + WebSocket server mode for external UI clients
 - **Web dashboard** — Lit-based UI with model settings, budget visualization
 - **SQLite database** — Prisma-backed session metadata and model settings
-- **`fna doctor`** — diagnostics command to check system health
-- **`fna init`** — setup wizard for first-time configuration
+- **`fan doctor`** — diagnostics command to check system health
+- **`fan init`** — setup wizard for first-time configuration
 
 ### Removed from Upstream
 - `mom` package
@@ -40,7 +40,7 @@ Download the binary or build from source — see [INSTALL.md](./INSTALL.md) for 
 
 ```bash
 # Verify installation
-fna --version
+fan --version
 ```
 
 ### 2. Verify Config Compatibility
@@ -64,13 +64,13 @@ If you had an alias for `fan` or `pi`, update it:
 alias fan='fan'
 
 # After
-alias fna='fna'
+alias fan='fan'
 ```
 
 ### 4. Run Diagnostics
 
 ```bash
-fna doctor
+fan doctor
 ```
 
 This checks runtime dependencies, config validity, and database status.
@@ -79,13 +79,13 @@ This checks runtime dependencies, config validity, and database status.
 
 ```bash
 # Start API server (REST + WebSocket)
-fna --mode server
+fan server
 
 # Re-run setup wizard (optional)
-fna init
+fan init
 
 # Check system health
-fna doctor
+fan doctor
 ```
 
 ### 6. Explore New Configuration
@@ -119,7 +119,7 @@ FAN adds new settings on top of the existing `settings.json` format:
 
 ## Getting Help
 
-- `fna --help` — CLI usage and available commands
-- `fna doctor` — system diagnostics
+- `fan --help` — CLI usage and available commands
+- `fan doctor` — system diagnostics
 - [docs/guides/](./docs/guides/) — configuration guides
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — system architecture overview

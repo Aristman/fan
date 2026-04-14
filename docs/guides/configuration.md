@@ -299,6 +299,6 @@ Overrides use the same fields (all optional) and merge deeply with built-ins.
 
 ## Quick Setup
 
-Run **`fna init`** for an interactive setup wizard (provider, API keys, budget, thinking level).
+Run **`fan init`** for an interactive setup wizard (provider, API keys, budget, thinking level).
 
 Or use the **Dashboard** at `http://localhost:5174` (`cd packages/dashboard && npm run dev`) for a visual model settings, routing, and budget configuration UI.

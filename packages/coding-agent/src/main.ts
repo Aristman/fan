@@ -66,6 +66,46 @@ async function handleDoctorCommand(args: string[]): Promise<boolean> {
 	process.exit(ok ? 0 : 1);
 }
 
+async function handleServerCommand(args: string[]): Promise<boolean> {
+	if (args[0] !== "server") return false;
+
+	const subcommand = args[1];
+
+	if (subcommand === "status") {
+		const { serverStatus } = await import("./cli/server-command.js");
+		serverStatus();
+		return true;
+	}
+
+	if (subcommand === "stop") {
+		const { serverStop } = await import("./cli/server-command.js");
+		serverStop();
+		return true;
+	}
+
+	if (subcommand === "start") {
+		// Parse optional --port and --host from remaining args
+		let port: number | undefined;
+		let host: string | undefined;
+		for (let i = 2; i < args.length; i++) {
+			if (args[i] === "--port" && args[i + 1]) {
+				port = Number(args[++i]);
+			} else if (args[i] === "--host" && args[i + 1]) {
+				host = args[++i];
+			}
+		}
+		const { serverStart } = await import("./cli/server-command.js");
+		await serverStart(port, host);
+		return true;
+	}
+
+	// "fan server" without subcommand → rewrite to --mode server
+	// Remove "server" from args so parseArgs doesn't treat it as a message
+	args.splice(0, 1);
+	process.env.FAN_FORCE_SERVER_MODE = "1";
+	return false; // continue to normal flow
+}
+
 /**
  * Read all content from piped stdin.
  * Returns undefined if stdin is a TTY (interactive terminal).
@@ -366,7 +406,7 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 type AppMode = "interactive" | "print" | "json" | "rpc" | "server";
 
 function resolveAppMode(parsed: Args, stdinIsTTY: boolean): AppMode {
-	if (parsed.web || parsed.mode === "server") {
+	if (process.env.FAN_FORCE_SERVER_MODE === "1" || parsed.web || parsed.mode === "server") {
 		return "server";
 	}
 	if (parsed.mode === "rpc") {
@@ -718,6 +758,10 @@ export async function main(args: string[]) {
 		return;
 	}
 
+	if (await handleServerCommand(args)) {
+		return;
+	}
+
 	if (await handleConfigCommand(args)) {
 		return;
 	}
@@ -1024,10 +1068,24 @@ export async function main(args: string[]) {
 			host: parsed.host || "localhost",
 			dashboardDir: getDashboardDir(),
 		});
+
+		// Write server info for background management (daemon mode)
+		if (process.env.FAN_SERVER_DAEMON === "1") {
+			const { writeServerInfo } = await import("./cli/server-command.js");
+			const serverInfo = {
+				pid: process.pid,
+				port,
+				host: parsed.host || "localhost",
+				startTime: new Date().toISOString(),
+				dashboardDir: getDashboardDir(),
+			};
+			writeServerInfo(serverInfo);
+		}
+
 		console.log(`[fan] Server mode active — http://${parsed.host || "localhost"}:${port}`);
 
-		// Auto-open browser if --web flag was used
-		if (parsed.web) {
+		// Auto-open browser if --web flag was used (not in daemon mode)
+		if (parsed.web && process.env.FAN_SERVER_DAEMON !== "1") {
 			const url = `http://${parsed.host || "localhost"}:${port}`;
 			console.log(`[fan] Opening dashboard in browser: ${url}`);
 			try {

@@ -46,8 +46,9 @@ Runtime: Bun · Monorepo: npm workspaces · Core: fan-ai + fan-agent-core + fan-
 - `docs/guides/orchestrator.md` — orchestrator guide
 - `docs/guides/dashboard.md` — dashboard guide
 - `docs/guides/api-reference.md` — API documentation
-- `packages/coding-agent/src/cli/init-wizard.ts` — `fna init` setup wizard
-- `packages/coding-agent/src/cli/diagnostics.ts` — `fna doctor` diagnostics module
+- `packages/coding-agent/src/cli/init-wizard.ts` — `fan init` setup wizard
+- `packages/coding-agent/src/cli/diagnostics.ts` — `fan doctor` diagnostics module
+- `packages/coding-agent/src/cli/server-command.ts` — `fan server` lifecycle management (start/stop/status)
 
 ## Phase Progress
 - [x] Phase 1 — Project fork & setup (monorepo, renamed @fan/*, build pipeline)
@@ -56,7 +57,7 @@ Runtime: Bun · Monorepo: npm workspaces · Core: fan-ai + fan-agent-core + fan-
 - [x] Phase 4 — Orchestrator (delegate_task tool, 4 workers, 3 workflows, slash commands, 29 tests)
 - [x] Phase 5 — Orchestrator Hardening (coordinator mode, task widget, /plan, config, workers, permissions, retry/fallback)
 - [x] Phase 6 — Dashboard Client (Lit web UI, model settings, budget viz)
-- [x] Phase 7 — Polish & release (CLI packaging, init wizard, doctor, docs, migration, `--web` flag, CI/CD delivery)
+- [x] Phase 7 — Polish & release (CLI packaging, init wizard, doctor, server command, --web flag, CI/CD delivery, docs)
 
 ## Phase 6 Dashboard — Architecture Notes
 - **WebUI is a thin frontend.** Disk (JSONL) = single source of truth. No in-memory session stores.
@@ -70,9 +71,16 @@ Runtime: Bun · Monorepo: npm workspaces · Core: fan-ai + fan-agent-core + fan-
 - **`models.json`** is global-only: `~/.fan/agent/models.json` (hardcoded path). Project `.fan/models.json` is unread.
 - **Model Settings** (temperature, maxTokens, thinking): stored in Prisma DB, not in models.json. Created via WebUI.
 
-## CLI Flags
-- `--web` — Start API server + web dashboard (recommended entry point)
-- `--mode server` — Equivalent to `--web`
+## CLI Commands
+- `fan` — Interactive TUI mode (default)
+- `fan init` — First-time setup wizard
+- `fan doctor` — Environment and dependency checks
+- `fan server` — Start server in foreground (full runtime)
+- `fan server start` — Start background daemon (for IDE plugins)
+- `fan server stop` — Stop background daemon
+- `fan server status` — Check server status (--json for machine output)
+- `fan --web` — Server + dashboard, auto-opens browser
+- `--mode server` — Server without browser auto-open
 
 ## Test Instructions
 - Dashboard: `docs/develop/tests/dashboard-phase6.md`
@@ -80,7 +88,9 @@ Runtime: Bun · Monorepo: npm workspaces · Core: fan-ai + fan-agent-core + fan-
 - Quick build: `npm run build` (10 packages, 0 errors)
 - Quick test: `cd packages/orchestrator && npx vitest run` (95 tests)
 - Dashboard dev: `cd packages/dashboard && npm run dev` → http://localhost:5174
-- CLI: `fna` — interactive TUI mode
-- Setup wizard: `fna init` — first-time configuration
-- Diagnostics: `fna doctor` — environment and dependency checks
-- Server mode: `fna --web` (or `fna --mode server`) — API server + dashboard
+- CLI: `fan` — interactive TUI mode
+- Setup wizard: `fan init` — first-time configuration
+- Diagnostics: `fan doctor` — environment and dependency checks
+- Server mode: `fan server` — full runtime server
+- Background daemon: `fan server start` / `fan server stop` / `fan server status`
+- Web dashboard: `fan --web` — server + auto-open browser
