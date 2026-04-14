@@ -1,4 +1,4 @@
-# Backlog: Project Setup Wizard (`fna init`)
+# Backlog: Project Setup Wizard (`fan init`)
 
 ## Status: Proposed
 ## Priority: Medium
@@ -15,7 +15,7 @@ New users face a friction-heavy setup:
 
 ## Proposed Solution
 
-Create an interactive `fna init` command that guides users through first-time setup.
+Create an interactive `fan init` command that guides users through first-time setup.
 
 ### Features
 
@@ -44,7 +44,7 @@ Create an interactive `fna init` command that guides users through first-time se
 
 ### Acceptance Criteria
 
-- [ ] `fna init` (or `node scripts/setup-wizard.ts`) runs on fresh clone
+- [ ] `fan init` (or `node scripts/setup-wizard.ts`) runs on fresh clone
 - [ ] Detects and installs correct native TypeScript binding
 - [ ] Generates valid `.env`, `.fan/settings.json`, `~/.fan/agent/models.json`
 - [ ] `models.json` written to `~/.fan/agent/` (NOT project `.fan/` — project-level not supported)
