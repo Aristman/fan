@@ -15,14 +15,8 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
-import type {
-	Agent,
-	AgentEvent,
-	AgentMessage,
-	AgentState,
-	AgentTool,
-	ThinkingLevel,
-} from "@itone/fan-agent-core";
+import type { ModelManager } from "@fan/model-manager";
+import type { Agent, AgentEvent, AgentMessage, AgentState, AgentTool, ThinkingLevel } from "@itone/fan-agent-core";
 import type { AssistantMessage, ImageContent, Message, Model, TextContent } from "@itone/fan-ai";
 import { isContextOverflow, modelsAreEqual, resetApiProviders, supportsXhigh } from "@itone/fan-ai";
 import { getDocsPath } from "../config.js";
@@ -80,7 +74,6 @@ import { buildSystemPrompt } from "./system-prompt.js";
 import { type BashOperations, createLocalBashOperations } from "./tools/bash.js";
 import { createAllToolDefinitions } from "./tools/index.js";
 import { createToolDefinitionFromAgentTool, wrapToolDefinition } from "./tools/tool-definition-wrapper.js";
-import type { ModelManager } from "@fan/model-manager";
 
 // ============================================================================
 // Skill Block Parsing

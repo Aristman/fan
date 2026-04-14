@@ -209,11 +209,71 @@ export type RpcResponse =
 	  }
 
 	// FAN Model Management
-	| { id?: string; type: "response"; command: "get_routing_rules"; success: true; data: { rules: Array<{ id: string; name: string; provider: string; model: string; fallback?: string; enabled: boolean }> } }
-	| { id?: string; type: "response"; command: "get_budget_status"; success: true; data: { budgets: Array<{ provider: string; period: string; tokensUsed: number; costUsed: number; tokenLimit?: number; costLimit?: number; exceeded: boolean }> } }
-	| { id?: string; type: "response"; command: "get_model_settings"; success: true; data: { settings: Array<{ id: string; provider: string; model: string; temperature?: number | null; maxTokens?: number | null; thinking?: string | null; isDefault: boolean; priority: number }> } }
-	| { id?: string; type: "response"; command: "generate_token"; success: true; data: { token: { id: string; name: string; token: string; createdAt: string; lastUsed?: string } } }
-	| { id?: string; type: "response"; command: "list_tokens"; success: true; data: { tokens: Array<{ id: string; name: string; createdAt: string; lastUsed?: string }> } }
+	| {
+			id?: string;
+			type: "response";
+			command: "get_routing_rules";
+			success: true;
+			data: {
+				rules: Array<{
+					id: string;
+					name: string;
+					provider: string;
+					model: string;
+					fallback?: string;
+					enabled: boolean;
+				}>;
+			};
+	  }
+	| {
+			id?: string;
+			type: "response";
+			command: "get_budget_status";
+			success: true;
+			data: {
+				budgets: Array<{
+					provider: string;
+					period: string;
+					tokensUsed: number;
+					costUsed: number;
+					tokenLimit?: number;
+					costLimit?: number;
+					exceeded: boolean;
+				}>;
+			};
+	  }
+	| {
+			id?: string;
+			type: "response";
+			command: "get_model_settings";
+			success: true;
+			data: {
+				settings: Array<{
+					id: string;
+					provider: string;
+					model: string;
+					temperature?: number | null;
+					maxTokens?: number | null;
+					thinking?: string | null;
+					isDefault: boolean;
+					priority: number;
+				}>;
+			};
+	  }
+	| {
+			id?: string;
+			type: "response";
+			command: "generate_token";
+			success: true;
+			data: { token: { id: string; name: string; token: string; createdAt: string; lastUsed?: string } };
+	  }
+	| {
+			id?: string;
+			type: "response";
+			command: "list_tokens";
+			success: true;
+			data: { tokens: Array<{ id: string; name: string; createdAt: string; lastUsed?: string }> };
+	  }
 	| { id?: string; type: "response"; command: "revoke_token"; success: true }
 
 	// Error response (any command can fail)
