@@ -2,6 +2,28 @@
 
 Complete installation and configuration for Windows, Ubuntu (Linux), and macOS.
 
+## Quick Start (Recommended)
+
+The fastest way to get started:
+
+1. Install FAN (see [INSTALL.md](INSTALL.md) for platform-specific instructions)
+2. Run the setup wizard:
+   ```bash
+   fna init
+   ```
+3. Verify everything works:
+   ```bash
+   fna doctor
+   ```
+4. Start using FAN:
+   ```bash
+   fna
+   ```
+
+The `fna init` wizard walks you through provider selection, API key configuration, budget limits, and thinking level. All settings are saved to `~/.fan/agent/` and can be edited manually later (see [Configuration](#configuration) below).
+
+---
+
 ## Prerequisites
 
 | Tool | Version | Check |
@@ -44,7 +66,13 @@ nvm install 24
 nvm use 24
 ```
 
-## Clone & Install
+---
+
+## Manual Setup (Advanced)
+
+If you prefer to set up manually instead of using `fna init`, follow the steps below.
+
+### Clone & Install
 
 ```bash
 git clone https://oneproject.it-one.ru/stash/scm/ailab/fan.git
@@ -77,7 +105,7 @@ npm install @typescript/native-preview-darwin-x64 --save-dev
 npm install @typescript/native-preview-win32-x64 --save-dev
 ```
 
-## Build
+### Build
 
 ```bash
 npm run build
@@ -89,6 +117,16 @@ Builds 10 packages sequentially: db → tui → ai → agent → model-manager �
 > ```bash
 > cd packages/dashboard && npm run build
 > ```
+
+### Verify installation
+
+```bash
+fna doctor
+```
+
+This runs diagnostics on your Node version, native modules, configuration files, API keys, and available models. Fix any reported issues before proceeding.
+
+---
 
 ## Configuration
 
@@ -123,6 +161,8 @@ FAN_OFFLINE=1           # Skip version checks
 | Cerebras | `CEREBRAS_AFAN_KEY` |
 | HuggingFace | `HF_TOKEN` |
 | Ollama / LM Studio | _(no key needed)_ |
+
+> **Tip:** Run `fna init` to configure API keys interactively instead of editing `.env` manually.
 
 ### 2. Project Settings (`.fan/settings.json`)
 
@@ -202,30 +242,34 @@ EOF
 | `extensions/` | `~/.fan/agent/extensions/` | `<project>/.fan/extensions/` |
 | `memory/` | `~/.fan/agent/memory/` | `<project>/.fan/memory/` |
 
+---
+
 ## Run
 
 ```bash
 # Interactive TUI
-node packages/coding-agent/dist/cli.js
+fna
 
 # Server mode (REST + WebSocket)
-node packages/coding-agent/dist/cli.js --mode server --port 3456
+fna --mode server --port 3456
 
 # Single prompt
-node packages/coding-agent/dist/cli.js -p "Hello, world!"
+fna -p "Hello, world!"
 
 # Server without auth (dev)
-FAN_NO_AUTH=1 node packages/coding-agent/dist/cli.js --mode server --port 3456
+FAN_NO_AUTH=1 fna --mode server --port 3456
 
 # Dashboard (separate terminal)
 cd packages/dashboard && npm run dev
 # → http://localhost:5174
 ```
 
+---
+
 ## Troubleshooting
 
 ### `tsgo: Unable to resolve @typescript/native-preview-*`
-Install the native binding for your platform (see above). Run:
+Install the native binding for your platform (see [Manual Setup](#manual-setup-advanced)). Run:
 ```bash
 npm install @typescript/native-preview-<os>-<arch> --save-dev
 ```
@@ -239,11 +283,11 @@ chmod +x node_modules/.bin/*
 Make sure you run from project root, not from a subdirectory:
 ```bash
 # ❌ Wrong (from packages/db/)
-node packages/coding-agent/dist/cli.js
+fna
 
 # ✅ Correct (from project root)
 cd ~/projects/fan
-node packages/coding-agent/dist/cli.js
+fna
 ```
 
 ### Empty sessions in dashboard
@@ -263,3 +307,44 @@ export ANTHROPIC_AFAN_KEY=sk-...
 ```
 
 Exception: Z.AI uses `ZAI_API_KEY` (no suffix).
+
+### `fna init` fails
+- **Check Node version:** FAN requires Node.js ≥ 24.0. Run `node --version` to verify.
+- **Check disk permissions:** Ensure `~/.fan/agent/` is writable. Run:
+  ```bash
+  mkdir -p ~/.fan/agent && test -w ~/.fan/agent && echo "OK" || echo "PERMISSION DENIED"
+  ```
+- **Check npm install:** If native modules are missing, run `npm install` from the project root first.
+
+### `fna doctor` shows errors
+Run `fna doctor` and follow the specific diagnostic advice for each item. Common fixes:
+- **"No config found"** → Run `fna init` to create default configuration.
+- **"Native module missing"** → Install platform binding (see above).
+- **"No API keys configured"** → Add keys to `.env` or run `fna init`.
+- **"No models available"** → Check API keys (see below) or add entries to `~/.fan/agent/models.json`.
+
+### No models available
+1. Check that your API keys are set correctly in `.env`:
+   ```bash
+   grep _AFAN_KEY .env
+   ```
+2. Verify keys are valid by testing one:
+   ```bash
+   curl -H "x-api-key: $ANTHROPIC_AFAN_KEY" https://api.anthropic.com/v1/messages
+   ```
+3. If using custom providers, check that `~/.fan/agent/models.json` is valid JSON and the `baseUrl` is reachable.
+
+### Port 3456 already in use
+Use the `--port` flag to specify a different port:
+```bash
+fna --mode server --port 8080
+```
+
+To find what's using port 3456:
+```bash
+# Linux/macOS
+lsof -i :3456
+
+# Windows
+netstat -ano | findstr :3456
+```

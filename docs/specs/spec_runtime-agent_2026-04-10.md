@@ -3,7 +3,7 @@
 ## Метаданные
 - **Дата**: 2026-04-10
 - **Автор**: Specification Generator
-- **Статус**: Phase 1-6 завершены, Phase 7 в планировании
+- **Статус**: Phase 1-7 завершены ✅
 - **Версия**: 1.0
 - **Тип**: Модификация (pivot from web SaaS to local runtime-agent)
 
@@ -543,11 +543,26 @@ model ClientToken {
 - **Bugs fixed during testing:** 18 (icons, theme, token sanitization, WS streaming, scroll, race conditions, session routing, sidebar events, tokens/cost display)
 
 ### Phase 7: Polish & Packaging (Day 20-22)
-- [ ] CLI binary packaging (`fna` command)
-- [ ] Settings management (global + project)
-- [ ] Error handling and resilience
-- [ ] Documentation
-- [ ] Optional: desktop wrapper prototype
+- [x] CLI binary packaging (`fna` command)
+- [x] Settings management (global + project)
+- [x] Error handling and resilience
+- [x] Documentation
+- [x] Optional: desktop wrapper prototype
+
+#### Phase 7 Results
+- **CLI binary:** `fna` command (renamed from `fan`), binary packaging via `scripts/build-binaries.sh`
+- **Setup wizard:** `fna init` — interactive first-time configuration (API keys, model defaults, preferences)
+- **Diagnostics:** `fna doctor` — environment and dependency health checks
+- **Environment template:** `.env.example` with all required/optional variables documented
+- **Installation guide:** `INSTALL.md` — Windows, Linux, macOS instructions
+- **Contributing guide:** `CONTRIBUTING.md` — development workflow, branch strategy, commit conventions
+- **Migration guide:** `MIGRATION.md` — upstream fan/pi migration instructions
+- **Configuration guide:** `docs/guides/configuration.md` — settings reference (global + project)
+- **Orchestrator guide:** `docs/guides/orchestrator.md` — coordinator mode, workers, workflows, commands
+- **Dashboard guide:** `docs/guides/dashboard.md` — WebUI features, settings, budget visualization
+- **API reference:** `docs/guides/api-reference.md` — REST + WebSocket endpoints, auth, events
+- **Updated core docs:** README.md, SETUP.md, CLAUDE.md, ARCHITECTURE.md — all reflect FAN branding and Phase 1-7 deliverables
+- **Build scripts:** `scripts/build-binaries.sh` updated for FAN branding and `fna` binary name
 
 ## 11. Следующие шаги
 
@@ -559,6 +574,7 @@ model ClientToken {
 - [x] Phase 4 completed — orchestrator baseline functional
 - [x] Phase 5 — orchestrator hardening (parity with Pi sample)
 - [x] Phase 6 — Dashboard Client (Lit web UI, model settings, budget viz)
+- [x] Phase 7 — Polish & release (CLI packaging, init wizard, doctor, docs, migration)
 
 ---
 

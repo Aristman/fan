@@ -7,7 +7,7 @@
 - **Type:** Local AI runtime-agent for developers
 - **Base:** Fork of fan-mono (fan-coding-agent core)
 - **Repo:** Monorepo (npm workspaces, Bun, TypeScript)
-- **Stage:** Phase 6 — Dashboard Client ✅ (ready to merge)
+- **Stage:** Phase 7 — Polish & release ✅
 
 ## What It Is
 Runs locally on user's machine. Provides external API for multiple UI clients (TUI, WebView, IDEA plugin, etc.). Built on fan-coding-agent with custom orchestrator extension, model management, and all current extensions/skills.
@@ -38,6 +38,16 @@ Runtime: Bun · Monorepo: npm workspaces · Core: fan-ai + fan-agent-core + fan-
 - `docs/specs/MVP-SPEC.md` — superseded (web SaaS concept, archived)
 - `ARCHITECTURE.md` — architecture, packages, data flow
 - `docs/develop/tests/dashboard-phase6.md` — dashboard test report (26/30 passed)
+- `INSTALL.md` — installation guide (Windows/Linux/macOS)
+- `CONTRIBUTING.md` — contribution guide
+- `MIGRATION.md` — migration from upstream fan/pi
+- `.env.example` — environment variable template
+- `docs/guides/configuration.md` — settings reference
+- `docs/guides/orchestrator.md` — orchestrator guide
+- `docs/guides/dashboard.md` — dashboard guide
+- `docs/guides/api-reference.md` — API documentation
+- `packages/coding-agent/src/cli/init-wizard.ts` — `fna init` setup wizard
+- `packages/coding-agent/src/cli/diagnostics.ts` — `fna doctor` diagnostics module
 
 ## Phase Progress
 - [x] Phase 1 — Project fork & setup (monorepo, renamed @fan/*, build pipeline)
@@ -46,7 +56,7 @@ Runtime: Bun · Monorepo: npm workspaces · Core: fan-ai + fan-agent-core + fan-
 - [x] Phase 4 — Orchestrator (delegate_task tool, 4 workers, 3 workflows, slash commands, 29 tests)
 - [x] Phase 5 — Orchestrator Hardening (coordinator mode, task widget, /plan, config, workers, permissions, retry/fallback)
 - [x] Phase 6 — Dashboard Client (Lit web UI, model settings, budget viz)
-- [ ] Phase 7 — Polish & release (docs, examples, migration guide)
+- [x] Phase 7 — Polish & release (CLI packaging, init wizard, doctor, docs, migration)
 
 ## Phase 6 Dashboard — Architecture Notes
 - **WebUI is a thin frontend.** Disk (JSONL) = single source of truth. No in-memory session stores.
@@ -66,3 +76,7 @@ Runtime: Bun · Monorepo: npm workspaces · Core: fan-ai + fan-agent-core + fan-
 - Quick build: `npm run build` (10 packages, 0 errors)
 - Quick test: `cd packages/orchestrator && npx vitest run` (95 tests)
 - Dashboard dev: `cd packages/dashboard && npm run dev` → http://localhost:5174
+- CLI: `fna` — interactive TUI mode
+- Setup wizard: `fna init` — first-time configuration
+- Diagnostics: `fna doctor` — environment and dependency checks
+- Server mode: `fna --mode server` — API server + dashboard

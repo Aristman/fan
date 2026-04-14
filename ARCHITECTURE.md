@@ -182,8 +182,10 @@ Lit-based web UI client connecting to FAN API:
 |------|-----------|-------------|
 | TUI (default) | `fna` | Interactive terminal with fan-tui |
 | Print | `fna -p "..."` | Single-shot, then exit |
+| Init Wizard | `fna init` | First-time setup wizard (API keys, models, preferences) |
+| Diagnostics | `fna doctor` | Environment and dependency health checks |
 | RPC | `fna --mode rpc` | JSON-over-stdio for IDE plugins |
-| Server | `fna --mode server` | HTTP REST + WebSocket on configurable port |
+| Server | `fna --mode server` | HTTP REST + WebSocket + Dashboard on configurable port |
 | SDK | `import { createFnaSession }` | Programmatic use as library |
 | Desktop | Electron/Tauri wrapper | Windowed app with embedded runtime |
 
@@ -384,6 +386,35 @@ Task received
 - `packages/model-manager/` — routing, fallback, budgets
 - `packages/api-gateway/` — client API (stdio + HTTP)
 - `packages/dashboard/` — Lit UI client
+
+---
+
+## CLI Commands
+
+| Command | Description |
+|---------|-------------|
+| `fna` | Interactive TUI mode (default) |
+| `fna init` | Setup wizard — configure API keys, model providers, preferences |
+| `fna doctor` | Diagnostics — check environment, dependencies, config health |
+| `fna --mode server` | Start API server + dashboard web UI |
+| `fna -p "..."` | Single-shot print mode |
+| `fna --mode rpc` | JSON-over-stdio for IDE/plugin integration |
+
+---
+
+## Documentation
+
+| File | Description |
+|------|-------------|
+| [CLAUDE.md](./CLAUDE.md) | Quick context for LLM sessions |
+| [INSTALL.md](./INSTALL.md) | Installation guide (Windows, Linux, macOS) |
+| [CONTRIBUTING.md](./CONTRIBUTING.md) | Contribution guide |
+| [MIGRATION.md](./MIGRATION.md) | Migration from upstream fan/pi |
+| [.env.example](./.env.example) | Environment variable template |
+| [docs/guides/configuration.md](./docs/guides/configuration.md) | Settings reference |
+| [docs/guides/orchestrator.md](./docs/guides/orchestrator.md) | Orchestrator guide |
+| [docs/guides/dashboard.md](./docs/guides/dashboard.md) | Dashboard guide |
+| [docs/guides/api-reference.md](./docs/guides/api-reference.md) | API documentation |
 
 ---
 
