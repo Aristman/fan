@@ -24,7 +24,7 @@ describe("Cache Retention (FAN_CACHE_RETENTION)", () => {
 	};
 
 	describe("Anthropic Provider", () => {
-		it.skipIf(!process.env.ANTHROPIC_AFAN_KEY)(
+		it.skipIf(!process.env.ANTHROPIC_API_KEY)(
 			"should use default cache TTL (no ttl field) when FAN_CACHE_RETENTION is not set",
 			async () => {
 				const model = getModel("anthropic", "claude-3-5-haiku-20241022");
@@ -48,7 +48,7 @@ describe("Cache Retention (FAN_CACHE_RETENTION)", () => {
 			},
 		);
 
-		it.skipIf(!process.env.ANTHROPIC_AFAN_KEY)("should use 1h cache TTL when FAN_CACHE_RETENTION=long", async () => {
+		it.skipIf(!process.env.ANTHROPIC_API_KEY)("should use 1h cache TTL when FAN_CACHE_RETENTION=long", async () => {
 			process.env.FAN_CACHE_RETENTION = "long";
 			const model = getModel("anthropic", "claude-3-5-haiku-20241022");
 			let capturedPayload: any = null;
@@ -195,7 +195,7 @@ describe("Cache Retention (FAN_CACHE_RETENTION)", () => {
 	});
 
 	describe("OpenAI Responses Provider", () => {
-		it.skipIf(!process.env.OPENAI_AFAN_KEY)(
+		it.skipIf(!process.env.OPENAI_API_KEY)(
 			"should not set prompt_cache_retention when FAN_CACHE_RETENTION is not set",
 			async () => {
 				const model = getModel("openai", "gpt-4o-mini");
@@ -217,7 +217,7 @@ describe("Cache Retention (FAN_CACHE_RETENTION)", () => {
 			},
 		);
 
-		it.skipIf(!process.env.OPENAI_AFAN_KEY)(
+		it.skipIf(!process.env.OPENAI_API_KEY)(
 			"should set prompt_cache_retention to 24h when FAN_CACHE_RETENTION=long",
 			async () => {
 				process.env.FAN_CACHE_RETENTION = "long";

@@ -15,6 +15,7 @@ import { createInterface } from "node:readline";
 import { homedir } from "os";
 import { join, resolve } from "path";
 import { parseSessionEntries, type SessionMessageEntry } from "../packages/coding-agent/src/core/session-manager.js";
+import type { Message } from "../packages/ai/src/types.js";
 import chalk from "chalk";
 
 const MAX_CHARS_PER_FILE = 100_000; // ~20k tokens, leaving room for prompt + analysis + output
@@ -42,7 +43,7 @@ function parseSession(filePath: string): string[] {
 	for (const entry of entries) {
 		if (entry.type !== "message") continue;
 		const msgEntry = entry as SessionMessageEntry;
-		const { role, content } = msgEntry.message;
+		const { role, content } = msgEntry.message as Message;
 
 		if (role !== "user" && role !== "assistant") continue;
 

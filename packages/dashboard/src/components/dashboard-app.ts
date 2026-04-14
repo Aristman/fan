@@ -1,6 +1,6 @@
 // @fan/dashboard/components — root <dashboard-app> element
 
-import { LitElement, html, nothing } from "lit";
+import { html, LitElement, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { FanApiClient } from "../api/client.js";
 import { FanWsClient } from "../api/ws-client.js";
@@ -15,223 +15,223 @@ import "./model-settings-panel.js";
 
 @customElement("dashboard-app")
 export class DashboardApp extends LitElement {
-  // -----------------------------------------------------------------------
-  // Properties (set by parent bootstrap)
-  // -----------------------------------------------------------------------
+	// -----------------------------------------------------------------------
+	// Properties (set by parent bootstrap)
+	// -----------------------------------------------------------------------
 
-  @property() apiUrl = "";
-  @property() token = "";
+	@property() apiUrl = "";
+	@property() token = "";
 
-  // -----------------------------------------------------------------------
-  // State
-  // -----------------------------------------------------------------------
+	// -----------------------------------------------------------------------
+	// State
+	// -----------------------------------------------------------------------
 
-  @state() currentView: "chat" | "sessions" | "budget" | "models" | "settings" = "sessions";
-  @state() currentSessionId: string | null = null;
-  @state() sidebarOpen = true;
-  @state() connectionStatus: "connected" | "disconnected" | "error" = "connected";
-  @state() settingsOpen = false;
-  @state() currentModel: { provider: string; model: string } | null = null;
+	@state() currentView: "chat" | "sessions" | "budget" | "models" | "settings" = "sessions";
+	@state() currentSessionId: string | null = null;
+	@state() sidebarOpen = true;
+	@state() connectionStatus: "connected" | "disconnected" | "error" = "connected";
+	@state() settingsOpen = false;
+	@state() currentModel: { provider: string; model: string } | null = null;
 
-  // -----------------------------------------------------------------------
-  // Internal
-  // -----------------------------------------------------------------------
+	// -----------------------------------------------------------------------
+	// Internal
+	// -----------------------------------------------------------------------
 
-  private apiClient!: FanApiClient;
-  private wsClient!: FanWsClient;
-  private _boundHandleSessionSelected?: EventListener;
-  private _boundHandleSessionCreated?: EventListener;
-  private _boundHandleSessionDeleted?: EventListener;
-  private _boundHandleNavigate?: EventListener;
-  private _wsUnsubMessage: (() => void) | null = null;
-  private _wsUnsubStatus: (() => void) | null = null;
+	private apiClient!: FanApiClient;
+	private wsClient!: FanWsClient;
+	private _boundHandleSessionSelected?: EventListener;
+	private _boundHandleSessionCreated?: EventListener;
+	private _boundHandleSessionDeleted?: EventListener;
+	private _boundHandleNavigate?: EventListener;
+	private _wsUnsubMessage: (() => void) | null = null;
+	private _wsUnsubStatus: (() => void) | null = null;
 
-  // -----------------------------------------------------------------------
-  // Accessors for child components
-  // -----------------------------------------------------------------------
+	// -----------------------------------------------------------------------
+	// Accessors for child components
+	// -----------------------------------------------------------------------
 
-  get api(): FanApiClient {
-    return this.apiClient;
-  }
+	get api(): FanApiClient {
+		return this.apiClient;
+	}
 
-  get ws(): FanWsClient {
-    return this.wsClient;
-  }
+	get ws(): FanWsClient {
+		return this.wsClient;
+	}
 
-  // -----------------------------------------------------------------------
-  // No shadow DOM — Tailwind styles need to penetrate
-  // -----------------------------------------------------------------------
+	// -----------------------------------------------------------------------
+	// No shadow DOM — Tailwind styles need to penetrate
+	// -----------------------------------------------------------------------
 
-  override createRenderRoot(): this {
-    return this;
-  }
+	override createRenderRoot(): this {
+		return this;
+	}
 
-  // -----------------------------------------------------------------------
-  // Lifecycle
-  // -----------------------------------------------------------------------
+	// -----------------------------------------------------------------------
+	// Lifecycle
+	// -----------------------------------------------------------------------
 
-  override connectedCallback(): void {
-    super.connectedCallback();
+	override connectedCallback(): void {
+		super.connectedCallback();
 
-    // Create API & WS clients
-    this.apiClient = new FanApiClient({ baseUrl: this.apiUrl, token: this.token });
-    this.wsClient = new FanWsClient();
+		// Create API & WS clients
+		this.apiClient = new FanApiClient({ baseUrl: this.apiUrl, token: this.token });
+		this.wsClient = new FanWsClient();
 
-    // Subscribe to WS messages for budget alerts and model switches
-    this._wsUnsubMessage = this.wsClient.onMessage((msg) => {
-      if (msg.type === "budget_alert" && "alert" in msg) {
-        // Dispatch via window so budget-alert-toast (a child of dashboard-app,
-        // which has no shadow DOM) can pick it up via its window listener.
-        window.dispatchEvent(
-          new CustomEvent("fan:budget-alert", {
-            detail: msg.alert,
-            bubbles: true,
-            composed: true,
-          }),
-        );
-      }
-      if (msg.type === "model_switch" && "to" in msg) {
-        const to = (msg as { to: { provider: string; model: string } }).to;
-        this.currentModel = { provider: to.provider, model: to.model };
-      }
-    });
+		// Subscribe to WS messages for budget alerts and model switches
+		this._wsUnsubMessage = this.wsClient.onMessage((msg) => {
+			if (msg.type === "budget_alert" && "alert" in msg) {
+				// Dispatch via window so budget-alert-toast (a child of dashboard-app,
+				// which has no shadow DOM) can pick it up via its window listener.
+				window.dispatchEvent(
+					new CustomEvent("fan:budget-alert", {
+						detail: msg.alert,
+						bubbles: true,
+						composed: true,
+					}),
+				);
+			}
+			if (msg.type === "model_switch" && "to" in msg) {
+				const to = (msg as { to: { provider: string; model: string } }).to;
+				this.currentModel = { provider: to.provider, model: to.model };
+			}
+		});
 
-    this._wsUnsubStatus = this.wsClient.onStatusChange((status) => {
-      this.connectionStatus = status === "connected" ? "connected" : status === "error" ? "error" : "disconnected";
-    });
+		this._wsUnsubStatus = this.wsClient.onStatusChange((status) => {
+			this.connectionStatus = status === "connected" ? "connected" : status === "error" ? "error" : "disconnected";
+		});
 
-    // Listen for session events from child components
-    this._boundHandleSessionSelected = ((ev: CustomEvent) => {
-      const sessionId = ev.detail?.sessionId;
-      this.currentSessionId = sessionId;
-      if (sessionId) {
-        this.currentView = "chat";
-      }
-    }) as EventListener;
+		// Listen for session events from child components
+		this._boundHandleSessionSelected = ((ev: CustomEvent) => {
+			const sessionId = ev.detail?.sessionId;
+			this.currentSessionId = sessionId;
+			if (sessionId) {
+				this.currentView = "chat";
+			}
+		}) as EventListener;
 
-    this._boundHandleSessionCreated = ((ev: CustomEvent) => {
-      const sessionId = ev.detail?.sessionId;
-      this.currentSessionId = sessionId;
-      if (sessionId) {
-        this.currentView = "chat";
-      }
-    }) as EventListener;
+		this._boundHandleSessionCreated = ((ev: CustomEvent) => {
+			const sessionId = ev.detail?.sessionId;
+			this.currentSessionId = sessionId;
+			if (sessionId) {
+				this.currentView = "chat";
+			}
+		}) as EventListener;
 
-    this._boundHandleSessionDeleted = ((ev: CustomEvent) => {
-      const sessionId = ev.detail?.sessionId;
-      if (sessionId && this.currentSessionId === sessionId) {
-        this.currentSessionId = null;
-        this.currentView = "sessions";
-        this.wsClient.disconnect();
-      }
-    }) as EventListener;
+		this._boundHandleSessionDeleted = ((ev: CustomEvent) => {
+			const sessionId = ev.detail?.sessionId;
+			if (sessionId && this.currentSessionId === sessionId) {
+				this.currentSessionId = null;
+				this.currentView = "sessions";
+				this.wsClient.disconnect();
+			}
+		}) as EventListener;
 
-    this._boundHandleNavigate = ((ev: CustomEvent) => {
-      const view = ev.detail?.view;
-      if (view && ["chat", "sessions", "budget", "models", "settings"].includes(view)) {
-        this.currentView = view as typeof this.currentView;
-      }
-    }) as EventListener;
+		this._boundHandleNavigate = ((ev: CustomEvent) => {
+			const view = ev.detail?.view;
+			if (view && ["chat", "sessions", "budget", "models", "settings"].includes(view)) {
+				this.currentView = view as typeof this.currentView;
+			}
+		}) as EventListener;
 
-    this.addEventListener("fan:session-selected", this._boundHandleSessionSelected);
-    this.addEventListener("fan:session-created", this._boundHandleSessionCreated);
-    this.addEventListener("fan:session-deleted", this._boundHandleSessionDeleted);
-    this.addEventListener("fan:navigate", this._boundHandleNavigate);
-  }
+		this.addEventListener("fan:session-selected", this._boundHandleSessionSelected);
+		this.addEventListener("fan:session-created", this._boundHandleSessionCreated);
+		this.addEventListener("fan:session-deleted", this._boundHandleSessionDeleted);
+		this.addEventListener("fan:navigate", this._boundHandleNavigate);
+	}
 
-  override willUpdate(changed: Map<string, unknown>): void {
-    // Connect WS when currentSessionId changes to a non-null value
-    if (changed.has("currentSessionId")) {
-      this._connectWsToSession(this.currentSessionId);
-    }
-  }
+	override willUpdate(changed: Map<string, unknown>): void {
+		// Connect WS when currentSessionId changes to a non-null value
+		if (changed.has("currentSessionId")) {
+			this._connectWsToSession(this.currentSessionId);
+		}
+	}
 
-  override disconnectedCallback(): void {
-    this.wsClient.disconnect();
+	override disconnectedCallback(): void {
+		this.wsClient.disconnect();
 
-    if (this._wsUnsubMessage) {
-      this._wsUnsubMessage();
-      this._wsUnsubMessage = null;
-    }
-    if (this._wsUnsubStatus) {
-      this._wsUnsubStatus();
-      this._wsUnsubStatus = null;
-    }
-    if (this._boundHandleSessionSelected) {
-      this.removeEventListener("fan:session-selected", this._boundHandleSessionSelected);
-    }
-    if (this._boundHandleSessionCreated) {
-      this.removeEventListener("fan:session-created", this._boundHandleSessionCreated);
-    }
-    if (this._boundHandleSessionDeleted) {
-      this.removeEventListener("fan:session-deleted", this._boundHandleSessionDeleted);
-    }
-    if (this._boundHandleNavigate) {
-      this.removeEventListener("fan:navigate", this._boundHandleNavigate);
-    }
+		if (this._wsUnsubMessage) {
+			this._wsUnsubMessage();
+			this._wsUnsubMessage = null;
+		}
+		if (this._wsUnsubStatus) {
+			this._wsUnsubStatus();
+			this._wsUnsubStatus = null;
+		}
+		if (this._boundHandleSessionSelected) {
+			this.removeEventListener("fan:session-selected", this._boundHandleSessionSelected);
+		}
+		if (this._boundHandleSessionCreated) {
+			this.removeEventListener("fan:session-created", this._boundHandleSessionCreated);
+		}
+		if (this._boundHandleSessionDeleted) {
+			this.removeEventListener("fan:session-deleted", this._boundHandleSessionDeleted);
+		}
+		if (this._boundHandleNavigate) {
+			this.removeEventListener("fan:navigate", this._boundHandleNavigate);
+		}
 
-    super.disconnectedCallback();
-  }
+		super.disconnectedCallback();
+	}
 
-  // -----------------------------------------------------------------------
-  // WebSocket management
-  // -----------------------------------------------------------------------
+	// -----------------------------------------------------------------------
+	// WebSocket management
+	// -----------------------------------------------------------------------
 
-  private _connectWsToSession(sessionId: string | null): void {
-    if (!this.wsClient || !this.apiUrl || !this.token || !sessionId) return;
-    // Disconnect from previous session
-    this.wsClient.disconnect();
-    // Connect to new session
-    this.wsClient.connect(this.apiUrl, sessionId, this.token);
-  }
+	private _connectWsToSession(sessionId: string | null): void {
+		if (!this.wsClient || !this.apiUrl || !this.token || !sessionId) return;
+		// Disconnect from previous session
+		this.wsClient.disconnect();
+		// Connect to new session
+		this.wsClient.connect(this.apiUrl, sessionId, this.token);
+	}
 
-  // -----------------------------------------------------------------------
-  // Actions
-  // -----------------------------------------------------------------------
+	// -----------------------------------------------------------------------
+	// Actions
+	// -----------------------------------------------------------------------
 
-  private _openSettings(): void {
-    SettingsDialog.open(this.apiClient, this.apiUrl, this.token);
-  }
+	private _openSettings(): void {
+		SettingsDialog.open(this.apiClient, this.apiUrl, this.token);
+	}
 
-  private _toggleSidebar(): void {
-    this.sidebarOpen = !this.sidebarOpen;
-  }
+	private _toggleSidebar(): void {
+		this.sidebarOpen = !this.sidebarOpen;
+	}
 
-  private _closeSidebar(): void {
-    this.sidebarOpen = false;
-  }
+	private _closeSidebar(): void {
+		this.sidebarOpen = false;
+	}
 
-  private async _handleNewSession(): Promise<void> {
-    try {
-      const res = await this.apiClient.createSession();
-      this.currentSessionId = res.id;
-      this.currentView = "chat";
-      this.dispatchEvent(
-        new CustomEvent("fan:session-created", {
-          detail: { sessionId: res.id },
-          bubbles: true,
-          composed: true,
-        }),
-      );
-    } catch (err) {
-      console.error("Failed to create session", err);
-    }
-  }
+	private async _handleNewSession(): Promise<void> {
+		try {
+			const res = await this.apiClient.createSession();
+			this.currentSessionId = res.id;
+			this.currentView = "chat";
+			this.dispatchEvent(
+				new CustomEvent("fan:session-created", {
+					detail: { sessionId: res.id },
+					bubbles: true,
+					composed: true,
+				}),
+			);
+		} catch (err) {
+			console.error("Failed to create session", err);
+		}
+	}
 
-  // -----------------------------------------------------------------------
-  // Render
-  // -----------------------------------------------------------------------
+	// -----------------------------------------------------------------------
+	// Render
+	// -----------------------------------------------------------------------
 
-  override render() {
-    const statusDot =
-      this.connectionStatus === "connected"
-        ? "bg-green-500"
-        : this.connectionStatus === "error"
-          ? "bg-red-500"
-          : "bg-yellow-500";
+	override render() {
+		const statusDot =
+			this.connectionStatus === "connected"
+				? "bg-green-500"
+				: this.connectionStatus === "error"
+					? "bg-red-500"
+					: "bg-yellow-500";
 
-    // Sidebar content (shared between desktop and mobile)
-    const sidebarContent = html`
+		// Sidebar content (shared between desktop and mobile)
+		const sidebarContent = html`
       <session-sidebar
         .apiClient=${this.apiClient}
         .activeSessionId=${this.currentSessionId}
@@ -264,7 +264,7 @@ export class DashboardApp extends LitElement {
       </div>
     `;
 
-    return html`
+		return html`
       <div class="flex flex-col h-screen bg-background text-foreground overflow-hidden">
         <!-- ── Budget Alert Toasts (fixed) ─────────────────────────────── -->
         <budget-alert-toast></budget-alert-toast>
@@ -290,8 +290,9 @@ export class DashboardApp extends LitElement {
               <span class="w-2 h-2 rounded-full ${statusDot} inline-block"></span>
               ${this.connectionStatus}
             </span>
-            ${this.currentModel
-              ? html`
+            ${
+					this.currentModel
+						? html`
                   <span
                     class="hidden sm:inline text-[10px] px-1.5 py-0.5 rounded bg-foreground/5 text-muted-foreground font-mono"
                     title="Current model"
@@ -299,7 +300,8 @@ export class DashboardApp extends LitElement {
                     ${this.currentModel.provider}/${this.currentModel.model}
                   </span>
                 `
-              : nothing}
+						: nothing
+				}
           </div>
 
           <button
@@ -317,12 +319,14 @@ export class DashboardApp extends LitElement {
         <!-- ── Body (sidebar + main) ───────────────────────────────────── -->
         <div class="flex flex-1 min-h-0">
           <!-- Mobile backdrop -->
-          ${this.sidebarOpen
-            ? html`<div
+          ${
+					this.sidebarOpen
+						? html`<div
                 class="md:hidden fixed inset-0 z-20 bg-black/40"
                 @click=${this._closeSidebar}
               ></div>`
-            : ""}
+						: ""
+				}
 
           <!-- Desktop sidebar -->
           <aside
@@ -333,8 +337,9 @@ export class DashboardApp extends LitElement {
           </aside>
 
           <!-- Mobile sidebar overlay -->
-          ${this.sidebarOpen
-            ? html`
+          ${
+					this.sidebarOpen
+						? html`
                 <aside
                   class="md:hidden fixed inset-y-0 left-0 z-30 flex flex-col border-r border-border overflow-y-auto bg-background"
                   style="top: var(--header-height); width: var(--sidebar-width)"
@@ -342,34 +347,36 @@ export class DashboardApp extends LitElement {
                   ${sidebarContent}
                 </aside>
               `
-            : nothing}
+						: nothing
+				}
 
           <!-- Main area -->
           <main class="flex-1 min-w-0 overflow-hidden flex flex-col">
-            ${this.currentView === "chat" && this.currentSessionId
-              ? html`
+            ${
+					this.currentView === "chat" && this.currentSessionId
+						? html`
                   <chat-view
                     .apiClient=${this.apiClient}
                     .wsClient=${this.wsClient}
                     .sessionId=${this.currentSessionId}
                   ></chat-view>
                 `
-              : this.currentView === "budget"
-                ? html`
+						: this.currentView === "budget"
+							? html`
                     <div class="flex-1 overflow-y-auto p-6">
                       <h2 class="text-xl font-semibold mb-4">Budget Overview</h2>
                       <budget-panel .apiClient=${this.apiClient}></budget-panel>
                     </div>
                   `
-                : this.currentView === "models"
-                  ? html`
+							: this.currentView === "models"
+								? html`
                       <div class="flex-1 overflow-y-auto p-6">
                         <h2 class="text-xl font-semibold mb-4">Model Settings</h2>
                         <model-settings-panel .apiClient=${this.apiClient}></model-settings-panel>
                       </div>
                   `
-                  : this.currentView === "settings"
-                    ? html`
+								: this.currentView === "settings"
+									? html`
                         <div class="flex-1 overflow-y-auto p-6">
                           <h2 class="text-xl font-semibold mb-4">Settings</h2>
                           <p class="text-sm text-muted-foreground">
@@ -377,7 +384,7 @@ export class DashboardApp extends LitElement {
                           </p>
                         </div>
                       `
-                    : html`
+									: html`
                         <!-- Empty state / welcome -->
                         <div class="flex-1 flex items-center justify-center text-muted-foreground">
                           <div class="text-center">
@@ -394,15 +401,16 @@ export class DashboardApp extends LitElement {
                             <p class="text-sm">Use the sidebar to browse sessions</p>
                           </div>
                         </div>
-                      `}
+                      `
+				}
           </main>
         </div>
       </div>
     `;
-  }
+	}
 }
 
 // Guard against double-registration
 if (!customElements.get("dashboard-app")) {
-  customElements.define("dashboard-app", DashboardApp);
+	customElements.define("dashboard-app", DashboardApp);
 }

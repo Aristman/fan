@@ -1,7 +1,7 @@
 import { join } from "node:path";
+import { ModelManager } from "@fan/model-manager";
 import { Agent, type AgentMessage, type ThinkingLevel } from "@itone/fan-agent-core";
 import { type Message, type Model, streamSimple } from "@itone/fan-ai";
-import { ModelManager } from "@fan/model-manager";
 import { getAgentDir, getDocsPath } from "../config.js";
 import { AgentSession } from "./agent-session.js";
 import { AuthStorage } from "./auth-storage.js";

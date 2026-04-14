@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Build pi binaries for all platforms locally.
+# Build FAN (fan) binaries for all platforms locally.
 # Mirrors .github/workflows/build-binaries.yml
 #
 # Usage:
@@ -12,11 +12,11 @@
 #
 # Output:
 #   packages/coding-agent/binaries/
-#     pi-darwin-arm64.tar.gz
-#     pi-darwin-x64.tar.gz
-#     pi-linux-x64.tar.gz
-#     pi-linux-arm64.tar.gz
-#     pi-windows-x64.zip
+#     fan-darwin-arm64.tar.gz
+#     fan-darwin-x64.tar.gz
+#     fan-linux-x64.tar.gz
+#     fan-linux-arm64.tar.gz
+#     fan-windows-x64.zip
 
 set -euo pipefail
 
@@ -55,8 +55,25 @@ if [[ -n "$PLATFORM" ]]; then
     esac
 fi
 
+# Ensure bun is installed
+if ! command -v bun &>/dev/null; then
+    if [[ -x "$HOME/.bun/bin/bun" ]]; then
+        export BUN_INSTALL="$HOME/.bun"
+        export PATH="$BUN_INSTALL/bin:$PATH"
+    else
+        echo "==> bun not found, installing..."
+        curl -fsSL https://bun.sh/install | bash
+        export BUN_INSTALL="$HOME/.bun"
+        export PATH="$BUN_INSTALL/bin:$PATH"
+    fi
+fi
+echo "==> Using bun $(bun --version)"
+
+# Display version being built
+echo "==> FAN (fan) version: $(node -e "console.log(require('./package.json').version)")"
+
 echo "==> Installing dependencies..."
-npm ci
+npm install
 
 if [[ "$SKIP_DEPS" == "false" ]]; then
     echo "==> Installing cross-platform native bindings..."
@@ -86,7 +103,11 @@ fi
 echo "==> Building all packages..."
 npm run build
 
-echo "==> Building binaries..."
+# Build dashboard
+echo "Building dashboard..."
+npm run build:dashboard
+
+echo "==> Building FAN (fan) binaries..."
 cd packages/coding-agent
 
 # Clean previous builds
@@ -107,9 +128,37 @@ for platform in "${PLATFORMS[@]}"; do
     # call site has a try/catch fallback. For Windows builds, we copy the
     # appropriate .node file alongside the binary below.
     if [[ "$platform" == "windows-x64" ]]; then
-        bun build --compile --external koffi --target=bun-$platform ./dist/bun/cli.js --outfile binaries/$platform/pi.exe
+        bun build --compile --external koffi --target=bun-$platform ./dist/bun/cli.js --outfile binaries/$platform/fan.exe
     else
-        bun build --compile --external koffi --target=bun-$platform ./dist/bun/cli.js --outfile binaries/$platform/pi
+        bun build --compile --external koffi --target=bun-$platform ./dist/bun/cli.js --outfile binaries/$platform/fan
+    fi
+done
+
+echo "==> Bundling FAN-specific assets..."
+
+# Prepare orchestrator assets in a temp directory
+ORCH_ASSETS_DIR=$(mktemp -d)
+trap "rm -rf '$ORCH_ASSETS_DIR'" EXIT
+
+mkdir -p "$ORCH_ASSETS_DIR/orchestrator/agents"
+mkdir -p "$ORCH_ASSETS_DIR/orchestrator/prompts"
+
+# Copy orchestrator config
+if [[ -f ../../packages/orchestrator/src/config.json ]]; then
+    cp ../../packages/orchestrator/src/config.json "$ORCH_ASSETS_DIR/orchestrator/"
+fi
+
+# Copy agent definitions (if they exist)
+for f in ../../packages/orchestrator/src/agents/*.md; do
+    if [[ -f "$f" ]]; then
+        cp "$f" "$ORCH_ASSETS_DIR/orchestrator/agents/"
+    fi
+done
+
+# Copy prompt templates (if they exist)
+for f in ../../packages/orchestrator/src/prompts/*.md; do
+    if [[ -f "$f" ]]; then
+        cp "$f" "$ORCH_ASSETS_DIR/orchestrator/prompts/"
     fi
 done
 
@@ -129,12 +178,35 @@ for platform in "${PLATFORMS[@]}"; do
     cp -r docs binaries/$platform/
     cp -r examples binaries/$platform/
 
+    # Bundle FAN orchestrator assets
+    cp -r "$ORCH_ASSETS_DIR/orchestrator" binaries/$platform/
+
+    # Dashboard
+    echo "  Copying dashboard..."
+    mkdir -p binaries/$platform/dashboard
+    cp -r ../../packages/dashboard/dist/* binaries/$platform/dashboard/
+
     # Copy koffi native module for Windows (needed for VT input support)
     if [[ "$platform" == "windows-x64" ]]; then
         mkdir -p binaries/$platform/node_modules/koffi/build/koffi/win32_x64
         cp ../../node_modules/koffi/index.js binaries/$platform/node_modules/koffi/
         cp ../../node_modules/koffi/package.json binaries/$platform/node_modules/koffi/
         cp ../../node_modules/koffi/build/koffi/win32_x64/koffi.node binaries/$platform/node_modules/koffi/build/koffi/win32_x64/
+        prisma_engine="query_engine-windows.dll.node"
+    elif [[ "$platform" == "darwin-arm64" ]]; then
+        prisma_engine="libquery_engine-darwin-arm64.dylib.node"
+    elif [[ "$platform" == "darwin-x64" ]]; then
+        prisma_engine="libquery_engine-darwin.dylib.node"
+    elif [[ "$platform" == "linux-arm64" ]]; then
+        prisma_engine="libquery_engine-linux-arm64-openssl-3.0.x.so.node"
+    elif [[ "$platform" == "linux-x64" ]]; then
+        prisma_engine="libquery_engine-debian-openssl-3.0.x.so.node"
+    fi
+
+    # Copy Prisma query engine for this platform
+    if [[ -n "${prisma_engine:-}" && -f ../../node_modules/.prisma/client/$prisma_engine ]]; then
+        mkdir -p binaries/$platform/node_modules/.prisma/client
+        cp ../../node_modules/.prisma/client/$prisma_engine binaries/$platform/node_modules/.prisma/client/
     fi
 done
 
@@ -144,12 +216,12 @@ cd binaries
 for platform in "${PLATFORMS[@]}"; do
     if [[ "$platform" == "windows-x64" ]]; then
         # Windows (zip)
-        echo "Creating pi-$platform.zip..."
-        (cd $platform && zip -r ../pi-$platform.zip .)
+        echo "Creating fan-$platform.zip..."
+        (cd $platform && zip -r ../fan-$platform.zip .)
     else
         # Unix platforms (tar.gz) - use wrapper directory for mise compatibility
-        echo "Creating pi-$platform.tar.gz..."
-        mv $platform pi && tar -czf pi-$platform.tar.gz pi && mv pi $platform
+        echo "Creating fan-$platform.tar.gz..."
+        mv $platform fan && tar -czf fan-$platform.tar.gz fan && mv fan $platform
     fi
 done
 
@@ -158,18 +230,18 @@ echo "==> Extracting archives for testing..."
 for platform in "${PLATFORMS[@]}"; do
     rm -rf $platform
     if [[ "$platform" == "windows-x64" ]]; then
-        mkdir -p $platform && (cd $platform && unzip -q ../pi-$platform.zip)
+        mkdir -p $platform && (cd $platform && unzip -q ../fan-$platform.zip)
     else
-        tar -xzf pi-$platform.tar.gz && mv pi $platform
+        tar -xzf fan-$platform.tar.gz && mv fan $platform
     fi
 done
 
 echo ""
-echo "==> Build complete!"
+echo "==> FAN build complete!"
 echo "Archives available in packages/coding-agent/binaries/"
 ls -lh *.tar.gz *.zip 2>/dev/null || true
 echo ""
 echo "Extracted directories for testing:"
 for platform in "${PLATFORMS[@]}"; do
-    echo "  binaries/$platform/pi"
+    echo "  binaries/$platform/fan"
 done

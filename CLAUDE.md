@@ -7,7 +7,7 @@
 - **Type:** Local AI runtime-agent for developers
 - **Base:** Fork of fan-mono (fan-coding-agent core)
 - **Repo:** Monorepo (npm workspaces, Bun, TypeScript)
-- **Stage:** Phase 6 — Dashboard Client ✅ (ready to merge)
+- **Stage:** Phase 7 — Polish & release ✅
 
 ## What It Is
 Runs locally on user's machine. Provides external API for multiple UI clients (TUI, WebView, IDEA plugin, etc.). Built on fan-coding-agent with custom orchestrator extension, model management, and all current extensions/skills.
@@ -38,6 +38,17 @@ Runtime: Bun · Monorepo: npm workspaces · Core: fan-ai + fan-agent-core + fan-
 - `docs/specs/MVP-SPEC.md` — superseded (web SaaS concept, archived)
 - `ARCHITECTURE.md` — architecture, packages, data flow
 - `docs/develop/tests/dashboard-phase6.md` — dashboard test report (26/30 passed)
+- `INSTALL.md` — installation guide (Windows/Linux/macOS)
+- `CONTRIBUTING.md` — contribution guide
+- `MIGRATION.md` — migration from upstream fan/pi
+- `.env.example` — environment variable template
+- `docs/guides/configuration.md` — settings reference
+- `docs/guides/orchestrator.md` — orchestrator guide
+- `docs/guides/dashboard.md` — dashboard guide
+- `docs/guides/api-reference.md` — API documentation
+- `packages/coding-agent/src/cli/init-wizard.ts` — `fan init` setup wizard
+- `packages/coding-agent/src/cli/diagnostics.ts` — `fan doctor` diagnostics module
+- `packages/coding-agent/src/cli/server-command.ts` — `fan server` lifecycle management (start/stop/status)
 
 ## Phase Progress
 - [x] Phase 1 — Project fork & setup (monorepo, renamed @fan/*, build pipeline)
@@ -46,7 +57,7 @@ Runtime: Bun · Monorepo: npm workspaces · Core: fan-ai + fan-agent-core + fan-
 - [x] Phase 4 — Orchestrator (delegate_task tool, 4 workers, 3 workflows, slash commands, 29 tests)
 - [x] Phase 5 — Orchestrator Hardening (coordinator mode, task widget, /plan, config, workers, permissions, retry/fallback)
 - [x] Phase 6 — Dashboard Client (Lit web UI, model settings, budget viz)
-- [ ] Phase 7 — Polish & release (docs, examples, migration guide)
+- [x] Phase 7 — Polish & release (CLI packaging, init wizard, doctor, server command, --web flag, CI/CD delivery, docs)
 
 ## Phase 6 Dashboard — Architecture Notes
 - **WebUI is a thin frontend.** Disk (JSONL) = single source of truth. No in-memory session stores.
@@ -60,9 +71,26 @@ Runtime: Bun · Monorepo: npm workspaces · Core: fan-ai + fan-agent-core + fan-
 - **`models.json`** is global-only: `~/.fan/agent/models.json` (hardcoded path). Project `.fan/models.json` is unread.
 - **Model Settings** (temperature, maxTokens, thinking): stored in Prisma DB, not in models.json. Created via WebUI.
 
+## CLI Commands
+- `fan` — Interactive TUI mode (default)
+- `fan init` — First-time setup wizard
+- `fan doctor` — Environment and dependency checks
+- `fan server` — Start server in foreground (full runtime)
+- `fan server start` — Start background daemon (for IDE plugins)
+- `fan server stop` — Stop background daemon
+- `fan server status` — Check server status (--json for machine output)
+- `fan --web` — Server + dashboard, auto-opens browser
+- `--mode server` — Server without browser auto-open
+
 ## Test Instructions
 - Dashboard: `docs/develop/tests/dashboard-phase6.md`
 - Orchestrator: `docs/develop/tests/orchestrator-phase4.md`
 - Quick build: `npm run build` (10 packages, 0 errors)
 - Quick test: `cd packages/orchestrator && npx vitest run` (95 tests)
 - Dashboard dev: `cd packages/dashboard && npm run dev` → http://localhost:5174
+- CLI: `fan` — interactive TUI mode
+- Setup wizard: `fan init` — first-time configuration
+- Diagnostics: `fan doctor` — environment and dependency checks
+- Server mode: `fan server` — full runtime server
+- Background daemon: `fan server start` / `fan server stop` / `fan server status`
+- Web dashboard: `fan --web` — server + auto-open browser

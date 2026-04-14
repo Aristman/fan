@@ -331,12 +331,12 @@ function createClient(
 	optionsHeaders?: Record<string, string>,
 ) {
 	if (!apiKey) {
-		if (!process.env.OPENAI_AFAN_KEY) {
+		if (!process.env.OPENAI_API_KEY) {
 			throw new Error(
-				"OpenAI API key is required. Set OPENAI_AFAN_KEY environment variable or pass it as an argument.",
+				"OpenAI API key is required. Set OPENAI_API_KEY environment variable or pass it as an argument.",
 			);
 		}
-		apiKey = process.env.OPENAI_AFAN_KEY;
+		apiKey = process.env.OPENAI_API_KEY;
 	}
 
 	const headers = { ...model.headers };
@@ -744,7 +744,7 @@ function parseChunkUsage(
 	const cacheWriteTokens = rawUsage.prompt_tokens_details?.cache_write_tokens || 0;
 	const reasoningTokens = rawUsage.completion_tokens_details?.reasoning_tokens || 0;
 
-	// Normalize to pi-ai semantics:
+	// Normalize to fan-ai semantics:
 	// - cacheRead: hits from cache created by previous requests only
 	// - cacheWrite: tokens written to cache in this request
 	// Some OpenAI-compatible providers (observed on OpenRouter) report cached_tokens

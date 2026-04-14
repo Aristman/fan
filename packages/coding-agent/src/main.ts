@@ -5,9 +5,12 @@
  * createAgentSession() options. The SDK does the heavy lifting.
  */
 
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { createInterface } from "node:readline";
+import { type SessionAdapter, startServer } from "@fan/api-gateway";
 import { type ImageContent, modelsAreEqual, supportsXhigh } from "@itone/fan-ai";
+import { orchestratorExtension } from "@fan/orchestrator";
 import { ProcessTerminal, setKeybindings, TUI } from "@itone/fan-tui";
 import chalk from "chalk";
 import { type Args, type Mode, parseArgs, printHelp } from "./cli/args.js";
@@ -15,8 +18,12 @@ import { processFileArguments } from "./cli/file-processor.js";
 import { buildInitialMessage } from "./cli/initial-message.js";
 import { listModels } from "./cli/list-models.js";
 import { selectSession } from "./cli/session-picker.js";
-import { getAgentDir, getModelsPath, VERSION } from "./config.js";
-import { type AgentSessionRuntime, type CreateAgentSessionRuntimeFactory, createAgentSessionRuntime } from "./core/agent-session-runtime.js";
+import { getAgentDir, getModelsPath, isBunBinary, VERSION } from "./config.js";
+import {
+	type AgentSessionRuntime,
+	type CreateAgentSessionRuntimeFactory,
+	createAgentSessionRuntime,
+} from "./core/agent-session-runtime.js";
 import {
 	type AgentSessionRuntimeDiagnostic,
 	createAgentSessionFromServices,
@@ -45,7 +52,60 @@ import { ExtensionSelectorComponent } from "./modes/interactive/components/exten
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.js";
 import { handleConfigCommand, handlePackageCommand } from "./package-manager-cli.js";
 import { isLocalPath } from "./utils/paths.js";
-import { startServer, type SessionAdapter } from "@fan/api-gateway";
+
+async function handleInitCommand(args: string[]): Promise<boolean> {
+	if (!args.includes("init")) return false;
+	const { runInitWizard } = await import("./cli/init-wizard.js");
+	await runInitWizard();
+	return true;
+}
+
+async function handleDoctorCommand(args: string[]): Promise<boolean> {
+	if (!args.includes("doctor")) return false;
+	const { runDiagnostics } = await import("./cli/diagnostics.js");
+	const ok = await runDiagnostics();
+	process.exit(ok ? 0 : 1);
+}
+
+async function handleServerCommand(args: string[]): Promise<boolean> {
+	if (args[0] !== "server") return false;
+
+	const subcommand = args[1];
+
+	if (subcommand === "status") {
+		const { serverStatus } = await import("./cli/server-command.js");
+		serverStatus();
+		return true;
+	}
+
+	if (subcommand === "stop") {
+		const { serverStop } = await import("./cli/server-command.js");
+		serverStop();
+		return true;
+	}
+
+	if (subcommand === "start") {
+		// Parse optional --port and --host from remaining args
+		let port: number | undefined;
+		let host: string | undefined;
+		for (let i = 2; i < args.length; i++) {
+			if (args[i] === "--port" && args[i + 1]) {
+				port = Number(args[++i]);
+			} else if (args[i] === "--host" && args[i + 1]) {
+				host = args[++i];
+			}
+		}
+		const { serverStart } = await import("./cli/server-command.js");
+		await serverStart(port, host);
+		return true;
+	}
+
+	// "fan server" without subcommand → rewrite to --mode server
+	// Remove "server" from args so parseArgs doesn't treat it as a message
+	args.splice(0, 1);
+	process.env.FAN_FORCE_SERVER_MODE = "1";
+	return false; // continue to normal flow
+}
 
 /**
  * Read all content from piped stdin.
@@ -100,7 +160,8 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 	// --- Disk cache (3s TTL) ---
 	let diskCacheTime = 0;
 	const DISK_CACHE_TTL = 3_000;
-	let cachedDiskSessions: Array<{ id: string; path: string; title: string; modified: Date; messageCount: number }> = [];
+	let cachedDiskSessions: Array<{ id: string; path: string; title: string; modified: Date; messageCount: number }> =
+		[];
 
 	// --- WS subscription forwarding ---
 	// runtime has ONE AgentSession at a time. When runtime switches session,
@@ -132,7 +193,19 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 	}
 
 	// --- Helpers ---
-	function convertMessage(msg: any, idx: number, prefix: string): { id: string; role: "user" | "assistant" | "tool"; content: string; createdAt: string; model?: string; tokens?: number; cost?: number } {
+	function convertMessage(
+		msg: any,
+		idx: number,
+		prefix: string,
+	): {
+		id: string;
+		role: "user" | "assistant" | "tool";
+		content: string;
+		createdAt: string;
+		model?: string;
+		tokens?: number;
+		cost?: number;
+	} {
 		const role = msg.role as "user" | "assistant" | "toolResult";
 		let text = "";
 		if (role === "user") {
@@ -140,7 +213,10 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 			text = typeof c === "string" ? c : Array.isArray(c) ? c.map((b: any) => b.text || "").join("") : "";
 		} else if (role === "assistant") {
 			const blocks = msg.content || [];
-			text = blocks.filter((b: any) => b.type === "text").map((b: any) => b.text || "").join("");
+			text = blocks
+				.filter((b: any) => b.type === "text")
+				.map((b: any) => b.text || "")
+				.join("");
 		} else if (role === "toolResult") {
 			const c = msg.content;
 			text = Array.isArray(c) ? c.map((b: any) => b.text || "").join("") : String(c || "");
@@ -163,14 +239,13 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 		}
 		diskCacheTime = now;
 		try {
-			cachedDiskSessions = (await SessionManager.listAll())
-				.map((s) => ({
-					id: s.id,
-					path: s.path,
-					title: s.name || s.firstMessage || "Untitled",
-					modified: s.modified,
-					messageCount: s.messageCount,
-				}));
+			cachedDiskSessions = (await SessionManager.listAll()).map((s) => ({
+				id: s.id,
+				path: s.path,
+				title: s.name || s.firstMessage || "Untitled",
+				modified: s.modified,
+				messageCount: s.messageCount,
+			}));
 			return cachedDiskSessions;
 		} catch (err) {
 			console.error("[session-adapter] Failed to list disk sessions:", err);
@@ -178,7 +253,9 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 		}
 	}
 
-	function readDiskSessionMessages(sessionPath: string): Array<{ id: string; role: "user" | "assistant" | "tool"; content: string; createdAt: string; model?: string }> {
+	function readDiskSessionMessages(
+		sessionPath: string,
+	): Array<{ id: string; role: "user" | "assistant" | "tool"; content: string; createdAt: string; model?: string }> {
 		try {
 			const mgr = SessionManager.open(sessionPath);
 			return mgr.buildSessionContext().messages.map((msg, idx) => convertMessage(msg, idx, "disk"));
@@ -214,16 +291,16 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 		// --- listSessions: ALL from disk (JSONL files, same as TUI /resume) ---
 		async listSessions() {
 			const diskSessions = await loadDiskSessions();
-			return diskSessions.map((s) => ({
-				id: s.id,
-				title: s.title,
-				createdAt: s.modified.toISOString(),
-				updatedAt: s.modified.toISOString(),
-				messageCount: s.messageCount,
-				sessionFile: s.path,
-			})).sort(
-				(a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-			);
+			return diskSessions
+				.map((s) => ({
+					id: s.id,
+					title: s.title,
+					createdAt: s.modified.toISOString(),
+					updatedAt: s.modified.toISOString(),
+					messageCount: s.messageCount,
+					sessionFile: s.path,
+				}))
+				.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 		},
 
 		// --- getSession: ALWAYS from disk (single source of truth) ---
@@ -304,11 +381,11 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 				sessionSubscribers.set(sessionId, handlers);
 			}
 			handlers.add(handler);
-		return () => {
+			return () => {
 				handlers.delete(handler);
-			if (handlers.size === 0) {
+				if (handlers.size === 0) {
 					sessionSubscribers.delete(sessionId);
-			}
+				}
 			};
 		},
 
@@ -316,11 +393,13 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 		async getAvailableModels() {
 			const current = runtime.session.model;
 			if (!current) return [];
-			return [{
-				provider: current.provider,
-				model: current.id,
-				displayName: current.name,
-			}];
+			return [
+				{
+					provider: current.provider,
+					model: current.id,
+					displayName: current.name,
+				},
+			];
 		},
 	};
 }
@@ -328,7 +407,7 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 type AppMode = "interactive" | "print" | "json" | "rpc" | "server";
 
 function resolveAppMode(parsed: Args, stdinIsTTY: boolean): AppMode {
-	if (parsed.mode === "server") {
+	if (process.env.FAN_FORCE_SERVER_MODE === "1" || parsed.web || parsed.mode === "server") {
 		return "server";
 	}
 	if (parsed.mode === "rpc") {
@@ -672,6 +751,18 @@ export async function main(args: string[]) {
 		return;
 	}
 
+	if (await handleInitCommand(args)) {
+		return;
+	}
+
+	if (await handleDoctorCommand(args)) {
+		return;
+	}
+
+	if (await handleServerCommand(args)) {
+		return;
+	}
+
 	if (await handleConfigCommand(args)) {
 		return;
 	}
@@ -722,6 +813,14 @@ export async function main(args: string[]) {
 	// Run migrations (pass cwd for project-local migrations)
 	const { migratedAuthProviders: migratedProviders, deprecationWarnings } = runMigrations(process.cwd());
 	time("runMigrations");
+
+	// Initialize database schema (create tables if needed)
+	try {
+		const { initDatabase } = await import("@fan/db");
+		await initDatabase();
+	} catch (e) {
+		console.error("Failed to initialize database:", e);
+	}
 
 	const cwd = process.cwd();
 	const agentDir = getAgentDir();
@@ -777,6 +876,7 @@ export async function main(args: string[]) {
 				noThemes: parsed.noThemes,
 				systemPrompt: parsed.systemPrompt,
 				appendSystemPrompt: parsed.appendSystemPrompt,
+				extensionFactories: [orchestratorExtension],
 			},
 		});
 		const { settingsManager, modelRegistry, resourceLoader } = services;
@@ -901,10 +1001,46 @@ export async function main(args: string[]) {
 	time("createAgentSession");
 
 	if (appMode !== "interactive" && appMode !== "server" && !session.model) {
+		// Detect which providers have API keys configured
+		const providerEnvVars: Record<string, string[]> = {
+			OpenAI: ["OPENAI_API_KEY", "OPENAI_API_KEY"],
+			Anthropic: ["ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY", "ANTHROPIC_OAUTH_TOKEN"],
+			Google: ["GOOGLE_API_KEY", "GEMINI_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY"],
+			Groq: ["GROQ_API_KEY"],
+			xAI: ["XAI_API_KEY"],
+			OpenRouter: ["OPENROUTER_API_KEY"],
+			Mistral: ["MISTRAL_API_KEY"],
+			Cerebras: ["CEREBRAS_API_KEY"],
+			"Z.AI": ["ZAI_API_KEY"],
+			"GitHub Copilot": ["COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"],
+			OpenCode: ["OPENCODE_API_KEY"],
+			HuggingFace: ["HF_TOKEN"],
+		};
+		const configuredProviders: string[] = [];
+		for (const [provider, envVars] of Object.entries(providerEnvVars)) {
+			if (envVars.some((v) => process.env[v])) {
+				configuredProviders.push(provider);
+			}
+		}
+
 		console.error(chalk.red("No models available."));
-		console.error(chalk.yellow("\nSet an API key environment variable:"));
-		console.error("  ANTHROPIC_AFAN_KEY, OPENAI_AFAN_KEY, GEMINI_AFAN_KEY, etc.");
-		console.error(chalk.yellow(`\nOr create ${getModelsPath()}`));
+		if (configuredProviders.length > 0) {
+			console.error(chalk.yellow(`\nAPI keys found for: ${configuredProviders.join(", ")}`));
+			console.error(chalk.yellow("But no models matched. Check your provider configuration or models.json."));
+		} else {
+			console.error(chalk.yellow("\nNo API keys configured for any provider."));
+		}
+		console.error(chalk.yellow("\nTo fix this:"));
+		console.error("  1. Set an API key environment variable (see .env.example for available providers)");
+		console.error('  2. Run "fan init" to create a default configuration');
+		console.error("  3. Or create models.json manually:");
+		console.error(chalk.dim(`     ${getModelsPath()}`));
+		console.error(
+			chalk.yellow(
+				"\nAvailable env vars: ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, GROQ_API_KEY, etc.",
+			),
+		);
+		console.error(chalk.dim("See .env.example in the project root for the full list."));
 		process.exit(1);
 	}
 
@@ -912,6 +1048,21 @@ export async function main(args: string[]) {
 	if (startupBenchmark && appMode !== "interactive") {
 		console.error(chalk.red("Error: FAN_STARTUP_BENCHMARK only supports interactive mode"));
 		process.exit(1);
+	}
+
+	/** Resolve dashboard dist directory based on runtime mode */
+	function getDashboardDir(): string | undefined {
+		if (isBunBinary) {
+			const pathMod = require("node:path") as {
+				dirname: (p: string) => string;
+				join: (...args: string[]) => string;
+			};
+			return pathMod.join(pathMod.dirname(process.execPath), "dashboard");
+		}
+		// Dev mode: check if dashboard dist exists in the monorepo
+		const devPath = resolve(process.cwd(), "packages", "dashboard", "dist");
+		if (existsSync(devPath)) return devPath;
+		return undefined;
 	}
 
 	if (appMode === "server") {
@@ -925,8 +1076,36 @@ export async function main(args: string[]) {
 		const { port, stop } = await startServer(modelManager, adapter, {
 			port: parsed.port || 3456,
 			host: parsed.host || "localhost",
+			dashboardDir: getDashboardDir(),
 		});
+
+		// Write server info for background management (daemon mode)
+		if (process.env.FAN_SERVER_DAEMON === "1") {
+			const { writeServerInfo } = await import("./cli/server-command.js");
+			const serverInfo = {
+				pid: process.pid,
+				port,
+				host: parsed.host || "localhost",
+				startTime: new Date().toISOString(),
+				dashboardDir: getDashboardDir(),
+			};
+			writeServerInfo(serverInfo);
+		}
+
 		console.log(`[fan] Server mode active — http://${parsed.host || "localhost"}:${port}`);
+
+		// Auto-open browser if --web flag was used (not in daemon mode)
+		if (parsed.web && process.env.FAN_SERVER_DAEMON !== "1") {
+			const url = `http://${parsed.host || "localhost"}:${port}`;
+			console.log(`[fan] Opening dashboard in browser: ${url}`);
+			try {
+				const { exec } = await import("node:child_process");
+				const cmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
+				exec(`${cmd} "${url}"`);
+			} catch {
+				console.log(chalk.dim(`[fan] Could not open browser automatically. Open ${url} manually.`));
+			}
+		}
 
 		// Keep process alive until interrupted
 		await new Promise<void>((resolve) => {

@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import { formatTokens, formatUsageStats, getFinalOutput } from "../subagent-runner.js";
 
 describe("formatTokens", () => {
@@ -23,7 +23,15 @@ describe("formatUsageStats", () => {
 	});
 
 	it("formats with turns and tokens", () => {
-		const result = formatUsageStats({ input: 1000, output: 500, cacheRead: 200, cacheWrite: 100, cost: 0.01, turns: 3, contextTokens: 10000 });
+		const result = formatUsageStats({
+			input: 1000,
+			output: 500,
+			cacheRead: 200,
+			cacheWrite: 100,
+			cost: 0.01,
+			turns: 3,
+			contextTokens: 10000,
+		});
 		expect(result).toContain("3 turns");
 		expect(result).toContain("↑1.0k");
 		expect(result).toContain("↓500");
@@ -51,9 +59,7 @@ describe("getFinalOutput", () => {
 	});
 
 	it("returns empty for user-only messages", () => {
-		const messages = [
-			{ role: "user", content: [{ type: "text", text: "hello" }] },
-		];
+		const messages = [{ role: "user", content: [{ type: "text", text: "hello" }] }];
 		expect(getFinalOutput(messages as any)).toBe("");
 	});
 });

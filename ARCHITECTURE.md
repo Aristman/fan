@@ -120,7 +120,7 @@ coordination via subprocess-based subagent delegation.
 - **agents.ts** — Agent discovery from builtin/user/project dirs with priority override, coordinator/planning prompts
 - **workers.ts** — Worker registry and slot pool (acquireSlot/releaseSlot FIFO queue, write slot limiting)
 - **permissions.ts** — Dangerous command detection (8 regex patterns), tool_call event handler with block/allow UI
-- **subagent-runner.ts** — Spawns fna subprocesses with JSON streaming, abort support, usage tracking, retry/fallback logic
+- **subagent-runner.ts** — Spawns fan subprocesses with JSON streaming, abort support, usage tracking, retry/fallback logic
 - **task-manager.ts** — Task lifecycle (CRUD, status transitions, blocking, serialization)
 - **orchestrator-tools.ts** — LLM-callable tools (delegate_task, list_tasks, cancel_task, classify_task, TaskCreate, TaskUpdate)
 - **orchestrator-extension.ts** — Extension wiring with slash commands (/orchestrator, /tasks, /agents, /delegate, /plan), coordinator mode, task widget
@@ -180,18 +180,20 @@ Lit-based web UI client connecting to FAN API:
 
 | Mode | Invocation | Description |
 |------|-----------|-------------|
-| TUI (default) | `fna` | Interactive terminal with fan-tui |
-| Print | `fna -p "..."` | Single-shot, then exit |
-| RPC | `fna --mode rpc` | JSON-over-stdio for IDE plugins |
-| Server | `fna --mode server` | HTTP REST + WebSocket on configurable port |
-| SDK | `import { createFnaSession }` | Programmatic use as library |
-| Desktop | Electron/Tauri wrapper | Windowed app with embedded runtime |
+| TUI (default) | `fan` | Interactive terminal with fan-tui |
+| Print | `fan -p "..."` | Single-shot, then exit |
+| Init Wizard | `fan init` | First-time setup wizard |
+| Diagnostics | `fan doctor` | Environment and dependency health checks |
+| RPC | `fan --mode rpc` | JSON-over-stdio for IDE plugins |
+| **Server** | **`fan server`** | **Full runtime as HTTP server (sessions, extensions, models, orchestrator)** |
+| **Server (daemon)** | **`fan server start`** | **Background daemon for IDE/plugin integration** |
+| **Web** | **`fan --web`** | **Server + dashboard, auto-opens browser** |
 
 ---
 
 ## HTTP API (Server Mode)
 
-When started with `--mode server`, FAN exposes a REST API + WebSocket on a configurable port (default: 3456).
+When started with `fan server` (or `--mode server` / `--web`), FAN exposes a REST API + WebSocket on a configurable port (default: 3456).
 
 ### Authentication
 - API token via `Authorization: Bearer <token>` header or `?token=` query param
@@ -211,6 +213,42 @@ When started with `--mode server`, FAN exposes a REST API + WebSocket on a confi
 The stdio RPC mode (`--mode rpc`) has been extended with FAN-specific commands:
 - `get_routing_rules`, `get_budget_status`, `get_model_settings`
 - `generate_token`, `list_tokens`, `revoke_token`
+
+---
+
+## Server Lifecycle
+
+`fan server` provides full runtime lifecycle management for external client integration (IDE plugins, custom UIs).
+
+### Background Daemon Mode
+
+```bash
+fan server start           # Start background daemon
+fan server start --port 8080  # Custom port
+fan server status          # Check status (exit code 0 = running, 1 = not running)
+fan server status --json   # Machine-readable output for IDE plugins
+fan server stop            # Graceful stop (SIGTERM → SIGKILL after 5s)
+```
+
+### State Files
+- `~/.fan/agent/server.json` — Server metadata (PID, port, host, startTime)
+- `~/.fan/agent/server.pid` — PID file
+- `~/.fan/agent/server.log` — Daemon output log
+
+### IDE Plugin Integration Flow
+1. Plugin calls `fan server status --json` → parses exit code and JSON
+2. If not running → `fan server start`
+3. Connect to `http://localhost:3456` with token from API
+4. Use REST + WebSocket for full agent interaction
+
+### Full Runtime Guarantee
+`fan server` runs the complete runtime pipeline:
+- Settings merge (global + project)
+- Session management (continue recent or create new)
+- Extensions & skills loading
+- Model registry with routing and fallback
+- Orchestrator with multi-agent delegation
+- All tools available to connected clients
 
 ---
 
@@ -384,6 +422,39 @@ Task received
 - `packages/model-manager/` — routing, fallback, budgets
 - `packages/api-gateway/` — client API (stdio + HTTP)
 - `packages/dashboard/` — Lit UI client
+
+---
+
+## CLI Commands
+
+| Command | Description |
+|---------|-------------|
+| `fan` | Interactive TUI mode (default) |
+| `fan init` | Setup wizard |
+| `fan doctor` | Diagnostics |
+| `fan server` | Start API server in foreground (full runtime) |
+| `fan server start` | Start background daemon |
+| `fan server stop` | Stop background daemon |
+| `fan server status` | Check daemon status (`--json` for machine output) |
+| `fan --web` | Server + dashboard, auto-opens browser |
+| `fan -p "..."` | Single-shot print mode |
+| `fan --mode rpc` | JSON-over-stdio for IDE/plugins |
+
+---
+
+## Documentation
+
+| File | Description |
+|------|-------------|
+| [CLAUDE.md](./CLAUDE.md) | Quick context for LLM sessions |
+| [INSTALL.md](./INSTALL.md) | Installation guide (Windows, Linux, macOS) |
+| [CONTRIBUTING.md](./CONTRIBUTING.md) | Contribution guide |
+| [MIGRATION.md](./MIGRATION.md) | Migration from upstream fan/pi |
+| [.env.example](./.env.example) | Environment variable template |
+| [docs/guides/configuration.md](./docs/guides/configuration.md) | Settings reference |
+| [docs/guides/orchestrator.md](./docs/guides/orchestrator.md) | Orchestrator guide |
+| [docs/guides/dashboard.md](./docs/guides/dashboard.md) | Dashboard guide |
+| [docs/guides/api-reference.md](./docs/guides/api-reference.md) | API documentation |
 
 ---
 

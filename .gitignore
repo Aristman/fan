@@ -13,6 +13,7 @@ node_modules/
 # Build output
 dist/
 *.tsbuildinfo
+packages/coding-agent/binaries/
 
 # Environment
 .env
@@ -38,3 +39,6 @@ coverage/
 
 # Orchestrator local config (keep config.example.json as template)
 packages/orchestrator/src/config.json
+
+# Fan agent runtime config
+.fan/

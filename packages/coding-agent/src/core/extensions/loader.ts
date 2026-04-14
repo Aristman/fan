@@ -9,12 +9,12 @@ import { createRequire } from "node:module";
 import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createJiti } from "@mariozechner/jiti";
 import * as _bundledPiAgentCore from "@itone/fan-agent-core";
 import * as _bundledPiAi from "@itone/fan-ai";
 import * as _bundledPiAiOauth from "@itone/fan-ai/oauth";
 import type { KeyId } from "@itone/fan-tui";
 import * as _bundledPiTui from "@itone/fan-tui";
+import { createJiti } from "@mariozechner/jiti";
 // Static imports of packages that extensions may use.
 // These MUST be static so Bun bundles them into the compiled binary.
 // The virtualModules option then makes them available to extensions.
@@ -23,6 +23,7 @@ import { getAgentDir, isBunBinary } from "../../config.js";
 // NOTE: This import works because loader.ts exports are NOT re-exported from index.ts,
 // avoiding a circular dependency. Extensions can import from @itone/fan-coding-agent.
 import * as _bundledPiCodingAgent from "../../index.js";
+import * as _bundledOrchestrator from "@fan/orchestrator";
 import { createEventBus, type EventBus } from "../event-bus.js";
 import type { ExecOptions } from "../exec.js";
 import { execCommand } from "../exec.js";
@@ -47,6 +48,7 @@ const VIRTUAL_MODULES: Record<string, unknown> = {
 	"@itone/fan-ai": _bundledPiAi,
 	"@itone/fan-ai/oauth": _bundledPiAiOauth,
 	"@itone/fan-coding-agent": _bundledPiCodingAgent,
+	"@fan/orchestrator": _bundledOrchestrator,
 };
 
 const require = createRequire(import.meta.url);
@@ -424,7 +426,7 @@ function isExtensionFile(name: string): boolean {
  * Resolve extension entry points from a directory.
  *
  * Checks for:
- * 1. package.json with "pi.extensions" field -> returns declared paths
+ * 1. package.json with "fan.extensions" field -> returns declared paths
  * 2. index.ts or index.js -> returns the index file
  *
  * Returns resolved paths or null if no entry points found.
@@ -539,7 +541,7 @@ export async function discoverAndLoadExtensions(
 	for (const p of configuredPaths) {
 		const resolved = resolvePath(p, cwd);
 		if (fs.existsSync(resolved) && fs.statSync(resolved).isDirectory()) {
-			// Check for package.json with pi manifest or index.ts
+			// Check for package.json with fan manifest or index.ts
 			const entries = resolveExtensionEntries(resolved);
 			if (entries) {
 				addPaths(entries);

@@ -1,29 +1,29 @@
 {
-  "name": "@fan/dashboard",
-  "version": "0.1.0",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
-    "check": "tsgo --noEmit",
-    "clean": "shx rm -rf dist",
-    "test": "vitest run"
-  },
-  "dependencies": {
-    "@itone/fan-web-ui": "file:../web-ui",
-    "lit": "^3.3.1",
-    "lucide": "^0.544.0"
-  },
-  "devDependencies": {
-    "@tailwindcss/vite": "^4.1.17",
-    "@types/ws": "^8.18.0",
-    "tailwindcss": "^4.1.17",
-    "typescript": "^5.7.3",
-    "vite": "^7.1.6",
-    "jsdom": "^26.1.0",
-    "vitest": "^3.2.1",
-    "shx": "^0.4.0"
-  }
+	"name": "@fan/dashboard",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "vite",
+		"build": "vite build",
+		"preview": "vite preview",
+		"check": "tsgo --noEmit",
+		"clean": "shx rm -rf dist",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@itone/fan-web-ui": "file:../web-ui",
+		"lit": "^3.3.1",
+		"lucide": "^0.544.0"
+	},
+	"devDependencies": {
+		"@tailwindcss/vite": "^4.1.17",
+		"@types/ws": "^8.18.0",
+		"tailwindcss": "^4.1.17",
+		"typescript": "^5.7.3",
+		"vite": "^7.1.6",
+		"jsdom": "^26.1.0",
+		"vitest": "^3.2.1",
+		"shx": "^0.4.0"
+	}
 }

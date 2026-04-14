@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { ProviderRouter } from "../router.js";
-import type { RoutingRuleData, ModelSettingData } from "../types.js";
+import type { ModelSettingData, RoutingRuleData } from "../types.js";
 
 // Mock DB adapter
 function createMockDb(rules: RoutingRuleData[] = [], settings: ModelSettingData[] = []) {

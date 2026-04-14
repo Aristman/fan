@@ -511,7 +511,7 @@ export class InteractiveMode {
 			].join("\n");
 			const onboarding = theme.fg(
 				"dim",
-				`Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.`,
+				`fan can explain its own features and look up its docs. Ask it how to use or extend fan.`,
 			);
 			this.builtInHeader = new Text(`${logo}\n${instructions}\n\n${onboarding}`, 1, 0);
 
@@ -1101,8 +1101,12 @@ export class InteractiveMode {
 				this.chatContainer.addChild(new Spacer(1));
 			}
 
-			if (extensions.length > 0) {
-				const groups = this.buildScopeGroups(extensions);
+			// Filter out inline/built-in extensions (sourceInfo.scope === "temporary") from display
+			const userExtensions = extensions.filter(
+				(ext) => ext.sourceInfo?.scope !== "temporary" && !ext.path.startsWith("<inline"),
+			);
+			if (userExtensions.length > 0) {
+				const groups = this.buildScopeGroups(userExtensions);
 				const extList = this.formatScopeGroups(groups, {
 					formatPath: (item) => this.formatDisplayPath(item.path),
 					formatPackagePath: (item) => this.getShortPath(item.path, item.sourceInfo),
@@ -2101,7 +2105,7 @@ export class InteractiveMode {
 			// Write to temp file
 			const tmpDir = os.tmpdir();
 			const ext = extensionForImageMimeType(image.mimeType) ?? "png";
-			const fileName = `pi-clipboard-${crypto.randomUUID()}.${ext}`;
+			const fileName = `fan-clipboard-${crypto.randomUUID()}.${ext}`;
 			const filePath = path.join(tmpDir, fileName);
 			fs.writeFileSync(filePath, Buffer.from(image.bytes));
 

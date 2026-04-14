@@ -5,10 +5,10 @@
 
 import * as prompts from "../src/prompts/prompts.js";
 
-const ANTHROPIC_AFAN_KEY = process.env.ANTHROPIC_AFAN_KEY;
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 
-if (!ANTHROPIC_AFAN_KEY) {
-	console.error("Error: ANTHROPIC_AFAN_KEY environment variable not set");
+if (!ANTHROPIC_API_KEY) {
+	console.error("Error: ANTHROPIC_API_KEY environment variable not set");
 	process.exit(1);
 }
 
@@ -21,7 +21,7 @@ async function countTokens(text: string): Promise<number> {
 		method: "POST",
 		headers: {
 			"Content-Type": "application/json",
-			"x-api-key": ANTHROPIC_AFAN_KEY,
+			"x-api-key": ANTHROPIC_API_KEY,
 			"anthropic-version": "2023-06-01",
 		},
 		body: JSON.stringify({

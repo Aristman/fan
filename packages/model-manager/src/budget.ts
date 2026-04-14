@@ -1,5 +1,5 @@
-import type { BudgetStatus, BudgetConfig, BudgetAlert, BudgetAlertHandler, BudgetTrackerOptions } from "./types.js";
 import * as db from "./db.js";
+import type { BudgetAlert, BudgetAlertHandler, BudgetConfig, BudgetStatus, BudgetTrackerOptions } from "./types.js";
 
 const DEFAULT_THRESHOLDS = {
 	warning: 0.8,
@@ -53,7 +53,12 @@ export class BudgetTracker {
 	}
 
 	/** Track token usage and cost for a provider. Returns budget status + optional alert. */
-	async track(provider: string, tokens: number, cost: number, period: string = "daily"): Promise<{ status: BudgetStatus; alert?: BudgetAlert }> {
+	async track(
+		provider: string,
+		tokens: number,
+		cost: number,
+		period: string = "daily",
+	): Promise<{ status: BudgetStatus; alert?: BudgetAlert }> {
 		await this.ensureLoaded();
 		await this.autoResetCheck(provider, period);
 
@@ -82,7 +87,11 @@ export class BudgetTracker {
 				this.budgetCache.set(key, budget);
 			} catch {
 				// Update locally if DB fails
-				budget = { ...budget, tokensUsed: (budget.tokensUsed ?? 0) + tokens, costUsed: (budget.costUsed ?? 0) + cost };
+				budget = {
+					...budget,
+					tokensUsed: (budget.tokensUsed ?? 0) + tokens,
+					costUsed: (budget.costUsed ?? 0) + cost,
+				};
 				this.budgetCache.set(key, budget);
 			}
 		}
@@ -142,7 +151,9 @@ export class BudgetTracker {
 				} else {
 					await db.resetBudget(budget.id);
 				}
-			} catch { /* ignore */ }
+			} catch {
+				/* ignore */
+			}
 		}
 		await this.load(); // refresh cache
 	}
@@ -167,7 +178,9 @@ export class BudgetTracker {
 					costLimit: config.costLimit,
 				});
 			}
-		} catch { /* ignore */ }
+		} catch {
+			/* ignore */
+		}
 		await this.load();
 	}
 
@@ -298,6 +311,8 @@ export class BudgetTracker {
 	/** Set alert handler */
 	onAlert(handler: BudgetAlertHandler): () => void {
 		this.alertHandler = handler;
-		return () => { if (this.alertHandler === handler) this.alertHandler = undefined; };
+		return () => {
+			if (this.alertHandler === handler) this.alertHandler = undefined;
+		};
 	}
 }

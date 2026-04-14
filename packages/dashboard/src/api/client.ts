@@ -1,23 +1,23 @@
 // @fan/dashboard/api — FAN REST API client
 import type {
-  HealthResponse,
-  CreateSessionRequest,
-  CreateSessionResponse,
-  ListSessionsResponse,
-  GetSessionResponse,
-  DeleteSessionResponse,
-  SendMessageResponse,
-  GetModelsResponse,
-  GetModelSettingsResponse,
-  UpdateModelSettingsRequest,
-  UpdateModelSettingsResponse,
-  GetBudgetResponse,
-  UpdateBudgetRequest,
-  UpdateBudgetResponse,
-  GenerateTokenResponse,
-  ListTokensResponse,
-  RevokeTokenResponse,
-  ApiError,
+	ApiError,
+	CreateSessionRequest,
+	CreateSessionResponse,
+	DeleteSessionResponse,
+	GenerateTokenResponse,
+	GetBudgetResponse,
+	GetModelSettingsResponse,
+	GetModelsResponse,
+	GetSessionResponse,
+	HealthResponse,
+	ListSessionsResponse,
+	ListTokensResponse,
+	RevokeTokenResponse,
+	SendMessageResponse,
+	UpdateBudgetRequest,
+	UpdateBudgetResponse,
+	UpdateModelSettingsRequest,
+	UpdateModelSettingsResponse,
 } from "@fan/api-gateway/types";
 
 // ---------------------------------------------------------------------------
@@ -25,17 +25,17 @@ import type {
 // ---------------------------------------------------------------------------
 
 export class FanApiError extends Error {
-  /** HTTP status code */
-  readonly status: number;
-  /** Machine-readable error code from the server (e.g. "UNAUTHORIZED") */
-  readonly code: string;
+	/** HTTP status code */
+	readonly status: number;
+	/** Machine-readable error code from the server (e.g. "UNAUTHORIZED") */
+	readonly code: string;
 
-  constructor(status: number, code: string, message: string) {
-    super(message);
-    this.name = "FanApiError";
-    this.status = status;
-    this.code = code;
-  }
+	constructor(status: number, code: string, message: string) {
+		super(message);
+		this.name = "FanApiError";
+		this.status = status;
+		this.code = code;
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -43,177 +43,165 @@ export class FanApiError extends Error {
 // ---------------------------------------------------------------------------
 
 export class FanApiClient {
-  private readonly baseUrl: string;
-  private token?: string;
+	private readonly baseUrl: string;
+	private token?: string;
 
-  constructor(opts: { baseUrl: string; token?: string }) {
-    // Ensure trailing slash is removed so path joining is clean
-    this.baseUrl = opts.baseUrl.replace(/\/+$/, "");
-    // Strip any non-ASCII characters that may have been pasted from terminals
-    this.token = opts.token?.replace(/[^\x20-\x7E]/g, "") ?? "";
-  }
+	constructor(opts: { baseUrl: string; token?: string }) {
+		// Ensure trailing slash is removed so path joining is clean
+		this.baseUrl = opts.baseUrl.replace(/\/+$/, "");
+		// Strip any non-ASCII characters that may have been pasted from terminals
+		this.token = opts.token?.replace(/[^\x20-\x7E]/g, "") ?? "";
+	}
 
-  /** Update the bearer token (e.g. after generating a new one). */
-  setToken(token: string | undefined): void {
-    this.token = token?.replace(/[^\x20-\x7E]/g, "") ?? "";
-  }
+	/** Update the bearer token (e.g. after generating a new one). */
+	setToken(token: string | undefined): void {
+		this.token = token?.replace(/[^\x20-\x7E]/g, "") ?? "";
+	}
 
-  // -----------------------------------------------------------------------
-  // Internal helpers
-  // -----------------------------------------------------------------------
+	// -----------------------------------------------------------------------
+	// Internal helpers
+	// -----------------------------------------------------------------------
 
-  private headers(authenticated: boolean): HeadersInit {
-    const h: HeadersInit = { Accept: "application/json" };
-    if (authenticated && this.token) {
-      h["Authorization"] = `Bearer ${this.token}`;
-    }
-    return h;
-  }
+	private headers(authenticated: boolean): HeadersInit {
+		const h: HeadersInit = { Accept: "application/json" };
+		if (authenticated && this.token) {
+			h["Authorization"] = `Bearer ${this.token}`;
+		}
+		return h;
+	}
 
-  private async _request<T>(
-    method: string,
-    path: string,
-    body?: unknown,
-    authenticated = true,
-  ): Promise<T> {
-    const url = `${this.baseUrl}${path}`;
-    const isWrite = method === "POST" || method === "PUT" || method === "PATCH";
-    const jsonBody = body !== undefined ? body : (isWrite ? {} : undefined);
+	private async _request<T>(method: string, path: string, body?: unknown, authenticated = true): Promise<T> {
+		const url = `${this.baseUrl}${path}`;
+		const isWrite = method === "POST" || method === "PUT" || method === "PATCH";
+		const jsonBody = body !== undefined ? body : isWrite ? {} : undefined;
 
-    const h: Record<string, string> = {
-      ...this.headers(authenticated),
-    } as Record<string, string>;
+		const h: Record<string, string> = {
+			...this.headers(authenticated),
+		} as Record<string, string>;
 
-    if (isWrite) {
-      h["Content-Type"] = "application/json";
-    }
+		if (isWrite) {
+			h["Content-Type"] = "application/json";
+		}
 
-    const init: RequestInit = {
-      method,
-      headers: h,
-      body: jsonBody !== undefined ? JSON.stringify(jsonBody) : undefined,
-    };
+		const init: RequestInit = {
+			method,
+			headers: h,
+			body: jsonBody !== undefined ? JSON.stringify(jsonBody) : undefined,
+		};
 
-    const res = await fetch(url, init);
+		const res = await fetch(url, init);
 
-    if (!res.ok) {
-      let code = "UNKNOWN";
-      let message = res.statusText;
+		if (!res.ok) {
+			let code = "UNKNOWN";
+			let message = res.statusText;
 
-      try {
-        const errBody = (await res.json()) as ApiError;
-        code = errBody.code ?? code;
-        message = errBody.error ?? message;
-      } catch {
-        // response body wasn't valid JSON — use defaults
-      }
+			try {
+				const errBody = (await res.json()) as ApiError;
+				code = errBody.code ?? code;
+				message = errBody.error ?? message;
+			} catch {
+				// response body wasn't valid JSON — use defaults
+			}
 
-      if (res.status === 401) {
-        window.dispatchEvent(new CustomEvent("fan:auth-error"));
-      }
+			if (res.status === 401) {
+				window.dispatchEvent(new CustomEvent("fan:auth-error"));
+			}
 
-      throw new FanApiError(res.status, code, message);
-    }
+			throw new FanApiError(res.status, code, message);
+		}
 
-    // 204 No Content — nothing to parse
-    if (res.status === 204) {
-      return undefined as T;
-    }
+		// 204 No Content — nothing to parse
+		if (res.status === 204) {
+			return undefined as T;
+		}
 
-    return res.json() as Promise<T>;
-  }
+		return res.json() as Promise<T>;
+	}
 
-  // -----------------------------------------------------------------------
-  // Health
-  // -----------------------------------------------------------------------
+	// -----------------------------------------------------------------------
+	// Health
+	// -----------------------------------------------------------------------
 
-  health(): Promise<HealthResponse> {
-    return this._request<HealthResponse>("GET", "/api/health", undefined, false);
-  }
+	health(): Promise<HealthResponse> {
+		return this._request<HealthResponse>("GET", "/api/health", undefined, false);
+	}
 
-  // -----------------------------------------------------------------------
-  // Sessions
-  // -----------------------------------------------------------------------
+	// -----------------------------------------------------------------------
+	// Sessions
+	// -----------------------------------------------------------------------
 
-  listSessions(): Promise<ListSessionsResponse> {
-    return this._request<ListSessionsResponse>("GET", "/api/sessions");
-  }
+	listSessions(): Promise<ListSessionsResponse> {
+		return this._request<ListSessionsResponse>("GET", "/api/sessions");
+	}
 
-  getSession(id: string): Promise<GetSessionResponse> {
-    return this._request<GetSessionResponse>("GET", `/api/sessions/${id}`);
-  }
+	getSession(id: string): Promise<GetSessionResponse> {
+		return this._request<GetSessionResponse>("GET", `/api/sessions/${id}`);
+	}
 
-  createSession(opts?: CreateSessionRequest): Promise<CreateSessionResponse> {
-    return this._request<CreateSessionResponse>("POST", "/api/sessions", opts);
-  }
+	createSession(opts?: CreateSessionRequest): Promise<CreateSessionResponse> {
+		return this._request<CreateSessionResponse>("POST", "/api/sessions", opts);
+	}
 
-  deleteSession(id: string): Promise<DeleteSessionResponse> {
-    return this._request<DeleteSessionResponse>("DELETE", `/api/sessions/${id}`);
-  }
+	deleteSession(id: string): Promise<DeleteSessionResponse> {
+		return this._request<DeleteSessionResponse>("DELETE", `/api/sessions/${id}`);
+	}
 
-  // -----------------------------------------------------------------------
-  // Messages
-  // -----------------------------------------------------------------------
+	// -----------------------------------------------------------------------
+	// Messages
+	// -----------------------------------------------------------------------
 
-  sendMessage(
-    sessionId: string,
-    message: string,
-    streamingBehavior?: "steer" | "followUp",
-  ): Promise<SendMessageResponse> {
-    return this._request<SendMessageResponse>(
-      "POST",
-      `/api/sessions/${sessionId}/messages`,
-      { message, streamingBehavior },
-    );
-  }
+	sendMessage(
+		sessionId: string,
+		message: string,
+		streamingBehavior?: "steer" | "followUp",
+	): Promise<SendMessageResponse> {
+		return this._request<SendMessageResponse>("POST", `/api/sessions/${sessionId}/messages`, {
+			message,
+			streamingBehavior,
+		});
+	}
 
-  // -----------------------------------------------------------------------
-  // Models
-  // -----------------------------------------------------------------------
+	// -----------------------------------------------------------------------
+	// Models
+	// -----------------------------------------------------------------------
 
-  getModels(): Promise<GetModelsResponse> {
-    return this._request<GetModelsResponse>("GET", "/api/models");
-  }
+	getModels(): Promise<GetModelsResponse> {
+		return this._request<GetModelsResponse>("GET", "/api/models");
+	}
 
-  getModelSettings(): Promise<GetModelSettingsResponse> {
-    return this._request<GetModelSettingsResponse>("GET", "/api/models/settings");
-  }
+	getModelSettings(): Promise<GetModelSettingsResponse> {
+		return this._request<GetModelSettingsResponse>("GET", "/api/models/settings");
+	}
 
-  updateModelSetting(
-    data: UpdateModelSettingsRequest,
-  ): Promise<UpdateModelSettingsResponse> {
-    return this._request<UpdateModelSettingsResponse>(
-      "PUT",
-      "/api/models/settings",
-      data,
-    );
-  }
+	updateModelSetting(data: UpdateModelSettingsRequest): Promise<UpdateModelSettingsResponse> {
+		return this._request<UpdateModelSettingsResponse>("PUT", "/api/models/settings", data);
+	}
 
-  // -----------------------------------------------------------------------
-  // Budget
-  // -----------------------------------------------------------------------
+	// -----------------------------------------------------------------------
+	// Budget
+	// -----------------------------------------------------------------------
 
-  getBudget(): Promise<GetBudgetResponse> {
-    return this._request<GetBudgetResponse>("GET", "/api/budget");
-  }
+	getBudget(): Promise<GetBudgetResponse> {
+		return this._request<GetBudgetResponse>("GET", "/api/budget");
+	}
 
-  updateBudget(data: UpdateBudgetRequest): Promise<UpdateBudgetResponse> {
-    return this._request<UpdateBudgetResponse>("PUT", "/api/budget", data);
-  }
+	updateBudget(data: UpdateBudgetRequest): Promise<UpdateBudgetResponse> {
+		return this._request<UpdateBudgetResponse>("PUT", "/api/budget", data);
+	}
 
-  // -----------------------------------------------------------------------
-  // Client Tokens
-  // -----------------------------------------------------------------------
+	// -----------------------------------------------------------------------
+	// Client Tokens
+	// -----------------------------------------------------------------------
 
-  generateToken(name: string): Promise<GenerateTokenResponse> {
-    return this._request<GenerateTokenResponse>("POST", "/api/tokens", { name });
-  }
+	generateToken(name: string): Promise<GenerateTokenResponse> {
+		return this._request<GenerateTokenResponse>("POST", "/api/tokens", { name });
+	}
 
-  listTokens(): Promise<ListTokensResponse> {
-    return this._request<ListTokensResponse>("GET", "/api/tokens");
-  }
+	listTokens(): Promise<ListTokensResponse> {
+		return this._request<ListTokensResponse>("GET", "/api/tokens");
+	}
 
-  revokeToken(id: string): Promise<RevokeTokenResponse> {
-    return this._request<RevokeTokenResponse>("DELETE", `/api/tokens/${id}`);
-  }
+	revokeToken(id: string): Promise<RevokeTokenResponse> {
+		return this._request<RevokeTokenResponse>("DELETE", `/api/tokens/${id}`);
+	}
 }

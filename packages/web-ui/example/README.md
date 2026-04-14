@@ -1,4 +1,4 @@
-# Pi Web UI - Example
+# FAN Web UI - Example
 
 This is a minimal example showing how to use `@itone/fan-web-ui` in a web application.
 
@@ -56,6 +56,6 @@ example/
 
 ## Learn More
 
-- [Pi Web UI Documentation](../README.md)
-- [Pi AI Documentation](../../ai/README.md)
+- [FAN Web UI Documentation](../README.md)
+- [FAN AI Documentation](../../ai/README.md)
 - [Mini Lit Documentation](https://github.com/badlogic/mini-lit)

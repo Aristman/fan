@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ModelManager } from "../model-manager.js";
-import type { RoutingRuleData, ModelSettingData, BudgetAlert } from "../types.js";
+import type { BudgetAlert, ModelSettingData, RoutingRuleData } from "../types.js";
 
 function createMockDbs() {
 	const rules: RoutingRuleData[] = [];
@@ -108,10 +108,7 @@ describe("ModelManager", () => {
 			budget: { db: dbs.budgetDb },
 			fallback: { config: { maxRetries: 1, baseDelayMs: 1 } },
 		});
-		const fn = vi
-			.fn()
-			.mockRejectedValueOnce(new Error("429 rate limit"))
-			.mockResolvedValueOnce("recovered");
+		const fn = vi.fn().mockRejectedValueOnce(new Error("429 rate limit")).mockResolvedValueOnce("recovered");
 		const result = await mm.executeWithFallback("coding", fn);
 		expect(result.result).toBe("recovered");
 		expect(result.attempts).toBe(2);

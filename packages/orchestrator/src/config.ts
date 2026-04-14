@@ -5,10 +5,10 @@
  * Provides model resolution and cloud health checking.
  */
 
+import { execSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { execSync } from "node:child_process";
 import type { OrchestratorConfig, WorkerType } from "./types.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -83,9 +83,7 @@ export function loadConfig(): OrchestratorConfig {
 			const userConfig = JSON.parse(raw);
 			return deepMerge(DEFAULTS, userConfig);
 		} catch (e) {
-			console.warn(
-				`[FAN Orchestrator] Failed to parse config.json: ${(e as Error).message}. Using defaults.`,
-			);
+			console.warn(`[FAN Orchestrator] Failed to parse config.json: ${(e as Error).message}. Using defaults.`);
 		}
 	}
 
@@ -127,10 +125,7 @@ async function checkCloudHealth(): Promise<"available" | "unavailable"> {
  */
 export async function getCloudStatus(): Promise<"available" | "unavailable"> {
 	const now = Date.now();
-	if (
-		now - cloudHealthCheckTime < CLOUD_HEALTH_CACHE_MS &&
-		cloudHealthCached !== "unknown"
-	) {
+	if (now - cloudHealthCheckTime < CLOUD_HEALTH_CACHE_MS && cloudHealthCached !== "unknown") {
 		return cloudHealthCached === "available" ? "available" : "unavailable";
 	}
 	cloudHealthCached = await checkCloudHealth();
@@ -146,7 +141,7 @@ export function getCloudHealthCached(): "unknown" | "available" | "unavailable" 
 	return cloudHealthCached;
 }
 
-/** Get the fna binary invocation — reuse from subagent-runner */
+/** Get the fan binary invocation — reuse from subagent-runner */
 function getFnaInvocation(args: string[]): { command: string; args: string[] } {
 	const currentScript = process.argv[1];
 	if (currentScript && fs.existsSync(currentScript)) {

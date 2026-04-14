@@ -1,5 +1,5 @@
 /**
- * TUI config selector for `pi config` command
+ * TUI config selector for `fan config` command
  */
 
 import { ProcessTerminal, TUI } from "@itone/fan-tui";

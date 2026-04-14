@@ -1,5 +1,5 @@
 /**
- * Subprocess Runner — Spawns fna subprocesses for subagent execution
+ * Subprocess Runner — Spawns fan subprocesses for subagent execution
  *
  * Ported from packages/coding-agent/examples/extensions/subagent/index.ts
  * with FAN-specific enhancements (ModelManager integration, budget awareness).
@@ -10,8 +10,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { Message } from "@itone/fan-ai";
-import type { AgentConfig } from "./types.js";
-import type { UsageStats, SingleResult, OrchestratorConfig } from "./types.js";
+import type { AgentConfig, OrchestratorConfig, SingleResult, UsageStats } from "./types.js";
 
 export const MAX_PARALLEL_TASKS = 8;
 export const MAX_CONCURRENCY = 4;
@@ -28,7 +27,9 @@ export function getFinalOutput(messages: Message[]): string {
 	return "";
 }
 
-export type DisplayItem = { type: "text"; text: string } | { type: "toolCall"; name: string; args: Record<string, any> };
+export type DisplayItem =
+	| { type: "text"; text: string }
+	| { type: "toolCall"; name: string; args: Record<string, any> };
 
 export function getDisplayItems(messages: Message[]): DisplayItem[] {
 	const items: DisplayItem[] = [];
@@ -51,7 +52,15 @@ export function formatTokens(count: number): string {
 }
 
 export function formatUsageStats(
-	usage: { input: number; output: number; cacheRead: number; cacheWrite: number; cost: number; contextTokens?: number; turns?: number },
+	usage: {
+		input: number;
+		output: number;
+		cacheRead: number;
+		cacheWrite: number;
+		cost: number;
+		contextTokens?: number;
+		turns?: number;
+	},
 	model?: string,
 ): string {
 	const parts: string[] = [];
@@ -97,7 +106,7 @@ async function writePromptToTempFile(agentName: string, prompt: string): Promise
 }
 
 /**
- * Resolve the fna binary invocation.
+ * Resolve the fan binary invocation.
  * Tries current script path first, then falls back to "fan" command.
  */
 export function getFnaInvocation(args: string[]): { command: string; args: string[] } {
@@ -314,9 +323,7 @@ export async function runSingleAgentWithRetry(
 
 	for (let attempt = 1; attempt <= maxAttempts; attempt++) {
 		try {
-			const result = await runSingleAgent(
-				defaultCwd, agents, agentName, task, cwd, step, signal, onUpdate,
-			);
+			const result = await runSingleAgent(defaultCwd, agents, agentName, task, cwd, step, signal, onUpdate);
 
 			if (result.exitCode === 0) {
 				return result;
@@ -359,17 +366,19 @@ export async function runSingleAgentWithRetry(
 		}
 	}
 
-	return lastError ?? {
-		agent: agentName,
-		agentSource: "unknown",
-		task,
-		exitCode: 1,
-		messages: [],
-		stderr: "All retry attempts exhausted",
-		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
-		errorMessage: "All retry attempts exhausted",
-		step,
-	};
+	return (
+		lastError ?? {
+			agent: agentName,
+			agentSource: "unknown",
+			task,
+			exitCode: 1,
+			messages: [],
+			stderr: "All retry attempts exhausted",
+			usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
+			errorMessage: "All retry attempts exhausted",
+			step,
+		}
+	);
 }
 
 /**
@@ -409,17 +418,28 @@ export async function runSingleAgentWithFallback(
 	};
 
 	if (signal) {
-		signal.addEventListener("abort", () => {
-			abortController.abort();
-			cleanup();
-		}, { once: true });
+		signal.addEventListener(
+			"abort",
+			() => {
+				abortController.abort();
+				cleanup();
+			},
+			{ once: true },
+		);
 	}
 
 	try {
 		const result = await Promise.race([
 			runSingleAgentWithRetry(
-				defaultCwd, agents, agentName, task, config,
-				cwd, step, abortController.signal, onUpdate,
+				defaultCwd,
+				agents,
+				agentName,
+				task,
+				config,
+				cwd,
+				step,
+				abortController.signal,
+				onUpdate,
 			),
 			timeoutPromise,
 		]);
@@ -432,8 +452,15 @@ export async function runSingleAgentWithFallback(
 		if (mode === "auto") {
 			const fallbackConfig = { ...config, providerMode: "local" as const };
 			return runSingleAgentWithRetry(
-				defaultCwd, agents, agentName, task, fallbackConfig,
-				cwd, step, signal, onUpdate,
+				defaultCwd,
+				agents,
+				agentName,
+				task,
+				fallbackConfig,
+				cwd,
+				step,
+				signal,
+				onUpdate,
 			);
 		}
 

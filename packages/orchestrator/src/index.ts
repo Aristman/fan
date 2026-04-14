@@ -1,87 +1,78 @@
-export { orchestratorExtension, default } from "./orchestrator-extension.js";
-
-// Public types
-export type {
-    TaskType,
-    TaskStatus,
-    WorkerType,
-    ExecutionMode,
-    WorkerState,
-    ProviderMode,
-    SubagentTask,
-    TaskClassification,
-    UsageStats,
-    SingleResult,
-    SubagentDetails,
-    OrchestratorState,
-    OrchestratorConfig,
-    AgentConfig,
-    AgentDiscoveryResult,
-    WorkerHandle,
-    Waiter,
-    ToolCallInfo,
-    WorkerProgress,
-} from "./types.js";
-
-// Public classes
-export { TaskManager } from "./task-manager.js";
-export type { CreateTaskConfig } from "./task-manager.js";
-
-// Agent discovery
-export { discoverAgents, formatAgentList } from "./agents.js";
 export type { AgentScope } from "./agents.js";
-
+// Agent discovery
 // Orchestrator prompts
 export {
-    COORDINATOR_PROMPT,
-    PLANNING_PROMPT,
-    formatTaskNotification,
-    parseVerdict,
+	COORDINATOR_PROMPT,
+	discoverAgents,
+	formatAgentList,
+	formatTaskNotification,
+	PLANNING_PROMPT,
+	parseVerdict,
 } from "./agents.js";
-
 // Configuration
 export {
-    loadConfig,
-    resolveModel,
-    getCloudStatus,
-    getCloudHealthCached,
-    DEFAULTS,
+	DEFAULTS,
+	getCloudHealthCached,
+	getCloudStatus,
+	loadConfig,
+	resolveModel,
 } from "./config.js";
-
-// Worker registry and slot pool
-export {
-    genWorkerId,
-    registerWorker,
-    getWorker,
-    listWorkers,
-    activeWorkers,
-    hasActiveWriteWorker,
-    updateWorker,
-    acquireSlot,
-    releaseSlot,
-    getQueueLength,
-    statusIcon,
-    statusColor,
-} from "./workers.js";
-
+export { default, orchestratorExtension } from "./orchestrator-extension.js";
 // Permissions
 export { isDangerousCommand } from "./permissions.js";
-
-// Task management utilities
-export { formatTaskList } from "./task-manager.js";
-
+export type { DisplayItem } from "./subagent-runner.js";
 // Subprocess runner utilities
 export {
-    runSingleAgent,
-    runSingleAgentWithRetry,
-    runSingleAgentWithFallback,
-    getFinalOutput,
-    getDisplayItems,
-    formatUsageStats,
-    formatTokens,
-    mapWithConcurrencyLimit,
-    getFnaInvocation,
-    MAX_PARALLEL_TASKS,
-    MAX_CONCURRENCY,
+	formatTokens,
+	formatUsageStats,
+	getDisplayItems,
+	getFinalOutput,
+	getFnaInvocation,
+	MAX_CONCURRENCY,
+	MAX_PARALLEL_TASKS,
+	mapWithConcurrencyLimit,
+	runSingleAgent,
+	runSingleAgentWithFallback,
+	runSingleAgentWithRetry,
 } from "./subagent-runner.js";
-export type { DisplayItem } from "./subagent-runner.js";
+export type { CreateTaskConfig } from "./task-manager.js";
+// Public classes
+// Task management utilities
+export { formatTaskList, TaskManager } from "./task-manager.js";
+// Public types
+export type {
+	AgentConfig,
+	AgentDiscoveryResult,
+	ExecutionMode,
+	OrchestratorConfig,
+	OrchestratorState,
+	ProviderMode,
+	SingleResult,
+	SubagentDetails,
+	SubagentTask,
+	TaskClassification,
+	TaskStatus,
+	TaskType,
+	ToolCallInfo,
+	UsageStats,
+	Waiter,
+	WorkerHandle,
+	WorkerProgress,
+	WorkerState,
+	WorkerType,
+} from "./types.js";
+// Worker registry and slot pool
+export {
+	acquireSlot,
+	activeWorkers,
+	genWorkerId,
+	getQueueLength,
+	getWorker,
+	hasActiveWriteWorker,
+	listWorkers,
+	registerWorker,
+	releaseSlot,
+	statusColor,
+	statusIcon,
+	updateWorker,
+} from "./workers.js";

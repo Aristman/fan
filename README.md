@@ -1,241 +1,153 @@
-# Filin Agent Next (FAN)
+# FAN — Filin Agent Next
 
-> Local AI runtime-agent for developers. Fork of [fan-mono](https://github.com/itone-team/fan-mono) with orchestrator, model management, and client API.
+> Local AI runtime-agent for developers. Multi-provider, multi-agent, with web dashboard.
 
-## What It Does
+## Features
 
-FAN runs locally on your machine and provides an external API for multiple UI clients:
-- **TUI** — Interactive terminal interface (built-in)
-- **Dashboard** — Lit-based web UI (browser, http://localhost:5174)
-- **Server mode** — HTTP REST + WebSocket for web/mobile/IDE clients
-- **RPC mode** — JSON-over-stdio for IDE plugins
-- **SDK** — Programmatic use as a library
-
-Built on [fan-coding-agent](https://github.com/itone-team/fan-mono) with:
-- **Orchestrator** — Multi-agent task delegation (explore, plan, implement, verify workers)
-- **Model Manager** — Per-task routing, fallback chains, budget tracking
-- **API Gateway** — Hono REST + WebSocket with token auth
+- Multi-provider AI (OpenAI, Anthropic, Google, Groq, xAI, Mistral, and more)
+- Interactive TUI with streaming, markdown, thinking blocks
+- Multi-agent orchestrator (coordinator mode, worker delegation)
+- Model management (routing rules, fallback chains, budget tracking)
+- REST API + WebSocket server mode (14 endpoints)
+- Web dashboard (Lit-based, real-time streaming)
+- Extension system & skill system
+- Session persistence (JSONL + SQLite metadata)
+- `fan init` setup wizard
+- `fan doctor` diagnostics
+- `fan server` command with start/stop/status subcommands (background daemon management)
+- Pre-built binary delivery (GitHub Releases, CI/CD)
 
 ## Quick Start
 
-```powershell
-# Install dependencies
-npm install
+### Install
 
-# Build all packages (10 packages)
-npm run build
-
-# Run in interactive mode
-node packages/coding-agent/dist/cli.js
-
-# Run as API server (with Web Dashboard)
-node packages/coding-agent/dist/cli.js --mode server --port 3456
-
-# Run dashboard dev server (in separate terminal)
-cd packages/dashboard && npm run dev
-# Open http://localhost:5174
-
-# Single prompt
-node packages/coding-agent/dist/cli.js -p "Hello, world!"
+```bash
+# Download pre-built binary (see INSTALL.md for all platforms)
+# Or build from source:
+git clone <repo> && cd fan && npm install && npm run build
 ```
 
-## Configuration
+### Setup
 
-### Provider Setup
-
-Set API key as environment variable:
-
-```powershell
-# System-wide (PowerShell)
-[System.Environment]::SetEnvironmentVariable("ANTHROPIC_API_KEY", "your-key", "User")
-
-# Or in project .env file (not committed)
-echo "ANTHROPIC_API_KEY=your-key" > .env
+```bash
+fan init          # Interactive setup wizard
+fan doctor        # Verify installation
 ```
 
-Supported providers: Anthropic, OpenAI, Google, Ollama, vLLM, LM Studio, Z.AI, and 15+ more.
+### Use
 
-### Project Settings
-
-Create `.fan/settings.json` in project root:
-
-```json
-{
-  "defaultProvider": "anthropic",
-  "defaultModel": "anthropic/claude-sonnet-4-20250514",
-  "defaultThinkingLevel": "medium",
-  "transport": "sse"
-}
+```bash
+fan               # Interactive TUI mode
+fan -p "prompt"   # Single prompt
+fan --web         # Server + dashboard (auto-opens browser)
+fan server        # Server in foreground (full runtime)
+fan server start  # Background daemon (for IDE plugins)
+fan server status # Check if server is running
+fan server stop   # Stop background server
 ```
 
-### Custom Models
+## Documentation
 
-Add custom providers and models in `~/.fan/agent/models.json`:
-
-```json
-{
-  "providers": {
-    "<provider-id>": {
-      "baseUrl": "https://api.example.com/v1",
-      "api": "openai-completions",
-      "apiKey": "your-key-or-env-var-name",
-      "compat": {
-        "supportsDeveloperRole": false,
-        "thinkingFormat": "openai"
-      },
-      "models": [
-        {
-          "id": "model-id",
-          "name": "Display Name",
-          "reasoning": false,
-          "input": ["text"],
-          "cost": {
-            "input": 0.0,
-            "output": 0.0,
-            "cacheRead": 0,
-            "cacheWrite": 0
-          },
-          "contextWindow": 128000,
-          "maxTokens": 4096
-        }
-      ]
-    }
-  }
-}
-```
-
-**Fields:**
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `baseUrl` | ✅ | API endpoint URL |
-| `api` | ✅ | API protocol: `openai-completions`, `anthropic`, `google` |
-| `apiKey` | ✅ | API key string or `${ENV_VAR_NAME}` for env reference |
-| `compat.supportsDeveloperRole` | | Enable `developer` system role (Anthropic) |
-| `compat.thinkingFormat` | | Thinking format: `openai`, `anthropic`, `zai`, `deepseek` |
-| `models[].id` | ✅ | Model identifier used in routing |
-| `models[].name` | ✅ | Human-readable display name |
-| `models[].reasoning` | | `true` if model supports extended thinking |
-| `models[].input` | | Input modalities: `["text"]`, `["text", "image"]` |
-| `models[].cost` | | Token costs for budget tracking |
-| `models[].contextWindow` | | Max context window size |
-| `models[].maxTokens` | | Max output tokens |
-
-Referenced in `.fan/settings.json` (project or global) as `"<provider-id>/<model-id>"`.
+| Document | Description |
+|----------|-------------|
+| [INSTALL.md](INSTALL.md) | Installation guide (Windows/Linux/macOS) |
+| [SETUP.md](SETUP.md) | Development setup & configuration |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Contribution guide |
+| [MIGRATION.md](MIGRATION.md) | Migration from upstream fan/pi |
+| [docs/guides/configuration.md](docs/guides/configuration.md) | Settings reference |
+| [docs/guides/orchestrator.md](docs/guides/orchestrator.md) | Orchestrator guide |
+| [docs/guides/dashboard.md](docs/guides/dashboard.md) | Dashboard guide |
+| [docs/guides/api-reference.md](docs/guides/api-reference.md) | API reference |
 
 ## Packages
 
-| Package | Scope | Description |
-|---------|-------|-------------|
-| [ai](packages/ai/) | `@itone/fan-ai` | LLM abstraction: streaming, 20+ providers |
-| [agent](packages/agent/) | `@itone/fan-agent-core` | Agent runtime: loop, tools, steering |
-| [tui](packages/tui/) | `@itone/fan-tui` | Terminal UI: markdown, editor, autocomplete |
-| [coding-agent](packages/coding-agent/) | `@itone/fan-coding-agent` | Core agent with tools, sessions, extensions |
-| [web-ui](packages/web-ui/) | `@itone/fan-web-ui` | Lit web components for chat UI |
-| [orchestrator](packages/orchestrator/) | `@fan/orchestrator` | Multi-agent coordination and delegation |
-| [model-manager](packages/model-manager/) | `@fan/model-manager` | Model routing, fallback, budget tracking |
-| [api-gateway](packages/api-gateway/) | `@fan/api-gateway` | HTTP REST + WebSocket server mode |
-| [db](packages/db/) | `@fan/db` | Prisma + SQLite schema and migrations |
-| [dashboard](packages/dashboard/) | `@fan/dashboard` | Lit-based web dashboard client |
+| Package | Version | Description |
+|---------|---------|-------------|
+| @itone/fan-ai | 0.66.1 | AI provider abstraction |
+| @itone/fan-agent | 0.66.1 | Agent core & session management |
+| @itone/fan-tui | 0.66.1 | Terminal UI components |
+| @itone/fan-web-ui | 0.66.1 | Web UI components |
+| @itone/fan-coding-agent | 0.66.1 | Main CLI package |
+| @fan/orchestrator | 1.0.0 | Multi-agent coordination |
+| @fan/model-manager | 1.0.0 | Model routing & budget |
+| @fan/api-gateway | 1.0.0 | REST/WS API server |
+| @fan/dashboard | 1.0.0 | Web dashboard |
+| @fan/db | 1.0.0 | Prisma/SQLite database |
 
-## Dashboard
+## Architecture
 
-Web UI for FAN runtime — session management, chat with streaming, budget visualization, model settings.
+FAN is a monorepo built with TypeScript, Bun, and npm workspaces.
 
-### Features
-- **Session sidebar** — create, delete, search, message count
-- **Chat view** — streaming responses, markdown, thinking blocks, tool calls, auto-scroll
-- **Budget panel** — per-provider budget cards with progress bars
-- **Model settings** — per-model overrides (temperature, maxTokens, thinking)
-- **Settings dialog** — connection config, API token management
-- **WebSocket** — real-time streaming with auto-reconnect
-- **Light/Dark theme** — custom FAN theme (oklch hue 260°)
-
-### Architecture
-- **Thin frontend.** All session data lives in JSONL files on disk.
-- Runtime engine switches sessions on demand (`switchSession`), disk is single source of truth.
-- WS subscription forwarding with adapter-level routing (resubscribes on session switch).
-- Server starts with `continueRecent` — opens last session, or creates new if empty.
-
-### Running
-
-```powershell
-# Start FAN server
-node packages/coding-agent/dist/cli.js --mode server --port 3456
-
-# Start dashboard (separate terminal)
-cd packages/dashboard && npm run dev
-# Open http://localhost:5174
+```
+Client (TUI / Dashboard / IDE / SDK)
+         │
+    ┌────┴────┐
+    │  API    │  Hono REST + WebSocket
+    │ Gateway │  Token auth via ClientToken (DB)
+    └────┬────┘
+         │
+    ┌────┴────────────┐
+    │  Coding Agent   │  Session management, tools, extensions
+    └────┬────────────┘
+         │
+    ┌────┼────────────┐
+    │    │            │
+Model   │       Orchestrator
+Manager │       (delegate_task,
+(routing,│       4 workers,
+fallback,│       3 workflows)
+budget)  │
+    │    │
+    ┌────┴────┐
+    │  Fan AI  │  Provider abstraction (20+ providers)
+    └─────────┘
+         │
+    ┌────┴────┐
+    │   DB     │  Prisma + SQLite (metadata, tokens, settings)
+    └─────────┘
 ```
 
-First launch shows connection setup — enter server URL and API token. Token is saved in localStorage.
+### Key Concepts
 
-### Token Generation
+- **Runtime = execution engine.** One active session at a time. Disk (JSONL) is the single source of truth.
+- **Dashboard is a thin frontend.** No in-memory session stores — all data from disk via API.
+- **Orchestrator** delegates tasks to specialized workers (explore, plan, implement, verify) with coordinator mode.
+- **Model Manager** handles per-task routing, fallback chains, and budget tracking across providers.
+- **Extensions & Skills** add tools, commands, and lifecycle hooks to the agent.
 
-```powershell
-# Create token (with auth disabled)
-FAN_NO_AUTH=1 node packages/coding-agent/dist/cli.js --mode server --port 3456
-curl -s -X POST http://localhost:3456/api/tokens -H "Content-Type: application/json" -d '{"name":"dashboard"}' | jq -r '.token'
+### Configuration
+
+- **Global config:** `~/.fan/agent/` (models, settings, tokens)
+- **Project config:** `.fan/` (project-specific settings)
+- **Environment vars:** `.env` (API keys, never committed)
+- **Custom models:** `~/.fan/agent/models.json` (global only)
+
+### Server Mode
+
+Server mode exposes 14 REST endpoints + WebSocket streaming:
+
+```bash
+fan --web                  # Server + dashboard (auto-opens browser)
+fan server                 # Server in foreground
+fan server start           # Background daemon
+fan server start --port 3000  # Custom port
+fan --mode server          # API server only (no browser auto-open)
 ```
 
-## Orchestrator
-
-FAN includes a multi-agent orchestrator that can delegate tasks to specialized workers:
-
-```text
-delegate_task tool supports 3 modes:
-  Single:   { agent: "explore", task: "Find all API endpoints" }
-  Parallel: { tasks: [{ agent: "explore", ... }, { agent: "explore", ... }] }
-  Chain:    { chain: [{ agent: "explore", task: "..." }, { agent: "plan", task: "... {previous}" }] }
-```
-
-**Built-in workers:**
-| Worker | Role | Tools |
-|--------|------|-------|
-| explore | Fast codebase recon | read, grep, find, ls, bash |
-| plan | Implementation plans | read, grep, find, ls |
-| implement | General-purpose coding | all defaults |
-| verify | Code review & testing | read, grep, find, ls, bash |
-
-**Slash commands:** `/orchestrator`, `/tasks`, `/agents`, `/delegate`
-
-## API Gateway
-
-Server mode exposes REST API + WebSocket:
-
-```powershell
-# Start server
-node packages/coding-agent/dist/cli.js --mode server --port 3456
-
-# Without auth (dev mode)
-FAN_NO_AUTH=1 node packages/coding-agent/dist/cli.js --mode server
-```
+`fan server` runs the **full runtime** (sessions, extensions, models, orchestrator) — all connected clients (dashboard, IDE plugins, API consumers) get the complete agent capabilities. Use `fan server start` for background daemon mode — ideal for IDE plugin integration. The daemon writes PID and metadata to `~/.fan/agent/server.json`.
 
 Key endpoints: `GET /api/health`, `POST /api/sessions/:id/messages`,
 `GET /api/models`, `GET /api/budget`, `WS /api/ws/:sessionId`
 
-See [ARCHITECTURE.md](./ARCHITECTURE.md) for full API documentation.
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for full details.
 
-## Testing
+### Delivery
 
-```powershell
-# All orchestrator tests (95 tests)
-cd packages/orchestrator && npx vitest run
+Pre-built binaries for all platforms (Windows, Linux, macOS) are available from
+[GitHub Releases](https://github.com/user/fan/releases), created automatically
+by CI/CD on every release. See [INSTALL.md](INSTALL.md) for download links.
 
-# All model-manager tests (42 tests)
-cd packages/model-manager && npx vitest run
-
-# All api-gateway tests (39 tests)
-cd packages/api-gateway && npx vitest run
-
-# All dashboard tests (23 tests)
-cd packages/dashboard && npx vitest run
-
-# Full build (10 packages)
-npm run build
-```
-
-See [docs/develop/tests/dashboard-phase6.md](./docs/develop/tests/dashboard-phase6.md) for detailed dashboard verification instructions.
+For IDE plugin integration, use `fan server start` to run the agent as a background daemon — it registers its PID and WebSocket endpoint so plugins can auto-connect.
 
 ## Development
 
@@ -247,10 +159,15 @@ master (prod) → develop (integration) → FAN/<type>/<name> (feature branches)
 
 Branch types: `feature`, `fix`, `hotfix`. Commits: conventional commits.
 
-### Build
+### Build & Test
 
-Uses [tsgo](https://github.com/nicholasgasior/ts-go) (native TypeScript Go compiler).
-All packages build to `dist/` with ESM output. Dashboard uses Vite separately.
+```bash
+npm run build                                    # Build all packages (10 packages, 0 errors)
+cd packages/orchestrator && npx vitest run       # Orchestrator tests (95 tests)
+cd packages/model-manager && npx vitest run      # Model Manager tests (42 tests)
+cd packages/api-gateway && npx vitest run        # API Gateway tests (39 tests)
+cd packages/dashboard && npx vitest run          # Dashboard tests (23 tests)
+```
 
 ### Environment
 
@@ -258,17 +175,10 @@ All packages build to `dist/` with ESM output. Dashboard uses Vite separately.
 - **Language:** TypeScript strict
 - **Package manager:** npm workspaces
 - **Database:** SQLite via Prisma
-- **OS:** Windows (primary), Linux, macOS
+- **Build:** tsgo (native TypeScript Go compiler)
+- **OS:** Windows, Linux, macOS
 
-## Documentation
-
-| File | Description |
-|------|-------------|
-| [CLAUDE.md](./CLAUDE.md) | Quick context for LLM sessions |
-| [ARCHITECTURE.md](./ARCHITECTURE.md) | Full architecture reference |
-| [SETUP.md](./SETUP.md) | Installation guide (Windows/Ubuntu/macOS) |
-| [docs/specs/](./docs/specs/) | Feature specifications |
-| [docs/develop/tests/](./docs/develop/tests/) | Test instructions |
+See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
 ## License
 

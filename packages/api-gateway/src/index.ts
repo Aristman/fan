@@ -1,8 +1,9 @@
 // @fan/api-gateway — Client API Gateway for FAN
-export { startServer, createApp } from "./http-server.js";
-export type { SessionAdapter, ServerOptions } from "./http-server.js";
-export { tokenAuth, generateToken, validateToken, listTokens, revokeToken, isAuthDisabled } from "./auth.js";
+
 export type { ClientTokenData } from "./auth.js";
-export { attachWebSocketHandler } from "./ws-handler.js";
-export type { WsHandlerOptions } from "./ws-handler.js";
+export { generateToken, isAuthDisabled, listTokens, revokeToken, tokenAuth, validateToken } from "./auth.js";
+export type { ServerOptions, SessionAdapter } from "./http-server.js";
+export { createApp, startServer } from "./http-server.js";
 export * from "./types.js";
+export type { WsHandlerOptions } from "./ws-handler.js";
+export { attachWebSocketHandler } from "./ws-handler.js";

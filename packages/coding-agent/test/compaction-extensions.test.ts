@@ -24,9 +24,9 @@ import { createSyntheticSourceInfo } from "../src/core/source-info.js";
 import { codingTools } from "../src/core/tools/index.js";
 import { createTestResourceLoader } from "./utilities.js";
 
-const AFAN_KEY = process.env.ANTHROPIC_OAUTH_TOKEN || process.env.ANTHROPIC_AFAN_KEY;
+const API_KEY = process.env.ANTHROPIC_OAUTH_TOKEN || process.env.ANTHROPIC_API_KEY;
 
-describe.skipIf(!AFAN_KEY)("Compaction extensions", () => {
+describe.skipIf(!API_KEY)("Compaction extensions", () => {
 	let session: AgentSession;
 	let tempDir: string;
 	let capturedEvents: SessionEvent[];
@@ -88,7 +88,7 @@ describe.skipIf(!AFAN_KEY)("Compaction extensions", () => {
 	function createSession(extensions: Extension[]) {
 		const model = getModel("anthropic", "claude-sonnet-4-5")!;
 		const agent = new Agent({
-			getApiKey: () => AFAN_KEY,
+			getApiKey: () => API_KEY,
 			initialState: {
 				model,
 				systemPrompt: "You are a helpful assistant. Be concise.",
