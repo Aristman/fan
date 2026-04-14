@@ -1,9 +1,14 @@
 import type { PrismaClient } from "@fan/db";
 import { getPrismaClient } from "@fan/db";
 
+let _db: PrismaClient | null = null;
+
 /** Get Prisma client, throws if DB not available */
 function db(): PrismaClient {
-	return getPrismaClient();
+	if (!_db) {
+		_db = getPrismaClient();
+	}
+	return _db;
 }
 
 // --- Routing Rules ---
@@ -26,7 +31,8 @@ export async function upsertRoutingRule(data: {
 	fallback?: string;
 	enabled?: boolean;
 }) {
-	return db().routingRule.upsert({
+	const client = db();
+	return client.routingRule.upsert({
 		where: { name: data.name },
 		update: {
 			provider: data.provider,
@@ -81,7 +87,8 @@ export async function upsertModelSetting(data: {
 	isDefault?: boolean;
 	priority?: number;
 }) {
-	return db().modelSetting.upsert({
+	const client = db();
+	return client.modelSetting.upsert({
 		where: { provider_model: { provider: data.provider, model: data.model } },
 		update: {
 			temperature: data.temperature,
@@ -141,12 +148,13 @@ export async function upsertBudgetConfig(data: {
 	tokenLimit?: number | null;
 	costLimit?: number | null;
 }) {
-	const existing = await db().budget.findFirst({
+	const client = db();
+	const existing = await client.budget.findFirst({
 		where: { provider: data.provider ?? null, period: data.period },
 	});
 
 	if (existing) {
-		return db().budget.update({
+		return client.budget.update({
 			where: { id: existing.id },
 			data: {
 				tokenLimit: data.tokenLimit,
@@ -155,7 +163,7 @@ export async function upsertBudgetConfig(data: {
 		});
 	}
 
-	return db().budget.create({
+	return client.budget.create({
 		data: {
 			provider: data.provider,
 			period: data.period,

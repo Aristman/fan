@@ -1,25 +1,12 @@
 // packages/coding-agent/src/cli/init-wizard.ts
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { APP_NAME, getAgentDir, getModelsPath, getSettingsPath, VERSION } from "../config.js";
+import { getWizardProviders, isProviderConfigured } from "@itone/fan-ai";
 
-const PROVIDERS = [
-	{ name: "OpenAI", envVar: "OPENAI_API_KEY", models: ["gpt-4o", "gpt-4o-mini", "o1", "o3-mini"] },
-	{
-		name: "Anthropic",
-		envVar: "ANTHROPIC_API_KEY",
-		models: ["claude-sonnet-4-20250514", "claude-opus-4-20250514", "claude-haiku-4-20250414"],
-	},
-	{ name: "Google", envVar: "GOOGLE_API_KEY", models: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"] },
-	{ name: "Groq", envVar: "GROQ_API_KEY", models: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"] },
-	{ name: "xAI", envVar: "XAI_API_KEY", models: ["grok-3", "grok-3-mini"] },
-	{ name: "Mistral", envVar: "MISTRAL_API_KEY", models: ["mistral-large-latest", "mistral-medium-latest"] },
-	{ name: "OpenRouter", envVar: "OPENROUTER_API_KEY", models: ["openrouter/auto"] },
-	{ name: "GitHub Copilot", envVar: "COPILOT_GITHUB_TOKEN", models: ["gpt-4o", "claude-sonnet-4"] },
-	{ name: "z.ai", envVar: "ZAI_API_KEY", models: ["claude-sonnet-4", "claude-opus-4", "gpt-4o"] },
-];
+const WIZARD_PROVIDERS = getWizardProviders();
 
 function createRL(): ReturnType<typeof createInterface> {
 	return createInterface({ input: process.stdin, output: process.stdout });
@@ -57,10 +44,10 @@ export async function runInitWizard(): Promise<void> {
 	console.log("\n📋 Select AI provider(s) to configure:");
 	console.log("   (Enter numbers separated by commas, e.g. 1,3)");
 
-	for (let i = 0; i < PROVIDERS.length; i++) {
-		const p = PROVIDERS[i];
-		const hasKey = process.env[p.envVar] ? " [configured]" : "";
-		console.log(`   ${i + 1}. ${p.name}${hasKey}`);
+	for (let i = 0; i < WIZARD_PROVIDERS.length; i++) {
+		const { id, meta } = WIZARD_PROVIDERS[i];
+		const hasKey = isProviderConfigured(id) ? " [configured]" : "";
+		console.log(`   ${i + 1}. ${meta.displayName}${hasKey}`);
 	}
 
 	const providerInput = await question(rl, "\n   Provider(s) [1]: ");
@@ -68,7 +55,7 @@ export async function runInitWizard(): Promise<void> {
 		? providerInput
 				.split(",")
 				.map((s) => parseInt(s.trim(), 10) - 1)
-				.filter((i) => i >= 0 && i < PROVIDERS.length)
+				.filter((i) => i >= 0 && i < WIZARD_PROVIDERS.length)
 		: [0]; // default: OpenAI
 
 	if (providerIndices.length === 0) {
@@ -82,27 +69,27 @@ export async function runInitWizard(): Promise<void> {
 	const envVars: Record<string, string> = {};
 
 	for (const idx of providerIndices) {
-		const provider = PROVIDERS[idx];
-		if (process.env[provider.envVar]) {
-			console.log(`   ✅ ${provider.name}: already set (${provider.envVar})`);
-			envVars[provider.envVar] = "";
+		const { id, meta } = WIZARD_PROVIDERS[idx];
+		if (isProviderConfigured(id)) {
+			console.log(`   ✅ ${meta.displayName}: already set (${meta.primaryEnvVar})`);
+			envVars[meta.primaryEnvVar] = "";
 		} else {
-			const key = await question(rl, `   ${provider.name} (${provider.envVar}): `);
+			const key = await question(rl, `   ${meta.displayName} (${meta.primaryEnvVar}): `);
 			if (key.trim()) {
-				envVars[provider.envVar] = key.trim();
+				envVars[meta.primaryEnvVar] = key.trim();
 			}
 		}
 	}
 
 	// Step 4: Default model selection
-	const firstProvider = PROVIDERS[providerIndices[0]];
-	console.log(`\n🤖 Select default model for ${firstProvider.name}:`);
-	for (let i = 0; i < firstProvider.models.length; i++) {
-		console.log(`   ${i + 1}. ${firstProvider.models[i]}`);
+	const firstProvider = WIZARD_PROVIDERS[providerIndices[0]];
+	console.log(`\n🤖 Select default model for ${firstProvider.meta.displayName}:`);
+	for (let i = 0; i < firstProvider.meta.wizardModels.length; i++) {
+		console.log(`   ${i + 1}. ${firstProvider.meta.wizardModels[i]}`);
 	}
 	const modelInput = await question(rl, "\n   Model [1]: ");
 	const modelIdx = parseInt(modelInput.trim() || "1", 10) - 1;
-	const selectedModel = firstProvider.models[modelIdx >= 0 && modelIdx < firstProvider.models.length ? modelIdx : 0];
+	const selectedModel = firstProvider.meta.wizardModels[modelIdx >= 0 && modelIdx < firstProvider.meta.wizardModels.length ? modelIdx : 0];
 
 	// Step 5: Generate .env file
 	const envPath = resolve(process.cwd(), ".env");
@@ -139,7 +126,7 @@ export async function runInitWizard(): Promise<void> {
 	// Step 6: Generate settings.json
 	const settingsPath = getSettingsPath();
 	const settings = {
-		defaultProvider: firstProvider.name.toLowerCase().replace(/\s+/g, "-"),
+		defaultProvider: firstProvider.id,
 		defaultModel: selectedModel,
 		theme: "dark",
 		quietStartup: false,
@@ -160,7 +147,7 @@ export async function runInitWizard(): Promise<void> {
 	// Step 7: Summary
 	console.log("\n✨ Setup complete!\n");
 	console.log("  Configuration:");
-	console.log(`    Provider: ${firstProvider.name}`);
+	console.log(`    Provider: ${firstProvider.meta.displayName}`);
 	console.log(`    Model: ${selectedModel}`);
 	console.log(`    Env file: ${envPath}`);
 	console.log(`    Settings: ${settingsPath}`);

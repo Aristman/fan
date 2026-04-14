@@ -10,6 +10,7 @@ import { resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { type SessionAdapter, startServer } from "@fan/api-gateway";
 import { type ImageContent, modelsAreEqual, supportsXhigh } from "@itone/fan-ai";
+import { orchestratorExtension } from "@fan/orchestrator";
 import { ProcessTerminal, setKeybindings, TUI } from "@itone/fan-tui";
 import chalk from "chalk";
 import { type Args, type Mode, parseArgs, printHelp } from "./cli/args.js";
@@ -813,6 +814,14 @@ export async function main(args: string[]) {
 	const { migratedAuthProviders: migratedProviders, deprecationWarnings } = runMigrations(process.cwd());
 	time("runMigrations");
 
+	// Initialize database schema (create tables if needed)
+	try {
+		const { initDatabase } = await import("@fan/db");
+		await initDatabase();
+	} catch (e) {
+		console.error("Failed to initialize database:", e);
+	}
+
 	const cwd = process.cwd();
 	const agentDir = getAgentDir();
 	const startupSettingsManager = SettingsManager.create(cwd, agentDir);
@@ -867,6 +876,7 @@ export async function main(args: string[]) {
 				noThemes: parsed.noThemes,
 				systemPrompt: parsed.systemPrompt,
 				appendSystemPrompt: parsed.appendSystemPrompt,
+				extensionFactories: [orchestratorExtension],
 			},
 		});
 		const { settingsManager, modelRegistry, resourceLoader } = services;

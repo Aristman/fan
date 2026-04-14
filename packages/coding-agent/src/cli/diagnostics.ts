@@ -5,6 +5,7 @@ import { accessSync, constants, existsSync, mkdirSync, readdirSync, readFileSync
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { APP_NAME, getAgentDir, getModelsPath, getSessionsDir, getSettingsPath, VERSION } from "../config.js";
+import { getProvidersRegistry } from "@itone/fan-ai";
 
 interface DiagnosticResult {
 	name: string;
@@ -114,25 +115,11 @@ export async function runDiagnostics(): Promise<boolean> {
 	}
 
 	// 6. API keys check
-	const providerEnvVars: Record<string, string[]> = {
-		OpenAI: ["OPENAI_API_KEY", "OPENAI_API_KEY"],
-		Anthropic: ["ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY", "ANTHROPIC_OAUTH_TOKEN"],
-		Google: ["GOOGLE_API_KEY", "GEMINI_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY"],
-		Groq: ["GROQ_API_KEY"],
-		xAI: ["XAI_API_KEY"],
-		OpenRouter: ["OPENROUTER_API_KEY"],
-		Mistral: ["MISTRAL_API_KEY"],
-		Cerebras: ["CEREBRAS_API_KEY"],
-		"Z.AI": ["ZAI_API_KEY"],
-		"GitHub Copilot": ["COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"],
-		OpenCode: ["OPENCODE_API_KEY"],
-		HuggingFace: ["HF_TOKEN"],
-	};
-
+	const { providers } = getProvidersRegistry();
 	const configuredProviders: string[] = [];
-	for (const [provider, envVars] of Object.entries(providerEnvVars)) {
-		if (envVars.some((v) => process.env[v])) {
-			configuredProviders.push(provider);
+	for (const [id, meta] of Object.entries(providers)) {
+		if (meta.envVars.some((v) => process.env[v])) {
+			configuredProviders.push(meta.displayName);
 		}
 	}
 

@@ -23,6 +23,7 @@ import { getAgentDir, isBunBinary } from "../../config.js";
 // NOTE: This import works because loader.ts exports are NOT re-exported from index.ts,
 // avoiding a circular dependency. Extensions can import from @itone/fan-coding-agent.
 import * as _bundledPiCodingAgent from "../../index.js";
+import * as _bundledOrchestrator from "@fan/orchestrator";
 import { createEventBus, type EventBus } from "../event-bus.js";
 import type { ExecOptions } from "../exec.js";
 import { execCommand } from "../exec.js";
@@ -47,6 +48,7 @@ const VIRTUAL_MODULES: Record<string, unknown> = {
 	"@itone/fan-ai": _bundledPiAi,
 	"@itone/fan-ai/oauth": _bundledPiAiOauth,
 	"@itone/fan-coding-agent": _bundledPiCodingAgent,
+	"@fan/orchestrator": _bundledOrchestrator,
 };
 
 const require = createRequire(import.meta.url);

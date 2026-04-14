@@ -32,4 +32,6 @@ export type {
 } from "./utils/oauth/types.js";
 export * from "./utils/overflow.js";
 export * from "./utils/typebox-helpers.js";
+export * from "./providers-registry.js";
+export type { ProviderMeta, ProvidersRegistry } from "./providers-registry.js";
 export * from "./utils/validation.js";

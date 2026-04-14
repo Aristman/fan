@@ -192,6 +192,21 @@ for platform in "${PLATFORMS[@]}"; do
         cp ../../node_modules/koffi/index.js binaries/$platform/node_modules/koffi/
         cp ../../node_modules/koffi/package.json binaries/$platform/node_modules/koffi/
         cp ../../node_modules/koffi/build/koffi/win32_x64/koffi.node binaries/$platform/node_modules/koffi/build/koffi/win32_x64/
+        prisma_engine="query_engine-windows.dll.node"
+    elif [[ "$platform" == "darwin-arm64" ]]; then
+        prisma_engine="libquery_engine-darwin-arm64.dylib.node"
+    elif [[ "$platform" == "darwin-x64" ]]; then
+        prisma_engine="libquery_engine-darwin.dylib.node"
+    elif [[ "$platform" == "linux-arm64" ]]; then
+        prisma_engine="libquery_engine-linux-arm64-openssl-3.0.x.so.node"
+    elif [[ "$platform" == "linux-x64" ]]; then
+        prisma_engine="libquery_engine-debian-openssl-3.0.x.so.node"
+    fi
+
+    # Copy Prisma query engine for this platform
+    if [[ -n "${prisma_engine:-}" && -f ../../node_modules/.prisma/client/$prisma_engine ]]; then
+        mkdir -p binaries/$platform/node_modules/.prisma/client
+        cp ../../node_modules/.prisma/client/$prisma_engine binaries/$platform/node_modules/.prisma/client/
     fi
 done
 

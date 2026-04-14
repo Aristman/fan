@@ -1,6 +1,6 @@
 {
 	"name": "@fan/model-manager",
-	"version": "1.0.0",
+	"version": "0.1.0",
 	"description": "FAN model manager — provider routing, fallback chains, budget tracking",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -19,7 +19,7 @@
 	},
 	"dependencies": {
 		"@fan/db": "*",
-		"@itone/fan-ai": "^0.66.1"
+		"@itone/fan-ai": "*"
 	},
 	"devDependencies": {
 		"shx": "^0.4.0",
