@@ -225,6 +225,8 @@ ${chalk.bold("Commands:")}
   ${APP_NAME} update [source]           Update installed extensions (skips pinned sources)
   ${APP_NAME} list                      List installed extensions from settings
   ${APP_NAME} config                    Open TUI to enable/disable package resources
+  ${APP_NAME} init                      Run interactive setup wizard
+  ${APP_NAME} doctor                    Run diagnostics and print health report
   ${APP_NAME} <command> --help          Show help for install/remove/uninstall/update/list
 
 ${chalk.bold("Options:")}
