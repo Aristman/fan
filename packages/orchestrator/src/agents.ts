@@ -11,8 +11,8 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { getAgentDir, parseFrontmatter } from "@itone/fan-coding-agent";
 import { fileURLToPath } from "node:url";
+import { getAgentDir, parseFrontmatter } from "@itone/fan-coding-agent";
 
 export type AgentScope = "user" | "project" | "both";
 export type { AgentConfig, AgentDiscoveryResult } from "./types.js";

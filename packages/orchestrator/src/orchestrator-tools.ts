@@ -12,22 +12,17 @@ import { Container, Markdown, Spacer, Text } from "@itone/fan-tui";
 import { Type } from "@sinclair/typebox";
 import { discoverAgents } from "./agents.js";
 import {
-	MAX_PARALLEL_TASKS,
-	MAX_CONCURRENCY,
-	getFinalOutput,
-	getDisplayItems,
-	formatUsageStats,
 	formatTokens,
+	formatUsageStats,
+	getDisplayItems,
+	getFinalOutput,
+	MAX_CONCURRENCY,
+	MAX_PARALLEL_TASKS,
 	mapWithConcurrencyLimit,
 	runSingleAgent,
 } from "./subagent-runner.js";
-import { TaskManager } from "./task-manager.js";
-import type {
-	WorkerType,
-	ExecutionMode,
-	SingleResult,
-	SubagentDetails,
-} from "./types.js";
+import type { TaskManager } from "./task-manager.js";
+import type { ExecutionMode, SingleResult, SubagentDetails, WorkerType } from "./types.js";
 
 const COLLAPSED_ITEM_COUNT = 10;
 
@@ -99,12 +94,20 @@ function formatToolCall(
 	}
 }
 
-function classifyTaskByDescription(description: string): { workerType: WorkerType; confidence: number; reasoning: string } {
+function classifyTaskByDescription(description: string): {
+	workerType: WorkerType;
+	confidence: number;
+	reasoning: string;
+} {
 	const lower = description.toLowerCase();
 
 	// Explore patterns
 	if (/\b(explore|find|locate|search|grep|look for|what files|list|structure|where|which file)\b/i.test(lower)) {
-		return { workerType: "explore", confidence: 0.8, reasoning: "Task description suggests codebase exploration or file lookup" };
+		return {
+			workerType: "explore",
+			confidence: 0.8,
+			reasoning: "Task description suggests codebase exploration or file lookup",
+		};
 	}
 
 	// Plan patterns
@@ -118,7 +121,11 @@ function classifyTaskByDescription(description: string): { workerType: WorkerTyp
 	}
 
 	// Default: implement
-	return { workerType: "implement", confidence: 0.5, reasoning: "No specific pattern matched, defaulting to implement" };
+	return {
+		workerType: "implement",
+		confidence: 0.5,
+		reasoning: "No specific pattern matched, defaulting to implement",
+	};
 }
 
 type OnUpdateCallback = (partial: { content: Array<{ type: "text"; text: string }>; details: SubagentDetails }) => void;
@@ -166,7 +173,7 @@ export function registerOrchestratorTools(pi: ExtensionAPI, taskManager: TaskMan
 		description: [
 			"Delegate tasks to specialized subagents with isolated context.",
 			"Modes: single (agent + task), parallel (tasks array), chain (sequential with {previous} placeholder).",
-			'Built-in agents: explore (fast recon), plan (implementation plans), implement (general-purpose), verify (code review).',
+			"Built-in agents: explore (fast recon), plan (implementation plans), implement (general-purpose), verify (code review).",
 			'Default agent scope is "user". Set agentScope: "both" to include project-local agents from .fan/agents/.',
 		].join(" "),
 		promptSnippet: `## Orchestrator Mode
@@ -259,7 +266,9 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 
 					const chainUpdate: OnUpdateCallback | undefined = onUpdate
 						? (partial) => {
-								const currentResult = Array.isArray(partial.details) ? partial.details[0] : partial.details?.results?.[0];
+								const currentResult = Array.isArray(partial.details)
+									? partial.details[0]
+									: partial.details?.results?.[0];
 								if (currentResult) {
 									onUpdate({
 										content: partial.content,
@@ -270,14 +279,22 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 						: undefined;
 
 					const result = await runSingleAgent(
-						ctx.cwd, agents, step.agent, taskWithContext,
-						step.cwd, i + 1, signal, chainUpdate,
+						ctx.cwd,
+						agents,
+						step.agent,
+						taskWithContext,
+						step.cwd,
+						i + 1,
+						signal,
+						chainUpdate,
 					);
 					results.push(result);
 
-					const isError = result.exitCode !== 0 || result.stopReason === "error" || result.stopReason === "aborted";
+					const isError =
+						result.exitCode !== 0 || result.stopReason === "error" || result.stopReason === "aborted";
 					if (isError) {
-						const errorMsg = result.errorMessage || result.stderr || getFinalOutput(result.messages) || "(no output)";
+						const errorMsg =
+							result.errorMessage || result.stderr || getFinalOutput(result.messages) || "(no output)";
 						return {
 							content: [{ type: "text", text: `Chain stopped at step ${i + 1} (${step.agent}): ${errorMsg}` }],
 							details: makeDetails("chain")(results),
@@ -296,7 +313,12 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 			if (params.tasks && params.tasks.length > 0) {
 				if (params.tasks.length > MAX_PARALLEL_TASKS) {
 					return {
-						content: [{ type: "text", text: `Too many parallel tasks (${params.tasks.length}). Max is ${MAX_PARALLEL_TASKS}.` }],
+						content: [
+							{
+								type: "text",
+								text: `Too many parallel tasks (${params.tasks.length}). Max is ${MAX_PARALLEL_TASKS}.`,
+							},
+						],
 						details: makeDetails("parallel")([]),
 					};
 				}
@@ -319,7 +341,9 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 						const running = allResults.filter((r) => r.exitCode === -1).length;
 						const done = allResults.filter((r) => r.exitCode !== -1).length;
 						onUpdate({
-							content: [{ type: "text", text: `Parallel: ${done}/${allResults.length} done, ${running} running...` }],
+							content: [
+								{ type: "text", text: `Parallel: ${done}/${allResults.length} done, ${running} running...` },
+							],
 							details: makeDetails("parallel")([...allResults]),
 						});
 					}
@@ -327,8 +351,13 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 
 				const results = await mapWithConcurrencyLimit(params.tasks, MAX_CONCURRENCY, async (t, index) => {
 					const result = await runSingleAgent(
-						ctx.cwd, agents, t.agent, t.task, t.cwd,
-						undefined, signal,
+						ctx.cwd,
+						agents,
+						t.agent,
+						t.task,
+						t.cwd,
+						undefined,
+						signal,
 						(partial) => {
 							const _cr = Array.isArray(partial.details) ? partial.details[0] : partial.details?.results?.[0];
 							if (_cr) {
@@ -349,7 +378,12 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 					return `[${r.agent}] ${r.exitCode === 0 ? "completed" : "failed"}: ${preview || "(no output)"}`;
 				});
 				return {
-					content: [{ type: "text", text: `Parallel: ${successCount}/${results.length} succeeded\n\n${summaries.join("\n\n")}` }],
+					content: [
+						{
+							type: "text",
+							text: `Parallel: ${successCount}/${results.length} succeeded\n\n${summaries.join("\n\n")}`,
+						},
+					],
 					details: makeDetails("parallel")(results),
 				};
 			}
@@ -357,12 +391,19 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 			// === Single Mode ===
 			if (params.agent && params.task) {
 				const result = await runSingleAgent(
-					ctx.cwd, agents, params.agent, params.task, params.cwd,
-					undefined, signal, onUpdate,
+					ctx.cwd,
+					agents,
+					params.agent,
+					params.task,
+					params.cwd,
+					undefined,
+					signal,
+					onUpdate,
 				);
 				const isError = result.exitCode !== 0 || result.stopReason === "error" || result.stopReason === "aborted";
 				if (isError) {
-					const errorMsg = result.errorMessage || result.stderr || getFinalOutput(result.messages) || "(no output)";
+					const errorMsg =
+						result.errorMessage || result.stderr || getFinalOutput(result.messages) || "(no output)";
 					return {
 						content: [{ type: "text", text: `Agent ${result.stopReason || "failed"}: ${errorMsg}` }],
 						details: makeDetails("single")([result]),
@@ -393,7 +434,12 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 					const step = args.chain[i];
 					const cleanTask = step.task.replace(/\{previous\}/g, "").trim();
 					const preview = cleanTask.length > 40 ? `${cleanTask.slice(0, 40)}...` : cleanTask;
-					text += "\n  " + theme.fg("muted", `${i + 1}.`) + " " + theme.fg("accent", step.agent) + theme.fg("dim", ` ${preview}`);
+					text +=
+						"\n  " +
+						theme.fg("muted", `${i + 1}.`) +
+						" " +
+						theme.fg("accent", step.agent) +
+						theme.fg("dim", ` ${preview}`);
 				}
 				if (args.chain.length > 3) text += `\n  ${theme.fg("muted", `... +${args.chain.length - 3} more`)}`;
 				return new Text(text, 0, 0);
@@ -457,7 +503,8 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 					let header = `${icon} ${theme.fg("toolTitle", theme.bold(r.agent))}${theme.fg("muted", ` (${r.agentSource})`)}`;
 					if (isError && r.stopReason) header += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
 					container.addChild(new Text(header, 0, 0));
-					if (isError && r.errorMessage) container.addChild(new Text(theme.fg("error", `Error: ${r.errorMessage}`), 0, 0));
+					if (isError && r.errorMessage)
+						container.addChild(new Text(theme.fg("error", `Error: ${r.errorMessage}`), 0, 0));
 					container.addChild(new Spacer(1));
 					container.addChild(new Text(theme.fg("muted", "─── Task ───"), 0, 0));
 					container.addChild(new Text(theme.fg("dim", r.task), 0, 0));
@@ -468,7 +515,13 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 					} else {
 						for (const item of displayItems) {
 							if (item.type === "toolCall")
-								container.addChild(new Text(theme.fg("muted", "→ ") + formatToolCall(item.name, item.args, theme.fg.bind(theme)), 0, 0));
+								container.addChild(
+									new Text(
+										theme.fg("muted", "→ ") + formatToolCall(item.name, item.args, theme.fg.bind(theme)),
+										0,
+										0,
+									),
+								);
 						}
 						if (finalOutput) {
 							container.addChild(new Spacer(1));
@@ -499,9 +552,12 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 			const aggregateUsage = (results: SingleResult[]) => {
 				const total = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 };
 				for (const r of results) {
-					total.input += r.usage.input; total.output += r.usage.output;
-					total.cacheRead += r.usage.cacheRead; total.cacheWrite += r.usage.cacheWrite;
-					total.cost += r.usage.cost; total.turns += r.usage.turns;
+					total.input += r.usage.input;
+					total.output += r.usage.output;
+					total.cacheRead += r.usage.cacheRead;
+					total.cacheWrite += r.usage.cacheWrite;
+					total.cost += r.usage.cost;
+					total.turns += r.usage.turns;
 				}
 				return total;
 			};
@@ -512,28 +568,59 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 
 				if (expanded) {
 					const container = new Container();
-					container.addChild(new Text(icon + " " + theme.fg("toolTitle", theme.bold("chain ")) + theme.fg("accent", `${successCount}/${details.results.length} steps`), 0, 0));
+					container.addChild(
+						new Text(
+							icon +
+								" " +
+								theme.fg("toolTitle", theme.bold("chain ")) +
+								theme.fg("accent", `${successCount}/${details.results.length} steps`),
+							0,
+							0,
+						),
+					);
 					for (const r of details.results) {
 						const rIcon = r.exitCode === 0 ? theme.fg("success", "✓") : theme.fg("error", "✗");
 						const displayItems = getDisplayItems(r.messages);
 						const finalOutput = getFinalOutput(r.messages);
 						container.addChild(new Spacer(1));
-						container.addChild(new Text(`${theme.fg("muted", `─── Step ${r.step}: `) + theme.fg("accent", r.agent)} ${rIcon}`, 0, 0));
+						container.addChild(
+							new Text(
+								`${theme.fg("muted", `─── Step ${r.step}: `) + theme.fg("accent", r.agent)} ${rIcon}`,
+								0,
+								0,
+							),
+						);
 						container.addChild(new Text(theme.fg("muted", "Task: ") + theme.fg("dim", r.task), 0, 0));
 						for (const item of displayItems) {
 							if (item.type === "toolCall")
-								container.addChild(new Text(theme.fg("muted", "→ ") + formatToolCall(item.name, item.args, theme.fg.bind(theme)), 0, 0));
+								container.addChild(
+									new Text(
+										theme.fg("muted", "→ ") + formatToolCall(item.name, item.args, theme.fg.bind(theme)),
+										0,
+										0,
+									),
+								);
 						}
-						if (finalOutput) { container.addChild(new Spacer(1)); container.addChild(new Markdown(finalOutput.trim(), 0, 0, mdTheme)); }
+						if (finalOutput) {
+							container.addChild(new Spacer(1));
+							container.addChild(new Markdown(finalOutput.trim(), 0, 0, mdTheme));
+						}
 						const stepUsage = formatUsageStats(r.usage, r.model);
 						if (stepUsage) container.addChild(new Text(theme.fg("dim", stepUsage), 0, 0));
 					}
 					const usageStr = formatUsageStats(aggregateUsage(details.results));
-					if (usageStr) { container.addChild(new Spacer(1)); container.addChild(new Text(theme.fg("dim", `Total: ${usageStr}`), 0, 0)); }
+					if (usageStr) {
+						container.addChild(new Spacer(1));
+						container.addChild(new Text(theme.fg("dim", `Total: ${usageStr}`), 0, 0));
+					}
 					return container;
 				}
 
-				let text = icon + " " + theme.fg("toolTitle", theme.bold("chain ")) + theme.fg("accent", `${successCount}/${details.results.length} steps`);
+				let text =
+					icon +
+					" " +
+					theme.fg("toolTitle", theme.bold("chain ")) +
+					theme.fg("accent", `${successCount}/${details.results.length} steps`);
 				for (const r of details.results) {
 					const rIcon = r.exitCode === 0 ? theme.fg("success", "✓") : theme.fg("error", "✗");
 					const displayItems = getDisplayItems(r.messages);
@@ -552,40 +639,70 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 				const successCount = details.results.filter((r) => r.exitCode === 0).length;
 				const failCount = details.results.filter((r) => r.exitCode > 0).length;
 				const isRunning = running > 0;
-				const icon = isRunning ? theme.fg("warning", "⏳") : failCount > 0 ? theme.fg("warning", "◐") : theme.fg("success", "✓");
+				const icon = isRunning
+					? theme.fg("warning", "⏳")
+					: failCount > 0
+						? theme.fg("warning", "◐")
+						: theme.fg("success", "✓");
 				const status = isRunning
 					? `${successCount + failCount}/${details.results.length} done, ${running} running`
 					: `${successCount}/${details.results.length} tasks`;
 
 				if (expanded && !isRunning) {
 					const container = new Container();
-					container.addChild(new Text(`${icon} ${theme.fg("toolTitle", theme.bold("parallel "))}${theme.fg("accent", status)}`, 0, 0));
+					container.addChild(
+						new Text(
+							`${icon} ${theme.fg("toolTitle", theme.bold("parallel "))}${theme.fg("accent", status)}`,
+							0,
+							0,
+						),
+					);
 					for (const r of details.results) {
 						const rIcon = r.exitCode === 0 ? theme.fg("success", "✓") : theme.fg("error", "✗");
 						const displayItems = getDisplayItems(r.messages);
 						const finalOutput = getFinalOutput(r.messages);
 						container.addChild(new Spacer(1));
-						container.addChild(new Text(`${theme.fg("muted", "─── ") + theme.fg("accent", r.agent)} ${rIcon}`, 0, 0));
+						container.addChild(
+							new Text(`${theme.fg("muted", "─── ") + theme.fg("accent", r.agent)} ${rIcon}`, 0, 0),
+						);
 						container.addChild(new Text(theme.fg("muted", "Task: ") + theme.fg("dim", r.task), 0, 0));
 						for (const item of displayItems) {
 							if (item.type === "toolCall")
-								container.addChild(new Text(theme.fg("muted", "→ ") + formatToolCall(item.name, item.args, theme.fg.bind(theme)), 0, 0));
+								container.addChild(
+									new Text(
+										theme.fg("muted", "→ ") + formatToolCall(item.name, item.args, theme.fg.bind(theme)),
+										0,
+										0,
+									),
+								);
 						}
-						if (finalOutput) { container.addChild(new Spacer(1)); container.addChild(new Markdown(finalOutput.trim(), 0, 0, mdTheme)); }
+						if (finalOutput) {
+							container.addChild(new Spacer(1));
+							container.addChild(new Markdown(finalOutput.trim(), 0, 0, mdTheme));
+						}
 						const taskUsage = formatUsageStats(r.usage, r.model);
 						if (taskUsage) container.addChild(new Text(theme.fg("dim", taskUsage), 0, 0));
 					}
 					const usageStr = formatUsageStats(aggregateUsage(details.results));
-					if (usageStr) { container.addChild(new Spacer(1)); container.addChild(new Text(theme.fg("dim", `Total: ${usageStr}`), 0, 0)); }
+					if (usageStr) {
+						container.addChild(new Spacer(1));
+						container.addChild(new Text(theme.fg("dim", `Total: ${usageStr}`), 0, 0));
+					}
 					return container;
 				}
 
 				let text = `${icon} ${theme.fg("toolTitle", theme.bold("parallel "))}${theme.fg("accent", status)}`;
 				for (const r of details.results) {
-					const rIcon = r.exitCode === -1 ? theme.fg("warning", "⏳") : r.exitCode === 0 ? theme.fg("success", "✓") : theme.fg("error", "✗");
+					const rIcon =
+						r.exitCode === -1
+							? theme.fg("warning", "⏳")
+							: r.exitCode === 0
+								? theme.fg("success", "✓")
+								: theme.fg("error", "✗");
 					const displayItems = getDisplayItems(r.messages);
 					text += `\n\n${theme.fg("muted", "─── ")}${theme.fg("accent", r.agent)} ${rIcon}`;
-					if (displayItems.length === 0) text += `\n${theme.fg("muted", r.exitCode === -1 ? "(running...)" : "(no output)")}`;
+					if (displayItems.length === 0)
+						text += `\n${theme.fg("muted", r.exitCode === -1 ? "(running...)" : "(no output)")}`;
 					else text += `\n${renderDisplayItems(displayItems, 5)}`;
 				}
 				if (!isRunning) {
@@ -608,7 +725,9 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 		label: "List Tasks",
 		description: "List orchestrator tasks. Optionally filter by status.",
 		parameters: Type.Object({
-			status: Type.Optional(Type.String({ description: "Filter by status: pending, in_progress, completed, failed, blocked" })),
+			status: Type.Optional(
+				Type.String({ description: "Filter by status: pending, in_progress, completed, failed, blocked" }),
+			),
 		}),
 
 		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
@@ -619,10 +738,12 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 
 			if (tasks.length === 0) {
 				return {
-					content: [{
-						type: "text",
-						text: `No tasks found. Status counts: ${JSON.stringify(counts)}`,
-					}],
+					content: [
+						{
+							type: "text",
+							text: `No tasks found. Status counts: ${JSON.stringify(counts)}`,
+						},
+					],
 					details: undefined,
 				};
 			}
@@ -634,10 +755,12 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 			});
 
 			return {
-				content: [{
-					type: "text",
-					text: `Tasks (${tasks.length}):\n${lines.join("\n")}\n\nStatus counts: ${JSON.stringify(counts)}`,
-				}],
+				content: [
+					{
+						type: "text",
+						text: `Tasks (${tasks.length}):\n${lines.join("\n")}\n\nStatus counts: ${JSON.stringify(counts)}`,
+					},
+				],
 				details: undefined,
 			};
 		},
@@ -654,19 +777,19 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 		}),
 
 		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
-		try {
-			const task = taskManager.cancelTask(params.taskId);
-			return {
-				content: [{ type: "text", text: `Task ${task.id.slice(0, 8)} cancelled.` }],
-				details: undefined,
-			};
-		} catch (e: any) {
-			return {
-				content: [{ type: "text", text: `Failed to cancel task: ${e.message}` }],
-				isError: true,
-				details: undefined,
-			};
-		}
+			try {
+				const task = taskManager.cancelTask(params.taskId);
+				return {
+					content: [{ type: "text", text: `Task ${task.id.slice(0, 8)} cancelled.` }],
+					details: undefined,
+				};
+			} catch (e: any) {
+				return {
+					content: [{ type: "text", text: `Failed to cancel task: ${e.message}` }],
+					isError: true,
+					details: undefined,
+				};
+			}
 		},
 	});
 
@@ -683,13 +806,15 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
 			const classification = classifyTaskByDescription(params.description);
 			return {
-				content: [{
-					type: "text",
-					text: `Classification:
+				content: [
+					{
+						type: "text",
+						text: `Classification:
   Worker type: ${classification.workerType}
   Confidence: ${classification.confidence}
   Reasoning: ${classification.reasoning}`,
-				}],
+					},
+				],
 				details: undefined,
 			};
 		},
@@ -705,7 +830,9 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 			subject: Type.String({ description: "Short description of the task" }),
 			description: Type.Optional(Type.String({ description: "Detailed description of the task" })),
 			owner: Type.Optional(Type.String({ description: "Worker ID that owns this task" })),
-			blocks: Type.Optional(Type.Array(Type.String(), { description: "Task IDs this task blocks (creates dependency)" })),
+			blocks: Type.Optional(
+				Type.Array(Type.String(), { description: "Task IDs this task blocks (creates dependency)" }),
+			),
 		}),
 
 		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
@@ -718,10 +845,12 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 				});
 
 				return {
-					content: [{
-						type: "text",
-						text: `Task created: ${task.id}\nSubject: ${params.subject}${task.status === "blocked" ? "\nStatus: blocked (waiting for dependencies)" : "\nStatus: pending"}${params.description ? `\nDescription: ${params.description}` : ""}${params.blocks?.length ? `\nBlocks: ${params.blocks.join(", ")}` : ""}`,
-					}],
+					content: [
+						{
+							type: "text",
+							text: `Task created: ${task.id}\nSubject: ${params.subject}${task.status === "blocked" ? "\nStatus: blocked (waiting for dependencies)" : "\nStatus: pending"}${params.description ? `\nDescription: ${params.description}` : ""}${params.blocks?.length ? `\nBlocks: ${params.blocks.join(", ")}` : ""}`,
+						},
+					],
 					details: undefined,
 				};
 			} catch (e: any) {
@@ -739,10 +868,13 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 	pi.registerTool({
 		name: "TaskUpdate",
 		label: "Update Task",
-		description: "Update a task's status, subject, description, or blocks. Completing a task auto-unblocks dependents.",
+		description:
+			"Update a task's status, subject, description, or blocks. Completing a task auto-unblocks dependents.",
 		parameters: Type.Object({
 			taskId: Type.String({ description: "The ID of the task to update" }),
-			status: Type.Optional(Type.String({ description: "New status: pending, in_progress, completed, blocked, failed" })),
+			status: Type.Optional(
+				Type.String({ description: "New status: pending, in_progress, completed, blocked, failed" }),
+			),
 			subject: Type.Optional(Type.String({ description: "New subject/description" })),
 			description: Type.Optional(Type.String({ description: "New detailed description" })),
 			blocks: Type.Optional(Type.Array(Type.String(), { description: "New blocks array (replaces existing)" })),
@@ -759,17 +891,19 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 				const task = taskManager.updateTask(params.taskId, updates);
 
 				// Check if any dependents were unblocked
-				const unblockedCount = task.status === "completed"
-					? taskManager.getTasks().filter(t =>
-						t.blockedBy?.includes(task.id) && t.status !== "blocked"
-					).length
-					: 0;
+				const unblockedCount =
+					task.status === "completed"
+						? taskManager.getTasks().filter((t) => t.blockedBy?.includes(task.id) && t.status !== "blocked")
+								.length
+						: 0;
 
 				return {
-					content: [{
-						type: "text",
-						text: `Task updated: ${task.id.slice(0, 8)}\nStatus: ${task.status}${params.subject ? `\nSubject: ${params.subject}` : ""}${unblockedCount > 0 ? `\nDependents unblocked: ${unblockedCount}` : ""}`,
-					}],
+					content: [
+						{
+							type: "text",
+							text: `Task updated: ${task.id.slice(0, 8)}\nStatus: ${task.status}${params.subject ? `\nSubject: ${params.subject}` : ""}${unblockedCount > 0 ? `\nDependents unblocked: ${unblockedCount}` : ""}`,
+						},
+					],
 					details: undefined,
 				};
 			} catch (e: any) {
@@ -787,19 +921,23 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 	pi.registerTool({
 		name: "TaskClear",
 		label: "Clear Completed Tasks",
-		description: "Remove all completed and failed tasks from the task list. Call this after your final report when all work is done.",
+		description:
+			"Remove all completed and failed tasks from the task list. Call this after your final report when all work is done.",
 		parameters: Type.Object({}),
 
 		async execute(_toolCallId, _params, _signal, _onUpdate, _ctx) {
 			const counts = taskManager.getStatusCounts();
 			const removed = taskManager.clearCompleted();
 			return {
-				content: [{
-					type: "text",
-					text: removed > 0
-						? `Cleared ${removed} task(s) from task list. Remaining: ${taskManager.size} tasks.`
-						: "No completed or failed tasks to clear.",
-				}],
+				content: [
+					{
+						type: "text",
+						text:
+							removed > 0
+								? `Cleared ${removed} task(s) from task list. Remaining: ${taskManager.size} tasks.`
+								: "No completed or failed tasks to clear.",
+					},
+				],
 				details: undefined,
 			};
 		},

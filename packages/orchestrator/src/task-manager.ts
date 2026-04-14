@@ -6,7 +6,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { SubagentTask, TaskStatus, TaskType, WorkerType, UsageStats } from "./types.js";
+import type { SubagentTask, TaskStatus, TaskType, UsageStats, WorkerType } from "./types.js";
 
 /** Valid status transitions */
 const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
@@ -184,7 +184,7 @@ export class TaskManager {
 					if (!newBlocker.blockedBy) newBlocker.blockedBy = [];
 					if (!newBlocker.blockedBy.includes(task.id)) {
 						newBlocker.blockedBy.push(task.id);
-				}
+					}
 				}
 			}
 		}
@@ -273,7 +273,14 @@ export class TaskManager {
 	/**
 	 * Serialize tasks for session persistence.
 	 */
-	serialize(): Array<{ id: string; status: string; description: string; agentType: string; result?: string; error?: string }> {
+	serialize(): Array<{
+		id: string;
+		status: string;
+		description: string;
+		agentType: string;
+		result?: string;
+		error?: string;
+	}> {
 		return this.getTasks().map((t) => ({
 			id: t.id,
 			status: t.status,
@@ -342,17 +349,19 @@ export function formatTaskList(tasks: SubagentTask[]): string {
 
 	const sorted = [...tasks].sort((a, b) => (order[a.status] ?? 5) - (order[b.status] ?? 5));
 
-	return sorted.map((t) => {
-		const icon = statusIcons[t.status] ?? "?";
-		const desc = t.description.length > 55 ? t.description.slice(0, 55) + "..." : t.description;
-		const deps = t.blockedBy?.length ? ` (blocked by ${t.blockedBy.length})` : "";
-		const owner = t.owner ? ` [${t.owner}]` : "";
-		if (isDone(t)) {
-			return `\x1b[2m\x1b[9m${icon} ${desc}${deps}${owner}\x1b[0m`;
-		}
-		if (t.status === "in_progress") {
-			return `\x1b[92m${icon} ${desc}${deps}${owner}\x1b[0m`;
-		}
-		return `${icon} ${desc}${deps}${owner}`;
-	}).join("\n");
+	return sorted
+		.map((t) => {
+			const icon = statusIcons[t.status] ?? "?";
+			const desc = t.description.length > 55 ? t.description.slice(0, 55) + "..." : t.description;
+			const deps = t.blockedBy?.length ? ` (blocked by ${t.blockedBy.length})` : "";
+			const owner = t.owner ? ` [${t.owner}]` : "";
+			if (isDone(t)) {
+				return `\x1b[2m\x1b[9m${icon} ${desc}${deps}${owner}\x1b[0m`;
+			}
+			if (t.status === "in_progress") {
+				return `\x1b[92m${icon} ${desc}${deps}${owner}\x1b[0m`;
+			}
+			return `${icon} ${desc}${deps}${owner}`;
+		})
+		.join("\n");
 }

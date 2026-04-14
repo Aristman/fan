@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import { TaskManager, formatTaskList } from "../task-manager.js";
+import { beforeEach, describe, expect, it } from "vitest";
 import { parseVerdict } from "../agents.js";
+import { formatTaskList, TaskManager } from "../task-manager.js";
 
 describe("TaskManager", () => {
 	let tm: TaskManager;
@@ -27,7 +27,12 @@ describe("TaskManager", () => {
 
 		it("creates a task with parent and blocks", () => {
 			const parent = tm.createTask({ description: "parent", agentType: "plan" });
-			const child = tm.createTask({ description: "child", agentType: "implement", parentTaskId: parent.id, blocks: [parent.id] });
+			const child = tm.createTask({
+				description: "child",
+				agentType: "implement",
+				parentTaskId: parent.id,
+				blocks: [parent.id],
+			});
 			expect(child.parentTaskId).toBe(parent.id);
 			expect(child.blocks).toEqual([parent.id]);
 		});
