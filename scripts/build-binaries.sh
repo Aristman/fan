@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Build FAN (fna) binaries for all platforms locally.
+# Build FAN (fan) binaries for all platforms locally.
 # Mirrors .github/workflows/build-binaries.yml
 #
 # Usage:
@@ -12,11 +12,11 @@
 #
 # Output:
 #   packages/coding-agent/binaries/
-#     fna-darwin-arm64.tar.gz
-#     fna-darwin-x64.tar.gz
-#     fna-linux-x64.tar.gz
-#     fna-linux-arm64.tar.gz
-#     fna-windows-x64.zip
+#     fan-darwin-arm64.tar.gz
+#     fan-darwin-x64.tar.gz
+#     fan-linux-x64.tar.gz
+#     fan-linux-arm64.tar.gz
+#     fan-windows-x64.zip
 
 set -euo pipefail
 
@@ -56,7 +56,7 @@ if [[ -n "$PLATFORM" ]]; then
 fi
 
 # Display version being built
-echo "==> FAN (fna) version: $(node -e "console.log(require('./package.json').version)")"
+echo "==> FAN (fan) version: $(node -e "console.log(require('./package.json').version)")"
 
 echo "==> Installing dependencies..."
 npm ci
@@ -89,7 +89,11 @@ fi
 echo "==> Building all packages..."
 npm run build
 
-echo "==> Building FAN (fna) binaries..."
+# Build dashboard
+echo "Building dashboard..."
+npm run build:dashboard
+
+echo "==> Building FAN (fan) binaries..."
 cd packages/coding-agent
 
 # Clean previous builds
@@ -110,9 +114,9 @@ for platform in "${PLATFORMS[@]}"; do
     # call site has a try/catch fallback. For Windows builds, we copy the
     # appropriate .node file alongside the binary below.
     if [[ "$platform" == "windows-x64" ]]; then
-        bun build --compile --external koffi --target=bun-$platform ./dist/bun/cli.js --outfile binaries/$platform/fna.exe
+        bun build --compile --external koffi --target=bun-$platform ./dist/bun/cli.js --outfile binaries/$platform/fan.exe
     else
-        bun build --compile --external koffi --target=bun-$platform ./dist/bun/cli.js --outfile binaries/$platform/fna
+        bun build --compile --external koffi --target=bun-$platform ./dist/bun/cli.js --outfile binaries/$platform/fan
     fi
 done
 
@@ -163,6 +167,11 @@ for platform in "${PLATFORMS[@]}"; do
     # Bundle FAN orchestrator assets
     cp -r "$ORCH_ASSETS_DIR/orchestrator" binaries/$platform/
 
+    # Dashboard
+    echo "  Copying dashboard..."
+    mkdir -p binaries/$platform/dashboard
+    cp -r ../../packages/dashboard/dist/* binaries/$platform/dashboard/
+
     # Copy koffi native module for Windows (needed for VT input support)
     if [[ "$platform" == "windows-x64" ]]; then
         mkdir -p binaries/$platform/node_modules/koffi/build/koffi/win32_x64
@@ -178,12 +187,12 @@ cd binaries
 for platform in "${PLATFORMS[@]}"; do
     if [[ "$platform" == "windows-x64" ]]; then
         # Windows (zip)
-        echo "Creating fna-$platform.zip..."
-        (cd $platform && zip -r ../fna-$platform.zip .)
+        echo "Creating fan-$platform.zip..."
+        (cd $platform && zip -r ../fan-$platform.zip .)
     else
         # Unix platforms (tar.gz) - use wrapper directory for mise compatibility
-        echo "Creating fna-$platform.tar.gz..."
-        mv $platform fna && tar -czf fna-$platform.tar.gz fna && mv fna $platform
+        echo "Creating fan-$platform.tar.gz..."
+        mv $platform fan && tar -czf fan-$platform.tar.gz fan && mv fan $platform
     fi
 done
 
@@ -192,9 +201,9 @@ echo "==> Extracting archives for testing..."
 for platform in "${PLATFORMS[@]}"; do
     rm -rf $platform
     if [[ "$platform" == "windows-x64" ]]; then
-        mkdir -p $platform && (cd $platform && unzip -q ../fna-$platform.zip)
+        mkdir -p $platform && (cd $platform && unzip -q ../fan-$platform.zip)
     else
-        tar -xzf fna-$platform.tar.gz && mv fna $platform
+        tar -xzf fan-$platform.tar.gz && mv fan $platform
     fi
 done
 
@@ -205,5 +214,5 @@ ls -lh *.tar.gz *.zip 2>/dev/null || true
 echo ""
 echo "Extracted directories for testing:"
 for platform in "${PLATFORMS[@]}"; do
-    echo "  binaries/$platform/fna"
+    echo "  binaries/$platform/fan"
 done
