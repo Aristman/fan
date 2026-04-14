@@ -189,7 +189,7 @@ export const CONFIG_DIR_NAME: string = pkg.fanConfig?.configDir || ".fan";
 export const VERSION: string = pkg.version;
 
 // e.g., FAN_CODING_AGENT_DIR or TAU_CODING_AGENT_DIR
-export const ENV_AGENT_DIR = `${APP_NAME.toUpperCase()}_CODING_AGENT_DIR`;
+export const ENV_AGENT_DIR = "FAN_CODING_AGENT_DIR";
 
 const DEFAULT_SHARE_VIEWER_URL = "https://pi.dev/session/";
 

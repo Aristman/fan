@@ -5,7 +5,7 @@
  *
  * Test with: npx tsx src/cli-new.ts [args...]
  */
-process.title = "fan";
+process.title = "fna";
 process.env.FAN_CODING_AGENT = "true";
 process.emitWarning = (() => {}) as typeof process.emitWarning;
 

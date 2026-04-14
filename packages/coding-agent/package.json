@@ -4,11 +4,11 @@
 	"description": "Fan coding agent CLI with read, write, edit, bash tools and session management",
 	"type": "module",
 	"fanConfig": {
-		"name": "fan",
+		"name": "fna",
 		"configDir": ".fan"
 	},
 	"bin": {
-		"fan": "dist/cli.js"
+		"fna": "dist/cli.js"
 	},
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",

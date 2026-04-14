@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-process.title = "fan";
+process.title = "fna";
 process.emitWarning = (() => {}) as typeof process.emitWarning;
 
 await import("./register-bedrock.js");

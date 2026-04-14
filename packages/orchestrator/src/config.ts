@@ -157,5 +157,5 @@ function getFnaInvocation(args: string[]): { command: string; args: string[] } {
 	if (!isGenericRuntime) {
 		return { command: process.execPath, args };
 	}
-	return { command: "fan", args };
+	return { command: "fna", args };
 }

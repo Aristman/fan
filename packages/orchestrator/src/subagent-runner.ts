@@ -112,7 +112,7 @@ export function getFnaInvocation(args: string[]): { command: string; args: strin
 		return { command: process.execPath, args };
 	}
 
-	return { command: "fan", args };
+	return { command: "fna", args };
 }
 
 type OnUpdateCallback = (partial: { content: Array<{ type: "text"; text: string }>; details: any }) => void;
