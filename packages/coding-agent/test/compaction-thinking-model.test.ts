@@ -20,7 +20,7 @@ import { SessionManager } from "../src/core/session-manager.js";
 import { SettingsManager } from "../src/core/settings-manager.js";
 import { codingTools } from "../src/core/tools/index.js";
 import {
-	AFAN_KEY,
+	API_KEY,
 	createTestResourceLoader,
 	getRealAuthStorage,
 	hasAuthForProvider,
@@ -29,7 +29,7 @@ import {
 
 // Check for auth
 const HAS_ANTIGRAVITY_AUTH = hasAuthForProvider("google-antigravity");
-const HAS_ANTHROPIC_AUTH = !!AFAN_KEY;
+const HAS_ANTHROPIC_AUTH = !!API_KEY;
 
 describe.skipIf(!HAS_ANTIGRAVITY_AUTH)("Compaction with thinking models (Antigravity)", () => {
 	let session: AgentSession;
@@ -164,7 +164,7 @@ describe.skipIf(!HAS_ANTHROPIC_AUTH)("Compaction with thinking models (Anthropic
 
 	function createSession(model: Model<any>, thinkingLevel: ThinkingLevel = "high") {
 		const agent = new Agent({
-			getApiKey: () => AFAN_KEY,
+			getApiKey: () => API_KEY,
 			initialState: {
 				model,
 				systemPrompt: "You are a helpful assistant. Be concise.",

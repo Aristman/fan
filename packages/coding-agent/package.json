@@ -39,8 +39,8 @@
 		"prepublishOnly": "npm run clean && npm run build"
 	},
 	"dependencies": {
-		"@fan/model-manager": "^0.1.0",
-		"@fan/api-gateway": "^0.1.0",
+		"@fan/model-manager": "*",
+		"@fan/api-gateway": "*",
 		"@mariozechner/jiti": "^2.6.2",
 		"@itone/fan-agent-core": "^0.66.1",
 		"@itone/fan-ai": "^0.66.1",

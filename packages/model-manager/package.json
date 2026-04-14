@@ -18,7 +18,7 @@
 		"test": "vitest run"
 	},
 	"dependencies": {
-		"@fan/db": "^0.1.0",
+		"@fan/db": "*",
 		"@itone/fan-ai": "^0.66.1"
 	},
 	"devDependencies": {

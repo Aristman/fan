@@ -21,9 +21,9 @@ import { codingTools } from "../src/core/tools/index.js";
 
 /**
  * API key for authenticated tests. Tests using this should be wrapped in
- * describe.skipIf(!AFAN_KEY)
+ * describe.skipIf(!API_KEY)
  */
-export const AFAN_KEY = process.env.ANTHROPIC_OAUTH_TOKEN || process.env.ANTHROPIC_AFAN_KEY;
+export const API_KEY = process.env.ANTHROPIC_OAUTH_TOKEN || process.env.ANTHROPIC_API_KEY;
 
 // ============================================================================
 // OAuth API key resolution from ~/.fan/agent/auth.json
@@ -238,7 +238,7 @@ export function createTestSession(options: TestSessionOptions = {}): TestSession
 
 	const model = getModel("anthropic", "claude-sonnet-4-5")!;
 	const agent = new Agent({
-		getApiKey: () => AFAN_KEY,
+		getApiKey: () => API_KEY,
 		initialState: {
 			model,
 			systemPrompt: options.systemPrompt ?? "You are a helpful assistant. Be extremely concise.",

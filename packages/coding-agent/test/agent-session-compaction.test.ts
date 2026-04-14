@@ -19,9 +19,9 @@ import { ModelRegistry } from "../src/core/model-registry.js";
 import { SessionManager } from "../src/core/session-manager.js";
 import { SettingsManager } from "../src/core/settings-manager.js";
 import { codingTools } from "../src/core/tools/index.js";
-import { AFAN_KEY, createTestResourceLoader } from "./utilities.js";
+import { API_KEY, createTestResourceLoader } from "./utilities.js";
 
-describe.skipIf(!AFAN_KEY)("AgentSession compaction e2e", () => {
+describe.skipIf(!API_KEY)("AgentSession compaction e2e", () => {
 	let session: AgentSession;
 	let tempDir: string;
 	let sessionManager: SessionManager;
@@ -48,7 +48,7 @@ describe.skipIf(!AFAN_KEY)("AgentSession compaction e2e", () => {
 	function createSession(inMemory = false) {
 		const model = getModel("anthropic", "claude-sonnet-4-5")!;
 		const agent = new Agent({
-			getApiKey: () => AFAN_KEY,
+			getApiKey: () => API_KEY,
 			initialState: {
 				model,
 				systemPrompt: "You are a helpful assistant. Be concise.",

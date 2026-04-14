@@ -113,12 +113,12 @@ describe("AuthStorage", () => {
 		});
 
 		test("apiKey as environment variable name resolves to env value", async () => {
-			const originalEnv = process.env.TEST_AUTH_AFAN_KEY_12345;
-			process.env.TEST_AUTH_AFAN_KEY_12345 = "env-api-key-value";
+			const originalEnv = process.env.TEST_AUTH_API_KEY_12345;
+			process.env.TEST_AUTH_API_KEY_12345 = "env-api-key-value";
 
 			try {
 				writeAuthJson({
-					anthropic: { type: "api_key", key: "TEST_AUTH_AFAN_KEY_12345" },
+					anthropic: { type: "api_key", key: "TEST_AUTH_API_KEY_12345" },
 				});
 
 				authStorage = AuthStorage.create(authJsonPath);
@@ -127,9 +127,9 @@ describe("AuthStorage", () => {
 				expect(apiKey).toBe("env-api-key-value");
 			} finally {
 				if (originalEnv === undefined) {
-					delete process.env.TEST_AUTH_AFAN_KEY_12345;
+					delete process.env.TEST_AUTH_API_KEY_12345;
 				} else {
-					process.env.TEST_AUTH_AFAN_KEY_12345 = originalEnv;
+					process.env.TEST_AUTH_API_KEY_12345 = originalEnv;
 				}
 			}
 		});

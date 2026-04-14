@@ -180,12 +180,12 @@ function resolveAzureConfig(
 
 function createClient(model: Model<"azure-openai-responses">, apiKey: string, options?: AzureOpenAIResponsesOptions) {
 	if (!apiKey) {
-		if (!process.env.AZURE_OPENAI_AFAN_KEY) {
+		if (!process.env.AZURE_OPENAI_API_KEY) {
 			throw new Error(
-				"Azure OpenAI API key is required. Set AZURE_OPENAI_AFAN_KEY environment variable or pass it as an argument.",
+				"Azure OpenAI API key is required. Set AZURE_OPENAI_API_KEY environment variable or pass it as an argument.",
 			);
 		}
-		apiKey = process.env.AZURE_OPENAI_AFAN_KEY;
+		apiKey = process.env.AZURE_OPENAI_API_KEY;
 	}
 
 	const headers = { ...model.headers };

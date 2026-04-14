@@ -369,7 +369,7 @@ function createClientWithApiKey(
 }
 
 function resolveApiKey(options?: GoogleVertexOptions): string | undefined {
-	const apiKey = options?.apiKey?.trim() || process.env.GOOGLE_CLOUD_AFAN_KEY?.trim();
+	const apiKey = options?.apiKey?.trim() || process.env.GOOGLE_CLOUD_API_KEY?.trim();
 	if (!apiKey || isPlaceholderApiKey(apiKey)) {
 		return undefined;
 	}

@@ -102,7 +102,7 @@ async function testAbortThenNewMessage<TApi extends Api>(llm: Model<TApi>, optio
 }
 
 describe("AI Providers Abort Tests", () => {
-	describe.skipIf(!process.env.GEMINI_AFAN_KEY)("Google Provider Abort", () => {
+	describe.skipIf(!process.env.GEMINI_API_KEY)("Google Provider Abort", () => {
 		const llm = getModel("google", "gemini-2.5-flash");
 
 		it("should abort mid-stream", { retry: 3 }, async () => {
@@ -114,7 +114,7 @@ describe("AI Providers Abort Tests", () => {
 		});
 	});
 
-	describe.skipIf(!process.env.OPENAI_AFAN_KEY)("OpenAI Completions Provider Abort", () => {
+	describe.skipIf(!process.env.OPENAI_API_KEY)("OpenAI Completions Provider Abort", () => {
 		const { compat: _compat, ...baseModel } = getModel("openai", "gpt-4o-mini")!;
 		void _compat;
 		const llm: Model<"openai-completions"> = {
@@ -131,7 +131,7 @@ describe("AI Providers Abort Tests", () => {
 		});
 	});
 
-	describe.skipIf(!process.env.OPENAI_AFAN_KEY)("OpenAI Responses Provider Abort", () => {
+	describe.skipIf(!process.env.OPENAI_API_KEY)("OpenAI Responses Provider Abort", () => {
 		const llm = getModel("openai", "gpt-5-mini");
 
 		it("should abort mid-stream", { retry: 3 }, async () => {
@@ -169,7 +169,7 @@ describe("AI Providers Abort Tests", () => {
 		});
 	});
 
-	describe.skipIf(!process.env.MISTRAL_AFAN_KEY)("Mistral Provider Abort", () => {
+	describe.skipIf(!process.env.MISTRAL_API_KEY)("Mistral Provider Abort", () => {
 		const llm = getModel("mistral", "devstral-medium-latest");
 
 		it("should abort mid-stream", { retry: 3 }, async () => {
@@ -181,7 +181,7 @@ describe("AI Providers Abort Tests", () => {
 		});
 	});
 
-	describe.skipIf(!process.env.MINIMAX_AFAN_KEY)("MiniMax Provider Abort", () => {
+	describe.skipIf(!process.env.MINIMAX_API_KEY)("MiniMax Provider Abort", () => {
 		const llm = getModel("minimax", "MiniMax-M2.7");
 
 		it("should abort mid-stream", { retry: 3 }, async () => {
@@ -193,7 +193,7 @@ describe("AI Providers Abort Tests", () => {
 		});
 	});
 
-	describe.skipIf(!process.env.KIMI_AFAN_KEY)("Kimi For Coding Provider Abort", () => {
+	describe.skipIf(!process.env.KIMI_API_KEY)("Kimi For Coding Provider Abort", () => {
 		const llm = getModel("kimi-coding", "kimi-k2-thinking");
 
 		it("should abort mid-stream", { retry: 3 }, async () => {
@@ -205,7 +205,7 @@ describe("AI Providers Abort Tests", () => {
 		});
 	});
 
-	describe.skipIf(!process.env.AI_GATEWAY_AFAN_KEY)("Vercel AI Gateway Provider Abort", () => {
+	describe.skipIf(!process.env.AI_GATEWAY_API_KEY)("Vercel AI Gateway Provider Abort", () => {
 		const llm = getModel("vercel-ai-gateway", "google/gemini-2.5-flash");
 
 		it("should abort mid-stream", { retry: 3 }, async () => {

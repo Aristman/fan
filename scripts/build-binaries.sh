@@ -55,11 +55,25 @@ if [[ -n "$PLATFORM" ]]; then
     esac
 fi
 
+# Ensure bun is installed
+if ! command -v bun &>/dev/null; then
+    if [[ -x "$HOME/.bun/bin/bun" ]]; then
+        export BUN_INSTALL="$HOME/.bun"
+        export PATH="$BUN_INSTALL/bin:$PATH"
+    else
+        echo "==> bun not found, installing..."
+        curl -fsSL https://bun.sh/install | bash
+        export BUN_INSTALL="$HOME/.bun"
+        export PATH="$BUN_INSTALL/bin:$PATH"
+    fi
+fi
+echo "==> Using bun $(bun --version)"
+
 # Display version being built
 echo "==> FAN (fan) version: $(node -e "console.log(require('./package.json').version)")"
 
 echo "==> Installing dependencies..."
-npm ci
+npm install
 
 if [[ "$SKIP_DEPS" == "false" ]]; then
     echo "==> Installing cross-platform native bindings..."

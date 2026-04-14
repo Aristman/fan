@@ -115,17 +115,17 @@ export async function runDiagnostics(): Promise<boolean> {
 
 	// 6. API keys check
 	const providerEnvVars: Record<string, string[]> = {
-		OpenAI: ["OPENAI_API_KEY", "OPENAI_AFAN_KEY"],
-		Anthropic: ["ANTHROPIC_API_KEY", "ANTHROPIC_AFAN_KEY", "ANTHROPIC_OAUTH_TOKEN"],
-		Google: ["GOOGLE_API_KEY", "GEMINI_AFAN_KEY", "GOOGLE_GENERATIVE_AI_API_KEY"],
-		Groq: ["GROQ_AFAN_KEY"],
-		xAI: ["XAI_AFAN_KEY"],
-		OpenRouter: ["OPENROUTER_AFAN_KEY"],
-		Mistral: ["MISTRAL_AFAN_KEY"],
-		Cerebras: ["CEREBRAS_AFAN_KEY"],
+		OpenAI: ["OPENAI_API_KEY", "OPENAI_API_KEY"],
+		Anthropic: ["ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY", "ANTHROPIC_OAUTH_TOKEN"],
+		Google: ["GOOGLE_API_KEY", "GEMINI_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY"],
+		Groq: ["GROQ_API_KEY"],
+		xAI: ["XAI_API_KEY"],
+		OpenRouter: ["OPENROUTER_API_KEY"],
+		Mistral: ["MISTRAL_API_KEY"],
+		Cerebras: ["CEREBRAS_API_KEY"],
 		"Z.AI": ["ZAI_API_KEY"],
 		"GitHub Copilot": ["COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"],
-		OpenCode: ["OPENCODE_AFAN_KEY"],
+		OpenCode: ["OPENCODE_API_KEY"],
 		HuggingFace: ["HF_TOKEN"],
 	};
 

@@ -13,11 +13,12 @@ const PROVIDERS = [
 		models: ["claude-sonnet-4-20250514", "claude-opus-4-20250514", "claude-haiku-4-20250414"],
 	},
 	{ name: "Google", envVar: "GOOGLE_API_KEY", models: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"] },
-	{ name: "Groq", envVar: "GROQ_AFAN_KEY", models: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"] },
-	{ name: "xAI", envVar: "XAI_AFAN_KEY", models: ["grok-3", "grok-3-mini"] },
-	{ name: "Mistral", envVar: "MISTRAL_AFAN_KEY", models: ["mistral-large-latest", "mistral-medium-latest"] },
-	{ name: "OpenRouter", envVar: "OPENROUTER_AFAN_KEY", models: ["openrouter/auto"] },
+	{ name: "Groq", envVar: "GROQ_API_KEY", models: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"] },
+	{ name: "xAI", envVar: "XAI_API_KEY", models: ["grok-3", "grok-3-mini"] },
+	{ name: "Mistral", envVar: "MISTRAL_API_KEY", models: ["mistral-large-latest", "mistral-medium-latest"] },
+	{ name: "OpenRouter", envVar: "OPENROUTER_API_KEY", models: ["openrouter/auto"] },
 	{ name: "GitHub Copilot", envVar: "COPILOT_GITHUB_TOKEN", models: ["gpt-4o", "claude-sonnet-4"] },
+	{ name: "z.ai", envVar: "ZAI_API_KEY", models: ["claude-sonnet-4", "claude-opus-4", "gpt-4o"] },
 ];
 
 function createRL(): ReturnType<typeof createInterface> {

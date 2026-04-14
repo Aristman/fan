@@ -39,7 +39,25 @@ jobs:
           node-version: 24
 
       - name: Install dependencies
-        run: bun install
+        run: npm install
+
+      - name: Install cross-platform native bindings
+        run: |
+          npm install --no-save --force \
+            @mariozechner/clipboard-darwin-arm64@0.3.0 \
+            @mariozechner/clipboard-darwin-x64@0.3.0 \
+            @mariozechner/clipboard-linux-x64-gnu@0.3.0 \
+            @mariozechner/clipboard-linux-arm64-gnu@0.3.0 \
+            @mariozechner/clipboard-win32-x64-msvc@0.3.0 \
+            @img/sharp-darwin-arm64@0.34.5 \
+            @img/sharp-darwin-x64@0.34.5 \
+            @img/sharp-linux-x64@0.34.5 \
+            @img/sharp-linux-arm64@0.34.5 \
+            @img/sharp-win32-x64@0.34.5 \
+            @img/sharp-libvips-darwin-arm64@1.2.4 \
+            @img/sharp-libvips-darwin-x64@1.2.4 \
+            @img/sharp-libvips-linux-x64@1.2.4 \
+            @img/sharp-libvips-linux-arm64@1.2.4
 
       - name: Generate Prisma client
         run: cd packages/db && npx prisma generate
@@ -51,17 +69,41 @@ jobs:
         run: npm run build:dashboard
 
       - name: Build binary (${{ matrix.platform }})
+        shell: bash
         run: |
-          bun build --compile \
-            --external koffi \
-            --target=bun-${{ matrix.platform }} \
-            --outfile packages/coding-agent/binaries/${{ matrix.platform }}/fan${{ matrix.platform == 'windows-x64' && '.exe' || '' }} \
-            packages/coding-agent/src/cli.ts
+          if [[ "${{ matrix.platform }}" == "windows-x64" ]]; then
+            bun build --compile --external koffi --target=bun-${{ matrix.platform }} packages/coding-agent/dist/bun/cli.js --outfile packages/coding-agent/binaries/${{ matrix.platform }}/fan.exe
+          else
+            bun build --compile --external koffi --target=bun-${{ matrix.platform }} packages/coding-agent/dist/bun/cli.js --outfile packages/coding-agent/binaries/${{ matrix.platform }}/fan
+          fi
 
       - name: Copy assets
         run: |
           PLATFORM="${{ matrix.platform }}"
           OUTDIR="packages/coding-agent/binaries/$PLATFORM"
+          
+          # Package metadata
+          cp packages/coding-agent/package.json "$OUTDIR/"
+          cp packages/coding-agent/README.md "$OUTDIR/"
+          cp packages/coding-agent/CHANGELOG.md "$OUTDIR/"
+          
+          # Photon WASM
+          cp node_modules/@silvia-odwyer/photon-node/photon_rs_bg.wasm "$OUTDIR/"
+          
+          # Theme (from dist, not src)
+          mkdir -p "$OUTDIR/theme"
+          cp packages/coding-agent/dist/modes/interactive/theme/*.json "$OUTDIR/theme/"
+          
+          # Interactive assets (from dist)
+          mkdir -p "$OUTDIR/assets"
+          cp packages/coding-agent/dist/modes/interactive/assets/* "$OUTDIR/assets/"
+          
+          # Export HTML
+          cp -r packages/coding-agent/dist/core/export-html "$OUTDIR/"
+          
+          # Documentation and examples
+          cp -r docs "$OUTDIR/"
+          cp -r examples "$OUTDIR/"
           
           # Orchestrator assets
           mkdir -p "$OUTDIR/orchestrator/agents" "$OUTDIR/orchestrator/prompts"
@@ -73,16 +115,12 @@ jobs:
           mkdir -p "$OUTDIR/dashboard"
           cp -r packages/dashboard/dist/* "$OUTDIR/dashboard/"
           
-          # Photon WASM
-          cp packages/coding-agent/src/modes/interactive/assets/photon_rs_bg.wasm "$OUTDIR/" 2>/dev/null || true
-          
-          # Themes
-          mkdir -p "$OUTDIR/theme"
-          cp packages/coding-agent/src/modes/interactive/theme/*.json "$OUTDIR/theme/" 2>/dev/null || true
-          
-          # Windows: copy koffi native binding
-          if [ "$PLATFORM" = "windows-x64" ]; then
-            cp node_modules/@aspect-build/koffi/build/koffi/napi-v6/win32-x64/koffi.node "$OUTDIR/" 2>/dev/null || true
+          # Windows: copy koffi native module with proper directory structure
+          if [[ "$PLATFORM" == "windows-x64" ]]; then
+            mkdir -p "$OUTDIR/node_modules/koffi/build/koffi/win32_x64"
+            cp node_modules/koffi/index.js "$OUTDIR/node_modules/koffi/"
+            cp node_modules/koffi/package.json "$OUTDIR/node_modules/koffi/"
+            cp node_modules/koffi/build/koffi/win32_x64/koffi.node "$OUTDIR/node_modules/koffi/build/koffi/win32_x64/"
           fi
         shell: bash
 
@@ -93,7 +131,7 @@ jobs:
           
           cd "$OUTDIR"
           if [[ "$PLATFORM" == "windows-x64" ]]; then
-            7z a "../../fan-$PLATFORM.zip" .
+            7z a "../fan-$PLATFORM.zip" .
           else
             mkdir -p "../fan-$PLATFORM"
             cp -r . "../fan-$PLATFORM/"
