@@ -1,12 +1,17 @@
 // packages/coding-agent/src/cli/init-wizard.ts
-import { createInterface } from "node:readline";
-import { mkdirSync, writeFileSync, existsSync, readFileSync } from "node:fs";
+
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { getAgentDir, getModelsPath, getSettingsPath, APP_NAME, VERSION } from "../config.js";
+import { createInterface } from "node:readline";
+import { APP_NAME, getAgentDir, getModelsPath, getSettingsPath, VERSION } from "../config.js";
 
 const PROVIDERS = [
 	{ name: "OpenAI", envVar: "OPENAI_API_KEY", models: ["gpt-4o", "gpt-4o-mini", "o1", "o3-mini"] },
-	{ name: "Anthropic", envVar: "ANTHROPIC_API_KEY", models: ["claude-sonnet-4-20250514", "claude-opus-4-20250514", "claude-haiku-4-20250414"] },
+	{
+		name: "Anthropic",
+		envVar: "ANTHROPIC_API_KEY",
+		models: ["claude-sonnet-4-20250514", "claude-opus-4-20250514", "claude-haiku-4-20250414"],
+	},
 	{ name: "Google", envVar: "GOOGLE_API_KEY", models: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"] },
 	{ name: "Groq", envVar: "GROQ_AFAN_KEY", models: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"] },
 	{ name: "xAI", envVar: "XAI_AFAN_KEY", models: ["grok-3", "grok-3-mini"] },
@@ -59,7 +64,10 @@ export async function runInitWizard(): Promise<void> {
 
 	const providerInput = await question(rl, "\n   Provider(s) [1]: ");
 	const providerIndices = providerInput.trim()
-		? providerInput.split(",").map(s => parseInt(s.trim(), 10) - 1).filter(i => i >= 0 && i < PROVIDERS.length)
+		? providerInput
+				.split(",")
+				.map((s) => parseInt(s.trim(), 10) - 1)
+				.filter((i) => i >= 0 && i < PROVIDERS.length)
 		: [0]; // default: OpenAI
 
 	if (providerIndices.length === 0) {
@@ -156,9 +164,10 @@ export async function runInitWizard(): Promise<void> {
 	console.log(`    Env file: ${envPath}`);
 	console.log(`    Settings: ${settingsPath}`);
 	console.log("\n  Next steps:");
-	console.log("    fna                        Start interactive mode");
-	console.log("    fna --mode server          Start with API & dashboard");
-	console.log("    fna doctor                 Run diagnostics\n");
+	console.log("    fan                        Start interactive mode");
+	console.log("    fan --web                  Start with dashboard (opens browser)");
+	console.log("    fan --mode server          Start API server only");
+	console.log("    fan doctor                 Run diagnostics\n");
 
 	rl.close();
 }

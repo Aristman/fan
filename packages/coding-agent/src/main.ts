@@ -5,8 +5,10 @@
  * createAgentSession() options. The SDK does the heavy lifting.
  */
 
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { createInterface } from "node:readline";
+import { type SessionAdapter, startServer } from "@fan/api-gateway";
 import { type ImageContent, modelsAreEqual, supportsXhigh } from "@itone/fan-ai";
 import { ProcessTerminal, setKeybindings, TUI } from "@itone/fan-tui";
 import chalk from "chalk";
@@ -15,8 +17,12 @@ import { processFileArguments } from "./cli/file-processor.js";
 import { buildInitialMessage } from "./cli/initial-message.js";
 import { listModels } from "./cli/list-models.js";
 import { selectSession } from "./cli/session-picker.js";
-import { getAgentDir, getModelsPath, VERSION } from "./config.js";
-import { type AgentSessionRuntime, type CreateAgentSessionRuntimeFactory, createAgentSessionRuntime } from "./core/agent-session-runtime.js";
+import { getAgentDir, getModelsPath, isBunBinary, VERSION } from "./config.js";
+import {
+	type AgentSessionRuntime,
+	type CreateAgentSessionRuntimeFactory,
+	createAgentSessionRuntime,
+} from "./core/agent-session-runtime.js";
 import {
 	type AgentSessionRuntimeDiagnostic,
 	createAgentSessionFromServices,
@@ -45,7 +51,6 @@ import { ExtensionSelectorComponent } from "./modes/interactive/components/exten
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.js";
 import { handleConfigCommand, handlePackageCommand } from "./package-manager-cli.js";
 import { isLocalPath } from "./utils/paths.js";
-import { startServer, type SessionAdapter } from "@fan/api-gateway";
 
 async function handleInitCommand(args: string[]): Promise<boolean> {
 	if (!args.includes("init")) return false;
@@ -114,7 +119,8 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 	// --- Disk cache (3s TTL) ---
 	let diskCacheTime = 0;
 	const DISK_CACHE_TTL = 3_000;
-	let cachedDiskSessions: Array<{ id: string; path: string; title: string; modified: Date; messageCount: number }> = [];
+	let cachedDiskSessions: Array<{ id: string; path: string; title: string; modified: Date; messageCount: number }> =
+		[];
 
 	// --- WS subscription forwarding ---
 	// runtime has ONE AgentSession at a time. When runtime switches session,
@@ -146,7 +152,19 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 	}
 
 	// --- Helpers ---
-	function convertMessage(msg: any, idx: number, prefix: string): { id: string; role: "user" | "assistant" | "tool"; content: string; createdAt: string; model?: string; tokens?: number; cost?: number } {
+	function convertMessage(
+		msg: any,
+		idx: number,
+		prefix: string,
+	): {
+		id: string;
+		role: "user" | "assistant" | "tool";
+		content: string;
+		createdAt: string;
+		model?: string;
+		tokens?: number;
+		cost?: number;
+	} {
 		const role = msg.role as "user" | "assistant" | "toolResult";
 		let text = "";
 		if (role === "user") {
@@ -154,7 +172,10 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 			text = typeof c === "string" ? c : Array.isArray(c) ? c.map((b: any) => b.text || "").join("") : "";
 		} else if (role === "assistant") {
 			const blocks = msg.content || [];
-			text = blocks.filter((b: any) => b.type === "text").map((b: any) => b.text || "").join("");
+			text = blocks
+				.filter((b: any) => b.type === "text")
+				.map((b: any) => b.text || "")
+				.join("");
 		} else if (role === "toolResult") {
 			const c = msg.content;
 			text = Array.isArray(c) ? c.map((b: any) => b.text || "").join("") : String(c || "");
@@ -177,14 +198,13 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 		}
 		diskCacheTime = now;
 		try {
-			cachedDiskSessions = (await SessionManager.listAll())
-				.map((s) => ({
-					id: s.id,
-					path: s.path,
-					title: s.name || s.firstMessage || "Untitled",
-					modified: s.modified,
-					messageCount: s.messageCount,
-				}));
+			cachedDiskSessions = (await SessionManager.listAll()).map((s) => ({
+				id: s.id,
+				path: s.path,
+				title: s.name || s.firstMessage || "Untitled",
+				modified: s.modified,
+				messageCount: s.messageCount,
+			}));
 			return cachedDiskSessions;
 		} catch (err) {
 			console.error("[session-adapter] Failed to list disk sessions:", err);
@@ -192,7 +212,9 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 		}
 	}
 
-	function readDiskSessionMessages(sessionPath: string): Array<{ id: string; role: "user" | "assistant" | "tool"; content: string; createdAt: string; model?: string }> {
+	function readDiskSessionMessages(
+		sessionPath: string,
+	): Array<{ id: string; role: "user" | "assistant" | "tool"; content: string; createdAt: string; model?: string }> {
 		try {
 			const mgr = SessionManager.open(sessionPath);
 			return mgr.buildSessionContext().messages.map((msg, idx) => convertMessage(msg, idx, "disk"));
@@ -228,16 +250,16 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 		// --- listSessions: ALL from disk (JSONL files, same as TUI /resume) ---
 		async listSessions() {
 			const diskSessions = await loadDiskSessions();
-			return diskSessions.map((s) => ({
-				id: s.id,
-				title: s.title,
-				createdAt: s.modified.toISOString(),
-				updatedAt: s.modified.toISOString(),
-				messageCount: s.messageCount,
-				sessionFile: s.path,
-			})).sort(
-				(a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-			);
+			return diskSessions
+				.map((s) => ({
+					id: s.id,
+					title: s.title,
+					createdAt: s.modified.toISOString(),
+					updatedAt: s.modified.toISOString(),
+					messageCount: s.messageCount,
+					sessionFile: s.path,
+				}))
+				.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 		},
 
 		// --- getSession: ALWAYS from disk (single source of truth) ---
@@ -318,11 +340,11 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 				sessionSubscribers.set(sessionId, handlers);
 			}
 			handlers.add(handler);
-		return () => {
+			return () => {
 				handlers.delete(handler);
-			if (handlers.size === 0) {
+				if (handlers.size === 0) {
 					sessionSubscribers.delete(sessionId);
-			}
+				}
 			};
 		},
 
@@ -330,11 +352,13 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 		async getAvailableModels() {
 			const current = runtime.session.model;
 			if (!current) return [];
-			return [{
-				provider: current.provider,
-				model: current.id,
-				displayName: current.name,
-			}];
+			return [
+				{
+					provider: current.provider,
+					model: current.id,
+					displayName: current.name,
+				},
+			];
 		},
 	};
 }
@@ -342,7 +366,7 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 type AppMode = "interactive" | "print" | "json" | "rpc" | "server";
 
 function resolveAppMode(parsed: Args, stdinIsTTY: boolean): AppMode {
-	if (parsed.mode === "server") {
+	if (parsed.web || parsed.mode === "server") {
 		return "server";
 	}
 	if (parsed.mode === "rpc") {
@@ -940,7 +964,7 @@ export async function main(args: string[]) {
 		};
 		const configuredProviders: string[] = [];
 		for (const [provider, envVars] of Object.entries(providerEnvVars)) {
-			if (envVars.some(v => process.env[v])) {
+			if (envVars.some((v) => process.env[v])) {
 				configuredProviders.push(provider);
 			}
 		}
@@ -954,10 +978,14 @@ export async function main(args: string[]) {
 		}
 		console.error(chalk.yellow("\nTo fix this:"));
 		console.error("  1. Set an API key environment variable (see .env.example for available providers)");
-		console.error("  2. Run \"fna init\" to create a default configuration");
+		console.error('  2. Run "fan init" to create a default configuration');
 		console.error("  3. Or create models.json manually:");
 		console.error(chalk.dim(`     ${getModelsPath()}`));
-		console.error(chalk.yellow("\nAvailable env vars: ANTHROPIC_AFAN_KEY, OPENAI_AFAN_KEY, GEMINI_AFAN_KEY, GROQ_AFAN_KEY, etc."));
+		console.error(
+			chalk.yellow(
+				"\nAvailable env vars: ANTHROPIC_AFAN_KEY, OPENAI_AFAN_KEY, GEMINI_AFAN_KEY, GROQ_AFAN_KEY, etc.",
+			),
+		);
 		console.error(chalk.dim("See .env.example in the project root for the full list."));
 		process.exit(1);
 	}
@@ -966,6 +994,21 @@ export async function main(args: string[]) {
 	if (startupBenchmark && appMode !== "interactive") {
 		console.error(chalk.red("Error: FAN_STARTUP_BENCHMARK only supports interactive mode"));
 		process.exit(1);
+	}
+
+	/** Resolve dashboard dist directory based on runtime mode */
+	function getDashboardDir(): string | undefined {
+		if (isBunBinary) {
+			const pathMod = require("node:path") as {
+				dirname: (p: string) => string;
+				join: (...args: string[]) => string;
+			};
+			return pathMod.join(pathMod.dirname(process.execPath), "dashboard");
+		}
+		// Dev mode: check if dashboard dist exists in the monorepo
+		const devPath = resolve(process.cwd(), "packages", "dashboard", "dist");
+		if (existsSync(devPath)) return devPath;
+		return undefined;
 	}
 
 	if (appMode === "server") {
@@ -979,8 +1022,22 @@ export async function main(args: string[]) {
 		const { port, stop } = await startServer(modelManager, adapter, {
 			port: parsed.port || 3456,
 			host: parsed.host || "localhost",
+			dashboardDir: getDashboardDir(),
 		});
 		console.log(`[fan] Server mode active — http://${parsed.host || "localhost"}:${port}`);
+
+		// Auto-open browser if --web flag was used
+		if (parsed.web) {
+			const url = `http://${parsed.host || "localhost"}:${port}`;
+			console.log(`[fan] Opening dashboard in browser: ${url}`);
+			try {
+				const { exec } = await import("node:child_process");
+				const cmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
+				exec(`${cmd} "${url}"`);
+			} catch {
+				console.log(chalk.dim(`[fan] Could not open browser automatically. Open ${url} manually.`));
+			}
+		}
 
 		// Keep process alive until interrupted
 		await new Promise<void>((resolve) => {

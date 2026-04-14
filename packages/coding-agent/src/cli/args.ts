@@ -22,6 +22,7 @@ export interface Args {
 	help?: boolean;
 	version?: boolean;
 	mode?: Mode;
+	web?: boolean;
 	noSession?: boolean;
 	session?: string;
 	fork?: string;
@@ -77,6 +78,8 @@ export function parseArgs(args: string[]): Args {
 			if (mode === "text" || mode === "json" || mode === "rpc" || mode === "server") {
 				result.mode = mode;
 			}
+		} else if (arg === "--web") {
+			result.web = true;
 		} else if (arg === "--continue" || arg === "-c") {
 			result.continue = true;
 		} else if (arg === "--resume" || arg === "-r") {
@@ -238,6 +241,7 @@ ${chalk.bold("Options:")}
   --mode <mode>                  Output mode: text (default), json, rpc, or server
   --port <port>                  Server port (default: 3456, used with --mode server)
   --host <host>                  Server bind address (default: localhost, used with --mode server)
+  --web                          Start web server with dashboard (opens browser)
   --print, -p                    Non-interactive mode: process prompt and exit
   --continue, -c                 Continue previous session
   --resume, -r                   Select a session to resume
@@ -313,6 +317,10 @@ ${chalk.bold("Examples:")}
 
   # Start as HTTP server (REST + WebSocket API)
   ${APP_NAME} --mode server --port 3456
+
+  # Start server with dashboard (opens browser)
+  ${APP_NAME} --web
+  ${APP_NAME} --web --port 8080
 
   # Export a session file to HTML
   ${APP_NAME} --export ~/${CONFIG_DIR_NAME}/agent/sessions/--path--/session.jsonl
