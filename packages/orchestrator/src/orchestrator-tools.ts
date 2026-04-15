@@ -314,15 +314,6 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 							}
 						: undefined;
 
-					// Auto-create task for this chain step
-					let stepTaskId: string | undefined;
-					try {
-						const stepSubject = `chain/${i + 1} ${step.agent}: ${step.task.replace(/\{previous\}/g, "").slice(0, 50)}`;
-						const created = taskManager.createTask({ description: stepSubject, agentType: toWorkerType(step.agent) });
-						stepTaskId = created.id;
-						taskManager.updateTask(stepTaskId, { status: "in_progress", owner: step.agent });
-					} catch { /* non-critical */ }
-
 					const workerType = toWorkerType(step.agent);
 					await acquireSlot(workerType, config.parallelWorkers);
 					let result: SingleResult;
@@ -334,9 +325,6 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 					results.push(result);
 
 					const isError = result.exitCode !== 0 || result.stopReason === "error" || result.stopReason === "aborted";
-					if (stepTaskId) {
-						try { taskManager.updateTask(stepTaskId, { status: isError ? "failed" : "completed" }); } catch { /* non-critical */ }
-					}
 					if (isError) {
 						const errorMsg = result.errorMessage || result.stderr || getFinalOutput(result.messages) || "(no output)";
 						return {
@@ -394,15 +382,6 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 				};
 
 				const results = await mapWithConcurrencyLimit(params.tasks, MAX_CONCURRENCY, async (t, index) => {
-					// Auto-create task for this parallel worker
-					let parTaskId: string | undefined;
-					try {
-						const parSubject = `parallel ${t.agent}: ${t.task.slice(0, 50)}`;
-						const created = taskManager.createTask({ description: parSubject, agentType: toWorkerType(t.agent) });
-						parTaskId = created.id;
-						taskManager.updateTask(parTaskId, { status: "in_progress", owner: t.agent });
-					} catch { /* non-critical */ }
-
 					const workerType = toWorkerType(t.agent);
 					await acquireSlot(workerType, config.parallelWorkers);
 					let result: SingleResult;
@@ -418,9 +397,6 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 					allResults[index] = result;
 					emitParallelUpdate();
 
-					if (parTaskId) {
-						try { taskManager.updateTask(parTaskId, { status: result.exitCode === 0 ? "completed" : "failed" }); } catch { /* non-critical */ }
-					}
 					return result;
 				});
 
@@ -443,15 +419,6 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 
 			// === Single Mode ===
 			if (params.agent && params.task) {
-				// Auto-create task for tracking
-				let autoTaskId: string | undefined;
-				try {
-					const taskSubject = `${params.agent}: ${params.task.slice(0, 60)}`;
-					const created = taskManager.createTask({ description: taskSubject, agentType: toWorkerType(params.agent) });
-					autoTaskId = created.id;
-					taskManager.updateTask(autoTaskId, { status: "in_progress", owner: params.agent });
-				} catch { /* non-critical */ }
-
 				const workerType = toWorkerType(params.agent);
 				await acquireSlot(workerType, config.parallelWorkers);
 				let result: SingleResult;
@@ -462,11 +429,6 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 				}
 
 				const isError = result.exitCode !== 0 || result.stopReason === "error" || result.stopReason === "aborted";
-				if (autoTaskId) {
-					try {
-						taskManager.updateTask(autoTaskId, { status: isError ? "failed" : "completed" });
-					} catch { /* non-critical */ }
-				}
 				if (isError) {
 					const errorMsg = result.errorMessage || result.stderr || getFinalOutput(result.messages) || "(no output)";
 					return {

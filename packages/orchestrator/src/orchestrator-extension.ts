@@ -224,7 +224,6 @@ export const orchestratorExtension: ExtensionFactory = (pi) => {
 			event.toolName === "TaskCreate" ||
 			event.toolName === "TaskUpdate" ||
 			event.toolName === "TaskClear" ||
-			event.toolName === "delegate_task" ||
 			event.toolName === "cancel_task"
 		) {
 			queueMicrotask(() => {
