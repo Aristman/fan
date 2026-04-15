@@ -1,7 +1,7 @@
 {
 	"name": "fan-extension-sandbox",
 	"private": true,
-	"version": "1.0.0",
+	"version": "0.0.0",
 	"type": "module",
 	"scripts": {
 		"clean": "echo 'nothing to clean'",
