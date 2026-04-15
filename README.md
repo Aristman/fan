@@ -4,25 +4,25 @@
 
 ## Features
 
-- Multi-provider AI (OpenAI, Anthropic, Google, Groq, xAI, Mistral, and more)
-- Interactive TUI with streaming, markdown, thinking blocks
-- Multi-agent orchestrator (coordinator mode, worker delegation)
-- Model management (routing rules, fallback chains, budget tracking)
-- REST API + WebSocket server mode (14 endpoints)
-- Web dashboard (Lit-based, real-time streaming)
-- Extension system & skill system
-- Session persistence (JSONL + SQLite metadata)
-- `fan init` setup wizard
-- `fan doctor` diagnostics
-- `fan server` command with start/stop/status subcommands (background daemon management)
-- Pre-built binary delivery (GitHub Releases, CI/CD)
+- **Multi-provider AI** — OpenAI, Anthropic, Google, Groq, xAI, Mistral, Amazon Bedrock, Azure, Vertex AI, and 40+ more
+- **Interactive TUI** — streaming, markdown rendering, thinking blocks, tool execution widgets
+- **Multi-agent orchestrator** — coordinator mode, 4 worker types (explore/plan/implement/verify), 3 workflows (single/chain/parallel), live tool call display
+- **Model management** — routing rules, fallback chains, budget tracking, per-session settings
+- **REST API + WebSocket server** — 14 endpoints, token auth, background daemon mode
+- **Web dashboard** — Lit-based, real-time streaming, model settings, budget visualization
+- **Extension & skill system** — tools, commands, lifecycle hooks, prompt templates
+- **Session persistence** — JSONL (single source of truth) + SQLite metadata
+- **CLI tools** — `fan init` setup wizard, `fan doctor` diagnostics, `fan server` daemon management
+- **Cross-platform** — Windows, Linux, macOS. Pre-built binaries via CI/CD
 
 ## Quick Start
 
 ### Install
 
 ```bash
-# Download pre-built binary (see INSTALL.md for all platforms)
+# Download pre-built binary (recommended)
+# See INSTALL.md for all platforms and package managers
+
 # Or build from source:
 git clone <repo> && cd fan && npm install && npm run build
 ```
@@ -30,21 +30,60 @@ git clone <repo> && cd fan && npm install && npm run build
 ### Setup
 
 ```bash
-fan init          # Interactive setup wizard
-fan doctor        # Verify installation
+fan init          # Interactive setup wizard (API keys, default model, preferences)
+fan doctor        # Verify installation and dependencies
 ```
 
 ### Use
 
 ```bash
-fan               # Interactive TUI mode
-fan -p "prompt"   # Single prompt
+fan               # Interactive TUI mode (default)
+fan -p "prompt"   # Single prompt (non-interactive)
 fan --web         # Server + dashboard (auto-opens browser)
-fan server        # Server in foreground (full runtime)
-fan server start  # Background daemon (for IDE plugins)
-fan server status # Check if server is running
-fan server stop   # Stop background server
 ```
+
+### Server Mode
+
+```bash
+fan server                # Server in foreground (full runtime)
+fan server start          # Background daemon (for IDE plugins)
+fan server start --port 3000  # Custom port
+fan server status         # Check daemon status (--json for machine output)
+fan server stop           # Stop background daemon
+```
+
+## Orchestrator
+
+FAN includes a built-in multi-agent orchestrator with specialized workers:
+
+| Worker | Role |
+|--------|------|
+| 🔍 **explore** | Fast codebase recon, file search, structure analysis |
+| 📋 **plan** | Create implementation plans from gathered context |
+| 🔧 **implement** | Write code, make changes, run commands |
+| 🛡️ **verify** | Code review, quality checks, security audit |
+
+### Workflows
+
+```
+# Single — one worker, one task
+delegate_task(agent="implement", task="fix the login bug")
+
+# Chain — sequential steps, each receives previous output
+delegate_task(chain=[
+  { agent: "explore", task: "find auth code" },
+  { agent: "plan", task: "create fix plan using {previous}" },
+  { agent: "implement", task: "apply the plan" }
+])
+
+# Parallel — multiple workers, concurrent execution
+delegate_task(tasks=[
+  { agent: "explore", task: "analyze frontend" },
+  { agent: "explore", task: "analyze backend" }
+])
+```
+
+Workers display live tool calls during execution, timing, and usage stats on completion. See [docs/guides/orchestrator.md](docs/guides/orchestrator.md) for details.
 
 ## Documentation
 
@@ -54,29 +93,16 @@ fan server stop   # Stop background server
 | [SETUP.md](SETUP.md) | Development setup & configuration |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Contribution guide |
 | [MIGRATION.md](MIGRATION.md) | Migration from upstream fan/pi |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Architecture, packages, data flow |
 | [docs/guides/configuration.md](docs/guides/configuration.md) | Settings reference |
 | [docs/guides/orchestrator.md](docs/guides/orchestrator.md) | Orchestrator guide |
 | [docs/guides/dashboard.md](docs/guides/dashboard.md) | Dashboard guide |
 | [docs/guides/api-reference.md](docs/guides/api-reference.md) | API reference |
-
-## Packages
-
-| Package | Version | Description |
-|---------|---------|-------------|
-| @itone/fan-ai | 0.66.1 | AI provider abstraction |
-| @itone/fan-agent | 0.66.1 | Agent core & session management |
-| @itone/fan-tui | 0.66.1 | Terminal UI components |
-| @itone/fan-web-ui | 0.66.1 | Web UI components |
-| @itone/fan-coding-agent | 0.66.1 | Main CLI package |
-| @fan/orchestrator | 1.0.0 | Multi-agent coordination |
-| @fan/model-manager | 1.0.0 | Model routing & budget |
-| @fan/api-gateway | 1.0.0 | REST/WS API server |
-| @fan/dashboard | 1.0.0 | Web dashboard |
-| @fan/db | 1.0.0 | Prisma/SQLite database |
+| [CHANGELOG.md](CHANGELOG.md) | Release changelog |
 
 ## Architecture
 
-FAN is a monorepo built with TypeScript, Bun, and npm workspaces.
+FAN is a monorepo (npm workspaces, TypeScript strict, Bun-compatible).
 
 ```
 Client (TUI / Dashboard / IDE / SDK)
@@ -107,47 +133,50 @@ budget)  │
     └─────────┘
 ```
 
+### Packages
+
+| Package | Description |
+|---------|-------------|
+| `coding-agent` | Main CLI — TUI, tools, extensions, skills |
+| `orchestrator` | Multi-agent coordination (96 tests) |
+| `ai` | AI/LLM provider abstraction (586 models) |
+| `agent` | Agent core & session management |
+| `model-manager` | Model routing, fallback chains, budget |
+| `api-gateway` | Hono REST + WebSocket API server |
+| `dashboard` | Lit web UI dashboard |
+| `db` | Prisma + SQLite schema & migrations |
+| `tui` | Terminal UI components |
+| `web-ui` | Standalone web UI components |
+
 ### Key Concepts
 
 - **Runtime = execution engine.** One active session at a time. Disk (JSONL) is the single source of truth.
 - **Dashboard is a thin frontend.** No in-memory session stores — all data from disk via API.
-- **Orchestrator** delegates tasks to specialized workers (explore, plan, implement, verify) with coordinator mode.
+- **Orchestrator** delegates tasks to specialized workers with coordinator mode, live TUI updates, and task tracking.
 - **Model Manager** handles per-task routing, fallback chains, and budget tracking across providers.
-- **Extensions & Skills** add tools, commands, and lifecycle hooks to the agent.
+- **Version** is defined once in root `package.json`. Sub-packages read it at runtime.
 
 ### Configuration
 
-- **Global config:** `~/.fan/agent/` (models, settings, tokens)
-- **Project config:** `.fan/` (project-specific settings)
-- **Environment vars:** `.env` (API keys, never committed)
-- **Custom models:** `~/.fan/agent/models.json` (global only)
+- **Global:** `~/.fan/agent/` (models, settings, tokens)
+- **Project:** `.fan/` (project-specific settings)
+- **Environment:** `.env` (API keys, never committed)
+- **Custom models:** `~/.fan/agent/models.json`
 
 ### Server Mode
 
-Server mode exposes 14 REST endpoints + WebSocket streaming:
+Server mode exposes the full runtime via REST + WebSocket:
 
 ```bash
 fan --web                  # Server + dashboard (auto-opens browser)
 fan server                 # Server in foreground
-fan server start           # Background daemon
-fan server start --port 3000  # Custom port
-fan --mode server          # API server only (no browser auto-open)
+fan server start           # Background daemon (ideal for IDE plugins)
 ```
-
-`fan server` runs the **full runtime** (sessions, extensions, models, orchestrator) — all connected clients (dashboard, IDE plugins, API consumers) get the complete agent capabilities. Use `fan server start` for background daemon mode — ideal for IDE plugin integration. The daemon writes PID and metadata to `~/.fan/agent/server.json`.
 
 Key endpoints: `GET /api/health`, `POST /api/sessions/:id/messages`,
 `GET /api/models`, `GET /api/budget`, `WS /api/ws/:sessionId`
 
-See [ARCHITECTURE.md](./ARCHITECTURE.md) for full details.
-
-### Delivery
-
-Pre-built binaries for all platforms (Windows, Linux, macOS) are available from
-[GitHub Releases](https://github.com/user/fan/releases), created automatically
-by CI/CD on every release. See [INSTALL.md](INSTALL.md) for download links.
-
-For IDE plugin integration, use `fan server start` to run the agent as a background daemon — it registers its PID and WebSocket endpoint so plugins can auto-connect.
+See [ARCHITECTURE.md](./ARCHITECTURE.md) and [docs/guides/api-reference.md](docs/guides/api-reference.md) for details.
 
 ## Development
 
@@ -162,16 +191,16 @@ Branch types: `feature`, `fix`, `hotfix`. Commits: conventional commits.
 ### Build & Test
 
 ```bash
-npm run build                                    # Build all packages (10 packages, 0 errors)
-cd packages/orchestrator && npx vitest run       # Orchestrator tests (95 tests)
-cd packages/model-manager && npx vitest run      # Model Manager tests (42 tests)
-cd packages/api-gateway && npx vitest run        # API Gateway tests (39 tests)
-cd packages/dashboard && npx vitest run          # Dashboard tests (23 tests)
+npm run build                                    # Build all packages
+cd packages/orchestrator && npx vitest run       # 96 tests
+cd packages/model-manager && npx vitest run      # 42 tests
+cd packages/api-gateway && npx vitest run        # 39 tests
+cd packages/dashboard && npx vitest run          # 23 tests
 ```
 
 ### Environment
 
-- **Runtime:** Node.js 24+ / Bun
+- **Runtime:** Node.js 20+ / Bun
 - **Language:** TypeScript strict
 - **Package manager:** npm workspaces
 - **Database:** SQLite via Prisma
