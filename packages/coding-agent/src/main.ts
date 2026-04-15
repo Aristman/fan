@@ -810,16 +810,25 @@ export async function main(args: string[]) {
 
 	validateForkFlags(parsed);
 
-	// Run migrations (pass cwd for project-local migrations)
-	const { migratedAuthProviders: migratedProviders, deprecationWarnings } = runMigrations(process.cwd());
-	time("runMigrations");
+	// Skip heavy initialization for worker subagent mode
+	const isWorkerMode = parsed.mode === "json" && parsed.noSession;
+	let migratedProviders: string[] = [];
+	let deprecationWarnings: string[] = [];
 
-	// Initialize database schema (create tables if needed)
-	try {
-		const { initDatabase } = await import("@fan/db");
-		await initDatabase();
-	} catch (e) {
-		console.error("Failed to initialize database:", e);
+	if (!isWorkerMode) {
+		// Run migrations (pass cwd for project-local migrations)
+		({ migratedAuthProviders: migratedProviders, deprecationWarnings } = runMigrations(process.cwd()));
+		time("runMigrations");
+
+		// Initialize database schema (create tables if needed)
+		try {
+			const { initDatabase } = await import("@fan/db");
+			await initDatabase();
+		} catch (e) {
+			console.error("Failed to initialize database:", e);
+		}
+	} else {
+		time("runMigrations (skipped – worker mode)");
 	}
 
 	const cwd = process.cwd();
@@ -876,7 +885,7 @@ export async function main(args: string[]) {
 				noThemes: parsed.noThemes,
 				systemPrompt: parsed.systemPrompt,
 				appendSystemPrompt: parsed.appendSystemPrompt,
-				extensionFactories: [orchestratorExtension],
+				extensionFactories: parsed.noOrchestrator ? [] : [orchestratorExtension],
 			},
 		});
 		const { settingsManager, modelRegistry, resourceLoader } = services;
