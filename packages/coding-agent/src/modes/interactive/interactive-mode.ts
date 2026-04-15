@@ -2735,8 +2735,10 @@ export class InteractiveMode {
 				this.chatContainer.addChild(assistantComponent);
 				break;
 			}
-			case "toolResult": {
-				// Tool results are rendered inline with tool calls, handled separately
+			case "toolResult":
+			case "user-with-attachments":
+			case "artifact": {
+				// Tool results, artifacts, and user-with-attachments are handled in web-ui; skip in TUI
 				break;
 			}
 			default: {

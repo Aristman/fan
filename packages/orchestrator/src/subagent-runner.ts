@@ -167,6 +167,8 @@ export async function runSingleAgent(
 			stderr: `Unknown agent: "${agentName}". Available agents: ${available}.`,
 			usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
 			step,
+			startTime: Date.now(),
+			endTime: Date.now(),
 		};
 	}
 
@@ -191,6 +193,7 @@ export async function runSingleAgent(
 		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
 		model: agent.model,
 		step,
+		startTime: Date.now(),
 	};
 
 	const emitUpdate = () => {
@@ -293,6 +296,7 @@ export async function runSingleAgent(
 		});
 
 		currentResult.exitCode = exitCode;
+		currentResult.endTime = Date.now();
 		if (wasAborted) throw new Error("Subagent was aborted");
 		return currentResult;
 	} finally {
@@ -370,6 +374,7 @@ export async function runSingleAgentWithRetry(
 					usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
 					errorMessage: e.message,
 					step,
+					endTime: Date.now(),
 				};
 			}
 		}
@@ -386,6 +391,7 @@ export async function runSingleAgentWithRetry(
 			usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
 			errorMessage: "All retry attempts exhausted",
 			step,
+			endTime: Date.now(),
 		}
 	);
 }

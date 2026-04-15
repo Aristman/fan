@@ -133,6 +133,8 @@ export interface SingleResult {
 	stopReason?: string;
 	errorMessage?: string;
 	step?: number;
+	startTime?: number;
+	endTime?: number;
 }
 
 /** Details attached to tool results for TUI rendering */
