@@ -63,7 +63,7 @@ tar xzf ~/Downloads/fan-darwin-arm64.tar.gz   # replace with your platform file
 **Windows:**
 
 ```powershell
-Expand-Archive -Path .\fan-windows-x64.zip -DestinationPath $env:USERPROFILE\bin\fan
+`Expand-Archive -Path .\fan-windows-x64.zip -DestinationPath $env:USERPROFILE\bin\fan`
 ```
 
 ### Step 3: Add to PATH

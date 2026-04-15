@@ -40,6 +40,7 @@ export interface Args {
 	noPromptTemplates?: boolean;
 	themes?: string[];
 	noThemes?: boolean;
+	noOrchestrator?: boolean;
 	listModels?: string | true;
 	offline?: boolean;
 	verbose?: boolean;
@@ -139,6 +140,8 @@ export function parseArgs(args: string[]): Args {
 			result.extensions.push(args[++i]);
 		} else if (arg === "--no-extensions" || arg === "-ne") {
 			result.noExtensions = true;
+		} else if (arg === "--no-orchestrator") {
+			result.noOrchestrator = true;
 		} else if (arg === "--skill" && i + 1 < args.length) {
 			result.skills = result.skills ?? [];
 			result.skills.push(args[++i]);
@@ -270,6 +273,7 @@ ${chalk.bold("Options:")}
   --no-prompt-templates, -np     Disable prompt template discovery and loading
   --theme <path>                 Load a theme file or directory (can be used multiple times)
   --no-themes                    Disable theme discovery and loading
+  --no-orchestrator              Disable orchestrator extension (no delegate_task, workers, or task management)
   --export <file>                Export session file to HTML and exit
   --list-models [search]         List available models (with optional fuzzy search)
   --verbose                      Force verbose startup (overrides quietStartup setting)

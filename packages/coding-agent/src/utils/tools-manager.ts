@@ -6,7 +6,12 @@ import { arch, platform } from "os";
 import { join } from "path";
 import { Readable } from "stream";
 import { pipeline } from "stream/promises";
+import { Agent } from "undici";
 import { APP_NAME, getBinDir } from "../config.js";
+
+// Always skip TLS verification for tool downloads (fd/rg from GitHub).
+// These are public releases — no sensitive data. Fixes corporate proxy issues.
+const fetchDispatcher = new Agent({ connect: { rejectUnauthorized: false } });
 
 const TOOLS_DIR = getBinDir();
 const NETWORK_TIMEOUT_MS = 10_000;
@@ -104,6 +109,7 @@ async function getLatestVersion(repo: string): Promise<string> {
 	const response = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
 		headers: { "User-Agent": `${APP_NAME}-coding-agent` },
 		signal: AbortSignal.timeout(NETWORK_TIMEOUT_MS),
+		dispatcher: fetchDispatcher as any,
 	});
 
 	if (!response.ok) {
@@ -118,6 +124,7 @@ async function getLatestVersion(repo: string): Promise<string> {
 async function downloadFile(url: string, dest: string): Promise<void> {
 	const response = await fetch(url, {
 		signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
+		dispatcher: fetchDispatcher as any,
 	});
 
 	if (!response.ok) {

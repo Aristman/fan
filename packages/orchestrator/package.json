@@ -1,6 +1,6 @@
 {
 	"name": "@fan/orchestrator",
-	"version": "0.1.0",
+	"version": "0.2.1",
 	"description": "FAN orchestrator — multi-agent task decomposition and coordination",
 	"type": "module",
 	"main": "./dist/index.js",

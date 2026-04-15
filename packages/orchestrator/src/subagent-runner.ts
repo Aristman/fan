@@ -109,19 +109,24 @@ async function writePromptToTempFile(agentName: string, prompt: string): Promise
  * Resolve the fan binary invocation.
  * Tries current script path first, then falls back to "fan" command.
  */
+let _cachedInvocation: { command: string; baseArgs: string[] } | null = null;
+
 export function getFnaInvocation(args: string[]): { command: string; args: string[] } {
-	const currentScript = process.argv[1];
-	if (currentScript && fs.existsSync(currentScript)) {
-		return { command: process.execPath, args: [currentScript, ...args] };
+	if (!_cachedInvocation) {
+		const currentScript = process.argv[1];
+		if (currentScript && fs.existsSync(currentScript)) {
+			_cachedInvocation = { command: process.execPath, baseArgs: [currentScript] };
+		} else {
+			const execName = path.basename(process.execPath).toLowerCase();
+			const isGenericRuntime = /^(node|bun)(\.exe)?$/.test(execName);
+			if (!isGenericRuntime) {
+				_cachedInvocation = { command: process.execPath, baseArgs: [] };
+			} else {
+				_cachedInvocation = { command: "fan", baseArgs: [] };
+			}
+		}
 	}
-
-	const execName = path.basename(process.execPath).toLowerCase();
-	const isGenericRuntime = /^(node|bun)(\.exe)?$/.test(execName);
-	if (!isGenericRuntime) {
-		return { command: process.execPath, args };
-	}
-
-	return { command: "fan", args };
+	return { command: _cachedInvocation.command, args: [..._cachedInvocation.baseArgs, ...args] };
 }
 
 type OnUpdateCallback = (partial: { content: Array<{ type: "text"; text: string }>; details: any }) => void;
@@ -162,10 +167,16 @@ export async function runSingleAgent(
 			stderr: `Unknown agent: "${agentName}". Available agents: ${available}.`,
 			usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
 			step,
+			startTime: Date.now(),
+			endTime: Date.now(),
 		};
 	}
 
-	const args: string[] = ["--mode", "json", "-p", "--no-session"];
+	const args: string[] = [
+		"--mode", "json", "-p", "--no-session",
+		"--no-orchestrator",
+		"--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes",
+	];
 	if (agent.model) args.push("--model", agent.model);
 	if (agent.tools && agent.tools.length > 0) args.push("--tools", agent.tools.join(","));
 
@@ -182,6 +193,7 @@ export async function runSingleAgent(
 		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
 		model: agent.model,
 		step,
+		startTime: Date.now(),
 	};
 
 	const emitUpdate = () => {
@@ -263,7 +275,7 @@ export async function runSingleAgent(
 
 			proc.on("close", (code) => {
 				if (buffer.trim()) processLine(buffer);
-				resolve(code ?? 0);
+				resolve(code ?? 1);
 			});
 
 			proc.on("error", () => {
@@ -284,6 +296,7 @@ export async function runSingleAgent(
 		});
 
 		currentResult.exitCode = exitCode;
+		currentResult.endTime = Date.now();
 		if (wasAborted) throw new Error("Subagent was aborted");
 		return currentResult;
 	} finally {
@@ -361,6 +374,7 @@ export async function runSingleAgentWithRetry(
 					usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
 					errorMessage: e.message,
 					step,
+					endTime: Date.now(),
 				};
 			}
 		}
@@ -377,6 +391,7 @@ export async function runSingleAgentWithRetry(
 			usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
 			errorMessage: "All retry attempts exhausted",
 			step,
+			endTime: Date.now(),
 		}
 	);
 }
@@ -399,7 +414,10 @@ export async function runSingleAgentWithFallback(
 	onUpdate: OnUpdateCallback | undefined,
 ): Promise<SingleResult> {
 	const mode = config.providerMode;
-	const timeout = config.workerTimeout ?? 300_000;
+	const timeout =
+		(config.agentTimeouts && config.agentTimeouts[agentName as keyof typeof config.agentTimeouts])
+		?? config.workerTimeout
+		?? 300_000;
 
 	// Set up abort timeout
 	let timeoutId: ReturnType<typeof setTimeout> | undefined;

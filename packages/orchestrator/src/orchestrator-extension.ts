@@ -33,7 +33,7 @@ export const orchestratorExtension: ExtensionFactory = (pi) => {
 	const taskManager = new TaskManager();
 
 	// Register tools (delegate_task, list_tasks, cancel_task, classify_task, TaskCreate, TaskUpdate)
-	registerOrchestratorTools(pi, taskManager);
+	registerOrchestratorTools(pi, taskManager, config);
 
 	// ---- State ----
 	let coordinatorActive = false;
@@ -46,54 +46,68 @@ export const orchestratorExtension: ExtensionFactory = (pi) => {
 
 		const tasks = taskManager.getTasks();
 
-		if (tasks.length === 0) {
+		// Auto-hide + auto-clear: if no active/pending tasks, hide widget and clean up
+		const activeOrPending = tasks.filter((t: any) => t.status !== "completed" && t.status !== "failed");
+		if (tasks.length === 0 || activeOrPending.length === 0) {
+			if (tasks.length > 0) taskManager.clearCompleted();
 			ctx.ui.setWidget("orchestrator-tasks", undefined);
 			return;
 		}
 
-		const statusIcons: Record<string, string> = {
-			pending: "☐",
-			in_progress: "◐",
-			completed: "☑",
-			blocked: "⛔",
-			failed: "✗",
-		};
+		const theme = ctx.ui.theme;
+		const fg = (color: string, text: string) => theme?.fg?.(color, text) ?? text;
+		const bold = (text: string) => theme?.bold?.(text) ?? text;
+	 const strikethrough = (text: string) => theme?.strikethrough?.(text) ?? text;
 
-		const isDone = (t: any) => t.status === "completed" || t.status === "failed";
-
-		const sorted = [...tasks].sort((a, b) => {
-			const order: Record<string, number> = {
-				in_progress: 0,
-				pending: 1,
-				blocked: 2,
-				completed: 3,
-				failed: 4,
-			};
+		const sorted = [...tasks].sort((a: any, b: any) => {
+			const order: Record<string, number> = { in_progress: 0, pending: 1, blocked: 2, completed: 3, failed: 4 };
 			return (order[a.status] ?? 5) - (order[b.status] ?? 5);
 		});
 
-		const activeCount = tasks.filter((t) => !isDone(t)).length;
-		const doneCount = tasks.filter((t) => isDone(t)).length;
+		const doneCount = tasks.filter((t: any) => t.status === "completed" || t.status === "failed").length;
+		const totalCount = activeOrPending.length + doneCount;
 
-		const lines: string[] = taskWidgetCollapsed
-			? [`Orchestrator Tasks (${activeCount} active, ${doneCount} done) — Alt+T to expand`]
-			: [
-					`Orchestrator Tasks (${activeCount} active, ${doneCount} done):`,
-					...sorted.map((t) => {
-						const icon = statusIcons[t.status] ?? "?";
-						const desc = t.description.length > 55 ? t.description.slice(0, 55) + "..." : t.description;
-						const deps = t.blockedBy?.length ? ` (blocked by ${t.blockedBy.length})` : "";
-						const owner = t.owner ? ` [${t.owner}]` : "";
+		// Collapsed: compact format
+		if (taskWidgetCollapsed) {
+			const lines = [`📋 ${doneCount}/${totalCount} tasks  [Alt+T to expand]`];
+			ctx.ui.setWidget("orchestrator-tasks", lines);
+			return;
+		}
 
-						if (isDone(t)) {
-							return `  \x1b[2m\x1b[9m${icon} ${desc}${deps}${owner}\x1b[0m`;
-						}
-						if (t.status === "in_progress") {
-							return `  \x1b[92m${icon} ${desc}${deps}${owner}\x1b[0m`;
-						}
-						return `  ${icon} ${desc}${deps}${owner}`;
-					}),
-				];
+		// Expanded: themed task list
+		const lines: string[] = [
+			`📋 ${doneCount}/${totalCount} tasks:`,
+			...sorted
+				.filter((t: any) => t.status !== "completed" && t.status !== "failed")
+				.map((t: any) => {
+					const desc = t.description.length > 60 ? t.description.slice(0, 60) + "..." : t.description;
+					const deps = t.blockedBy?.length ? ` (blocked by ${t.blockedBy.length})` : "";
+					const owner = t.owner ? ` [${t.owner}]` : "";
+					if (t.status === "in_progress") {
+						return `  ${fg("warning", bold("◐ "))}${fg("warning", bold(desc))}${fg("dim", deps + owner)}`;
+					}
+					if (t.status === "blocked") {
+						return `  ${fg("muted", "⛔ ")}${fg("dim", desc)}${fg("dim", deps + owner)}`;
+					}
+					if (t.status === "failed") {
+						return `  ${fg("error", "✗ ")}${fg("error", desc)}${fg("dim", deps + owner)}`;
+					}
+					return `  ${fg("muted", "☐ ")}${desc}${fg("dim", deps + owner)}`;
+				}),
+		];
+
+		// Show completed/failed at bottom (dimmed + strikethrough)
+		const doneTasks = sorted.filter((t: any) => t.status === "completed" || t.status === "failed");
+		if (doneTasks.length > 0 && doneTasks.length <= 3) {
+			lines.push("", fg("dim", "── done ──"));
+			for (const t of doneTasks) {
+				const desc = t.description.length > 50 ? t.description.slice(0, 50) + "..." : t.description;
+				const icon = t.status === "completed" ? "☑" : "✗";
+				lines.push(`  ${fg("muted", strikethrough(`${icon} ${desc}`))}`);
+			}
+		} else if (doneTasks.length > 3) {
+			lines.push("", fg("muted", `  ── ${doneTasks.length} completed/failed ──`));
+		}
 
 		ctx.ui.setWidget("orchestrator-tasks", lines);
 	}
@@ -103,9 +117,9 @@ export const orchestratorExtension: ExtensionFactory = (pi) => {
 		coordinatorActive = active;
 		if (!ctx?.ui?.setStatus) return;
 		if (active) {
-			ctx.ui.setStatus("2-orchestrator", "🔄 Coordinator");
+			ctx.ui.setStatus("2-orchestrator", "🎭 Coordinator ON");
 		} else {
-			ctx.ui.setStatus("2-orchestrator", undefined);
+			ctx.ui.setStatus("2-orchestrator", `🎭 Orchestrator (${config.providerMode})`);
 		}
 	}
 
@@ -154,7 +168,9 @@ export const orchestratorExtension: ExtensionFactory = (pi) => {
 
 		// Restore status bar and widget
 		if (coordinatorActive) {
-			ctx.ui.setStatus("2-orchestrator", "🔄 Coordinator");
+			ctx.ui.setStatus("2-orchestrator", "🎭 Coordinator ON");
+		} else {
+			ctx.ui.setStatus("2-orchestrator", `🎭 Orchestrator (${config.providerMode})`);
 		}
 		updateTaskWidget(ctx);
 
@@ -208,7 +224,6 @@ export const orchestratorExtension: ExtensionFactory = (pi) => {
 			event.toolName === "TaskCreate" ||
 			event.toolName === "TaskUpdate" ||
 			event.toolName === "TaskClear" ||
-			event.toolName === "delegate_task" ||
 			event.toolName === "cancel_task"
 		) {
 			queueMicrotask(() => {
@@ -256,22 +271,18 @@ export const orchestratorExtension: ExtensionFactory = (pi) => {
 				}
 
 				case "config": {
-					const lines = [
-						"FAN Orchestrator — Configuration",
-						`Provider mode: ${config.providerMode}`,
-						`Cloud model: ${config.cloud.model}`,
-						`Local model: ${config.local.model}`,
-						`Parallel workers: ${config.parallelWorkers}`,
-						`Worker timeout: ${config.workerTimeout / 1000}s`,
-						`Max retries: ${config.maxRetries}`,
-						`Plan timeout: ${config.planTimeout / 1000}s`,
+					const configLines: string[] = [
+						`📊 ${config.providerMode.toUpperCase()} | Parallel: ${config.parallelWorkers} | Queue: 10 | Worker: ${config.workerTimeout / 1000}s | Plan: ${config.planTimeout / 1000}s | Retries: ${config.maxRetries}`,
+						`☁️ ${config.cloud.model} (cloud)`,
+						`🏠 ${config.local.model} (local)`,
 						"Agent timeouts:",
 						...Object.entries(config.agentTimeouts).map(
 							([k, v]) => `  ${k}: ${typeof v === "number" ? (v as number) / 1000 + "s" : "default"}`,
 						),
-						`Dangerous commands: ${config.dangerousCommands.length} patterns`,
+						`🚫 Dangerous: ${config.dangerousCommands.length} patterns`,
 					];
-					ctx.ui.notify(lines.join("\n"));
+					ctx.ui.setWidget("orchestrator", configLines);
+					setTimeout(() => { ctx.ui.setWidget("orchestrator", undefined); }, 10_000);
 					return;
 				}
 
@@ -286,29 +297,60 @@ export const orchestratorExtension: ExtensionFactory = (pi) => {
 					return;
 				}
 
+					case "retry": {
+						const failed = taskManager.getTasks().filter((t: any) => t.status === "failed");
+						if (failed.length === 0) {
+							ctx.ui.notify("No failed tasks to retry.");
+							return;
+						}
+						const last = failed[failed.length - 1];
+						if (last.description) {
+							ctx.ui.notify(`Retrying failed task: ${last.description.slice(0, 80)}`);
+							taskManager.updateTask(last.id, { status: "pending" });
+						} else {
+							ctx.ui.notify("No retryable task found.");
+						}
+						return;
+					}
+
 				case "status": {
 					const counts = taskManager.getStatusCounts();
 					const workers = activeWorkers();
 					const discovery = discoverAgents(ctx.cwd, "both");
-					const lines = [
-						"FAN Orchestrator — Status",
-						`Coordinator: ${coordinatorActive ? "ON" : "OFF"}`,
-						`Provider mode: ${config.providerMode}`,
-						"",
-						`Tasks: ${taskManager.size} total`,
-						`  Pending: ${counts.pending} | In Progress: ${counts.in_progress} | Completed: ${counts.completed} | Failed: ${counts.failed} | Blocked: ${counts.blocked}`,
-						"",
-						`Active workers: ${workers.length}`,
-						...workers.map(
-							(w) =>
-								`  [${w.status}] ${w.id.slice(0, 8)} ${w.agentType}: ${w.task?.slice(0, 60) ?? "(no task)"}`,
-						),
-						"",
-						`Available agents: ${discovery.agents.length}`,
-						...discovery.agents.slice(0, 5).map((a) => `  ${a.name} (${a.source}): ${a.description}`),
-						discovery.agents.length > 5 ? `  ... +${discovery.agents.length - 5} more` : "",
+					const statusLines: string[] = [
+						`🎭 Orchestration: ${coordinatorActive ? "ON" : "OFF"}`,
+						`📡 Provider: ${config.providerMode}`,
+						`👷 Active: ${counts.in_progress} / ${config.parallelWorkers} | Queue: ${workers.length}`,
 					];
-					ctx.ui.notify(lines.join("\n"));
+
+					if (workers.length > 0) {
+						statusLines.push("", "── Workers ──");
+						for (const w of workers) {
+							const elapsed = w.startTime ? Math.round((Date.now() - w.startTime) / 1000) : 0;
+							statusLines.push(`  🔄 ${w.id.slice(0, 8)} ${w.agentType} (${w.model ?? "?"}) — ${w.status} [${elapsed}s]`);
+						}
+					}
+
+					if (taskManager.size > 0) {
+						const done = counts.completed + counts.failed;
+						statusLines.push("", "── Tasks ──");
+						statusLines.push(`  📊 ${done}/${taskManager.size} done`);
+						const pending = taskManager.getTasks().filter((t: any) => t.status === "pending" || t.status === "in_progress");
+						for (const t of pending.slice(0, 5)) {
+							statusLines.push(`  ${t.status === "in_progress" ? "🔄" : "⏳"} ${t.id.slice(0, 8)}: ${t.description.slice(0, 50)}`);
+						}
+						if (pending.length > 5) statusLines.push(`  ... +${pending.length - 5} more`);
+					}
+
+					statusLines.push("", `── Agents ──`);
+					statusLines.push(`  Available: ${discovery.agents.length}`);
+					for (const a of discovery.agents.slice(0, 4)) {
+						statusLines.push(`  • ${a.name} (${a.source})`);
+					}
+					if (discovery.agents.length > 4) statusLines.push(`  ... +${discovery.agents.length - 4} more`);
+
+					ctx.ui.setWidget("orchestrator", statusLines);
+					setTimeout(() => { ctx.ui.setWidget("orchestrator", undefined); }, 10_000);
 					return;
 				}
 
@@ -324,9 +366,10 @@ export const orchestratorExtension: ExtensionFactory = (pi) => {
 						"  on       — Enable coordinator mode",
 						"  off      — Disable coordinator mode",
 						"  stop     — Stop all active workers",
-						"  config   — Show configuration",
+						"  config   — Show configuration (widget)",
 						"  mode     — Switch provider mode (cloud|local|auto)",
-						"  status   — Extended status with workers + tasks",
+						"  status   — Extended status (widget, 10s)",
+						"  retry    — Retry last failed task",
 						"",
 						"Shortcuts: Alt+O (coordinator), Alt+T (task list)",
 						"Commands: /plan, /tasks, /agents, /delegate",
