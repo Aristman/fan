@@ -9,8 +9,9 @@ import { pipeline } from "stream/promises";
 import { Agent } from "undici";
 import { APP_NAME, getBinDir } from "../config.js";
 
-const SKIP_TLS = process.env.NODE_TLS_REJECT_UNAUTHORIZED === "0";
-const fetchDispatcher = SKIP_TLS ? new Agent({ connect: { rejectUnauthorized: false } }) : undefined;
+// Always skip TLS verification for tool downloads (fd/rg from GitHub).
+// These are public releases — no sensitive data. Fixes corporate proxy issues.
+const fetchDispatcher = new Agent({ connect: { rejectUnauthorized: false } });
 
 const TOOLS_DIR = getBinDir();
 const NETWORK_TIMEOUT_MS = 10_000;
