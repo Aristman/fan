@@ -419,11 +419,25 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 
 			// === Single Mode ===
 			if (params.agent && params.task) {
+				const singleUpdate: OnUpdateCallback | undefined = onUpdate
+					? (partial) => {
+							const currentResult = Array.isArray(partial.details)
+								? partial.details[0]
+								: partial.details?.results?.[0];
+							if (currentResult) {
+								onUpdate({
+									content: partial.content,
+									details: makeDetails("single")([currentResult]),
+								});
+							}
+					  }
+					: undefined;
+
 				const workerType = toWorkerType(params.agent);
 				await acquireSlot(workerType, config.parallelWorkers);
 				let result: SingleResult;
 				try {
-					result = await runSingleAgent(ctx.cwd, agents, params.agent, params.task, params.cwd, undefined, signal, onUpdate);
+					result = await runSingleAgent(ctx.cwd, agents, params.agent, params.task, params.cwd, undefined, signal, singleUpdate);
 				} finally {
 					releaseSlot(workerType, config.parallelWorkers);
 				}
