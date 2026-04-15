@@ -99,6 +99,7 @@ Workers display live tool calls during execution, timing, and usage stats on com
 | [docs/guides/dashboard.md](docs/guides/dashboard.md) | Dashboard guide |
 | [docs/guides/api-reference.md](docs/guides/api-reference.md) | API reference |
 | [CHANGELOG.md](CHANGELOG.md) | Release changelog |
+| [docs/roadmaps/orchestrator-ui-upgrade.md](docs/roadmaps/orchestrator-ui-upgrade.md) | Orchestrator UI upgrade roadmap |
 
 ## Architecture
 
