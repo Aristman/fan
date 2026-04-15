@@ -147,6 +147,7 @@ export class TaskManager {
 			subject?: string;
 			description?: string;
 			blocks?: string[];
+			owner?: string;
 		},
 	): SubagentTask {
 		const task = this.getTaskOrThrow(id);
@@ -164,6 +165,9 @@ export class TaskManager {
 		}
 		if (updates.description !== undefined) {
 			task.description = updates.description;
+		}
+		if (updates.owner !== undefined) {
+			task.owner = updates.owner;
 		}
 		if (updates.blocks !== undefined) {
 			// Update blocks and relink blockedBy
@@ -355,13 +359,11 @@ export function formatTaskList(tasks: SubagentTask[]): string {
 			const desc = t.description.length > 55 ? t.description.slice(0, 55) + "..." : t.description;
 			const deps = t.blockedBy?.length ? ` (blocked by ${t.blockedBy.length})` : "";
 			const owner = t.owner ? ` [${t.owner}]` : "";
+			const status = t.status === "in_progress" ? " ⚡" : t.status === "blocked" ? " ⛔" : t.status === "failed" ? " ✗" : "";
 			if (isDone(t)) {
-				return `\x1b[2m\x1b[9m${icon} ${desc}${deps}${owner}\x1b[0m`;
+				return `${icon} ~~${desc}${deps}${owner}~~`;
 			}
-			if (t.status === "in_progress") {
-				return `\x1b[92m${icon} ${desc}${deps}${owner}\x1b[0m`;
-			}
-			return `${icon} ${desc}${deps}${owner}`;
+			return `${icon}${status} ${desc}${deps}${owner}`;
 		})
 		.join("\n");
 }

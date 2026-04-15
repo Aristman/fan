@@ -22,10 +22,27 @@ import {
 	runSingleAgent,
 } from "./subagent-runner.js";
 import type { TaskManager } from "./task-manager.js";
-import type { ExecutionMode, SingleResult, SubagentDetails, WorkerType } from "./types.js";
+import type { ExecutionMode, OrchestratorConfig, SingleResult, SubagentDetails, WorkerType } from "./types.js";
+import { acquireSlot, releaseSlot } from "./workers.js";
 
 const COLLAPSED_ITEM_COUNT = 10;
 const MAX_LIVE_TOOLS = 9;
+
+const AGENT_ICONS: Record<string, string> = {
+	explore: "🔍",
+	plan: "📋",
+	implement: "🔧",
+	verify: "🛡️",
+};
+
+function getAgentIcon(agentName: string): string {
+	return AGENT_ICONS[agentName] ?? "🤖";
+}
+
+function toWorkerType(agentName: string): WorkerType {
+	if (agentName === "explore" || agentName === "plan" || agentName === "verify") return agentName as WorkerType;
+	return "implement";
+}
 
 function formatElapsedTime(startTime: number, endTime?: number): string {
 	const ms = (endTime ?? Date.now()) - startTime;
@@ -152,7 +169,7 @@ type OnUpdateCallback = (partial: { content: Array<{ type: "text"; text: string 
 /**
  * Register all orchestrator tools with the extension API.
  */
-export function registerOrchestratorTools(pi: ExtensionAPI, taskManager: TaskManager): void {
+export function registerOrchestratorTools(pi: ExtensionAPI, taskManager: TaskManager, config: OrchestratorConfig): void {
 	// ---- delegate_task ----
 
 	const TaskItem = Type.Object({
@@ -297,23 +314,31 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 							}
 						: undefined;
 
-					const result = await runSingleAgent(
-						ctx.cwd,
-						agents,
-						step.agent,
-						taskWithContext,
-						step.cwd,
-						i + 1,
-						signal,
-						chainUpdate,
-					);
+					// Auto-create task for this chain step
+					let stepTaskId: string | undefined;
+					try {
+						const stepSubject = `chain/${i + 1} ${step.agent}: ${step.task.replace(/\{previous\}/g, "").slice(0, 50)}`;
+						const created = taskManager.createTask({ description: stepSubject, agentType: toWorkerType(step.agent) });
+						stepTaskId = created.id;
+						taskManager.updateTask(stepTaskId, { status: "in_progress", owner: step.agent });
+					} catch { /* non-critical */ }
+
+					const workerType = toWorkerType(step.agent);
+					await acquireSlot(workerType, config.parallelWorkers);
+					let result: SingleResult;
+					try {
+						result = await runSingleAgent(ctx.cwd, agents, step.agent, taskWithContext, step.cwd, i + 1, signal, chainUpdate);
+					} finally {
+						releaseSlot(workerType, config.parallelWorkers);
+					}
 					results.push(result);
 
-					const isError =
-						result.exitCode !== 0 || result.stopReason === "error" || result.stopReason === "aborted";
+					const isError = result.exitCode !== 0 || result.stopReason === "error" || result.stopReason === "aborted";
+					if (stepTaskId) {
+						try { taskManager.updateTask(stepTaskId, { status: isError ? "failed" : "completed" }); } catch { /* non-critical */ }
+					}
 					if (isError) {
-						const errorMsg =
-							result.errorMessage || result.stderr || getFinalOutput(result.messages) || "(no output)";
+						const errorMsg = result.errorMessage || result.stderr || getFinalOutput(result.messages) || "(no output)";
 						return {
 							content: [{ type: "text", text: `Chain stopped at step ${i + 1} (${step.agent}): ${errorMsg}` }],
 							details: makeDetails("chain")(results),
@@ -369,24 +394,33 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 				};
 
 				const results = await mapWithConcurrencyLimit(params.tasks, MAX_CONCURRENCY, async (t, index) => {
-					const result = await runSingleAgent(
-						ctx.cwd,
-						agents,
-						t.agent,
-						t.task,
-						t.cwd,
-						undefined,
-						signal,
-						(partial) => {
+					// Auto-create task for this parallel worker
+					let parTaskId: string | undefined;
+					try {
+						const parSubject = `parallel ${t.agent}: ${t.task.slice(0, 50)}`;
+						const created = taskManager.createTask({ description: parSubject, agentType: toWorkerType(t.agent) });
+						parTaskId = created.id;
+						taskManager.updateTask(parTaskId, { status: "in_progress", owner: t.agent });
+					} catch { /* non-critical */ }
+
+					const workerType = toWorkerType(t.agent);
+					await acquireSlot(workerType, config.parallelWorkers);
+					let result: SingleResult;
+					try {
+						result = await runSingleAgent(ctx.cwd, agents, t.agent, t.task, t.cwd, undefined, signal, (partial) => {
 							const _cr = Array.isArray(partial.details) ? partial.details[0] : partial.details?.results?.[0];
-							if (_cr) {
-								allResults[index] = _cr;
-								emitParallelUpdate();
-							}
-						},
-					);
+							if (_cr) { allResults[index] = _cr; emitParallelUpdate(); }
+						});
+					} finally {
+						releaseSlot(workerType, config.parallelWorkers);
+					}
+
 					allResults[index] = result;
 					emitParallelUpdate();
+
+					if (parTaskId) {
+						try { taskManager.updateTask(parTaskId, { status: result.exitCode === 0 ? "completed" : "failed" }); } catch { /* non-critical */ }
+					}
 					return result;
 				});
 
@@ -409,20 +443,32 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 
 			// === Single Mode ===
 			if (params.agent && params.task) {
-				const result = await runSingleAgent(
-					ctx.cwd,
-					agents,
-					params.agent,
-					params.task,
-					params.cwd,
-					undefined,
-					signal,
-					onUpdate,
-				);
+				// Auto-create task for tracking
+				let autoTaskId: string | undefined;
+				try {
+					const taskSubject = `${params.agent}: ${params.task.slice(0, 60)}`;
+					const created = taskManager.createTask({ description: taskSubject, agentType: toWorkerType(params.agent) });
+					autoTaskId = created.id;
+					taskManager.updateTask(autoTaskId, { status: "in_progress", owner: params.agent });
+				} catch { /* non-critical */ }
+
+				const workerType = toWorkerType(params.agent);
+				await acquireSlot(workerType, config.parallelWorkers);
+				let result: SingleResult;
+				try {
+					result = await runSingleAgent(ctx.cwd, agents, params.agent, params.task, params.cwd, undefined, signal, onUpdate);
+				} finally {
+					releaseSlot(workerType, config.parallelWorkers);
+				}
+
 				const isError = result.exitCode !== 0 || result.stopReason === "error" || result.stopReason === "aborted";
+				if (autoTaskId) {
+					try {
+						taskManager.updateTask(autoTaskId, { status: isError ? "failed" : "completed" });
+					} catch { /* non-critical */ }
+				}
 				if (isError) {
-					const errorMsg =
-						result.errorMessage || result.stderr || getFinalOutput(result.messages) || "(no output)";
+					const errorMsg = result.errorMessage || result.stderr || getFinalOutput(result.messages) || "(no output)";
 					return {
 						content: [{ type: "text", text: `Agent ${result.stopReason || "failed"}: ${errorMsg}` }],
 						details: makeDetails("single")([result]),
@@ -444,27 +490,28 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 
 		renderCall(args, theme) {
 			if (args.chain && args.chain.length > 0) {
-				let text = theme.fg("toolTitle", theme.bold("CHAIN worker")) + theme.fg("muted", ` (${args.chain.length} steps)`);
+				let text = theme.fg("toolTitle", theme.bold("🔗 CHAIN worker")) + theme.fg("muted", ` (${args.chain.length} steps)`);
 				for (let i = 0; i < Math.min(args.chain.length, 5); i++) {
 					const step = args.chain[i];
 					const cleanTask = step.task.replace(/\{previous\}/g, "").trim();
 					const preview = cleanTask.length > 50 ? `${cleanTask.slice(0, 50)}...` : cleanTask;
-					text += `\n  ${theme.fg("muted", `${i + 1}.`)} ${theme.fg("accent", step.agent)}${theme.fg("dim", ` ${preview}`)}`;
+					text += `\n  ${theme.fg("muted", `${i + 1}.`)} ${getAgentIcon(step.agent)} ${theme.fg("accent", step.agent)}${theme.fg("dim", ` ${preview}`)}`;
 				}
 				if (args.chain.length > 5) text += `\n  ${theme.fg("muted", `... +${args.chain.length - 5} more`)}`;
 				return new Text(text, 0, 0);
 			}
 			if (args.tasks && args.tasks.length > 0) {
-				let text = theme.fg("toolTitle", theme.bold("PARALLEL worker")) + theme.fg("muted", ` (${args.tasks.length} tasks)`);
+				let text = theme.fg("toolTitle", theme.bold("⚡ PARALLEL worker")) + theme.fg("muted", ` (${args.tasks.length} tasks)`);
 				for (const t of args.tasks.slice(0, 5)) {
 					const preview = t.task.length > 50 ? `${t.task.slice(0, 50)}...` : t.task;
-					text += `\n  ${theme.fg("accent", t.agent)}${theme.fg("dim", ` ${preview}`)}`;
+					text += `\n  ${getAgentIcon(t.agent)} ${theme.fg("accent", t.agent)}${theme.fg("dim", ` ${preview}`)}`;
 				}
 				if (args.tasks.length > 5) text += `\n  ${theme.fg("muted", `... +${args.tasks.length - 5} more`)}`;
 				return new Text(text, 0, 0);
 			}
+			const agentIcon = getAgentIcon(args.agent || "unknown");
 			const agentLabel = (args.agent || "unknown").toUpperCase();
-			let text = theme.fg("toolTitle", theme.bold(`${agentLabel} worker`));
+			let text = theme.fg("toolTitle", theme.bold(`${agentIcon} ${agentLabel} worker`));
 			if (args.task) {
 				const preview = args.task.length > 80 ? `${args.task.slice(0, 80)}...` : args.task;
 				text += `\n  ${theme.fg("dim", `Task: ${preview}`)}`;
@@ -500,6 +547,8 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 				const parts: string[] = [];
 				const tc = countToolCalls(r.messages);
 				parts.push(`${tc} tool${tc !== 1 ? "s" : ""}`);
+				const msgCount = r.messages.filter((m: any) => m.role === "assistant" || m.role === "user").length;
+				parts.push(`${msgCount} msg${msgCount !== 1 ? "s" : ""}`);
 				if (r.startTime) parts.push(formatElapsedTime(r.startTime, r.endTime));
 				const usageStr = formatUsageStats(r.usage, r.model);
 				if (usageStr) parts.push(usageStr);
@@ -527,17 +576,21 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 				const isError = !isRunning && r.exitCode !== 0;
 				const toolCount = countToolCalls(r.messages);
 				const modelLabel = r.model || "initializing...";
-				const headerLabel = `${r.agent.toUpperCase()} worker`;
+				const headerLabel = `${getAgentIcon(r.agent)} ${r.agent.toUpperCase()} worker`;
 
 				// ── Running (collapsed) ──
 				if (isRunning) {
 					const icon = theme.fg("warning", "⏳");
+					const toolCount = countToolCalls(r.messages);
+					const msgCount = r.messages.filter((m: any) => m.role === "assistant" || m.role === "user").length;
+					const statusLine = `Processing · ${toolCount} tool${toolCount !== 1 ? "s" : ""} · ${msgCount} message${msgCount !== 1 ? "s" : ""}`;
 					let text = `${icon} ${theme.fg("toolTitle", theme.bold(headerLabel))} ${theme.fg("muted", `(${modelLabel})`)}`;
+					text += `\n${theme.fg("dim", statusLine)}`;
 					const lastTools = getLastToolCalls(r.messages, MAX_LIVE_TOOLS);
 					if (lastTools.length > 0) {
 						for (const tc of lastTools) text += `\n${theme.fg("muted", "→ ")}${fmtTool(tc.name, tc.args)}`;
 					} else {
-						text += `\n${theme.fg("muted", "(starting...)")}`;
+						text += `\n${theme.fg("muted", "(thinking...)")}`;
 					}
 					return new Text(text, 0, 0);
 				}
@@ -631,7 +684,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 						container.addChild(new Spacer(1));
 						container.addChild(
 							new Text(
-								`${theme.fg("muted", `─── Step ${r.step}: ${r.agent}`)} ${rIcon}`,
+								`${theme.fg("muted", `─── Step ${r.step}:`)} ${getAgentIcon(r.agent)} ${theme.fg("accent", r.agent)} ${rIcon}`,
 								0,
 								0,
 							),
@@ -666,7 +719,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 							? theme.fg("success", "✓")
 							: theme.fg("error", "✗");
 					const rOutput = getFinalOutput(r.messages);
-					text += `\n\n${theme.fg("muted", `─── Step ${r.step}: ${r.agent}`)} ${rIcon}`;
+					text += `\n\n${theme.fg("muted", `─── Step ${r.step}:`)} ${getAgentIcon(r.agent)} ${theme.fg("accent", r.agent)} ${rIcon}`;
 					if (rRunning) {
 						const lastTools = getLastToolCalls(r.messages, 5);
 						if (lastTools.length > 0) {
@@ -720,7 +773,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 						const rOutput = getFinalOutput(r.messages);
 						container.addChild(new Spacer(1));
 						container.addChild(
-							new Text(`${theme.fg("muted", "─── ")}${theme.fg("accent", r.agent)} ${rIcon}`, 0, 0),
+							new Text(`${theme.fg("muted", "─── ")}${getAgentIcon(r.agent)} ${theme.fg("accent", r.agent)} ${rIcon}`, 0, 0),
 						);
 						container.addChild(new Text(theme.fg("muted", "Task: ") + theme.fg("dim", r.task), 0, 0));
 						for (const item of rDisplayItems) {
@@ -748,7 +801,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 							? theme.fg("success", "✓")
 							: theme.fg("error", "✗");
 					const rOutput = getFinalOutput(r.messages);
-					text += `\n\n${theme.fg("muted", "─── ")}${theme.fg("accent", r.agent)} ${rIcon}`;
+					text += `\n\n${theme.fg("muted", "─── ")}${getAgentIcon(r.agent)} ${theme.fg("accent", r.agent)} ${rIcon}`;
 					if (rRunning) {
 						const lastTools = getLastToolCalls(r.messages, 5);
 						if (lastTools.length > 0) {
@@ -997,6 +1050,41 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 								: "No completed or failed tasks to clear.",
 					},
 				],
+				details: undefined,
+			};
+		},
+	});
+
+	// ---- stop_worker ----
+
+	pi.registerTool({
+		name: "stop_worker",
+		label: "Stop Worker",
+		description: "Stop a running or spawning worker by its ID.",
+		parameters: Type.Object({
+			workerId: Type.String({ description: "The worker ID to stop" }),
+			reason: Type.Optional(Type.String({ description: "Reason for stopping" })),
+		}),
+
+		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+			const { getWorker, updateWorker } = await import("./workers.js");
+			const worker = getWorker(params.workerId);
+			if (!worker) {
+				return {
+					content: [{ type: "text", text: `Worker not found: ${params.workerId}` }],
+					isError: true,
+					details: undefined,
+				};
+			}
+			if (worker.status === "completed" || worker.status === "failed" || worker.status === "aborted") {
+				return {
+					content: [{ type: "text", text: `Worker ${worker.id.slice(0, 8)} is already ${worker.status}.` }],
+				details: undefined,
+				};
+			}
+			updateWorker(worker.id, { status: "aborted", endTime: Date.now(), error: params.reason ?? "Stopped by coordinator" });
+			return {
+				content: [{ type: "text", text: `Worker ${worker.id.slice(0, 8)} (${worker.agentType}) stopped.${params.reason ? ` Reason: ${params.reason}` : ""}` }],
 				details: undefined,
 			};
 		},

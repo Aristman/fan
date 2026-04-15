@@ -120,7 +120,7 @@ describe("orchestrator extension integration", () => {
 		const { orchestratorExtension } = await import("../orchestrator-extension.js");
 		orchestratorExtension(mockPi as any);
 
-		expect(mockPi.tools).toHaveLength(7);
+		expect(mockPi.tools).toHaveLength(8);
 	});
 
 	it("extension registers expected commands", async () => {
