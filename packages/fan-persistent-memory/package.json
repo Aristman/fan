@@ -1,0 +1,17 @@
+{
+	"name": "fan-persistent-memory",
+	"version": "0.3.0",
+	"description": "Persistent memory extension for FAN with hybrid RAG: FTS5 + semantic embeddings + auto-extraction + maintenance pipeline",
+	"type": "module",
+	"license": "MIT",
+	"author": "Sergun",
+	"dependencies": {},
+	"scripts": {
+		"typecheck": "tsc --noEmit"
+	},
+	"fan": {
+		"extensions": [
+			"./src/index.ts"
+		]
+	}
+}
