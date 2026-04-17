@@ -584,6 +584,8 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 					container.addChild(new Text(headerLine, 0, 0));
 					if (isError && r.errorMessage)
 						container.addChild(new Text(theme.fg("error", `Error: ${r.errorMessage}`), 0, 0));
+					if (isError && r.stderr && !r.errorMessage)
+						container.addChild(new Text(theme.fg("error", `Stderr: ${r.stderr.slice(0, 500)}`), 0, 0));
 					container.addChild(new Spacer(1));
 					container.addChild(new Text(theme.fg("muted", "─── Task ───"), 0, 0));
 					container.addChild(new Text(theme.fg("dim", r.task), 0, 0));
@@ -612,6 +614,8 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 				if (isError && r.stopReason) text += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
 				if (isError && r.errorMessage) {
 					text += `\n${theme.fg("error", `Error: ${r.errorMessage}`)}`;
+				} else if (isError && r.stderr) {
+					text += `\n${theme.fg("error", `Stderr: ${r.stderr.slice(0, 500)}`)}`;
 				} else if (finalOutput) {
 					const lines = finalOutput.trim().split("\n");
 					const preview = lines.slice(0, 10).join("\n");
