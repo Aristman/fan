@@ -7673,7 +7673,7 @@ export const MODELS = {
 				cacheRead: 0.024999999999999998,
 				cacheWrite: 0.08333333333333334,
 			},
-			contextWindow: 1048576,
+			contextWindow: 1000000,
 			maxTokens: 8192,
 		} satisfies Model<"openai-completions">,
 		"google/gemini-2.0-flash-lite-001": {
@@ -13069,7 +13069,7 @@ export const MODELS = {
 		} satisfies Model<"anthropic-messages">,
 		"openai/gpt-oss-20b": {
 			id: "openai/gpt-oss-20b",
-			name: "gpt-oss-20b",
+			name: "GPT OSS 120B",
 			api: "anthropic-messages",
 			provider: "vercel-ai-gateway",
 			baseUrl: "https://ai-gateway.vercel.sh",
@@ -13086,7 +13086,7 @@ export const MODELS = {
 		} satisfies Model<"anthropic-messages">,
 		"openai/gpt-oss-safeguard-20b": {
 			id: "openai/gpt-oss-safeguard-20b",
-			name: "gpt-oss-safeguard-20b",
+			name: "GPT OSS Safeguard 20B",
 			api: "anthropic-messages",
 			provider: "vercel-ai-gateway",
 			baseUrl: "https://ai-gateway.vercel.sh",
@@ -13346,7 +13346,7 @@ export const MODELS = {
 			provider: "vercel-ai-gateway",
 			baseUrl: "https://ai-gateway.vercel.sh",
 			reasoning: false,
-			input: ["text"],
+			input: ["text", "image"],
 			cost: {
 				input: 0.19999999999999998,
 				output: 0.5,
@@ -13363,7 +13363,7 @@ export const MODELS = {
 			provider: "vercel-ai-gateway",
 			baseUrl: "https://ai-gateway.vercel.sh",
 			reasoning: true,
-			input: ["text"],
+			input: ["text", "image"],
 			cost: {
 				input: 0.19999999999999998,
 				output: 0.5,
@@ -13380,7 +13380,7 @@ export const MODELS = {
 			provider: "vercel-ai-gateway",
 			baseUrl: "https://ai-gateway.vercel.sh",
 			reasoning: false,
-			input: ["text"],
+			input: ["text", "image"],
 			cost: {
 				input: 0.19999999999999998,
 				output: 0.5,
@@ -13397,7 +13397,7 @@ export const MODELS = {
 			provider: "vercel-ai-gateway",
 			baseUrl: "https://ai-gateway.vercel.sh",
 			reasoning: true,
-			input: ["text"],
+			input: ["text", "image"],
 			cost: {
 				input: 0.19999999999999998,
 				output: 0.5,
@@ -13414,7 +13414,7 @@ export const MODELS = {
 			provider: "vercel-ai-gateway",
 			baseUrl: "https://ai-gateway.vercel.sh",
 			reasoning: true,
-			input: ["text"],
+			input: ["text", "image"],
 			cost: {
 				input: 2,
 				output: 6,
@@ -13431,7 +13431,7 @@ export const MODELS = {
 			provider: "vercel-ai-gateway",
 			baseUrl: "https://ai-gateway.vercel.sh",
 			reasoning: true,
-			input: ["text"],
+			input: ["text", "image"],
 			cost: {
 				input: 2,
 				output: 6,
