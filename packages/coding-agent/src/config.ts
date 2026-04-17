@@ -236,6 +236,11 @@ export function getSettingsPath(): string {
 	return join(getAgentDir(), "settings.json");
 }
 
+/** Get path to global .env file */
+export function getEnvPath(): string {
+	return join(getAgentDir(), ".env");
+}
+
 /** Get path to tools directory */
 export function getToolsDir(): string {
 	return join(getAgentDir(), "tools");
