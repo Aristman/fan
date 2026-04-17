@@ -260,6 +260,12 @@ export async function runSingleAgent(
 					currentResult.messages.push(event.message as Message);
 					emitUpdate();
 				}
+
+				// Also capture tool results via message_end (toolResult role)
+				if (event.type === "message_end" && event.message && event.message.role === "toolResult") {
+					currentResult.messages.push(event.message as Message);
+					emitUpdate();
+				}
 			};
 
 			proc.stdout.on("data", (data) => {

@@ -71,13 +71,13 @@ tar xzf ~/Downloads/fan-darwin-arm64.tar.gz   # replace with your platform file
 **macOS / Linux (zsh):**
 
 ```bash
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
+echo 'export PATH="$HOME/.local/bin/fan:$PATH"' >> ~/.zshrc && source ~/.zshrc
 ```
 
 **macOS / Linux (bash):**
 
 ```bash
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
+echo 'export PATH="$HOME/.local/bin/fan:$PATH"' >> ~/.bashrc && source ~/.bashrc
 ```
 
 **Linux (system-wide, no PATH editing needed):**

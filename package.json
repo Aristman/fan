@@ -2,13 +2,14 @@
 	"name": "fan",
 	"private": true,
 	"type": "module",
-	"version": "0.2.2",
+	"version": "0.3.3",
 	"workspaces": [
 		"packages/*",
 		"packages/web-ui/example",
 		"packages/coding-agent/examples/extensions/with-deps",
 		"packages/coding-agent/examples/extensions/custom-provider-anthropic",
 		"packages/coding-agent/examples/extensions/custom-provider-gitlab-duo",
+		"!packages/fan-persistent-memory",
 		"packages/coding-agent/examples/extensions/custom-provider-qwen-cli"
 	],
 	"scripts": {

@@ -90,11 +90,35 @@ function findNearestProjectAgentsDir(cwd: string): string | null {
 
 /**
  * Get the directory containing built-in agent definitions.
+ *
+ * Resolution order:
+ * 1. Binary installation: <execDir>/orchestrator/agents/ (reliable in compiled binaries)
+ * 2. dist/agents/ — source tree (same dir as compiled agents.js, works in dev)
+ * 3. Fallback: ../src/agents/ (source tree, relative)
+ *
+ * Note: In Bun compiled binaries, import.meta.url resolves to a virtual
+ * filesystem path that doesn't correspond to the real on-disk location.
+ * Therefore we check execPath first — it's always correct.
  */
 function getBuiltinAgentsDir(): string {
-	const currentFile = fileURLToPath(import.meta.url);
+	// 1. Binary installation: <execDir>/orchestrator/agents/
+	const execDir = path.dirname(process.execPath);
+	const binaryPath = path.join(execDir, "orchestrator", "agents");
+	if (fs.existsSync(binaryPath)) return binaryPath;
+
+	// 2. dist/agents/ — source tree (same dir as compiled agents.js)
+	let currentFile: string;
+	try {
+		currentFile = fileURLToPath(import.meta.url);
+	} catch {
+		// import.meta.url may be unresolvable in some bundled environments
+		currentFile = "";
+	}
 	const distDir = path.dirname(currentFile);
-	// At runtime, this file is in dist/, but agent .md files are in src/agents/
+	const distPath = path.join(distDir, "agents");
+	if (currentFile && fs.existsSync(distPath)) return distPath;
+
+	// 3. Fallback: ../src/agents/ (source tree, relative)
 	return path.join(distDir, "..", "src", "agents");
 }
 
