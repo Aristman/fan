@@ -11,6 +11,7 @@ import { createInterface } from "node:readline";
 import { type SessionAdapter, startServer } from "@fan/api-gateway";
 import { type ImageContent, modelsAreEqual, supportsXhigh } from "@itone/fan-ai";
 import { orchestratorExtension } from "@fan/orchestrator";
+import { storeExtension } from "@fan/store";
 import { ProcessTerminal, setKeybindings, TUI } from "@itone/fan-tui";
 import chalk from "chalk";
 import { type Args, type Mode, parseArgs, printHelp } from "./cli/args.js";
@@ -885,7 +886,10 @@ export async function main(args: string[]) {
 				noThemes: parsed.noThemes,
 				systemPrompt: parsed.systemPrompt,
 				appendSystemPrompt: parsed.appendSystemPrompt,
-				extensionFactories: parsed.noOrchestrator ? [] : [orchestratorExtension],
+				extensionFactories: [
+					...(parsed.noOrchestrator ? [] : [orchestratorExtension]),
+					...(parsed.noStore ? [] : [storeExtension]),
+				],
 			},
 		});
 		const { settingsManager, modelRegistry, resourceLoader } = services;
