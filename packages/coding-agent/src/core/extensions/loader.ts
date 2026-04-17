@@ -24,6 +24,7 @@ import { getAgentDir, isBunBinary } from "../../config.js";
 // avoiding a circular dependency. Extensions can import from @itone/fan-coding-agent.
 import * as _bundledPiCodingAgent from "../../index.js";
 import * as _bundledOrchestrator from "@fan/orchestrator";
+import * as _bundledStore from "@fan/store";
 import { createEventBus, type EventBus } from "../event-bus.js";
 import type { ExecOptions } from "../exec.js";
 import { execCommand } from "../exec.js";
@@ -49,6 +50,7 @@ const VIRTUAL_MODULES: Record<string, unknown> = {
 	"@itone/fan-ai/oauth": _bundledPiAiOauth,
 	"@itone/fan-coding-agent": _bundledPiCodingAgent,
 	"@fan/orchestrator": _bundledOrchestrator,
+	"@fan/store": _bundledStore,
 };
 
 const require = createRequire(import.meta.url);

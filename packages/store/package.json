@@ -1,7 +1,7 @@
 {
-	"name": "@fan/api-gateway",
+	"name": "@fan/store",
 	"version": "0.3.4",
-	"description": "FAN API Gateway — HTTP/WebSocket server for client connections",
+	"description": "FAN Store — package manager for extensions, skills, themes from repositories and archives",
 	"type": "module",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -18,16 +18,11 @@
 		"test": "vitest run"
 	},
 	"dependencies": {
-		"@fan/db": "*",
-		"@fan/model-manager": "*",
-		"@hono/node-server": "^1.13.8",
-		"hono": "^4.6.0",
-		"ws": "^8.18.0"
+		"@itone/fan-coding-agent": "*",
+		"@sinclair/typebox": "^0.34.0"
 	},
 	"devDependencies": {
-		"@types/ws": "^8.5.0",
 		"shx": "^0.4.0",
-		"typescript": "^5.8.0",
-		"vitest": "^3.0.0"
+		"vitest": "^3.2.4"
 	}
 }
