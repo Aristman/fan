@@ -42,3 +42,4 @@ packages/orchestrator/src/config.json
 
 # Fan agent runtime config
 .fan/
+/packages/ai/src/models.generated.ts

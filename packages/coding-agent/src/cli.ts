@@ -10,8 +10,10 @@ process.env.FAN_CODING_AGENT = "true";
 process.emitWarning = (() => {}) as typeof process.emitWarning;
 
 import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
+import { loadGlobalEnv } from "./config.js";
 import { main } from "./main.js";
 
 setGlobalDispatcher(new EnvHttpProxyAgent());
+loadGlobalEnv();
 
 main(process.argv.slice(2));

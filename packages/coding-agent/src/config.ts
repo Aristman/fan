@@ -241,6 +241,28 @@ export function getEnvPath(): string {
 	return join(getAgentDir(), ".env");
 }
 
+/** Load global .env file into process.env (does not override existing vars) */
+export function loadGlobalEnv(): void {
+	const envPath = getEnvPath();
+	if (!existsSync(envPath)) return;
+	try {
+		const content = readFileSync(envPath, "utf-8");
+		for (const line of content.split("\n")) {
+			const trimmed = line.trim();
+			if (!trimmed || trimmed.startsWith("#")) continue;
+			const eqIdx = trimmed.indexOf("=");
+			if (eqIdx === -1) continue;
+			const key = trimmed.slice(0, eqIdx).trim();
+			const value = trimmed.slice(eqIdx + 1).trim();
+			if (key && !(key in process.env)) {
+				process.env[key] = value;
+			}
+		}
+	} catch {
+		// ignore errors — non-critical
+	}
+}
+
 /** Get path to tools directory */
 export function getToolsDir(): string {
 	return join(getAgentDir(), "tools");
