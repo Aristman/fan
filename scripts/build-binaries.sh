@@ -72,15 +72,28 @@ echo "==> Using bun $(bun --version)"
 # Display version being built
 echo "==> FAN (fan) version: $(node -e "console.log(require('./package.json').version)")"
 
+# ─── Install dependencies ──────────────────────────────────────
+# bun install understands workspace:* protocol used by the monorepo.
+# --ignore-scripts skips canvas native build (needs libgif-dev system dep).
+# After install, fix-bun-symlinks.sh creates symlinks in node_modules for
+# tsgo and bun build --compile (bun's isolated linker doesn't hoist all
+# transitive deps into node_modules).
+
 echo "==> Installing dependencies..."
-bun install --no-scripts
+bun install --ignore-scripts || true
+
+echo "==> Fixing bun isolated linker symlinks..."
+bash "$(dirname "$0")/fix-bun-symlinks.sh"
+
+# Generate Prisma client (skipped by --ignore-scripts)
+echo "==> Generating Prisma client..."
+cd packages/db && npx prisma generate && cd ../..
 
 if [[ "$SKIP_DEPS" == "false" ]]; then
     echo "==> Installing cross-platform native bindings..."
-    # npm ci only installs optional deps for the current platform
     # We need all platform bindings for bun cross-compilation
     # Use --force to bypass platform checks (os/cpu restrictions in package.json)
-    bun add --no-save --no-scripts --force \
+    bun add --no-save --ignore-scripts --force \
         @mariozechner/clipboard-darwin-arm64@0.3.0 \
         @mariozechner/clipboard-darwin-x64@0.3.0 \
         @mariozechner/clipboard-linux-x64-gnu@0.3.0 \
@@ -94,7 +107,7 @@ if [[ "$SKIP_DEPS" == "false" ]]; then
         @img/sharp-libvips-darwin-arm64@1.2.4 \
         @img/sharp-libvips-darwin-x64@1.2.4 \
         @img/sharp-libvips-linux-x64@1.2.4 \
-        @img/sharp-libvips-linux-arm64@1.2.4
+        @img/sharp-libvips-linux-arm64@1.2.4 || true
 else
     echo "==> Skipping cross-platform native bindings (--skip-deps)"
 fi
