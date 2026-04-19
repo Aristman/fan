@@ -15,6 +15,24 @@ The orchestrator is a FAN extension that turns a single LLM session into a team 
 
 At a high level: you describe what you want → the coordinator breaks it down → workers execute → results are verified → you get a summary.
 
+## Installation
+
+The orchestrator ships bundled with FAN and is auto-discovered by the extension loader. No manual installation is needed for standard FAN installations.
+
+For manual installation or reinstallation:
+
+```bash
+# Install from FAN Store (if available)
+fan store install fan-orchestrator
+
+# Or copy the extension to the extensions directory
+cp -r ~/.fan/packages/fan-orchestrator ~/.fan/agent/extensions/
+```
+
+To disable the orchestrator, remove or rename its folder in `~/.fan/agent/extensions/`.
+
+> **Architecture note:** The orchestrator is a standalone extension — it is NOT hardcoded into the `@itone/fan-coding-agent` core. It's loaded at runtime through FAN's extension system.
+
 ## Coordinator Mode
 
 Coordinator mode changes the LLM's role from "doer" to "manager." When active, the agent does **not** use code tools directly — it only delegates via `delegate_task` and tracks progress with `TaskCreate`/`TaskUpdate`.

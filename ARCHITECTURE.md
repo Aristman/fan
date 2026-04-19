@@ -8,7 +8,7 @@
 
 - **Name:** Filin Agent Next (FAN)
 - **Type:** Local AI runtime-agent for developers
-- **Description:** Runs locally on user's machine, provides external API for multiple UI clients (TUI, WebView, IDEA plugin, etc.). Built on fan-coding-agent with custom orchestrator extension, model management, and all current extensions/skills.
+- **Description:** Runs locally on user's machine, provides external API for multiple UI clients (TUI, WebView, IDEA plugin, etc.). Built on fan-coding-agent with standalone orchestrator extension (FAN Store), model management, and all current extensions/skills.
 - **Base:** Fork of itone/fan-mono (fan-coding-agent core)
 - **Spec:** docs/specs/spec_runtime-agent_2026-04-10.md
 
@@ -103,7 +103,7 @@ Terminal UI library. Markdown rendering, multi-line editor with autocomplete, lo
 Core agent with built-in tools (read, write, edit, bash, grep, find, ls), session persistence (JSONL), extension system, skills.
 
 **Modifications:**
-- Integrate FAN orchestrator extension
+- Install FAN orchestrator extension (via FAN Store)
 - Integrate model manager (routing, fallback, budgets)
 - Add FAN-specific settings
 
@@ -111,6 +111,9 @@ Core agent with built-in tools (read, write, edit, bash, grep, find, ls), sessio
 Lit web components (ChatPanel with streaming, file attachments, artifact rendering). Used as component library for dashboard client.
 
 ### packages/orchestrator — NEW
+
+> **Note:** The orchestrator is now a standalone FAN extension (not hardcoded into the core). It ships with FAN (bundled) and is auto-discovered by the extension loader. No static imports exist in the coding-agent core.
+
 Coordinator extension for fan-coding-agent. Multi-agent task decomposition and
 coordination via subprocess-based subagent delegation.
 
@@ -410,7 +413,7 @@ Task received
 - `packages/tui/` — TUI library
 
 ### Modify
-- `packages/coding-agent/` — integrate FAN orchestrator + model manager
+- `packages/coding-agent/` — install FAN orchestrator extension + model manager
 - `packages/web-ui/` — adapt as component library for dashboard
 
 ### Remove
@@ -418,7 +421,7 @@ Task received
 - `packages/pods/` — vLLM management (not relevant)
 
 ### Add
-- `packages/orchestrator/` — coordinator extension
+- `packages/orchestrator/` — standalone coordinator extension (FAN Store)
 - `packages/model-manager/` — routing, fallback, budgets
 - `packages/api-gateway/` — client API (stdio + HTTP)
 - `packages/dashboard/` — Lit UI client

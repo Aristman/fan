@@ -174,7 +174,6 @@ export async function runSingleAgent(
 
 	const args: string[] = [
 		"--mode", "json", "-p", "--no-session",
-		"--no-orchestrator",
 		"--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes",
 	];
 	if (agent.model) args.push("--model", agent.model);
