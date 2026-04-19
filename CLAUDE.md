@@ -23,6 +23,11 @@ Runtime: Bun · Monorepo: npm workspaces · Core: fan-ai + fan-agent-core + fan-
 - **Types:** feature, fix, hotfix
 - **Commits:** conventional commits style
 
+## Orchestrator Rules (Coordinator Mode)
+- **1 task = 1 worker.** Tasks are created from plan decomposition, workers are launched based on tasks. Never launch one worker to cover multiple tasks.
+- **Flow:** Plan → `TaskCreate` (all tasks) → `delegate_task` per task → `TaskUpdate` after worker completes → next task.
+- **Task transitions:** `pending` → `in_progress` → `completed` (direct `pending` → `completed` is not allowed).
+
 ## Code Conventions
 - TypeScript strict mode
 - Packages in packages/ directory
