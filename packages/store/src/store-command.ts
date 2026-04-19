@@ -7,7 +7,9 @@ import type { StoreDatabase } from "./storage.js";
 import type { RepoClient } from "./repo-client.js";
 import type { ArchiveInstaller } from "./installer.js";
 import type { StoreConfig } from "./config.js";
+import type { RepoEntry } from "./types.js";
 import { saveConfig } from "./config.js";
+import { StoreBrowseComponent, type BrowseResult } from "./browse-component.js";
 
 // ──────────────────────────────────────────────
 // /store command
@@ -43,6 +45,8 @@ export function registerStoreCommand(
 					return showRemove(ctx, subArgs);
 				case "update":
 					return showUpdate(ctx, subArgs);
+				case "browse":
+					return showBrowse(ctx, subArgs);
 				case "repos":
 					return showRepos(ctx, subArgs);
 				default:
@@ -61,6 +65,7 @@ Usage: /store <command>
 
 Commands:
   list [type]           List installed packages
+  browse                Browse & install packages interactively
   search <query>        Search available packages in repos
   install <source>      Install from repo or archive file
   remove <name>         Uninstall a package
@@ -312,6 +317,113 @@ Commands:
 					"error",
 				);
 			}
+		}
+	}
+
+	// ─── store browse ──────────────────────────
+
+	async function showBrowse(ctx: Ctx, _subArgs: string[]): Promise<void> {
+		const config = getConfig();
+		const enabledRepos = config.repositories.filter((r) => r.enabled);
+
+		if (enabledRepos.length === 0) {
+			ctx.ui.notify(
+				"No repositories configured. Add one with /store repos add <name> <url>",
+				"error",
+			);
+			return;
+		}
+
+		// Step 1: Select repository (skip if only one)
+		let selectedRepo: RepoEntry;
+		if (enabledRepos.length === 1) {
+			selectedRepo = enabledRepos[0];
+		} else {
+			const repoOptions = enabledRepos.map((r) => `${r.name} — ${r.url}`);
+			const chosen = await ctx.ui.select(
+				"📦 Select repository",
+				repoOptions,
+			);
+			if (!chosen) return; // cancelled
+			const idx = repoOptions.indexOf(chosen);
+			if (idx === -1) return;
+			selectedRepo = enabledRepos[idx];
+		}
+
+		// Step 2: Fetch packages from repository
+		ctx.ui.setWorkingMessage("Fetching packages...");
+		let repoIndex;
+		try {
+			repoIndex = await getRepoClient().fetchIndex(selectedRepo.url);
+		} catch (err) {
+			ctx.ui.setWorkingMessage(undefined);
+			ctx.ui.notify(
+				`Failed to fetch from "${selectedRepo.name}": ${err instanceof Error ? err.message : String(err)}`,
+				"error",
+			);
+			return;
+		}
+		ctx.ui.setWorkingMessage(undefined);
+
+		if (repoIndex.packages.length === 0) {
+			ctx.ui.notify(`Repository "${selectedRepo.name}" has no packages.`, "info");
+			return;
+		}
+
+		// Step 3: Show interactive browser
+		const db = getDB();
+		const installed = db.getPackages();
+
+		const result = await ctx.ui.custom<BrowseResult>(
+			(tui, themeInstance, keybindings, done) => {
+				return new StoreBrowseComponent(
+					repoIndex.packages,
+					installed,
+					selectedRepo.name,
+					tui,
+					themeInstance,
+					keybindings,
+					done,
+				);
+			},
+		);
+
+		// Step 4: Handle result
+		if (!result || result.action === "cancel" || !result.packageName) {
+			return;
+		}
+
+		const pkgName = result.packageName;
+		const scope = config.installScope;
+
+		try {
+			ctx.ui.setWorkingMessage(`Installing ${pkgName}...`);
+			const pkg = await getRepoClient().getPackage(pkgName, config.repositories);
+			if (!pkg) {
+				ctx.ui.setWorkingMessage(undefined);
+				ctx.ui.notify(`Package "${pkgName}" not found in repository.`, "error");
+				return;
+			}
+
+			const installedPkg = await getInstaller().installFromRepo(pkg, config.repositories, scope);
+			ctx.ui.setWorkingMessage(undefined);
+
+			ctx.ui.notify(
+				`✅ Installed ${installedPkg.name} (${installedPkg.type}) v${installedPkg.version}\nPath: ${installedPkg.installedPath}`,
+				"info",
+			);
+
+			try {
+				await ctx.reload();
+			} catch {
+				ctx.ui.notify("Run /reload to activate the new package.", "info");
+			}
+		} catch (err) {
+			ctx.ui.setWorkingMessage(undefined);
+			ctx.ui.notify(
+				`Install failed: ${err instanceof Error ? err.message : String(err)}`,
+				"error",
+			);
 		}
 	}
 
