@@ -97,9 +97,16 @@ export function registerStoreTools(
 				Type.String({ description: "Install scope", enum: ["user", "project"] }),
 			),
 		}),
-		async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
+		async execute(_toolCallId, params, signal, onUpdate, _ctx) {
 			const config = getConfig();
 			const scope = (params.scope as "user" | "project") ?? config.installScope;
+
+			const onProgress = (stage: string, detail?: string) => {
+				onUpdate?.({
+					content: [{ type: "text" as const, text: `📦 ${detail ?? stage}...` }],
+					details: undefined,
+				});
+			};
 
 			const isFilePath =
 				params.source.includes("/") ||
@@ -110,7 +117,8 @@ export function registerStoreTools(
 
 			if (isFilePath) {
 				const type = params.type as ResourceType | undefined;
-				const installed = await getInstaller().installFromArchive(params.source, scope, type);
+				onProgress("extracting", `Installing from ${params.source}`);
+				const installed = await getInstaller().installFromArchive(params.source, scope, type, onProgress);
 				return {
 					content: [
 						{
@@ -134,7 +142,8 @@ export function registerStoreTools(
 					details: undefined,
 				};
 			}
-			const installed = await getInstaller().installFromRepo(pkg, config.repositories, scope, signal);
+			onProgress("downloading", `Downloading ${pkg.name} v${pkg.version}...`);
+			const installed = await getInstaller().installFromRepo(pkg, config.repositories, scope, signal, onProgress);
 			return {
 				content: [
 					{
@@ -157,7 +166,7 @@ export function registerStoreTools(
 		parameters: Type.Object({
 			name: Type.String({ description: "Package name to remove", minLength: 1 }),
 		}),
-		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+		async execute(_toolCallId, params, _signal, onUpdate, _ctx) {
 			const pkg = getDB().getPackage(params.name);
 			if (!pkg) {
 				return {
@@ -170,7 +179,15 @@ export function registerStoreTools(
 					details: undefined,
 				};
 			}
-			await getInstaller().uninstall(pkg);
+
+			const onProgress = (stage: string, detail?: string) => {
+				onUpdate?.({
+					content: [{ type: "text" as const, text: `📦 ${detail ?? stage}...` }],
+					details: undefined,
+				});
+			};
+
+			await getInstaller().uninstall(pkg, onProgress);
 			return {
 				content: [
 					{
@@ -198,9 +215,16 @@ export function registerStoreTools(
 				}),
 			),
 		}),
-		async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
+		async execute(_toolCallId, params, signal, onUpdate, _ctx) {
 			const db = getDB();
 			const config = getConfig();
+
+			const onProgress = (stage: string, detail?: string) => {
+				onUpdate?.({
+					content: [{ type: "text" as const, text: `📦 ${detail ?? stage}...` }],
+					details: undefined,
+				});
+			};
 
 			if (config.repositories.length === 0) {
 				return {
@@ -256,12 +280,15 @@ export function registerStoreTools(
 				}
 
 				// Uninstall old, install new
-				await getInstaller().uninstall(pkg);
+				onProgress("removing", `Removing ${pkg.name} v${pkg.version}...`);
+				await getInstaller().uninstall(pkg, onProgress);
+				onProgress("downloading", `Installing ${params.name} v${repoPkg.version}...`);
 				const updated = await getInstaller().installFromRepo(
 					repoPkg,
 					config.repositories,
 					pkg.scope ?? "user",
 					signal,
+					onProgress,
 				);
 				return {
 					content: [
@@ -275,6 +302,7 @@ export function registerStoreTools(
 			}
 
 			// Check all packages
+			onProgress("checking", "Checking for updates...");
 			const updates = await getRepoClient().checkUpdates(db.getPackages(), config.repositories);
 			db.setLastUpdateCheck(Date.now());
 

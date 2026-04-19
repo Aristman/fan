@@ -3,16 +3,26 @@
  *
  * Handles extraction of .tar.gz and .zip archives, type detection,
  * bundle installation, and uninstall with cleanup.
+ *
+ * All I/O is non-blocking (async). Progress callbacks report stage transitions.
  */
 
-import { execSync } from "node:child_process";
-import { existsSync, cpSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from "node:fs";
+import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
+import { cp, mkdir, readdir, rename, rm, stat } from "node:fs/promises";
 import { readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import type { InstalledPackage, RepoEntry, RepoPackage, ResourceType } from "./types.js";
 import { StoreDatabase } from "./storage.js";
 import { RepoClient } from "./repo-client.js";
+
+// ──────────────────────────────────────────────
+// Progress callback
+// ──────────────────────────────────────────────
+
+/** Called at each stage of an install/remove/update operation. */
+export type ProgressCallback = (stage: string, detail?: string) => void;
 
 export class ArchiveInstaller {
 	constructor(
@@ -54,16 +64,21 @@ export class ArchiveInstaller {
 	/**
 	 * Detect the resource type of an extracted directory.
 	 */
-	private detectType(extractedDir: string): ResourceType | "bundle" | undefined {
-		const entries = readdirSync(extractedDir);
+	private async detectType(extractedDir: string): Promise<ResourceType | "bundle" | undefined> {
+		const entries = await readdir(extractedDir);
 
 		// Check if it's a bundle (contains subdirectories matching resource types)
-		const subdirs = entries.filter((e: string) => {
+		const subdirs: string[] = [];
+		for (const e of entries) {
 			const p = join(extractedDir, e);
-			return statSync(p).isDirectory();
-		});
+			try {
+				if ((await stat(p)).isDirectory()) subdirs.push(e);
+			} catch {
+				// ignore
+			}
+		}
 
-		if (subdirs.some((d: string) => d === "extensions" || d === "skills" || d === "themes")) {
+		if (subdirs.some((d) => d === "extensions" || d === "skills" || d === "themes")) {
 			return "bundle";
 		}
 
@@ -85,18 +100,19 @@ export class ArchiveInstaller {
 	 * Find the wrapper directory inside an extracted archive.
 	 * Archives should contain a single top-level directory named after the package.
 	 */
-	private findWrapperDir(extractedDir: string): { dir: string; name: string | null } {
-		const entries = readdirSync(extractedDir);
-		const dirs = entries.filter((e: string) => {
+	private async findWrapperDir(extractedDir: string): Promise<{ dir: string; name: string | null }> {
+		const entries = await readdir(extractedDir);
+		const dirs: string[] = [];
+		for (const e of entries) {
 			try {
-				return statSync(join(extractedDir, e)).isDirectory();
+				if ((await stat(join(extractedDir, e))).isDirectory()) dirs.push(e);
 			} catch {
-				return false;
+				// ignore
 			}
-		});
+		}
 		// Ignore hidden files for wrapper detection
 		const visibleFiles = entries.filter(
-			(e: string) => !dirs.includes(e) && !e.startsWith("."),
+			(e) => !dirs.includes(e) && !e.startsWith("."),
 		);
 
 		if (dirs.length === 1 && visibleFiles.length === 0) {
@@ -108,57 +124,51 @@ export class ArchiveInstaller {
 	/**
 	 * Backup existing installation before overwrite.
 	 */
-	private backupExisting(targetPath: string): string | undefined {
+	private async backupExisting(targetPath: string): Promise<string | undefined> {
 		if (!existsSync(targetPath)) return undefined;
 		const backupPath = `${targetPath}.bak.${Date.now()}`;
-		cpSync(targetPath, backupPath, { recursive: true });
+		await cp(targetPath, backupPath, { recursive: true });
 		return backupPath;
 	}
 
 	/**
 	 * Restore from backup on failure.
 	 */
-	private restoreBackup(targetPath: string, backupPath: string | undefined): void {
+	private async restoreBackup(targetPath: string, backupPath: string | undefined): Promise<void> {
 		if (backupPath === undefined) return;
 		if (existsSync(targetPath)) {
-			rmSync(targetPath, { recursive: true, force: true });
+			await rm(targetPath, { recursive: true, force: true });
 		}
-		renameSync(backupPath, targetPath);
+		await rename(backupPath, targetPath);
 	}
 
 	/**
 	 * Extract .tar.gz archive to a directory.
 	 */
 	private async extractTarGz(archivePath: string, targetDir: string): Promise<void> {
-		try {
-			execSync(`tar -xzf "${archivePath}" -C "${targetDir}"`, {
-				timeout: 30_000,
-				stdio: "pipe",
+		return new Promise<void>((resolve, reject) => {
+			execFile("tar", ["-xzf", archivePath, "-C", targetDir], { timeout: 30_000 }, (err) => {
+				if (err) reject(new Error(`Failed to extract ${archivePath}: ${err.message}`));
+				else resolve();
 			});
-			return;
-		} catch {
-			// tar not available or failed
-		}
-		throw new Error(
-			`Failed to extract ${archivePath}: 'tar' command not available. ` +
-				`Ensure Git Bash or tar is installed and on PATH.`,
-		);
+		});
 	}
 
 	/**
 	 * Extract .zip archive to a directory.
 	 */
 	private async extractZip(archivePath: string, targetDir: string): Promise<void> {
-		try {
-			execSync(
-				`powershell -NoProfile -Command "Expand-Archive -Path '${archivePath}' -DestinationPath '${targetDir}' -Force"`,
-				{ timeout: 60_000, stdio: "pipe" },
+		return new Promise<void>((resolve, reject) => {
+			execFile(
+				"powershell",
+				["-NoProfile", "-Command", `Expand-Archive -Path '${archivePath}' -DestinationPath '${targetDir}' -Force`],
+				{ timeout: 60_000 },
+				(err) => {
+					if (err) reject(new Error(`Failed to extract ${archivePath}: ${err.message}`));
+					else resolve();
+				},
 			);
-			return;
-		} catch {
-			// PowerShell not available or failed
-		}
-		throw new Error(`Failed to extract ${archivePath}: PowerShell Expand-Archive failed.`);
+		});
 	}
 
 	/**
@@ -200,10 +210,11 @@ export class ArchiveInstaller {
 			// If we can't read/parse package.json, skip cleanup and try install anyway
 		}
 
-		execSync("npm install --omit=dev", {
-			cwd: dir,
-			timeout: 120_000,
-			stdio: "pipe",
+		return new Promise<void>((resolve, reject) => {
+			execFile("npm", ["install", "--omit=dev"], { cwd: dir, timeout: 120_000 }, (err) => {
+				if (err) reject(new Error(`npm install failed in ${dir}: ${err.message}`));
+				else resolve();
+			});
 		});
 	}
 
@@ -214,19 +225,22 @@ export class ArchiveInstaller {
 		archivePath: string,
 		scope: "user" | "project",
 		type?: ResourceType,
+		onProgress?: ProgressCallback,
 	): Promise<InstalledPackage> {
 		if (!existsSync(archivePath)) {
 			throw new Error(`Archive not found: ${archivePath}`);
 		}
 
 		const tempDir = join(this.archiveTempDir ?? tmpdir(), `fan-store-install-${Date.now()}`);
-		mkdirSync(tempDir, { recursive: true });
+		await mkdir(tempDir, { recursive: true });
 
 		try {
 			// Extract based on extension
 			if (archivePath.endsWith(".tar.gz") || archivePath.endsWith(".tgz")) {
+				onProgress?.("extracting", `Extracting ${basename(archivePath)}...`);
 				await this.extractTarGz(archivePath, tempDir);
 			} else if (archivePath.endsWith(".zip")) {
+				onProgress?.("extracting", `Extracting ${basename(archivePath)}...`);
 				await this.extractZip(archivePath, tempDir);
 			} else {
 				throw new Error(
@@ -234,8 +248,9 @@ export class ArchiveInstaller {
 				);
 			}
 
-			const { dir: sourceDir, name: wrapperName } = this.findWrapperDir(tempDir);
-			const detectedType = type ?? this.detectType(sourceDir);
+			onProgress?.("detecting", "Detecting package type...");
+			const { dir: sourceDir, name: wrapperName } = await this.findWrapperDir(tempDir);
+			const detectedType = type ?? (await this.detectType(sourceDir));
 			if (!detectedType) {
 				throw new Error(
 					`Cannot determine package type from ${archivePath}. ` +
@@ -244,11 +259,10 @@ export class ArchiveInstaller {
 			}
 
 			if (detectedType === "bundle") {
-				return await this.installBundle(sourceDir, scope, "archive", undefined);
+				return await this.installBundle(sourceDir, scope, "archive", undefined, onProgress);
 			}
 
 			const pkgName = wrapperName ?? (await this.detectName(sourceDir, detectedType));
-			const targetDir = this.getTargetDirectory(detectedType, scope, pkgName);
 
 			// Check for existing installation
 			const existing = this.db.getPackage(pkgName);
@@ -259,13 +273,18 @@ export class ArchiveInstaller {
 				);
 			}
 
-			const backup = this.backupExisting(targetDir);
+			const targetDir = this.getTargetDirectory(detectedType, scope, pkgName);
+
+			const backup = await this.backupExisting(targetDir);
 			try {
-				mkdirSync(dirname(targetDir), { recursive: true });
-				cpSync(sourceDir, targetDir, { recursive: true });
+				onProgress?.("installing", `Copying files for ${pkgName}...`);
+				await mkdir(dirname(targetDir), { recursive: true });
+				await cp(sourceDir, targetDir, { recursive: true });
+
+				onProgress?.("installing", `Running npm install for ${pkgName}...`);
 				await this.npmInstall(targetDir);
 			} catch (err) {
-				this.restoreBackup(targetDir, backup);
+				await this.restoreBackup(targetDir, backup);
 				throw err;
 			}
 
@@ -289,10 +308,13 @@ export class ArchiveInstaller {
 				// No package.json or no version — keep "unknown"
 			}
 
+			onProgress?.("saving", "Saving package metadata...");
 			this.db.savePackage(installedPkg);
+			onProgress?.("done", `Installed ${pkgName}`);
 			return installedPkg;
 		} finally {
-			rmSync(tempDir, { recursive: true, force: true });
+			onProgress?.("cleanup", "Cleaning up temporary files...");
+			await rm(tempDir, { recursive: true, force: true });
 		}
 	}
 
@@ -304,6 +326,7 @@ export class ArchiveInstaller {
 		repos: RepoEntry[],
 		scope: "user" | "project",
 		signal?: AbortSignal,
+		onProgress?: ProgressCallback,
 	): Promise<InstalledPackage> {
 		// Check for existing installation
 		const existing = this.db.getPackage(pkg.name);
@@ -317,27 +340,36 @@ export class ArchiveInstaller {
 		const tempDir = join(this.archiveTempDir ?? tmpdir(), `fan-store-install-${Date.now()}`);
 		const archivePath = join(tempDir, `${pkg.name}-${pkg.version}.tar.gz`);
 		const extractDir = join(tempDir, "extract");
-		mkdirSync(tempDir, { recursive: true });
+		await mkdir(tempDir, { recursive: true });
 
 		try {
+			onProgress?.("downloading", `Downloading ${pkg.name} v${pkg.version}...`);
 			await this.repoClient.downloadPackage(pkg, archivePath, signal);
-			mkdirSync(extractDir, { recursive: true });
+
+			onProgress?.("extracting", `Extracting ${pkg.name}...`);
+			await mkdir(extractDir, { recursive: true });
 			await this.extractTarGz(archivePath, extractDir);
 
-			const { dir: sourceDir } = this.findWrapperDir(extractDir);
-			const detectedType = this.detectType(sourceDir) ?? pkg.type;
+			onProgress?.("detecting", "Detecting package type...");
+			const { dir: sourceDir } = await this.findWrapperDir(extractDir);
+			const detectedType = (await this.detectType(sourceDir)) ?? pkg.type;
+
 			if (detectedType === "bundle") {
-				return await this.installBundle(sourceDir, scope, "repo", pkg);
+				return await this.installBundle(sourceDir, scope, "repo", pkg, onProgress);
 			}
+
 			const targetDir = this.getTargetDirectory(detectedType, scope, pkg.name);
 
-			const backup = this.backupExisting(targetDir);
+			const backup = await this.backupExisting(targetDir);
 			try {
-				mkdirSync(dirname(targetDir), { recursive: true });
-				cpSync(sourceDir, targetDir, { recursive: true });
+				onProgress?.("installing", `Copying files for ${pkg.name}...`);
+				await mkdir(dirname(targetDir), { recursive: true });
+				await cp(sourceDir, targetDir, { recursive: true });
+
+				onProgress?.("installing", `Running npm install for ${pkg.name}...`);
 				await this.npmInstall(targetDir);
 			} catch (err) {
-				this.restoreBackup(targetDir, backup);
+				await this.restoreBackup(targetDir, backup);
 				throw err;
 			}
 
@@ -355,10 +387,13 @@ export class ArchiveInstaller {
 				hash: pkg.hash,
 			};
 
+			onProgress?.("saving", "Saving package metadata...");
 			this.db.savePackage(installedPkg);
+			onProgress?.("done", `Installed ${pkg.name}`);
 			return installedPkg;
 		} finally {
-			rmSync(tempDir, { recursive: true, force: true });
+			onProgress?.("cleanup", "Cleaning up temporary files...");
+			await rm(tempDir, { recursive: true, force: true });
 		}
 	}
 
@@ -370,6 +405,7 @@ export class ArchiveInstaller {
 		scope: "user" | "project",
 		source: "repo" | "archive",
 		pkg?: RepoPackage,
+		onProgress?: ProgressCallback,
 	): Promise<InstalledPackage> {
 		const pkgName = pkg?.name ?? (await this.detectName(extractedDir, "extension"));
 		const bundleVersion = pkg?.version ?? "unknown";
@@ -380,21 +416,29 @@ export class ArchiveInstaller {
 			const subDir = join(extractedDir, `${type}s`);
 			if (!existsSync(subDir)) continue;
 
-			const entries = readdirSync(subDir);
+			const entries = await readdir(subDir);
 			for (const entry of entries) {
 				const entryPath = join(subDir, entry);
-				if (!statSync(entryPath).isDirectory()) continue;
-
-				const targetDir = this.getTargetDirectory(type, scope, entry);
-				const backup = this.backupExisting(targetDir);
+				let isDir = false;
 				try {
-					mkdirSync(dirname(targetDir), { recursive: true });
-					cpSync(entryPath, targetDir, { recursive: true });
+					isDir = (await stat(entryPath)).isDirectory();
+				} catch {
+					// ignore
+				}
+				if (!isDir) continue;
+
+				onProgress?.("installing", `Installing ${entry} (${type})...`);
+				const targetDir = this.getTargetDirectory(type, scope, entry);
+				const backup = await this.backupExisting(targetDir);
+				try {
+					await mkdir(dirname(targetDir), { recursive: true });
+					await cp(entryPath, targetDir, { recursive: true });
 					if (type === "extension") {
+						onProgress?.("installing", `Running npm install for ${entry}...`);
 						await this.npmInstall(targetDir);
 					}
 				} catch (err) {
-					this.restoreBackup(targetDir, backup);
+					await this.restoreBackup(targetDir, backup);
 					throw err;
 				}
 				installedResources.push({ type, path: targetDir, name: entry });
@@ -421,7 +465,9 @@ export class ArchiveInstaller {
 			...(pkg?.hash != null ? { hash: pkg.hash } : {}),
 		};
 
+		onProgress?.("saving", "Saving package metadata...");
 		this.db.savePackage(installedPkg);
+		onProgress?.("done", `Installed bundle ${pkgName}`);
 		return installedPkg;
 	}
 
@@ -444,25 +490,29 @@ export class ArchiveInstaller {
 	/**
 	 * Uninstall a package.
 	 */
-	async uninstall(pkg: InstalledPackage): Promise<void> {
+	async uninstall(pkg: InstalledPackage, onProgress?: ProgressCallback): Promise<void> {
 		const targetPath = pkg.installedPath;
 
+		onProgress?.("removing", `Removing ${pkg.name}...`);
 		if (existsSync(targetPath)) {
-			rmSync(targetPath, { recursive: true, force: true });
+			await rm(targetPath, { recursive: true, force: true });
 		}
 
 		// Clean up .bak files too
+		onProgress?.("removing", "Cleaning up backups...");
 		const parentDir = dirname(targetPath);
 		if (existsSync(parentDir)) {
-			const siblings = readdirSync(parentDir);
+			const siblings = await readdir(parentDir);
 			const targetBase = basename(targetPath);
 			for (const sibling of siblings) {
 				if (sibling.startsWith(targetBase + ".bak.")) {
-					rmSync(join(parentDir, sibling), { recursive: true, force: true });
+					await rm(join(parentDir, sibling), { recursive: true, force: true });
 				}
 			}
 		}
 
+		onProgress?.("saving", "Updating package database...");
 		this.db.removePackage(pkg.name);
+		onProgress?.("done", `Removed ${pkg.name}`);
 	}
 }

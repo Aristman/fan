@@ -10,12 +10,21 @@ import type { StoreConfig } from "./config.js";
 import type { RepoEntry } from "./types.js";
 import { saveConfig } from "./config.js";
 import { StoreBrowseComponent, type BrowseResult } from "./browse-component.js";
+import { ProgressOverlay } from "./progress-overlay.js";
 
 // ──────────────────────────────────────────────
 // /store command
 // ──────────────────────────────────────────────
 
 type Ctx = ExtensionCommandContext;
+
+const CANCELLED: OperationResult = { success: false, message: "", cancelled: true };
+
+interface OperationResult {
+	success: boolean;
+	message: string;
+	cancelled?: true;
+}
 
 export function registerStoreCommand(
 	pi: ExtensionAPI,
@@ -153,51 +162,78 @@ Commands:
 		const config = getConfig();
 		const scope = config.installScope;
 
-		try {
-			const isFilePath =
-				source.includes("/") ||
-				source.includes("\\") ||
-				source.endsWith(".tar.gz") ||
-				source.endsWith(".tgz") ||
-				source.endsWith(".zip");
+		const isFilePath =
+			source.includes("/") ||
+			source.includes("\\") ||
+			source.endsWith(".tar.gz") ||
+			source.endsWith(".tgz") ||
+			source.endsWith(".zip");
 
-			let installed;
-			if (isFilePath) {
-				installed = await getInstaller().installFromArchive(source, scope);
-			} else {
-				if (config.repositories.length === 0) {
-					ctx.ui.notify(
-						"No repositories configured. Add one with /store repos add <name> <url>",
-						"error",
-					);
-					return;
-				}
-				const pkg = await getRepoClient().getPackage(source, config.repositories);
-				if (!pkg) {
-					ctx.ui.notify(
-						`Package "${source}" not found in any configured repository.`,
-						"error",
-					);
-					return;
-				}
-				installed = await getInstaller().installFromRepo(pkg, config.repositories, scope);
-			}
+		const result = await ctx.ui.custom<OperationResult>(
+			(tui, themeInstance, _keybindings, done) => {
+				const overlay = new ProgressOverlay(
+					tui,
+					themeInstance,
+					isFilePath ? `Installing ${source}...` : `Installing ${source}...`,
+					() => done(CANCELLED),
+				);
 
-			ctx.ui.notify(
-				`✅ Installed ${installed.name} (${installed.type}) v${installed.version}\nPath: ${installed.installedPath}`,
-				"info",
-			);
+				(async () => {
+					try {
+						const onProgress = (stage: string, detail?: string) => {
+							overlay.setMessage(detail ?? stage);
+						};
 
+						let installed;
+						if (isFilePath) {
+							installed = await getInstaller().installFromArchive(source, scope, undefined, onProgress);
+						} else {
+							if (config.repositories.length === 0) {
+								done({ success: false, message: "No repositories configured. Add one with /store repos add <name> <url>" });
+								return;
+							}
+							const pkg = await getRepoClient().getPackage(source, config.repositories);
+							if (!pkg) {
+								done({ success: false, message: `Package "${source}" not found in any configured repository.` });
+								return;
+							}
+							installed = await getInstaller().installFromRepo(pkg, config.repositories, scope, overlay.signal, onProgress);
+						}
+
+						done({
+							success: true,
+							message: `✅ Installed ${installed.name} (${installed.type}) v${installed.version}\nPath: ${installed.installedPath}`,
+						});
+					} catch (err) {
+						if (overlay.signal.aborted) {
+							done(CANCELLED); // cancelled
+						} else {
+							done({
+								success: false,
+								message: `❌ Install failed: ${err instanceof Error ? err.message : String(err)}`,
+							});
+						}
+					}
+				})();
+
+				return overlay;
+			},
+		);
+
+		if (result.cancelled) {
+			// cancelled
+			return;
+		}
+
+		if (result.success) {
+			ctx.ui.notify(result.message, "info");
 			try {
 				await ctx.reload();
 			} catch {
 				ctx.ui.notify("Run /reload to activate the new package.", "info");
 			}
-		} catch (err) {
-			ctx.ui.notify(
-				`Install failed: ${err instanceof Error ? err.message : String(err)}`,
-				"error",
-			);
+		} else {
+			ctx.ui.notify(result.message, "error");
 		}
 	}
 
@@ -217,20 +253,52 @@ Commands:
 			return;
 		}
 
-		try {
-			await getInstaller().uninstall(pkg);
-			ctx.ui.notify(`✅ Removed ${name} (${pkg.type}) v${pkg.version}`, "info");
+		const result = await ctx.ui.custom<OperationResult>(
+			(tui, themeInstance, _keybindings, done) => {
+				const overlay = new ProgressOverlay(
+					tui,
+					themeInstance,
+					`Removing ${name}...`,
+					() => done(CANCELLED),
+				);
 
+				(async () => {
+					try {
+						const onProgress = (_stage: string, detail?: string) => {
+							overlay.setMessage(detail ?? _stage);
+						};
+
+						await getInstaller().uninstall(pkg, onProgress);
+						done({ success: true, message: `✅ Removed ${name} (${pkg.type}) v${pkg.version}` });
+					} catch (err) {
+						if (overlay.signal.aborted) {
+							done(CANCELLED);
+						} else {
+							done({
+								success: false,
+								message: `❌ Remove failed: ${err instanceof Error ? err.message : String(err)}`,
+							});
+						}
+					}
+				})();
+
+				return overlay;
+			},
+		);
+
+		if (result.cancelled) {
+			return;
+		}
+
+		if (result.success) {
+			ctx.ui.notify(result.message, "info");
 			try {
 				await ctx.reload();
 			} catch {
 				ctx.ui.notify("Run /reload to apply changes.", "info");
 			}
-		} catch (err) {
-			ctx.ui.notify(
-				`Remove failed: ${err instanceof Error ? err.message : String(err)}`,
-				"error",
-			);
+		} else {
+			ctx.ui.notify(result.message, "error");
 		}
 	}
 
@@ -261,35 +329,72 @@ Commands:
 				return;
 			}
 
-			try {
-				const repoPkg = await getRepoClient().getPackage(name, config.repositories);
-				if (!repoPkg) {
-					ctx.ui.notify(`Package "${name}" not found in any repository.`, "error");
-					return;
-				}
-				if (repoPkg.version === pkg.version) {
-					ctx.ui.notify(`✅ ${name} is already up to date (v${pkg.version}).`, "info");
-					return;
-				}
+			const result = await ctx.ui.custom<OperationResult>(
+				(tui, themeInstance, _keybindings, done) => {
+					const overlay = new ProgressOverlay(
+						tui,
+						themeInstance,
+						`Updating ${name}...`,
+						() => done(CANCELLED),
+					);
 
-				await getInstaller().uninstall(pkg);
-				const updated = await getInstaller().installFromRepo(
-					repoPkg,
-					config.repositories,
-					pkg.scope ?? "user",
-				);
-				ctx.ui.notify(`✅ Updated ${name}: v${pkg.version} → v${updated.version}`, "info");
+					(async () => {
+						try {
+							const onProgress = (_stage: string, detail?: string) => {
+								overlay.setMessage(detail ?? _stage);
+							};
 
+							const repoPkg = await getRepoClient().getPackage(name, config.repositories);
+							if (!repoPkg) {
+								done({ success: false, message: `Package "${name}" not found in any repository.` });
+								return;
+							}
+							if (repoPkg.version === pkg.version) {
+								done({ success: true, message: `✅ ${name} is already up to date (v${pkg.version}).` });
+								return;
+							}
+
+							onProgress("removing", `Removing ${name} v${pkg.version}...`);
+							await getInstaller().uninstall(pkg, onProgress);
+
+							onProgress("downloading", `Installing ${name} v${repoPkg.version}...`);
+							const updated = await getInstaller().installFromRepo(
+								repoPkg,
+								config.repositories,
+								pkg.scope ?? "user",
+								overlay.signal,
+								onProgress,
+							);
+							done({ success: true, message: `✅ Updated ${name}: v${pkg.version} → v${updated.version}` });
+						} catch (err) {
+							if (overlay.signal.aborted) {
+								done(CANCELLED);
+							} else {
+								done({
+									success: false,
+									message: `❌ Update failed: ${err instanceof Error ? err.message : String(err)}`,
+								});
+							}
+						}
+					})();
+
+					return overlay;
+				},
+			);
+
+			if (result.cancelled) {
+				return;
+			}
+
+			if (result.success) {
+				ctx.ui.notify(result.message, "info");
 				try {
 					await ctx.reload();
 				} catch {
 					ctx.ui.notify("Run /reload to activate the update.", "info");
 				}
-			} catch (err) {
-				ctx.ui.notify(
-					`Update failed: ${err instanceof Error ? err.message : String(err)}`,
-					"error",
-				);
+			} else {
+				ctx.ui.notify(result.message, "error");
 			}
 		} else {
 			try {
@@ -396,34 +501,62 @@ Commands:
 		const pkgName = result.packageName;
 		const scope = config.installScope;
 
-		try {
-			ctx.ui.setWorkingMessage(`Installing ${pkgName}...`);
-			const pkg = await getRepoClient().getPackage(pkgName, config.repositories);
-			if (!pkg) {
-				ctx.ui.setWorkingMessage(undefined);
-				ctx.ui.notify(`Package "${pkgName}" not found in repository.`, "error");
-				return;
-			}
+		// Step 5: Install with progress overlay
+		const installResult = await ctx.ui.custom<OperationResult>(
+			(tui, themeInstance, _keybindings, done) => {
+				const overlay = new ProgressOverlay(
+					tui,
+					themeInstance,
+					`Installing ${pkgName}...`,
+					() => done(CANCELLED),
+				);
 
-			const installedPkg = await getInstaller().installFromRepo(pkg, config.repositories, scope);
-			ctx.ui.setWorkingMessage(undefined);
+				(async () => {
+					try {
+						const onProgress = (_stage: string, detail?: string) => {
+							overlay.setMessage(detail ?? _stage);
+						};
 
-			ctx.ui.notify(
-				`✅ Installed ${installedPkg.name} (${installedPkg.type}) v${installedPkg.version}\nPath: ${installedPkg.installedPath}`,
-				"info",
-			);
+						const pkg = await getRepoClient().getPackage(pkgName, config.repositories);
+						if (!pkg) {
+							done({ success: false, message: `Package "${pkgName}" not found in repository.` });
+							return;
+						}
 
+						const installedPkg = await getInstaller().installFromRepo(pkg, config.repositories, scope, overlay.signal, onProgress);
+						done({
+							success: true,
+							message: `✅ Installed ${installedPkg.name} (${installedPkg.type}) v${installedPkg.version}\nPath: ${installedPkg.installedPath}`,
+						});
+					} catch (err) {
+						if (overlay.signal.aborted) {
+							done(CANCELLED);
+						} else {
+							done({
+								success: false,
+								message: `❌ Install failed: ${err instanceof Error ? err.message : String(err)}`,
+							});
+						}
+					}
+				})();
+
+				return overlay;
+			},
+		);
+
+		if (installResult.cancelled) {
+			return;
+		}
+
+		if (installResult.success) {
+			ctx.ui.notify(installResult.message, "info");
 			try {
 				await ctx.reload();
 			} catch {
 				ctx.ui.notify("Run /reload to activate the new package.", "info");
 			}
-		} catch (err) {
-			ctx.ui.setWorkingMessage(undefined);
-			ctx.ui.notify(
-				`Install failed: ${err instanceof Error ? err.message : String(err)}`,
-				"error",
-			);
+		} else {
+			ctx.ui.notify(installResult.message, "error");
 		}
 	}
 

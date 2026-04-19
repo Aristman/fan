@@ -1,6 +1,6 @@
 {
 	"name": "@fan/orchestrator",
-	"version": "1.0.0",
+	"version": "0.4.1",
 	"fan": {
 		"name": "fan-orchestrator",
 		"type": "extension",
@@ -37,10 +37,10 @@
 		"test": "vitest run"
 	},
 	"dependencies": {
-		"@itone/fan-ai": "workspace:*",
-		"@itone/fan-coding-agent": "workspace:*",
-		"@itone/fan-agent-core": "workspace:*",
-		"@itone/fan-tui": "workspace:*",
+		"@itone/fan-ai": "*",
+		"@itone/fan-coding-agent": "*",
+		"@itone/fan-agent-core": "*",
+		"@itone/fan-tui": "*",
 		"@sinclair/typebox": "^0.34.0"
 	},
 	"devDependencies": {
