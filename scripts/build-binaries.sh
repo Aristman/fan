@@ -80,7 +80,7 @@ if [[ "$SKIP_DEPS" == "false" ]]; then
     # npm ci only installs optional deps for the current platform
     # We need all platform bindings for bun cross-compilation
     # Use --force to bypass platform checks (os/cpu restrictions in package.json)
-    bun add --no-save --force \
+    bun add --no-save --no-scripts --force \
         @mariozechner/clipboard-darwin-arm64@0.3.0 \
         @mariozechner/clipboard-darwin-x64@0.3.0 \
         @mariozechner/clipboard-linux-x64-gnu@0.3.0 \
