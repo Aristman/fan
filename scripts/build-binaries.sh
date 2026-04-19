@@ -73,7 +73,7 @@ echo "==> Using bun $(bun --version)"
 echo "==> FAN (fan) version: $(node -e "console.log(require('./package.json').version)")"
 
 echo "==> Installing dependencies..."
-bun install
+bun install --no-scripts
 
 if [[ "$SKIP_DEPS" == "false" ]]; then
     echo "==> Installing cross-platform native bindings..."
