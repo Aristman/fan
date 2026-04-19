@@ -73,15 +73,14 @@ echo "==> Using bun $(bun --version)"
 echo "==> FAN (fan) version: $(node -e "console.log(require('./package.json').version)")"
 
 echo "==> Installing dependencies..."
-npm install
+bun install
 
 if [[ "$SKIP_DEPS" == "false" ]]; then
     echo "==> Installing cross-platform native bindings..."
     # npm ci only installs optional deps for the current platform
     # We need all platform bindings for bun cross-compilation
     # Use --force to bypass platform checks (os/cpu restrictions in package.json)
-    # Install all in one command to avoid npm removing packages from previous installs
-    npm install --no-save --force \
+    bun add --no-save --force \
         @mariozechner/clipboard-darwin-arm64@0.3.0 \
         @mariozechner/clipboard-darwin-x64@0.3.0 \
         @mariozechner/clipboard-linux-x64-gnu@0.3.0 \
