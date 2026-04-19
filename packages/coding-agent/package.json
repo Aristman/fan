@@ -1,6 +1,6 @@
 {
 	"name": "@itone/fan-coding-agent",
-	"version": "0.3.5",
+	"version": "0.4.0",
 	"description": "Fan coding agent CLI with read, write, edit, bash tools and session management",
 	"type": "module",
 	"fanConfig": {
@@ -41,7 +41,6 @@
 	"dependencies": {
 		"@fan/model-manager": "*",
 		"@fan/api-gateway": "*",
-		"@fan/orchestrator": "*",
 		"@fan/store": "*",
 		"@mariozechner/jiti": "^2.6.2",
 		"@itone/fan-agent-core": "*",

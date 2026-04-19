@@ -178,7 +178,15 @@ export class ArchiveInstaller {
 				const deps = pkgJson[field];
 				if (typeof deps !== "object" || deps === null) continue;
 				for (const [key, val] of Object.entries(deps as Record<string, string>)) {
-					if (typeof val === "string" && val.startsWith("workspace:")) {
+					if (typeof val !== "string") continue;
+					// Strip workspace:* references (can't resolve outside monorepo)
+					if (val.startsWith("workspace:")) {
+						delete (deps as Record<string, string>)[key];
+						cleaned = true;
+						continue;
+					}
+					// Strip bare * version on @itone/* packages (workspace deps without workspace: protocol)
+					if (val === "*" && key.startsWith("@itone/")) {
 						delete (deps as Record<string, string>)[key];
 						cleaned = true;
 					}

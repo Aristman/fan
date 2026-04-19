@@ -10,7 +10,7 @@
 - **Stage:** Phase 7 — Polish & release ✅
 
 ## What It Is
-Runs locally on user's machine. Provides external API for multiple UI clients (TUI, WebView, IDEA plugin, etc.). Built on fan-coding-agent with custom orchestrator extension, model management, and all current extensions/skills.
+Runs locally on user's machine. Provides external API for multiple UI clients (TUI, WebView, IDEA plugin, etc.). Built on fan-coding-agent with standalone orchestrator extension (FAN Store), model management, and all current extensions/skills.
 
 ## Tech Stack
 Runtime: Bun · Monorepo: npm workspaces · Core: fan-ai + fan-agent-core + fan-coding-agent + fan-tui · API: stdio RPC + Hono HTTP/WS · DB: Prisma+SQLite · Dashboard: Lit+Vite · Build: tsgo
@@ -54,10 +54,11 @@ Runtime: Bun · Monorepo: npm workspaces · Core: fan-ai + fan-agent-core + fan-
 - [x] Phase 1 — Project fork & setup (monorepo, renamed @fan/*, build pipeline)
 - [x] Phase 2 — Model Management (ProviderRouter, FallbackChain, BudgetTracker, ModelManager)
 - [x] Phase 3 — Client API Gateway (Hono REST+WS, auth, 14 endpoints, server mode)
-- [x] Phase 4 — Orchestrator (delegate_task tool, 4 workers, 3 workflows, slash commands, 29 tests)
-- [x] Phase 5 — Orchestrator Hardening (coordinator mode, task widget, /plan, config, workers, permissions, retry/fallback)
+- [x] Phase 4 — Orchestrator standalone extension (delegate_task tool, 4 workers, 3 workflows, slash commands, 29 tests)
+- [x] Phase 5 — Orchestrator Hardening as extension (coordinator mode, task widget, /plan, config, workers, permissions, retry/fallback)
 - [x] Phase 6 — Dashboard Client (Lit web UI, model settings, budget viz)
 - [x] Phase 7 — Polish & release (CLI packaging, init wizard, doctor, server command, --web flag, CI/CD delivery, docs)
+- [x] Phase 7.1 — Orchestrator extraction (removed hardcoded integration from core, standalone FAN Store extension, auto-discovery)
 
 ## Phase 6 Dashboard — Architecture Notes
 - **WebUI is a thin frontend.** Disk (JSONL) = single source of truth. No in-memory session stores.
