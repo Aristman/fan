@@ -5,12 +5,12 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { homedir } from "node:os";
+import { dirname, join } from "node:path";
+import { getAgentDir } from "@itone/fan-coding-agent";
 import type { InstalledPackage } from "./types.js";
 
-const DB_DIR = join(homedir(), ".fan", "agent");
-const DB_PATH = join(DB_DIR, "store-packages.json");
+const DB_PATH = join(getAgentDir(), "store-packages.json");
+const DB_DIR = dirname(DB_PATH);
 
 interface StoreDatabaseSchema {
 	packages: Record<string, InstalledPackage>;

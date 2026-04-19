@@ -7,7 +7,7 @@
 
 import { execSync } from "node:child_process";
 import { existsSync, cpSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import type { InstalledPackage, RepoEntry, RepoPackage, ResourceType } from "./types.js";
@@ -129,7 +129,7 @@ export class ArchiveInstaller {
 	/**
 	 * Extract .tar.gz archive to a directory.
 	 */
-	private extractTarGz(archivePath: string, targetDir: string): void {
+	private async extractTarGz(archivePath: string, targetDir: string): Promise<void> {
 		try {
 			execSync(`tar -xzf "${archivePath}" -C "${targetDir}"`, {
 				timeout: 30_000,
@@ -148,7 +148,7 @@ export class ArchiveInstaller {
 	/**
 	 * Extract .zip archive to a directory.
 	 */
-	private extractZip(archivePath: string, targetDir: string): void {
+	private async extractZip(archivePath: string, targetDir: string): Promise<void> {
 		try {
 			execSync(
 				`powershell -NoProfile -Command "Expand-Archive -Path '${archivePath}' -DestinationPath '${targetDir}' -Force"`,
@@ -163,12 +163,36 @@ export class ArchiveInstaller {
 
 	/**
 	 * Run npm install in a directory if package.json exists.
+	 * Strips workspace:* dependencies before install (not resolvable by npm).
 	 */
-	private npmInstall(dir: string): void {
+	private async npmInstall(dir: string): Promise<void> {
 		const pkgJsonPath = join(dir, "package.json");
 		if (!existsSync(pkgJsonPath)) return;
 
-		execSync("npm install --production", {
+		try {
+			const raw = await readFile(pkgJsonPath, "utf-8");
+			const pkgJson = JSON.parse(raw) as Record<string, unknown>;
+			let cleaned = false;
+
+			for (const field of ["dependencies", "devDependencies", "peerDependencies"] as const) {
+				const deps = pkgJson[field];
+				if (typeof deps !== "object" || deps === null) continue;
+				for (const [key, val] of Object.entries(deps as Record<string, string>)) {
+					if (typeof val === "string" && val.startsWith("workspace:")) {
+						delete (deps as Record<string, string>)[key];
+						cleaned = true;
+					}
+				}
+			}
+
+			if (cleaned) {
+				await writeFile(pkgJsonPath, JSON.stringify(pkgJson, null, 2) + "\n", "utf-8");
+			}
+		} catch {
+			// If we can't read/parse package.json, skip cleanup and try install anyway
+		}
+
+		execSync("npm install --omit=dev", {
 			cwd: dir,
 			timeout: 120_000,
 			stdio: "pipe",
@@ -193,9 +217,9 @@ export class ArchiveInstaller {
 		try {
 			// Extract based on extension
 			if (archivePath.endsWith(".tar.gz") || archivePath.endsWith(".tgz")) {
-				this.extractTarGz(archivePath, tempDir);
+				await this.extractTarGz(archivePath, tempDir);
 			} else if (archivePath.endsWith(".zip")) {
-				this.extractZip(archivePath, tempDir);
+				await this.extractZip(archivePath, tempDir);
 			} else {
 				throw new Error(
 					`Unsupported archive format: ${archivePath}. Use .tar.gz, .tgz, or .zip`,
@@ -231,7 +255,7 @@ export class ArchiveInstaller {
 			try {
 				mkdirSync(dirname(targetDir), { recursive: true });
 				cpSync(sourceDir, targetDir, { recursive: true });
-				this.npmInstall(targetDir);
+				await this.npmInstall(targetDir);
 			} catch (err) {
 				this.restoreBackup(targetDir, backup);
 				throw err;
@@ -284,13 +308,15 @@ export class ArchiveInstaller {
 
 		const tempDir = join(this.archiveTempDir ?? tmpdir(), `fan-store-install-${Date.now()}`);
 		const archivePath = join(tempDir, `${pkg.name}-${pkg.version}.tar.gz`);
+		const extractDir = join(tempDir, "extract");
 		mkdirSync(tempDir, { recursive: true });
 
 		try {
 			await this.repoClient.downloadPackage(pkg, archivePath, signal);
-			this.extractTarGz(archivePath, tempDir);
+			mkdirSync(extractDir, { recursive: true });
+			await this.extractTarGz(archivePath, extractDir);
 
-			const { dir: sourceDir } = this.findWrapperDir(tempDir);
+			const { dir: sourceDir } = this.findWrapperDir(extractDir);
 			const detectedType = this.detectType(sourceDir) ?? pkg.type;
 			if (detectedType === "bundle") {
 				return await this.installBundle(sourceDir, scope, "repo", pkg);
@@ -301,7 +327,7 @@ export class ArchiveInstaller {
 			try {
 				mkdirSync(dirname(targetDir), { recursive: true });
 				cpSync(sourceDir, targetDir, { recursive: true });
-				this.npmInstall(targetDir);
+				await this.npmInstall(targetDir);
 			} catch (err) {
 				this.restoreBackup(targetDir, backup);
 				throw err;
@@ -357,7 +383,7 @@ export class ArchiveInstaller {
 					mkdirSync(dirname(targetDir), { recursive: true });
 					cpSync(entryPath, targetDir, { recursive: true });
 					if (type === "extension") {
-						this.npmInstall(targetDir);
+						await this.npmInstall(targetDir);
 					}
 				} catch (err) {
 					this.restoreBackup(targetDir, backup);

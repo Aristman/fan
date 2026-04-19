@@ -17,7 +17,7 @@ set -euo pipefail
 # ── Config ──────────────────────────────────────────────
 REMOTE_HOST="root@185.219.41.46"
 REMOTE_PATH="/var/www/fan-repo"
-REPO_URL="http://185.219.41.46"
+REPO_URL="http://185.219.41.46/fan"
 REPO_DIR=""
 
 # ── Colors ──────────────────────────────────────────────
@@ -462,7 +462,7 @@ cmd_help() {
     echo "  help                   Show this help"
     echo ""
     echo "Default server: root@185.219.41.46:/var/www/fan-repo"
-    echo "Default URL:    http://185.219.41.46/"
+    echo "Default URL:    http://185.219.41.46/fan/"
     echo "Environment:"
     echo "  FAN_REPO_DIR           Override repository directory"
     echo ""

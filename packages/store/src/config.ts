@@ -5,8 +5,9 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { homedir, tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { getAgentDir } from "@itone/fan-coding-agent";
+import { tmpdir } from "node:os";
 import type { RepoEntry } from "./types.js";
 
 // ──────────────────────────────────────────────
@@ -37,8 +38,8 @@ const DEFAULTS: StoreConfig = {
 // Config paths
 // ──────────────────────────────────────────────
 
-const CONFIG_DIR = join(homedir(), ".fan", "agent");
-const CONFIG_PATH = join(CONFIG_DIR, "store.json");
+const CONFIG_PATH = join(getAgentDir(), "store.json");
+const CONFIG_DIR = dirname(CONFIG_PATH);
 
 // ──────────────────────────────────────────────
 // Config loader/saver
