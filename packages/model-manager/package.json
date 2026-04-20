@@ -1,6 +1,6 @@
 {
 	"name": "@fan/model-manager",
-	"version": "0.4.3",
+	"version": "0.4.5",
 	"description": "FAN model manager — provider routing, fallback chains, budget tracking",
 	"type": "module",
 	"main": "./dist/index.js",
