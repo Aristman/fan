@@ -328,7 +328,7 @@ export class ArchiveInstaller {
 		}
 
 		const bunPath = await this.ensureBun(onProgress);
-		await this.exec(bunPath, ["install", "--omit=dev", "--no-save"], dir, 120_000);
+		await this.exec(bunPath, ["install", "--omit=dev", "--no-save", "--ignore-scripts"], dir, 120_000);
 	}
 
 	/**
