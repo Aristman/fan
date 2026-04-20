@@ -9,7 +9,7 @@
 
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { cp, mkdir, readdir, rename, rm, stat } from "node:fs/promises";
+import { cp, mkdir, readdir, rm, stat } from "node:fs/promises";
 import { readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { homedir, tmpdir } from "node:os";
@@ -121,26 +121,59 @@ export class ArchiveInstaller {
 		return { dir: extractedDir, name: null };
 	}
 
-	/**
-	 * Backup existing installation before overwrite.
-	 */
+	// ──────────────────────────────────────────────
+	// Staging (all temp files outside extensions dir)
+	// ──────────────────────────────────────────────
+
+	/** Staging root for backups — never inside extensions directory. */
+	private get stagingDir(): string {
+		return join(this.archiveTempDir ?? tmpdir(), "fan-store-staging");
+	}
+
+	private async ensureStagingDir(): Promise<string> {
+		const dir = this.stagingDir;
+		await mkdir(dir, { recursive: true });
+		return dir;
+	}
+
+	/** Move existing installation to staging backup. */
 	private async backupExisting(targetPath: string): Promise<string | undefined> {
 		if (!existsSync(targetPath)) return undefined;
-		const backupPath = `${targetPath}.bak.${Date.now()}`;
+		const staging = await this.ensureStagingDir();
+		const backupName = `${basename(targetPath)}.bak.${Date.now()}`;
+		const backupPath = join(staging, backupName);
 		await cp(targetPath, backupPath, { recursive: true });
 		return backupPath;
 	}
 
-	/**
-	 * Restore from backup on failure.
-	 */
+	/** Remove backup from staging after successful install. */
+	private async cleanupBackup(backupPath: string | undefined): Promise<void> {
+		if (backupPath === undefined) return;
+		try {
+			await rm(backupPath, { recursive: true, force: true });
+		} catch { /* ignore */ }
+	}
+
+	/** Restore backup to target location on failure. */
 	private async restoreBackup(targetPath: string, backupPath: string | undefined): Promise<void> {
 		if (backupPath === undefined) return;
 		if (existsSync(targetPath)) {
 			await rm(targetPath, { recursive: true, force: true });
 		}
-		await rename(backupPath, targetPath);
+		await mkdir(dirname(targetPath), { recursive: true });
+		await cp(backupPath, targetPath, { recursive: true });
 	}
+
+	/** Clean up entire staging directory. */
+	async cleanupStaging(): Promise<void> {
+		try {
+			await rm(this.stagingDir, { recursive: true, force: true });
+		} catch { /* ignore */ }
+	}
+
+	// ──────────────────────────────────────────────
+	// Archive extraction
+	// ──────────────────────────────────────────────
 
 	/**
 	 * Extract .tar.gz archive to a directory.
@@ -171,11 +204,95 @@ export class ArchiveInstaller {
 		});
 	}
 
+	// ──────────────────────────────────────────────
+	// Dependency installation
+	// ──────────────────────────────────────────────
+
 	/**
-	 * Run npm install in a directory if package.json exists.
-	 * Strips workspace:* dependencies before install (not resolvable by npm).
+	 * Find or install bun CLI.
+	 * Search order: PATH → ~/.bun/bin → <fan.exe dir>/.bun/bin → auto-install.
 	 */
-	private async npmInstall(dir: string): Promise<void> {
+	private async ensureBun(onProgress?: ProgressCallback): Promise<string> {
+		// 1. Check PATH via Bun.which
+		try {
+			const gBun = globalThis as Record<string, unknown>;
+			const bunObj = gBun.Bun as Record<string, unknown> | undefined;
+			if (bunObj?.which) {
+				const found = (bunObj.which as (cmd: string) => string | null)("bun");
+				if (found) return found;
+			}
+		} catch { /* ignore */ }
+
+		const home = homedir();
+		const exe = process.platform === "win32" ? "bun.exe" : "bun";
+		const candidates: string[] = [
+			// 2. Standard bun install location
+			join(home, ".bun", "bin", exe),
+			// 3. Bundled with FAN binary (<fan.exe dir>/.bun/bin/)
+			join(dirname(process.execPath), ".bun", "bin", exe),
+		];
+
+		for (const c of candidates) {
+			if (existsSync(c)) return c;
+		}
+
+		// 4. Not found — install it
+		onProgress?.("installing", "Bun CLI not found, installing...");
+		await this.installBunCli();
+
+		// 5. Re-check after install
+		const stdPath = join(home, ".bun", "bin", exe);
+		if (existsSync(stdPath)) return stdPath;
+
+		try {
+			const gBun = globalThis as Record<string, unknown>;
+			const bunObj = gBun.Bun as Record<string, unknown> | undefined;
+			if (bunObj?.which) {
+				const found = (bunObj.which as (cmd: string) => string | null)("bun");
+				if (found) return found;
+			}
+		} catch { /* ignore */ }
+
+		throw new Error("Failed to install bun CLI automatically. Install it manually: https://bun.sh");
+	}
+
+	/**
+	 * Download and install bun CLI to ~/.bun/bin/.
+	 */
+	private async installBunCli(): Promise<void> {
+		if (process.platform === "win32") {
+			await new Promise<void>((resolve, reject) => {
+				execFile(
+					"powershell",
+					["-NoProfile", "-Command", "irm bun.sh/install.ps1 | iex"],
+					{ timeout: 120_000 },
+					(err) => {
+						if (err) reject(new Error(`Failed to install bun: ${err.message}`));
+						else resolve();
+					},
+				);
+			});
+		} else {
+			await new Promise<void>((resolve, reject) => {
+				execFile(
+					"/bin/sh",
+					["-c", "curl -fsSL https://bun.sh/install | bash"],
+					{ timeout: 120_000 },
+					(err) => {
+						if (err) reject(new Error(`Failed to install bun: ${err.message}`));
+						else resolve();
+					},
+				);
+			});
+		}
+	}
+
+	/**
+	 * Install dependencies in a directory using bun.
+	 * Strips workspace:* and @itone/* bare * dependencies from package.json
+	 * before install (not resolvable outside monorepo).
+	 */
+	private async installDeps(dir: string, onProgress?: ProgressCallback): Promise<void> {
 		const pkgJsonPath = join(dir, "package.json");
 		if (!existsSync(pkgJsonPath)) return;
 
@@ -210,13 +327,25 @@ export class ArchiveInstaller {
 			// If we can't read/parse package.json, skip cleanup and try install anyway
 		}
 
+		const bunPath = await this.ensureBun(onProgress);
+		await this.exec(bunPath, ["install", "--omit=dev", "--no-save"], dir, 120_000);
+	}
+
+	/**
+	 * Helper to exec a command with a promise.
+	 */
+	private exec(cmd: string, args: string[], cwd: string, timeout: number): Promise<void> {
 		return new Promise<void>((resolve, reject) => {
-			execFile("npm", ["install", "--omit=dev"], { cwd: dir, timeout: 120_000 }, (err) => {
-				if (err) reject(new Error(`npm install failed in ${dir}: ${err.message}`));
+			execFile(cmd, args, { cwd, timeout }, (err) => {
+				if (err) reject(new Error(`${cmd} failed in ${cwd}: ${err.message}`));
 				else resolve();
 			});
 		});
 	}
+
+	// ──────────────────────────────────────────────
+	// Public install methods
+	// ──────────────────────────────────────────────
 
 	/**
 	 * Install a package from a local archive file (.tar.gz or .zip).
@@ -281,8 +410,8 @@ export class ArchiveInstaller {
 				await mkdir(dirname(targetDir), { recursive: true });
 				await cp(sourceDir, targetDir, { recursive: true });
 
-				onProgress?.("installing", `Running npm install for ${pkgName}...`);
-				await this.npmInstall(targetDir);
+				onProgress?.("installing", `Installing dependencies for ${pkgName}...`);
+				await this.installDeps(targetDir, onProgress);
 			} catch (err) {
 				await this.restoreBackup(targetDir, backup);
 				throw err;
@@ -310,11 +439,16 @@ export class ArchiveInstaller {
 
 			onProgress?.("saving", "Saving package metadata...");
 			this.db.savePackage(installedPkg);
+
+			// Success — clean up backup
+			await this.cleanupBackup(backup);
+
 			onProgress?.("done", `Installed ${pkgName}`);
 			return installedPkg;
 		} finally {
 			onProgress?.("cleanup", "Cleaning up temporary files...");
 			await rm(tempDir, { recursive: true, force: true });
+			await this.cleanupStaging();
 		}
 	}
 
@@ -366,8 +500,8 @@ export class ArchiveInstaller {
 				await mkdir(dirname(targetDir), { recursive: true });
 				await cp(sourceDir, targetDir, { recursive: true });
 
-				onProgress?.("installing", `Running npm install for ${pkg.name}...`);
-				await this.npmInstall(targetDir);
+				onProgress?.("installing", `Installing dependencies for ${pkg.name}...`);
+				await this.installDeps(targetDir, onProgress);
 			} catch (err) {
 				await this.restoreBackup(targetDir, backup);
 				throw err;
@@ -389,11 +523,16 @@ export class ArchiveInstaller {
 
 			onProgress?.("saving", "Saving package metadata...");
 			this.db.savePackage(installedPkg);
+
+			// Success — clean up backup
+			await this.cleanupBackup(backup);
+
 			onProgress?.("done", `Installed ${pkg.name}`);
 			return installedPkg;
 		} finally {
 			onProgress?.("cleanup", "Cleaning up temporary files...");
 			await rm(tempDir, { recursive: true, force: true });
+			await this.cleanupStaging();
 		}
 	}
 
@@ -434,14 +573,16 @@ export class ArchiveInstaller {
 					await mkdir(dirname(targetDir), { recursive: true });
 					await cp(entryPath, targetDir, { recursive: true });
 					if (type === "extension") {
-						onProgress?.("installing", `Running npm install for ${entry}...`);
-						await this.npmInstall(targetDir);
+						onProgress?.("installing", `Installing dependencies for ${entry}...`);
+						await this.installDeps(targetDir, onProgress);
 					}
 				} catch (err) {
 					await this.restoreBackup(targetDir, backup);
 					throw err;
 				}
 				installedResources.push({ type, path: targetDir, name: entry });
+				// Success — clean up backup
+				await this.cleanupBackup(backup);
 			}
 		}
 
@@ -498,18 +639,8 @@ export class ArchiveInstaller {
 			await rm(targetPath, { recursive: true, force: true });
 		}
 
-		// Clean up .bak files too
-		onProgress?.("removing", "Cleaning up backups...");
-		const parentDir = dirname(targetPath);
-		if (existsSync(parentDir)) {
-			const siblings = await readdir(parentDir);
-			const targetBase = basename(targetPath);
-			for (const sibling of siblings) {
-				if (sibling.startsWith(targetBase + ".bak.")) {
-					await rm(join(parentDir, sibling), { recursive: true, force: true });
-				}
-			}
-		}
+		onProgress?.("removing", "Cleaning up staging...");
+		await this.cleanupStaging();
 
 		onProgress?.("saving", "Updating package database...");
 		this.db.removePackage(pkg.name);
