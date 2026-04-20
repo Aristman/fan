@@ -27,7 +27,14 @@ export interface StoreConfig {
 // ──────────────────────────────────────────────
 
 const DEFAULTS: StoreConfig = {
-	repositories: [],
+	repositories: [
+		{
+			name: "fan-repo",
+			url: "http://185.219.41.46/fan",
+			enabled: true,
+			priority: 1,
+		},
+	],
 	autoUpdateCheck: true,
 	autoUpdateCheckIntervalHours: 24,
 	installScope: "user",
