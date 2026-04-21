@@ -12,11 +12,11 @@
 #
 # Output:
 #   packages/coding-agent/binaries/
-#     fan-darwin-arm64.tar.gz
-#     fan-darwin-x64.tar.gz
-#     fan-linux-x64.tar.gz
-#     fan-linux-arm64.tar.gz
-#     fan-windows-x64.zip
+#     fan-0.4.5-darwin-arm64.tar.gz
+#     fan-0.4.5-darwin-x64.tar.gz
+#     fan-0.4.5-linux-x64.tar.gz
+#     fan-0.4.5-linux-arm64.tar.gz
+#     fan-0.4.5-windows-x64.zip
 
 set -euo pipefail
 
@@ -221,9 +221,8 @@ for platform in "${PLATFORMS[@]}"; do
 done
 
 # Create archives
+VERSION=$(node -e "console.log(require('./package.json').version)")
 cd binaries
-
-VERSION=$(node -e "console.log(require('../package.json').version)")
 
 for platform in "${PLATFORMS[@]}"; do
     if [[ "$platform" == "windows-x64" ]]; then
@@ -242,9 +241,9 @@ echo "==> Extracting archives for testing..."
 for platform in "${PLATFORMS[@]}"; do
     rm -rf $platform
     if [[ "$platform" == "windows-x64" ]]; then
-        mkdir -p $platform && (cd $platform && unzip -q ../fan-$platform.zip)
+        mkdir -p $platform && (cd $platform && unzip -q ../fan-$VERSION-$platform.zip)
     else
-        tar -xzf fan-$platform.tar.gz && mv fan $platform
+        tar -xzf fan-$VERSION-$platform.tar.gz && mv fan $platform
     fi
 done
 
@@ -258,41 +257,23 @@ for platform in "${PLATFORMS[@]}"; do
     echo "  binaries/$platform/fan"
 done
 
-# ─── Generate manifest.json ────────────────────────────────────
+# Generate manifest.json
 echo "==> Generating manifest.json..."
-VERSION=$(node -e "console.log(require('../package.json').version)")
-MANIFEST="{"
-MANIFEST+=\"\"latest\":\"$VERSION\","
-MANIFEST+=\"\"releasedAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\","
-MANIFEST+=\"\"releaseNotes\":\"\","
-MANIFEST+=\"\"platforms\":{"
-
-FIRST=true
-for platform in "${PLATFORMS[@]}"; do
-    if [[ "$platform" == "windows-x64" ]]; then
-        ARCHIVE="fan-$VERSION-$platform.zip"
-    else
-        ARCHIVE="fan-$VERSION-$platform.tar.gz"
-    fi
-
-    if [[ -f "$ARCHIVE" ]]; then
-        HASH=$(sha256sum "$ARCHIVE" | cut -d' ' -f1)
-        SIZE=$(stat -f%z "$ARCHIVE" 2>/dev/null || stat -c%s "$ARCHIVE" 2>/dev/null)
-
-        if [[ "$FIRST" == "true" ]]; then
-            FIRST=false
-        else
-            MANIFEST+=","
-        fi
-
-        MANIFEST+=\"\"$platform\":{"
-        MANIFEST+=\"\"url\":\"http://185.219.41.46/fan/dist/$ARCHIVE\","
-        MANIFEST+=\"\"hash\":\"sha256:$HASH\","
-        MANIFEST+=\"\"size\":$SIZE"
-        MANIFEST+=\"}"
-    fi
-done
-
-MANIFEST+=\"}}"
-echo "$MANIFEST" | python3 -m json.tool > manifest.json
-echo "Manifest written to packages/coding-agent/binaries/manifest.json"
+python3 << 'PYEOF'
+import json, hashlib, os, glob
+version = os.environ['VERSION']
+released_at = os.popen("date -u +%Y-%m-%dT%H:%M:%SZ").read().strip()
+platforms = {}
+for f in sorted(glob.glob(f"fan-{version}-*.tar.gz") + glob.glob(f"fan-{version}-*.zip")):
+    name = f.replace(f"fan-{version}-", "").replace(".tar.gz", "").replace(".zip", "")
+    h = hashlib.sha256(open(f, "rb").read()).hexdigest()
+    s = os.path.getsize(f)
+    platforms[name] = {"url": f"http://185.219.41.46/fan/dist/{f}", "hash": f"sha256:{h}", "size": s}
+manifest = {"latest": version, "releasedAt": released_at, "releaseNotes": "", "platforms": platforms}
+with open("manifest.json", "w") as out:
+    json.dump(manifest, out, indent=2)
+    out.write("\n")
+print(f"Manifest: {len(platforms)} platforms, version {version}")
+for name, p in sorted(platforms.items()):
+    print(f"  {name}: {p['size']} bytes")
+PYEOF
