@@ -20,7 +20,9 @@
 
 set -euo pipefail
 
-cd "$(dirname "$0")/.."
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+cd "$SCRIPT_DIR/.."
 
 SKIP_DEPS=false
 PLATFORM=""
@@ -278,3 +280,13 @@ print(f"Manifest: {len(platforms)} platforms, version {version}")
 for name, p in sorted(platforms.items()):
     print(f"  {name}: {p['size']} bytes")
 PYEOF
+
+# Copy artifacts to dist repo
+DIST_REPO="$HOME/fan-repo/dist"
+mkdir -p "$DIST_REPO"
+echo "==> Copying artifacts to $DIST_REPO/"
+cp -v manifest.json "$DIST_REPO/"
+cp -v fan-$VERSION-*.{tar.gz,zip} "$DIST_REPO/" 2>/dev/null
+cp -v "$SCRIPT_DIR/install.sh" "$DIST_REPO/"
+cp -v "$SCRIPT_DIR/install.ps1" "$DIST_REPO/"
+echo "==> Dist repo ready. Run: fan-repo publish"
