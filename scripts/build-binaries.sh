@@ -222,6 +222,7 @@ done
 
 # Create archives
 VERSION=$(node -e "console.log(require('./package.json').version)")
+export VERSION
 cd binaries
 
 for platform in "${PLATFORMS[@]}"; do
