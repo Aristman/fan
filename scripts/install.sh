@@ -88,6 +88,12 @@ resolve_install_dir() {
 
 # ─── Check if already installed ────────────────────────────────
 check_existing() {
+    # If INSTALL_PATH is a directory (e.g. from old install), remove it
+    if [ -d "${INSTALL_PATH}" ] && [ ! -f "${INSTALL_PATH}/fan" ]; then
+        warn "${INSTALL_PATH} is a directory — replacing with binary..."
+        rm -rf "${INSTALL_PATH}"
+    fi
+
     if [ -f "${INSTALL_PATH}" ]; then
         EXISTING_VERSION=$("${INSTALL_PATH}" --version 2>/dev/null || echo "unknown")
         if [ "${CI:-}" = "true" ]; then
