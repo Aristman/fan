@@ -187,8 +187,6 @@ for platform in "${PLATFORMS[@]}"; do
     mkdir -p binaries/$platform/assets
     cp dist/modes/interactive/assets/* binaries/$platform/assets/
     cp -r dist/core/export-html binaries/$platform/
-    cp -r docs binaries/$platform/
-    cp -r examples binaries/$platform/
 
     # Bundle FAN orchestrator assets
     cp -r "$ORCH_ASSETS_DIR/orchestrator" binaries/$platform/
