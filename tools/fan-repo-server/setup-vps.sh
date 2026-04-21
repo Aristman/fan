@@ -116,6 +116,23 @@ server {
         location ~ ^/packages/ {
             add_header Cache-Control "public, max-age=31536000, immutable";
         }
+
+        # Install scripts — always fresh
+        location ~ ^/dist/install\.(sh|ps1)$ {
+            add_header Cache-Control "no-cache, must-revalidate";
+            add_header Content-Type text/plain;
+        }
+
+        # Manifest — always fresh
+        location = /dist/manifest.json {
+            add_header Cache-Control "no-cache, must-revalidate";
+            add_header Content-Type application/json;
+        }
+
+        # Platform archives — immutable (versioned in filename)
+        location ~ ^/dist/fan-.*\.(tar\.gz|zip)$ {
+            add_header Cache-Control "public, max-age=31536000, immutable";
+        }
     }
 
     # Deny everything else
