@@ -53,7 +53,8 @@ export function getUpdateInstruction(packageName: string): string {
 	const method = detectInstallMethod();
 	switch (method) {
 		case "bun-binary":
-			return `Download from: https://github.com/itone/fan-mono/releases/latest`;
+			return `Run: fan update`;
+
 		case "pnpm":
 			return `Run: pnpm install -g ${packageName}`;
 		case "yarn":

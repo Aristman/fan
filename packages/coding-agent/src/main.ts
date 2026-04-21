@@ -51,6 +51,7 @@ import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { ExtensionSelectorComponent } from "./modes/interactive/components/extension-selector.js";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.js";
 import { handleConfigCommand, handlePackageCommand } from "./package-manager-cli.js";
+import { handleUpdateCommand } from "./cli/self-update.js";
 import { isLocalPath } from "./utils/paths.js";
 
 async function handleInitCommand(args: string[]): Promise<boolean> {
@@ -748,6 +749,10 @@ export async function main(args: string[]) {
 	}
 
 	if (await handlePackageCommand(args)) {
+		return;
+	}
+
+	if (await handleUpdateCommand(args)) {
 		return;
 	}
 

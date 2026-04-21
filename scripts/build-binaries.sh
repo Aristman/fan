@@ -223,15 +223,17 @@ done
 # Create archives
 cd binaries
 
+VERSION=$(node -e "console.log(require('../package.json').version)")
+
 for platform in "${PLATFORMS[@]}"; do
     if [[ "$platform" == "windows-x64" ]]; then
         # Windows (zip)
-        echo "Creating fan-$platform.zip..."
-        (cd $platform && zip -r ../fan-$platform.zip .)
+        echo "Creating fan-$VERSION-$platform.zip..."
+        (cd $platform && zip -r ../fan-$VERSION-$platform.zip .)
     else
         # Unix platforms (tar.gz) - use wrapper directory for mise compatibility
-        echo "Creating fan-$platform.tar.gz..."
-        mv $platform fan && tar -czf fan-$platform.tar.gz fan && mv fan $platform
+        echo "Creating fan-$VERSION-$platform.tar.gz..."
+        mv $platform fan && tar -czf fan-$VERSION-$platform.tar.gz fan && mv fan $platform
     fi
 done
 
@@ -255,3 +257,42 @@ echo "Extracted directories for testing:"
 for platform in "${PLATFORMS[@]}"; do
     echo "  binaries/$platform/fan"
 done
+
+# ─── Generate manifest.json ────────────────────────────────────
+echo "==> Generating manifest.json..."
+VERSION=$(node -e "console.log(require('../package.json').version)")
+MANIFEST="{"
+MANIFEST+=\"\"latest\":\"$VERSION\","
+MANIFEST+=\"\"releasedAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\","
+MANIFEST+=\"\"releaseNotes\":\"\","
+MANIFEST+=\"\"platforms\":{"
+
+FIRST=true
+for platform in "${PLATFORMS[@]}"; do
+    if [[ "$platform" == "windows-x64" ]]; then
+        ARCHIVE="fan-$VERSION-$platform.zip"
+    else
+        ARCHIVE="fan-$VERSION-$platform.tar.gz"
+    fi
+
+    if [[ -f "$ARCHIVE" ]]; then
+        HASH=$(sha256sum "$ARCHIVE" | cut -d' ' -f1)
+        SIZE=$(stat -f%z "$ARCHIVE" 2>/dev/null || stat -c%s "$ARCHIVE" 2>/dev/null)
+
+        if [[ "$FIRST" == "true" ]]; then
+            FIRST=false
+        else
+            MANIFEST+=","
+        fi
+
+        MANIFEST+=\"\"$platform\":{"
+        MANIFEST+=\"\"url\":\"http://185.219.41.46/fan/dist/$ARCHIVE\","
+        MANIFEST+=\"\"hash\":\"sha256:$HASH\","
+        MANIFEST+=\"\"size\":$SIZE"
+        MANIFEST+=\"}"
+    fi
+done
+
+MANIFEST+=\"}}"
+echo "$MANIFEST" | python3 -m json.tool > manifest.json
+echo "Manifest written to packages/coding-agent/binaries/manifest.json"
