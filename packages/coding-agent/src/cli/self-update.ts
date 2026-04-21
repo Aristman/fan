@@ -6,7 +6,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, realpathSync, rmSync, statSync } from "node:fs";
 import { join, dirname, basename } from "node:path";
 import { tmpdir } from "node:os";
 import { spawn } from "node:child_process";
@@ -338,8 +338,8 @@ export async function performUpdate(options?: {
 		throw new Error(`Archive does not contain expected 'fan' directory.`);
 	}
 
-	// 8. Determine current install directory
-	const installDir = dirname(process.execPath);
+	// 8. Determine current install directory (resolve symlinks)
+	const installDir = dirname(realpathSync(process.execPath));
 	const backupDir = join(workDir, "backup");
 	mkdirSync(backupDir, { recursive: true });
 

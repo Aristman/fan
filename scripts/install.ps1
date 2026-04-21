@@ -3,11 +3,13 @@
 .SYNOPSIS
     FAN (fan) installer for Windows.
 .DESCRIPTION
-    Downloads and installs the latest FAN binary on Windows.
+    Downloads and installs the latest FAN on Windows.
     Usage:
         irm http://185.219.41.46/fan/dist/install.ps1 | iex
 .PARAMETER FAN_INSTALL_DIR
     Custom installation directory (default: $env:LOCALAPPDATA\fan)
+.EXAMPLE
+    $env:FAN_INSTALL_DIR = "D:\Tools\fan"; irm http://185.219.41.46/fan/dist/install.ps1 | iex
 #>
 
 $ErrorActionPreference = "Stop"
@@ -24,13 +26,14 @@ $platform = "windows-x64"
 Write-Info "Detected platform: $platform"
 
 # ─── Install directory ─────────────────────────────────────────
+# All fan files (binary + assets) live here
 $installDir = if ($env:FAN_INSTALL_DIR) { $env:FAN_INSTALL_DIR } else { "$env:LOCALAPPDATA\fan" }
-$installPath = Join-Path $installDir "fan.exe"
+$installBin = Join-Path $installDir "fan.exe"
 
 # ─── Check existing installation ───────────────────────────────
-if (Test-Path $installPath) {
+if (Test-Path $installBin) {
     try {
-        $existingVersion = & $installPath --version 2>$null
+        $existingVersion = & $installBin --version 2>$null
         if (-not $existingVersion) { $existingVersion = "unknown" }
     } catch {
         $existingVersion = "unknown"
@@ -39,7 +42,7 @@ if (Test-Path $installPath) {
     if ($env:CI -eq "true") {
         Write-Info "Reinstalling fan (current: $existingVersion)..."
     } else {
-        $answer = Read-Host "fan is already installed at $installPath (version $existingVersion). Reinstall? [y/N]"
+        $answer = Read-Host "fan is already installed at $installDir (version $existingVersion). Reinstall? [y/N]"
         if ($answer -notmatch '^[Yy](es)?$') {
             Write-Host "Aborted."
             exit 0
@@ -112,7 +115,6 @@ try {
     Write-Info "Extracting archive..."
 
     try {
-        # PowerShell 5.1 compatible: use .NET ZipFile or Expand-Archive
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         [System.IO.Compression.ZipFile]::ExtractToDirectory($archiveFile, $extractDir)
     } catch {
@@ -120,28 +122,40 @@ try {
         exit 1
     }
 
-    # Find the fan.exe inside the extracted 'fan' directory
-    $binarySrc = Join-Path $extractDir "fan\fan.exe"
-    if (-not (Test-Path $binarySrc)) {
-        Write-Err "Binary not found in archive at $binarySrc"
+    # Locate the extracted 'fan' directory (wrapper dir in zip)
+    $sourceDir = Join-Path $extractDir "fan"
+    if (-not (Test-Path $sourceDir)) {
+        Write-Err "Archive does not contain expected 'fan' directory"
         exit 1
     }
 
-    # ─── Install binary ────────────────────────────────────────
-    Write-Info "Installing fan to $installPath..."
-    if (-not (Test-Path $installDir)) {
+    $sourceBin = Join-Path $sourceDir "fan.exe"
+    if (-not (Test-Path $sourceBin)) {
+        Write-Err "Binary not found in archive at $sourceBin"
+        exit 1
+    }
+
+    # ─── Install: copy entire directory ────────────────────────
+    Write-Info "Installing to $installDir\..."
+
+    # Remove old installation contents
+    if (Test-Path $installDir) {
+        Get-ChildItem -Path $installDir -Exclude "config.json", "models.json" | Remove-Item -Recurse -Force
+    } else {
         New-Item -ItemType Directory -Path $installDir -Force | Out-Null
     }
 
-    Copy-Item -Path $binarySrc -Destination $installPath -Force
+    # Copy all files from extracted directory
+    Copy-Item -Path "$sourceDir\*" -Destination $installDir -Recurse -Force
 
     # ─── Verify installation ───────────────────────────────────
     try {
-        $installedVersion = & $installPath --version 2>$null
+        $installedVersion = & $installBin --version 2>$null
         if ($LASTEXITCODE -eq 0 -and $installedVersion) {
             Write-Ok "fan $installedVersion installed successfully!"
+            Write-Info "  Data:    $installDir\"
         } else {
-            Write-Err "Installation verification failed. Binary may not be executable."
+            Write-Err "Installation verification failed."
             exit 1
         }
     } catch {
@@ -167,6 +181,5 @@ try {
     Write-Host ""
 
 } finally {
-    # Cleanup
     Remove-Item -Path $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
 }

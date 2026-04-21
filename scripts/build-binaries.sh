@@ -229,9 +229,9 @@ cd binaries
 
 for platform in "${PLATFORMS[@]}"; do
     if [[ "$platform" == "windows-x64" ]]; then
-        # Windows (zip)
+        # Windows (zip) - use wrapper directory for consistency with Unix
         echo "Creating fan-$VERSION-$platform.zip..."
-        (cd $platform && zip -r ../fan-$VERSION-$platform.zip .)
+        mv $platform fan && (cd fan && zip -r ../fan-$VERSION-$platform.zip .) && mv fan $platform
     else
         # Unix platforms (tar.gz) - use wrapper directory for mise compatibility
         echo "Creating fan-$VERSION-$platform.tar.gz..."
