@@ -7,9 +7,11 @@ import type { StoreDatabase } from "./storage.js";
 import type { RepoClient } from "./repo-client.js";
 import type { ArchiveInstaller } from "./installer.js";
 import type { StoreConfig } from "./config.js";
-import type { RepoEntry } from "./types.js";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { homedir } from "node:os";
 import { saveConfig } from "./config.js";
-import { StoreBrowseComponent, type BrowseResult } from "./browse-component.js";
+import { showExtensionBrowser } from "./browse-component.js";
 import { ProgressOverlay } from "./progress-overlay.js";
 
 // ──────────────────────────────────────────────
@@ -54,6 +56,8 @@ export function registerStoreCommand(
 					return showRemove(ctx, subArgs);
 				case "update":
 					return showUpdate(ctx, subArgs);
+				case "self":
+					return showSelf(ctx);
 				case "browse":
 					return showBrowse(ctx, subArgs);
 				case "repos":
@@ -78,7 +82,8 @@ Commands:
   search <query>        Search available packages in repos
   install <source>      Install from repo or archive file
   remove <name>         Uninstall a package
-  update [name]         Check updates or update specific package
+  update [name|all]     Check updates or update package(s)
+  self                  Show fan-store version & self-update
   repos                 List configured repositories
   repos add <name> <url>  Add a repository
   repos remove <name>     Remove a repository`,
@@ -315,6 +320,10 @@ Commands:
 
 		const name = subArgs[0];
 
+		if (name === "all") {
+			return showUpdateAll(ctx);
+		}
+
 		if (name) {
 			const pkg = db.getPackage(name);
 			if (!pkg) {
@@ -354,14 +363,10 @@ Commands:
 								return;
 							}
 
-							onProgress("removing", `Removing ${name} v${pkg.version}...`);
-							await getInstaller().uninstall(pkg, onProgress);
-
-							onProgress("downloading", `Installing ${name} v${repoPkg.version}...`);
-							const updated = await getInstaller().installFromRepo(
+							const updated = await getInstaller().updateFromRepo(
+								pkg,
 								repoPkg,
 								config.repositories,
-								pkg.scope ?? "user",
 								overlay.signal,
 								onProgress,
 							);
@@ -425,116 +430,189 @@ Commands:
 		}
 	}
 
-	// ─── store browse ──────────────────────────
+	// ─── store self ──────────────────────────
 
-	async function showBrowse(ctx: Ctx, _subArgs: string[]): Promise<void> {
-		const config = getConfig();
-		const enabledRepos = config.repositories.filter((r) => r.enabled);
-
-		if (enabledRepos.length === 0) {
-			ctx.ui.notify(
-				"No repositories configured. Add one with /store repos add <name> <url>",
-				"error",
-			);
-			return;
-		}
-
-		// Step 1: Select repository (skip if only one)
-		let selectedRepo: RepoEntry;
-		if (enabledRepos.length === 1) {
-			selectedRepo = enabledRepos[0];
-		} else {
-			const repoOptions = enabledRepos.map((r) => `${r.name} — ${r.url}`);
-			const chosen = await ctx.ui.select(
-				"📦 Select repository",
-				repoOptions,
-			);
-			if (!chosen) return; // cancelled
-			const idx = repoOptions.indexOf(chosen);
-			if (idx === -1) return;
-			selectedRepo = enabledRepos[idx];
-		}
-
-		// Step 2: Fetch packages from repository
-		ctx.ui.setWorkingMessage("Fetching packages...");
-		let repoIndex;
-		try {
-			repoIndex = await getRepoClient().fetchIndex(selectedRepo.url);
-		} catch (err) {
-			ctx.ui.setWorkingMessage(undefined);
-			ctx.ui.notify(
-				`Failed to fetch from "${selectedRepo.name}": ${err instanceof Error ? err.message : String(err)}`,
-				"error",
-			);
-			return;
-		}
-		ctx.ui.setWorkingMessage(undefined);
-
-		if (repoIndex.packages.length === 0) {
-			ctx.ui.notify(`Repository "${selectedRepo.name}" has no packages.`, "info");
-			return;
-		}
-
-		// Step 3: Show interactive browser
+	async function showSelf(ctx: Ctx): Promise<void> {
 		const db = getDB();
-		const installed = db.getPackages();
+		const config = getConfig();
+		const EXTENSION_DIR = join(homedir(), ".fan", "agent", "extensions", "fan-store");
 
-		const result = await ctx.ui.custom<BrowseResult>(
-			(tui, themeInstance, keybindings, done) => {
-				return new StoreBrowseComponent(
-					repoIndex.packages,
-					installed,
-					selectedRepo.name,
-					tui,
-					themeInstance,
-					keybindings,
-					done,
+		// Read current version from package.json
+		let currentVersion = "unknown";
+		try {
+			const pkgJson = JSON.parse(
+				await readFile(join(EXTENSION_DIR, "package.json"), "utf-8"),
+			) as { version?: string };
+			if (pkgJson.version) currentVersion = pkgJson.version;
+		} catch { /* not found */ }
+
+		// Check for update in repos
+		let updateAvailable = false;
+		let latestVersion: string | undefined;
+		if (config.repositories.length > 0) {
+			try {
+				const selfPkg = await getRepoClient().getPackage("fan-store", config.repositories);
+				if (selfPkg && selfPkg.version !== currentVersion) {
+					updateAvailable = true;
+					latestVersion = selfPkg.version;
+				}
+			} catch { /* repos unreachable */ }
+		}
+
+		if (updateAvailable && latestVersion) {
+			const choice = await ctx.ui.select(
+				`📦 FAN Store v${currentVersion} — Update available: v${latestVersion}`,
+				["Update now", "Cancel"],
+			);
+			if (choice === "Update now") {
+				const selfPkg = await getRepoClient().getPackage("fan-store", config.repositories);
+				if (!selfPkg) {
+					ctx.ui.notify("Package fan-store not found in repositories.", "error");
+					return;
+				}
+
+				const result = await ctx.ui.custom<OperationResult>(
+					(tui, themeInstance, _keybindings, done) => {
+						const overlay = new ProgressOverlay(
+							tui,
+							themeInstance,
+							`Updating fan-store to v${latestVersion}...`,
+							() => done(CANCELLED),
+						);
+
+						(async () => {
+							try {
+								const onProgress = (_stage: string, detail?: string) => {
+									overlay.setMessage(detail ?? _stage);
+								};
+
+								// Ensure fan-store is tracked in DB
+								let existing = db.getPackage("fan-store");
+								if (!existing) {
+									db.savePackage({
+										name: "fan-store",
+										version: currentVersion,
+										type: "extension",
+										source: "local",
+										installedAt: Date.now(),
+										installedPath: EXTENSION_DIR,
+										scope: "user",
+									});
+									existing = db.getPackage("fan-store");
+								}
+								if (!existing) throw new Error("Failed to create fan-store DB entry");
+
+								await getInstaller().stageUpdate(selfPkg, EXTENSION_DIR, overlay.signal, onProgress);
+								done({
+									success: true,
+									message: `📦 fan-store v${latestVersion} staged. Update will apply on next session start.`,
+								});
+							} catch (err) {
+								if (overlay.signal.aborted) {
+									done(CANCELLED);
+								} else {
+									done({
+										success: false,
+										message: `❌ Self-update failed: ${err instanceof Error ? err.message : String(err)}`,
+									});
+								}
+							}
+						})();
+
+						return overlay;
+					},
 				);
-			},
+
+				if (result.cancelled) return;
+				if (result.success) {
+					ctx.ui.notify(result.message, "info");
+				} else {
+					ctx.ui.notify(result.message, "error");
+				}
+			}
+		} else {
+			ctx.ui.notify(`📦 FAN Store v${currentVersion} — Up to date`, "info");
+		}
+	}
+
+	// ─── store update all ────────────────────
+
+	async function showUpdateAll(ctx: Ctx): Promise<void> {
+		const db = getDB();
+		const config = getConfig();
+
+		if (config.repositories.length === 0) {
+			ctx.ui.notify("No repositories configured.", "error");
+			return;
+		}
+
+		const packages = db.getPackages();
+		const updatable = packages.filter(
+			(p) => p.source === "repo" && p.updateAvailable,
 		);
 
-		// Step 4: Handle result
-		if (!result || result.action === "cancel" || !result.packageName) {
+		if (updatable.length === 0) {
+			ctx.ui.notify("✅ All packages are up to date.", "info");
 			return;
 		}
 
-		const pkgName = result.packageName;
-		const scope = config.installScope;
+		const confirm = await ctx.ui.select(
+			`Update ${updatable.length} package(s)?`,
+			["Yes, update all", "Cancel"],
+		);
+		if (confirm !== "Yes, update all") return;
 
-		// Step 5: Install with progress overlay
-		const installResult = await ctx.ui.custom<OperationResult>(
+		const result = await ctx.ui.custom<OperationResult>(
 			(tui, themeInstance, _keybindings, done) => {
 				const overlay = new ProgressOverlay(
 					tui,
 					themeInstance,
-					`Installing ${pkgName}...`,
+					`Updating 0/${updatable.length} packages...`,
 					() => done(CANCELLED),
 				);
 
 				(async () => {
 					try {
-						const onProgress = (_stage: string, detail?: string) => {
-							overlay.setMessage(detail ?? _stage);
-						};
+						let successCount = 0;
+						let failCount = 0;
+						const errors: string[] = [];
 
-						const pkg = await getRepoClient().getPackage(pkgName, config.repositories);
-						if (!pkg) {
-							done({ success: false, message: `Package "${pkgName}" not found in repository.` });
-							return;
+						for (const pkg of updatable) {
+							if (overlay.signal.aborted) {
+								done(CANCELLED);
+								return;
+							}
+
+							overlay.setMessage(`Updating ${pkg.name} (${successCount + failCount + 1}/${updatable.length})...`);
+
+							try {
+								const repoPkg = await getRepoClient().getPackage(pkg.name, config.repositories);
+								if (!repoPkg) {
+									errors.push(`${pkg.name}: not found in repos`);
+									failCount++;
+									continue;
+								}
+								await getInstaller().updateFromRepo(pkg, repoPkg, config.repositories, overlay.signal);
+								successCount++;
+							} catch (err) {
+								errors.push(`${pkg.name}: ${err instanceof Error ? err.message : String(err)}`);
+								failCount++;
+							}
 						}
 
-						const installedPkg = await getInstaller().installFromRepo(pkg, config.repositories, scope, overlay.signal, onProgress);
-						done({
-							success: true,
-							message: `✅ Installed ${installedPkg.name} (${installedPkg.type}) v${installedPkg.version}\nPath: ${installedPkg.installedPath}`,
-						});
+						let msg = `📦 Updated ${successCount} package(s).`;
+						if (failCount > 0) {
+							msg += ` ${failCount} failed:\n${errors.join("\n")}`;
+						}
+
+						done({ success: failCount === 0, message: msg });
 					} catch (err) {
 						if (overlay.signal.aborted) {
 							done(CANCELLED);
 						} else {
 							done({
 								success: false,
-								message: `❌ Install failed: ${err instanceof Error ? err.message : String(err)}`,
+								message: `❌ Batch update failed: ${err instanceof Error ? err.message : String(err)}`,
 							});
 						}
 					}
@@ -544,20 +622,22 @@ Commands:
 			},
 		);
 
-		if (installResult.cancelled) {
-			return;
-		}
+		if (result.cancelled) return;
+		ctx.ui.notify(result.message, result.success ? "info" : "error");
 
-		if (installResult.success) {
-			ctx.ui.notify(installResult.message, "info");
+		if (result.success) {
 			try {
 				await ctx.reload();
 			} catch {
-				ctx.ui.notify("Run /reload to activate the new package.", "info");
+				ctx.ui.notify("Run /reload to activate updates.", "info");
 			}
-		} else {
-			ctx.ui.notify(installResult.message, "error");
 		}
+	}
+
+	// ─── store browse ──────────────────────────
+
+	async function showBrowse(ctx: Ctx, _subArgs: string[]): Promise<void> {
+		await showExtensionBrowser(ctx, getDB(), getRepoClient(), getInstaller(), getConfig());
 	}
 
 	// ─── store repos ──────────────────────────

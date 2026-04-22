@@ -12,7 +12,11 @@
  */
 
 import type { ExtensionFactory } from "@itone/fan-coding-agent";
+import { join } from "node:path";
+import { homedir } from "node:os";
+import { readFile } from "node:fs/promises";
 import { loadConfig } from "./config.js";
+import { showExtensionBrowser } from "./browse-component.js";
 import { StoreDatabase } from "./storage.js";
 import { RepoClient } from "./repo-client.js";
 import { ArchiveInstaller } from "./installer.js";
@@ -36,10 +40,31 @@ export const storeExtension: ExtensionFactory = (pi) => {
 	// Register command
 	registerStoreCommand(pi, getDB, getRepoClient, getInstaller, getConfig);
 
+	// Register ALT+S shortcut for extension browser
+	pi.registerShortcut("alt+s", {
+		description: "Browse extension repositories",
+		handler: (ctx) => {
+			showExtensionBrowser(ctx, db, repoClient, installer, config);
+		},
+	});
+
 	// Session lifecycle
 	pi.on("session_start", async (_event, ctx) => {
 		// Reload config on each session (user may have modified it)
 		config = loadConfig();
+
+		// ─── Phase 0: Apply staged self-update if pending ───
+		const SELF_EXTENSION_DIR = join(homedir(), ".fan", "agent", "extensions", "fan-store");
+		const staged = installer.getStagedUpdate(SELF_EXTENSION_DIR);
+		if (staged) {
+			try {
+				ctx.ui.setStatus("store", `📦 Applying fan-store update → v${staged.version}...`);
+				const appliedVersion = await installer.applyStagedUpdate(SELF_EXTENSION_DIR);
+				ctx.ui.notify(`📦 fan-store updated → v${appliedVersion}. Run /reload to activate.`, "info");
+			} catch (err) {
+				ctx.ui.notify(`Self-update failed: ${err instanceof Error ? err.message : String(err)}`, "error");
+			}
+		}
 
 		const packages = db.getPackages();
 		const updateCount = packages.filter((p) => p.updateAvailable).length;
@@ -72,6 +97,45 @@ export const storeExtension: ExtensionFactory = (pi) => {
 					ctx.ui.setStatus("store", `📦 Store: ${packages.length} packages (⚠ update check failed)`);
 				}
 			}
+		}
+
+		// Always check if fan-store itself has an update in repos
+		try {
+			const selfPkg = await repoClient.getPackage("fan-store", config.repositories);
+			if (selfPkg) {
+				const installedSelf = db.getPackage("fan-store");
+				if (!installedSelf) {
+					// Track fan-store in DB even if installed manually
+					let selfVersion = "unknown";
+					try {
+						const pkgJson = JSON.parse(
+							await readFile(join(SELF_EXTENSION_DIR, "package.json"), "utf-8"),
+						) as { version?: string };
+						if (pkgJson.version) selfVersion = pkgJson.version;
+					} catch { /* not found */ }
+
+					db.savePackage({
+						name: "fan-store",
+						version: selfVersion,
+						type: "extension",
+						source: "local",
+						installedAt: Date.now(),
+						installedPath: SELF_EXTENSION_DIR,
+						scope: "user",
+					});
+				}
+
+				const currentSelf = db.getPackage("fan-store");
+				if (currentSelf && selfPkg.version !== currentSelf.version) {
+					db.updatePackage("fan-store", { updateAvailable: true, updateVersion: selfPkg.version });
+					const allPkgs = db.getPackages();
+					const updateCount = allPkgs.filter((p) => p.updateAvailable).length;
+					ctx.ui.setStatus("store", `📦 Store: ${allPkgs.length} packages (${updateCount} update${updateCount > 1 ? "s" : ""})`);
+					ctx.ui.notify(`📦 fan-store update available: v${currentSelf.version} → v${selfPkg.version}`, "info");
+				}
+			}
+		} catch {
+			// ignore self-check failures
 		}
 	});
 };

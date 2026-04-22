@@ -8,7 +8,7 @@
  */
 
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { cp, mkdir, readdir, rm, stat } from "node:fs/promises";
 import { readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
@@ -162,6 +162,53 @@ export class ArchiveInstaller {
 		}
 		await mkdir(dirname(targetPath), { recursive: true });
 		await cp(backupPath, targetPath, { recursive: true });
+	}
+
+	/**
+	 * Merge-copy files from source to target. Does NOT delete extra files in target.
+	 * Used for updates — overlays new files while preserving user-created files.
+	 */
+	private async mergeCopy(sourceDir: string, targetDir: string): Promise<void> {
+		await mkdir(targetDir, { recursive: true });
+		const entries = await readdir(sourceDir);
+		for (const entry of entries) {
+			const src = join(sourceDir, entry);
+			const dst = join(targetDir, entry);
+			try {
+				if ((await stat(src)).isDirectory()) {
+					await cp(src, dst, { recursive: true, force: true });
+				} else {
+					await cp(src, dst, { force: true });
+				}
+			} catch {
+				// skip individual file errors during merge
+			}
+		}
+	}
+
+	/**
+	 * Apply update cleanup manifest. Reads update-cleanup.json from targetDir,
+	 * deletes each listed path relative to targetDir, then removes the manifest.
+	 */
+	private async applyUpdateCleanup(targetDir: string): Promise<void> {
+		const manifestPath = join(targetDir, "update-cleanup.json");
+		if (!existsSync(manifestPath)) return;
+		try {
+			const raw = await readFile(manifestPath, "utf-8");
+			const manifest = JSON.parse(raw) as { remove?: string[] };
+			if (Array.isArray(manifest.remove)) {
+				for (const relPath of manifest.remove) {
+					const safePath = this.validatePath(targetDir, relPath);
+					if (existsSync(safePath)) {
+						await rm(safePath, { recursive: true, force: true });
+					}
+				}
+			}
+		} catch {
+			// ignore corrupt manifest
+		} finally {
+			await rm(manifestPath, { force: true }).catch(() => {});
+		}
 	}
 
 	/** Clean up entire staging directory. */
@@ -534,6 +581,189 @@ export class ArchiveInstaller {
 			await rm(tempDir, { recursive: true, force: true });
 			await this.cleanupStaging();
 		}
+	}
+
+	/**
+	 * Update an installed package from a repository.
+	 * Does NOT uninstall — uses merge-copy + cleanup manifest.
+	 * This preserves user-created files in the extension directory.
+	 */
+	async updateFromRepo(
+		pkg: InstalledPackage,
+		repoPkg: RepoPackage,
+		repos: RepoEntry[],
+		signal?: AbortSignal,
+		onProgress?: ProgressCallback,
+	): Promise<InstalledPackage> {
+		const targetDir = pkg.installedPath;
+		const tempDir = join(this.archiveTempDir ?? tmpdir(), `fan-store-update-${Date.now()}`);
+		const archivePath = join(tempDir, `${pkg.name}-${repoPkg.version}.tar.gz`);
+		const extractDir = join(tempDir, "extract");
+		await mkdir(tempDir, { recursive: true });
+
+		try {
+			onProgress?.("downloading", `Downloading ${pkg.name} v${repoPkg.version}...`);
+			await this.repoClient.downloadPackage(repoPkg, archivePath, signal);
+
+			onProgress?.("extracting", `Extracting ${pkg.name}...`);
+			await mkdir(extractDir, { recursive: true });
+			await this.extractTarGz(archivePath, extractDir);
+
+			onProgress?.("detecting", "Detecting package structure...");
+			const { dir: sourceDir } = await this.findWrapperDir(extractDir);
+
+			const backup = await this.backupExisting(targetDir);
+
+			try {
+				onProgress?.("installing", `Updating files for ${pkg.name}...`);
+				await this.mergeCopy(sourceDir, targetDir);
+				await this.applyUpdateCleanup(targetDir);
+
+				onProgress?.("installing", `Installing dependencies for ${pkg.name}...`);
+				await this.installDeps(targetDir, onProgress);
+			} catch (err) {
+				await this.restoreBackup(targetDir, backup);
+				throw err;
+			}
+
+			onProgress?.("saving", "Updating package metadata...");
+			this.db.updatePackage(pkg.name, {
+				version: repoPkg.version,
+				updateAvailable: false,
+				updateVersion: undefined,
+				downloadUrl: repoPkg.downloadUrl,
+				hash: repoPkg.hash,
+			});
+
+			// Success — clean up backup
+			await this.cleanupBackup(backup);
+
+			const updated = this.db.getPackage(pkg.name);
+			onProgress?.("done", `Updated ${pkg.name} to v${repoPkg.version}`);
+			return updated!;
+		} finally {
+			onProgress?.("cleanup", "Cleaning up temporary files...");
+			await rm(tempDir, { recursive: true, force: true });
+			await this.cleanupStaging();
+		}
+	}
+
+	// ──────────────────────────────────────────────
+	// Self-update (staged two-phase)
+	// ──────────────────────────────────────────────
+
+	/**
+	 * Stage a self-update: download archive to data/ without applying.
+	 * The update is applied on the next session_start via applyStagedUpdate().
+	 */
+	async stageUpdate(
+		pkg: RepoPackage,
+		extensionDir: string,
+		signal?: AbortSignal,
+		onProgress?: ProgressCallback,
+	): Promise<{ version: string; stagedPath: string }> {
+		const dataDir = join(extensionDir, "data");
+		await mkdir(dataDir, { recursive: true });
+
+		onProgress?.("downloading", `Downloading fan-store v${pkg.version}...`);
+		const stagedPath = join(dataDir, `staged-update-${pkg.version}.tgz`);
+		await this.repoClient.downloadPackage(pkg, stagedPath, signal);
+
+		const markerPath = join(dataDir, "pending-update.json");
+		await writeFile(
+			markerPath,
+			JSON.stringify(
+				{
+					version: pkg.version,
+					stagedArchive: stagedPath,
+				downloadedAt: Date.now(),
+				},
+				null,
+				2,
+			),
+			"utf-8",
+		);
+
+		onProgress?.("done", `Staged fan-store update to v${pkg.version}`);
+		return { version: pkg.version, stagedPath };
+	}
+
+	/**
+	 * Check if a staged self-update is pending.
+	 */
+	getStagedUpdate(extensionDir: string): { version: string; stagedArchive: string } | null {
+		const markerPath = join(extensionDir, "data", "pending-update.json");
+		if (!existsSync(markerPath)) return null;
+		try {
+			return JSON.parse(
+				readFileSync(markerPath, "utf-8"),
+			) as { version: string; stagedArchive: string };
+		} catch {
+			return null;
+		}
+	}
+
+	/**
+	 * Apply a staged self-update. Must be called BEFORE ctx.reload().
+	 * Extracts staged archive, merge-copies over extension dir, applies cleanup.
+	 */
+	async applyStagedUpdate(extensionDir: string, onProgress?: ProgressCallback): Promise<string> {
+		const marker = this.getStagedUpdate(extensionDir);
+		if (!marker) throw new Error("No pending update found");
+
+		onProgress?.("extracting", "Extracting staged update...");
+		const tempDir = await this.extractArchiveOnly(marker.stagedArchive);
+		const { dir: sourceDir } = await this.findWrapperDir(tempDir);
+
+		try {
+			const backup = await this.backupExisting(extensionDir);
+
+			try {
+				onProgress?.("installing", "Applying update...");
+				await this.mergeCopy(sourceDir, extensionDir);
+				await this.applyUpdateCleanup(extensionDir);
+				onProgress?.("installing", "Installing dependencies...");
+				await this.installDeps(extensionDir, onProgress);
+			} catch (err) {
+				await this.restoreBackup(extensionDir, backup);
+				throw err;
+			}
+
+			// Clean up marker and staged archive
+			await rm(join(extensionDir, "data", "pending-update.json"), { force: true });
+			await rm(marker.stagedArchive, { force: true });
+
+			// Update DB
+			this.db.updatePackage("fan-store", {
+				version: marker.version,
+				updateAvailable: false,
+				updateVersion: undefined,
+			});
+
+			onProgress?.("done", `Self-updated fan-store to v${marker.version}`);
+			return marker.version;
+		} finally {
+			// Clean up temp extraction dir
+			await rm(tempDir, { recursive: true, force: true }).catch(() => {});
+		}
+	}
+
+	/**
+	 * Extract an archive to a temp directory (helper for self-update).
+	 * Returns the temp directory path.
+	 */
+	private async extractArchiveOnly(archivePath: string): Promise<string> {
+		const tempDir = join(this.archiveTempDir ?? tmpdir(), `fan-store-selfupdate-${Date.now()}`);
+		await mkdir(tempDir, { recursive: true });
+		if (archivePath.endsWith(".tar.gz") || archivePath.endsWith(".tgz")) {
+			await this.extractTarGz(archivePath, tempDir);
+		} else if (archivePath.endsWith(".zip")) {
+			await this.extractZip(archivePath, tempDir);
+		} else {
+			await rm(tempDir, { recursive: true, force: true });
+			throw new Error(`Unsupported archive format for self-update: ${archivePath}`);
+		}
+		return tempDir;
 	}
 
 	/**
