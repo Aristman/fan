@@ -279,14 +279,10 @@ export function registerStoreTools(
 					};
 				}
 
-				// Uninstall old, install new
-				onProgress("removing", `Removing ${pkg.name} v${pkg.version}...`);
-				await getInstaller().uninstall(pkg, onProgress);
-				onProgress("downloading", `Installing ${params.name} v${repoPkg.version}...`);
-				const updated = await getInstaller().installFromRepo(
+				const updated = await getInstaller().updateFromRepo(
+					pkg,
 					repoPkg,
 					config.repositories,
-					pkg.scope ?? "user",
 					signal,
 					onProgress,
 				);
