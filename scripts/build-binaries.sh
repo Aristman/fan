@@ -216,9 +216,16 @@ for platform in "${PLATFORMS[@]}"; do
     fi
 
     # Copy Prisma query engine for this platform
-    if [[ -n "${prisma_engine:-}" && -f ../../node_modules/.prisma/client/$prisma_engine ]]; then
+    # Bun stores generated client in its cache, not in node_modules/.prisma/client/
+    PRISMA_CLIENT_DIR=$(find ../../node_modules/.bun -path '*/.prisma/client' -type d 2>/dev/null | head -1)
+    if [[ -n "${prisma_engine:-}" && -n "${PRISMA_CLIENT_DIR:-}" && -f "$PRISMA_CLIENT_DIR/$prisma_engine" ]]; then
+        mkdir -p binaries/$platform/node_modules/.prisma/client
+        cp "$PRISMA_CLIENT_DIR/$prisma_engine" binaries/$platform/node_modules/.prisma/client/
+    elif [[ -n "${prisma_engine:-}" && -f ../../node_modules/.prisma/client/$prisma_engine ]]; then
         mkdir -p binaries/$platform/node_modules/.prisma/client
         cp ../../node_modules/.prisma/client/$prisma_engine binaries/$platform/node_modules/.prisma/client/
+    else
+        echo "  ⚠ Warning: Prisma engine '$prisma_engine' not found (checked bun cache and node_modules/.prisma/client/)"
     fi
 done
 
@@ -231,7 +238,7 @@ for platform in "${PLATFORMS[@]}"; do
     if [[ "$platform" == "windows-x64" ]]; then
         # Windows (zip) - use wrapper directory for consistency with Unix
         echo "Creating fan-$VERSION-$platform.zip..."
-        mv $platform fan && (cd fan && zip -r ../fan-$VERSION-$platform.zip .) && mv fan $platform
+        mv $platform fan && zip -rq fan-$VERSION-$platform.zip fan && mv fan $platform
     else
         # Unix platforms (tar.gz) - use wrapper directory for mise compatibility
         echo "Creating fan-$VERSION-$platform.tar.gz..."
@@ -244,7 +251,7 @@ echo "==> Extracting archives for testing..."
 for platform in "${PLATFORMS[@]}"; do
     rm -rf $platform
     if [[ "$platform" == "windows-x64" ]]; then
-        mkdir -p $platform && (cd $platform && unzip -q ../fan-$VERSION-$platform.zip)
+        unzip -q fan-$VERSION-$platform.zip && mv fan $platform
     else
         tar -xzf fan-$VERSION-$platform.tar.gz && mv fan $platform
     fi

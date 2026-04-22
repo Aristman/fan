@@ -748,11 +748,11 @@ export async function main(args: string[]) {
 		process.env.FAN_SKIP_VERSION_CHECK = "1";
 	}
 
-	if (await handlePackageCommand(args)) {
+	if (await handleUpdateCommand(args)) {
 		return;
 	}
 
-	if (await handleUpdateCommand(args)) {
+	if (await handlePackageCommand(args)) {
 		return;
 	}
 

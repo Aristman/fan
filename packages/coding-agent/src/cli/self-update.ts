@@ -6,7 +6,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, readdirSync, realpathSync, rmSync, statSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, renameSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, dirname, basename } from "node:path";
 import { tmpdir } from "node:os";
 import { spawn } from "node:child_process";
@@ -14,7 +14,7 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import chalk from "chalk";
 import { isBunBinary, VERSION } from "../config.js";
-import extractZip = require("extract-zip");
+// extract-zip removed: used child_process unzip to avoid runtime dependency in bun binary
 
 // =============================================================================
 // Types
@@ -262,6 +262,35 @@ function copyRecursive(src: string, dest: string): void {
 	}
 }
 
+/** Extract .zip archive using system tools (no extract-zip dependency needed in bun binary) */
+function extractZipArchive(archivePath: string, destDir: string): Promise<void> {
+	return new Promise((resolve, reject) => {
+		let child: import("child_process").ChildProcess;
+		if (process.platform === "win32") {
+			// Windows: use PowerShell Expand-Archive
+			child = spawn(
+				"powershell.exe",
+				["-NoProfile", "-Command", `Expand-Archive -Path '${archivePath}' -DestinationPath '${destDir}' -Force`],
+				{ stdio: "pipe" },
+			);
+		} else {
+			// Unix: use unzip
+			child = spawn("unzip", ["-q", "-o", archivePath, "-d", destDir], {
+				stdio: "pipe",
+			});
+		}
+		let stderr = "";
+		child.stderr?.on("data", (data: Buffer) => {
+			stderr += data.toString();
+		});
+		child.on("close", (code) => {
+			if (code === 0) resolve();
+			else reject(new Error(`zip extraction failed (exit code ${code}): ${stderr}`));
+		});
+		child.on("error", reject);
+	});
+}
+
 /** Format bytes to human-readable string */
 function formatBytes(bytes: number): string {
 	if (bytes < 1024) return `${bytes} B`;
@@ -325,7 +354,7 @@ export async function performUpdate(options?: {
 
 	console.log(chalk.dim("Extracting archive..."));
 	if (archiveFileName.endsWith(".zip")) {
-		await extractZip(archivePath, { dir: extractDir });
+		await extractZipArchive(archivePath, extractDir);
 	} else if (archiveFileName.endsWith(".tar.gz")) {
 		await extractTarGz(archivePath, extractDir);
 	} else {
@@ -359,14 +388,71 @@ export async function performUpdate(options?: {
 		}
 	}
 
-	// 10. Copy new binary (chmod +x if not Windows)
+	// 10. Install new binary
 	console.log(chalk.dim("Installing new binary..."));
-	copyFileSync(newBinary, currentBinary);
-	if (process.platform !== "win32") {
+
+	if (process.platform === "win32") {
+		// Windows: cannot overwrite a running .exe (EBUSY).
+		// Spawn a detached batch helper that waits for this process to exit,
+		// then copies the new binary and cleans up temp files.
+		const helperPath = join(workDir, "apply-update.bat");
+		const bat = [
+			"@echo off",
+			"chcp 65001 >NUL 2>&1",
+			`set "PID=${process.pid}"`,
+			`set "SRC=${newBinary.replace(/\//g, "\\")}"`,
+			`set "DST=${currentBinary.replace(/\//g, "\\")}"`,
+			`set "WORK=${workDir.replace(/\//g, "\\")}"`,
+			":waitloop",
+			`tasklist /FI "PID eq %PID%" 2>NUL | find "%PID%" >NUL`,
+			"if not errorlevel 1 (",
+			"  timeout /t 1 /nobreak >NUL",
+			"  goto waitloop",
+			")",
+			`copy /Y "%SRC%" "%DST%" >NUL 2>&1`,
+			"if errorlevel 1 (",
+			"  echo Failed to apply update: could not copy binary.",
+			"  pause",
+			"  exit /b 1",
+			")",
+			`rd /S /Q "%WORK%" >NUL 2>&1`,
+			"exit /b 0",
+		].join("\r\n");
+		writeFileSync(helperPath, bat, "utf-8");
+		spawn("cmd.exe", ["/C", helperPath], {
+			detached: true,
+			stdio: "ignore",
+			windowsHide: true,
+		}).unref();
+	} else {
+		// Linux/macOS: rename() atomically replaces the running binary.
+		// The kernel keeps the old inode alive for the running process;
+		// the path now points to the new binary.
+		try {
+			renameSync(newBinary, currentBinary);
+		} catch (renameErr) {
+			// Cross-filesystem rename fails with EXDEV — copy to staging then rename
+			if ((renameErr as NodeJS.ErrnoException).code === "EXDEV") {
+				const staging = join(installDir, `.fan-update-${Date.now()}`);
+				try {
+					copyFileSync(newBinary, staging);
+					renameSync(staging, currentBinary);
+				} catch (innerErr) {
+					try {
+						rmSync(staging, { force: true });
+					} catch {
+						/* ignore */
+					}
+					throw innerErr;
+				}
+			} else {
+				throw renameErr;
+			}
+		}
 		require("node:fs").chmodSync(currentBinary, 0o755);
 	}
 
-	// 11. Copy new assets
+	// 11. Copy new assets (not locked by the running process)
 	console.log(chalk.dim("Installing assets..."));
 	for (const asset of UPDATE_ASSETS) {
 		const newAsset = join(sourceDir, asset);
@@ -380,18 +466,27 @@ export async function performUpdate(options?: {
 		}
 	}
 
-	// 12. Clean up temp + backup
-	try {
-		rmSync(workDir, { recursive: true, force: true });
-	} catch {
-		// Non-critical: temp files will be cleaned by OS eventually
+	// 12. Clean up temp + backup (skip on Windows — helper script handles it)
+	if (process.platform !== "win32") {
+		try {
+			rmSync(workDir, { recursive: true, force: true });
+		} catch {
+			// Non-critical: temp files will be cleaned by OS eventually
+		}
 	}
 
-	// 13. Print success message
+	// 13. Print result
 	console.log("");
-	console.log(chalk.green.bold("✓ Update complete!"));
-	console.log(chalk.dim(`  Updated from ${chalk.white(VERSION)} to ${chalk.white(manifest.latest)}`));
-	console.log(chalk.dim(`  Installed to: ${chalk.white(installDir)}`));
+	if (process.platform === "win32") {
+		console.log(chalk.green.bold("✓ Update staged!"));
+		console.log(chalk.dim(`  ${chalk.white(VERSION)} → ${chalk.white(manifest.latest)}`));
+		console.log(chalk.dim("  The new binary will be installed when this process exits."));
+		console.log(chalk.dim(`  Installed to: ${chalk.white(installDir)}`));
+	} else {
+		console.log(chalk.green.bold("✓ Update complete!"));
+		console.log(chalk.dim(`  Updated from ${chalk.white(VERSION)} to ${chalk.white(manifest.latest)}`));
+		console.log(chalk.dim(`  Installed to: ${chalk.white(installDir)}`));
+	}
 	console.log("");
 }
 
@@ -408,6 +503,12 @@ export async function runSelfUpdate(args: string[]): Promise<boolean> {
 		force: args.includes("--force"),
 		json: args.includes("--json"),
 	};
+
+	// If there are non-flag arguments after "update", it's a package command (e.g. "fan update some-pkg")
+	const nonFlagArgs = args.slice(1).filter((a) => !a.startsWith("--"));
+	if (nonFlagArgs.length > 0 && !flags.check && !flags.force && !flags.json) {
+		return false; // Let handlePackageCommand handle it
+	}
 
 	// 1. Show current version
 	if (!flags.json) {

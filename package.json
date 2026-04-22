@@ -2,7 +2,7 @@
 	"name": "fan",
 	"private": true,
 	"type": "module",
-	"version": "0.4.5",
+	"version": "0.5.1",
 	"workspaces": [
 		"packages/*",
 		"packages/web-ui/example",

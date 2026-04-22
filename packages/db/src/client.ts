@@ -20,24 +20,41 @@ function getLibraryEngineName(): string {
 
 /**
  * Resolve the Prisma query engine path for standalone binaries.
- * In a bun-compiled binary, __dirname points inside the binary,
- * so Prisma can't find the engine. We resolve it relative to
- * the binary location or the package dir.
+ *
+ * In a bun-compiled binary, process.execPath and import.meta.dir point
+ * inside Bun's virtual filesystem (e.g. "B:/~BUN/root/fan.exe"), so
+ * neither can be used to locate real files on disk. Also, existsSync()
+ * may not see real filesystem files in bun compile.
+ *
+ * Instead, we unconditionally set the engine path based on well-known
+ * install directories. install.ps1 and install.sh always put files in
+ * deterministic locations.
  */
 function resolvePrismaEngine(): string | undefined {
-	const execDir = dirname(process.execPath);
 	const engineName = getLibraryEngineName();
+	const platform = process.platform;
 
-	const candidates = [
-		join(execDir, "node_modules", ".prisma", "client", engineName),
-		join(execDir, "..", "node_modules", ".prisma", "client", engineName),
-	];
-
-	for (const p of candidates) {
-		if (existsSync(p)) return p;
+	// 1. Well-known install directories
+	//    Windows: %LOCALAPPDATA%\fan\  (install.ps1 default)
+	//    Unix:    ~/.local/share/fan/    (install.sh default)
+	if (platform === "win32") {
+		if (process.env.LOCALAPPDATA) {
+			return join(process.env.LOCALAPPDATA, "fan", "node_modules", ".prisma", "client", engineName);
+		}
+		if (process.env.APPDATA) {
+			return join(process.env.APPDATA, "fan", "node_modules", ".prisma", "client", engineName);
+		}
+	} else {
+		return join(homedir(), ".local", "share", "fan", "node_modules", ".prisma", "client", engineName);
 	}
 
-	return undefined;
+	// 2. FAN_INSTALL_DIR override (from install scripts)
+	if (process.env.FAN_INSTALL_DIR) {
+		return join(process.env.FAN_INSTALL_DIR, "node_modules", ".prisma", "client", engineName);
+	}
+
+	// 3. process.execPath — works for dev mode (non-compiled)
+	return join(dirname(process.execPath), "node_modules", ".prisma", "client", engineName);
 }
 
 /** DDL statements for the initial schema (one per table/index) */

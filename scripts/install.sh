@@ -109,7 +109,7 @@ check_existing() {
         else
             printf "${YELLOW}fan is already installed (version ${EXISTING_VERSION}).${RESET}\n"
             printf "Reinstall? [y/N] "
-            read -r answer
+            read -r answer < /dev/tty
             case "$answer" in
                 y|Y|yes) ;;
                 *) echo "Aborted." && exit 0 ;;
