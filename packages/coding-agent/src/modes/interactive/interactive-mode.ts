@@ -43,9 +43,9 @@ import {
 	getAuthPath,
 	getDebugLogPath,
 	getShareViewerUrl,
-	getUpdateInstruction,
 	VERSION,
 } from "../../config.js";
+import { fetchManifest, UPDATE_SERVER_URL } from "../../cli/self-update.js";
 import { type AgentSession, type AgentSessionEvent, parseSkillBlock } from "../../core/agent-session.js";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.js";
 import type {
@@ -662,25 +662,14 @@ export class InteractiveMode {
 		}
 	}
 
-	/**
-	 * Check npm registry for a newer version.
-	 */
 	private async checkForNewVersion(): Promise<string | undefined> {
 		if (process.env.FAN_SKIP_VERSION_CHECK || process.env.FAN_OFFLINE) return undefined;
-
 		try {
-			const response = await fetch("https://registry.npmjs.org/@itone/fan-coding-agent/latest", {
-				signal: AbortSignal.timeout(10000),
-			});
-			if (!response.ok) return undefined;
-
-			const data = (await response.json()) as { version?: string };
-			const latestVersion = data.version;
-
-			if (latestVersion && latestVersion !== this.version) {
-				return latestVersion;
+			const manifest = await fetchManifest(AbortSignal.timeout(10000));
+			if (!manifest) return undefined;
+			if (manifest.latest && manifest.latest !== this.version) {
+				return manifest.latest;
 			}
-
 			return undefined;
 		} catch {
 			return undefined;
@@ -3113,19 +3102,15 @@ export class InteractiveMode {
 	}
 
 	showNewVersionNotification(newVersion: string): void {
-		const action = theme.fg("accent", getUpdateInstruction("@itone/fan-coding-agent"));
-		const updateInstruction = theme.fg("muted", `New version ${newVersion} is available. `) + action;
-		const changelogUrl = theme.fg(
-			"accent",
-			"https://github.com/itone/fan-mono/blob/main/packages/coding-agent/CHANGELOG.md",
-		);
-		const changelogLine = theme.fg("muted", "Changelog: ") + changelogUrl;
+		const updateLine = theme.fg("muted", "New version ") + theme.fg("accent", newVersion) + theme.fg("muted", " is available.");
+		const action = theme.fg("accent", "Run: fan update");
+		const changelogUrl = theme.fg("accent", `${UPDATE_SERVER_URL}/CHANGELOG.md`);
 
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new DynamicBorder((text) => theme.fg("warning", text)));
 		this.chatContainer.addChild(
 			new Text(
-				`${theme.bold(theme.fg("warning", "Update Available"))}\n${updateInstruction}\n${changelogLine}`,
+				`${theme.bold(theme.fg("warning", "Update Available"))}\n${updateLine}\n${action}\n${theme.fg("muted", "Changelog: ")}${changelogUrl}`,
 				1,
 				0,
 			),

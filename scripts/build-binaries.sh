@@ -12,15 +12,17 @@
 #
 # Output:
 #   packages/coding-agent/binaries/
-#     fan-darwin-arm64.tar.gz
-#     fan-darwin-x64.tar.gz
-#     fan-linux-x64.tar.gz
-#     fan-linux-arm64.tar.gz
-#     fan-windows-x64.zip
+#     fan-0.4.5-darwin-arm64.tar.gz
+#     fan-0.4.5-darwin-x64.tar.gz
+#     fan-0.4.5-linux-x64.tar.gz
+#     fan-0.4.5-linux-arm64.tar.gz
+#     fan-0.4.5-windows-x64.zip
 
 set -euo pipefail
 
-cd "$(dirname "$0")/.."
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+cd "$SCRIPT_DIR/.."
 
 SKIP_DEPS=false
 PLATFORM=""
@@ -187,8 +189,6 @@ for platform in "${PLATFORMS[@]}"; do
     mkdir -p binaries/$platform/assets
     cp dist/modes/interactive/assets/* binaries/$platform/assets/
     cp -r dist/core/export-html binaries/$platform/
-    cp -r docs binaries/$platform/
-    cp -r examples binaries/$platform/
 
     # Bundle FAN orchestrator assets
     cp -r "$ORCH_ASSETS_DIR/orchestrator" binaries/$platform/
@@ -216,24 +216,33 @@ for platform in "${PLATFORMS[@]}"; do
     fi
 
     # Copy Prisma query engine for this platform
-    if [[ -n "${prisma_engine:-}" && -f ../../node_modules/.prisma/client/$prisma_engine ]]; then
+    # Bun stores generated client in its cache, not in node_modules/.prisma/client/
+    PRISMA_CLIENT_DIR=$(find ../../node_modules/.bun -path '*/.prisma/client' -type d 2>/dev/null | head -1)
+    if [[ -n "${prisma_engine:-}" && -n "${PRISMA_CLIENT_DIR:-}" && -f "$PRISMA_CLIENT_DIR/$prisma_engine" ]]; then
+        mkdir -p binaries/$platform/node_modules/.prisma/client
+        cp "$PRISMA_CLIENT_DIR/$prisma_engine" binaries/$platform/node_modules/.prisma/client/
+    elif [[ -n "${prisma_engine:-}" && -f ../../node_modules/.prisma/client/$prisma_engine ]]; then
         mkdir -p binaries/$platform/node_modules/.prisma/client
         cp ../../node_modules/.prisma/client/$prisma_engine binaries/$platform/node_modules/.prisma/client/
+    else
+        echo "  ⚠ Warning: Prisma engine '$prisma_engine' not found (checked bun cache and node_modules/.prisma/client/)"
     fi
 done
 
 # Create archives
+VERSION=$(node -e "console.log(require('./package.json').version)")
+export VERSION
 cd binaries
 
 for platform in "${PLATFORMS[@]}"; do
     if [[ "$platform" == "windows-x64" ]]; then
-        # Windows (zip)
-        echo "Creating fan-$platform.zip..."
-        (cd $platform && zip -r ../fan-$platform.zip .)
+        # Windows (zip) - use wrapper directory for consistency with Unix
+        echo "Creating fan-$VERSION-$platform.zip..."
+        mv $platform fan && zip -rq fan-$VERSION-$platform.zip fan && mv fan $platform
     else
         # Unix platforms (tar.gz) - use wrapper directory for mise compatibility
-        echo "Creating fan-$platform.tar.gz..."
-        mv $platform fan && tar -czf fan-$platform.tar.gz fan && mv fan $platform
+        echo "Creating fan-$VERSION-$platform.tar.gz..."
+        mv $platform fan && tar -czf fan-$VERSION-$platform.tar.gz fan && mv fan $platform
     fi
 done
 
@@ -242,9 +251,9 @@ echo "==> Extracting archives for testing..."
 for platform in "${PLATFORMS[@]}"; do
     rm -rf $platform
     if [[ "$platform" == "windows-x64" ]]; then
-        mkdir -p $platform && (cd $platform && unzip -q ../fan-$platform.zip)
+        unzip -q fan-$VERSION-$platform.zip && mv fan $platform
     else
-        tar -xzf fan-$platform.tar.gz && mv fan $platform
+        tar -xzf fan-$VERSION-$platform.tar.gz && mv fan $platform
     fi
 done
 
@@ -257,3 +266,34 @@ echo "Extracted directories for testing:"
 for platform in "${PLATFORMS[@]}"; do
     echo "  binaries/$platform/fan"
 done
+
+# Generate manifest.json
+echo "==> Generating manifest.json..."
+python3 << 'PYEOF'
+import json, hashlib, os, glob
+version = os.environ['VERSION']
+released_at = os.popen("date -u +%Y-%m-%dT%H:%M:%SZ").read().strip()
+platforms = {}
+for f in sorted(glob.glob(f"fan-{version}-*.tar.gz") + glob.glob(f"fan-{version}-*.zip")):
+    name = f.replace(f"fan-{version}-", "").replace(".tar.gz", "").replace(".zip", "")
+    h = hashlib.sha256(open(f, "rb").read()).hexdigest()
+    s = os.path.getsize(f)
+    platforms[name] = {"url": f"http://185.219.41.46/fan/dist/{f}", "hash": f"sha256:{h}", "size": s}
+manifest = {"latest": version, "releasedAt": released_at, "releaseNotes": "", "platforms": platforms}
+with open("manifest.json", "w") as out:
+    json.dump(manifest, out, indent=2)
+    out.write("\n")
+print(f"Manifest: {len(platforms)} platforms, version {version}")
+for name, p in sorted(platforms.items()):
+    print(f"  {name}: {p['size']} bytes")
+PYEOF
+
+# Copy artifacts to dist repo
+DIST_REPO="$HOME/fan-repo/dist"
+mkdir -p "$DIST_REPO"
+echo "==> Copying artifacts to $DIST_REPO/"
+cp -v manifest.json "$DIST_REPO/"
+cp -v fan-$VERSION-*.{tar.gz,zip} "$DIST_REPO/" 2>/dev/null
+cp -v "$SCRIPT_DIR/install.sh" "$DIST_REPO/"
+cp -v "$SCRIPT_DIR/install.ps1" "$DIST_REPO/"
+echo "==> Dist repo ready. Run: fan-repo publish"

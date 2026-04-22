@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readFileSync, realpathSync } from "fs";
 import { homedir } from "os";
 import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
@@ -53,7 +53,8 @@ export function getUpdateInstruction(packageName: string): string {
 	const method = detectInstallMethod();
 	switch (method) {
 		case "bun-binary":
-			return `Download from: https://github.com/itone/fan-mono/releases/latest`;
+			return `Run: fan update`;
+
 		case "pnpm":
 			return `Run: pnpm install -g ${packageName}`;
 		case "yarn":
@@ -73,7 +74,7 @@ export function getUpdateInstruction(packageName: string): string {
 
 /**
  * Get the base directory for resolving package assets (themes, package.json, README.md, CHANGELOG.md).
- * - For Bun binary: returns the directory containing the executable
+ * - For Bun binary: resolves symlinks, then returns directory containing the real executable
  * - For Node.js (dist/): returns __dirname (the dist/ directory)
  * - For tsx (src/): returns parent directory (the package root)
  */
@@ -87,8 +88,8 @@ export function getPackageDir(): string {
 	}
 
 	if (isBunBinary) {
-		// Bun binary: process.execPath points to the compiled executable
-		return dirname(process.execPath);
+		// Bun binary: resolve symlinks so installed via symlink works correctly
+		return dirname(realpathSync(process.execPath));
 	}
 	// Node.js: walk up from __dirname until we find package.json
 	let dir = __dirname;
@@ -103,6 +104,17 @@ export function getPackageDir(): string {
 }
 
 /**
+ * Get the directory containing the bun binary (resolves symlinks).
+ * Used for assets that live next to the executable (theme/, assets/, export-html/).
+ */
+function getBinaryDir(): string {
+	if (isBunBinary) {
+		return dirname(realpathSync(process.execPath));
+	}
+	return __dirname;
+}
+
+/**
  * Get path to built-in themes directory (shipped with package)
  * - For Bun binary: theme/ next to executable
  * - For Node.js (dist/): dist/modes/interactive/theme/
@@ -110,7 +122,7 @@ export function getPackageDir(): string {
  */
 export function getThemesDir(): string {
 	if (isBunBinary) {
-		return join(dirname(process.execPath), "theme");
+		return join(getBinaryDir(), "theme");
 	}
 	// Theme is in modes/interactive/theme/ relative to src/ or dist/
 	const packageDir = getPackageDir();
@@ -126,7 +138,7 @@ export function getThemesDir(): string {
  */
 export function getExportTemplateDir(): string {
 	if (isBunBinary) {
-		return join(dirname(process.execPath), "export-html");
+		return join(getBinaryDir(), "export-html");
 	}
 	const packageDir = getPackageDir();
 	const srcOrDist = existsSync(join(packageDir, "src")) ? "src" : "dist";
@@ -166,7 +178,7 @@ export function getChangelogPath(): string {
  */
 export function getInteractiveAssetsDir(): string {
 	if (isBunBinary) {
-		return join(dirname(process.execPath), "assets");
+		return join(getBinaryDir(), "assets");
 	}
 	const packageDir = getPackageDir();
 	const srcOrDist = existsSync(join(packageDir, "src")) ? "src" : "dist";

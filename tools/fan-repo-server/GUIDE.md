@@ -11,6 +11,11 @@
   - [fan-repo CLI](#fan-repo-cli)
   - [setup-vps.sh](#setup-vpssh)
 - [Серверная инфраструктура](#серверная-инфраструктура)
+- [Дистрибутивы и обновления](#дистрибутивы-и-обновления)
+  - [Структура dist/](#структура-dist)
+  - [Формат manifest.json](#формат-manifestjson)
+  - [Установка через install.sh](#установка-через-installsh)
+  - [Самообновление (fan update)](#самообновление-fan-update)
 - [Формат index.json](#формат-indexjson)
 - [Формат архива tar.gz](#формат-архива-targz)
 - [Клиентская сторона FAN Store](#клиентская-сторона-fan-store)
@@ -161,14 +166,22 @@ REPO_URL    = http://185.219.41.46/fan
 
 ```
 /var/www/fan-repo/
-├── index.json                          # Индекс репозитория
+├── index.json                          # Индекс репозитория (FAN Store)
 ├── packages/                           # Текущие версии пакетов (.tar.gz)
 │   ├── fan-orchestrator-1.0.0.tar.gz
 │   └── fan-persistent-memory-3.1.2.tar.gz
-└── releases/                           # Архив всех релизов (для откатов)
-    ├── fan-persistent-memory-3.0.0.tar.gz
-    ├── fan-persistent-memory-3.1.0.tar.gz
-    └── ...
+├── releases/                           # Архив всех релизов (для откатов)
+│   ├── fan-persistent-memory-3.0.0.tar.gz
+│   └── ...
+└── dist/                               # Дистрибутивы FAN и самообновление
+    ├── manifest.json                   # Версии, платформы, хеши
+    ├── install.sh                      # One-liner installer (Unix)
+    ├── install.ps1                     # One-liner installer (Windows)
+    ├── fan-0.4.5-darwin-arm64.tar.gz
+    ├── fan-0.4.5-darwin-x64.tar.gz
+    ├── fan-0.4.5-linux-x64.tar.gz
+    ├── fan-0.4.5-linux-arm64.tar.gz
+    └── fan-0.4.5-windows-x64.zip
 ```
 
 ### Nginx конфигурация
@@ -192,6 +205,23 @@ server {
         location /fan/packages/ {
             add_header Cache-Control "public, max-age=31536000, immutable" always;
         }
+
+        # Install scripts — always fresh
+        location ~ ^/fan/dist/install\.(sh|ps1)$ {
+            add_header Cache-Control "no-cache, must-revalidate" always;
+            add_header Content-Type text/plain always;
+        }
+
+        # Manifest — always fresh
+        location = /fan/dist/manifest.json {
+            add_header Cache-Control "no-cache, must-revalidate" always;
+            add_header Content-Type application/json always;
+        }
+
+        # Platform archives — immutable (versioned in filename)
+        location ~ ^/fan/dist/fan-.*\.(tar\.gz|zip)$ {
+            add_header Cache-Control "public, max-age=31536000, immutable" always;
+        }
     }
 
     location / { return 404; }
@@ -200,6 +230,135 @@ server {
 ```
 
 Перезагрузка: `ssh root@185.219.41.46 "nginx -t && systemctl reload nginx"`
+
+---
+
+## Дистрибутивы и обновления
+
+### Структура dist/
+
+Директория `dist/` внутри репозитория хранит бинарные дистрибутивы FAN и инфраструктуру для one-liner установки и самообновления.
+
+```
+~/fan-repo/dist/
+├── manifest.json                       # Метаданные версий и платформ
+├── install.sh                          # Unix installer (curl | bash)
+├── install.ps1                         # Windows installer (irm | iex)
+├── fan-0.4.5-darwin-arm64.tar.gz      # macOS Apple Silicon
+├── fan-0.4.5-darwin-x64.tar.gz        # macOS Intel
+├── fan-0.4.5-linux-x64.tar.gz         # Linux x86_64
+├── fan-0.4.5-linux-arm64.tar.gz       # Linux ARM (aarch64)
+└── fan-0.4.5-windows-x64.zip          # Windows x64
+```
+
+### Формат manifest.json
+
+```json
+{
+  "latest": "0.4.5",
+  "releasedAt": "2026-04-21T12:00:00Z",
+  "releaseNotes": "Bug fixes and improvements",
+  "platforms": {
+    "darwin-arm64": {
+      "url": "http://185.219.41.46/fan/dist/fan-0.4.5-darwin-arm64.tar.gz",
+      "hash": "sha256:abcdef...",
+      "size": 12345678
+    },
+    "darwin-x64": { "url": "...", "hash": "sha256:...", "size": ... },
+    "linux-x64":  { "url": "...", "hash": "sha256:...", "size": ... },
+    "linux-arm64":{ "url": "...", "hash": "sha256:...", "size": ... },
+    "windows-x64":{ "url": "...", "hash": "sha256:...", "size": ... }
+  }
+}
+```
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `latest` | string | Последняя версия (semver) |
+| `releasedAt` | string | Дата релиза (ISO 8601 UTC) |
+| `releaseNotes` | string | Краткое описание изменений |
+| `platforms` | object | Карта платформ → метаданные архива |
+| `platforms.*.url` | string | Полный URL до архива |
+| `platforms.*.hash` | string | SHA-256 хеш (`sha256:<hex>`) |
+| `platforms.*.size` | number | Размер архива в байтах |
+
+Manifest генерируется автоматически при сборке бинарников (`scripts/build-binaries.sh`).
+
+### Установка через install.sh
+
+```bash
+curl -fsSL http://185.219.41.46/fan/dist/install.sh | bash
+```
+
+**Что делает:**
+1. Детектит ОС (Darwin/Linux) и архитектуру (x64/arm64)
+2. Скачивает `manifest.json`, находит нужный архив
+3. Проверяет SHA-256 хеш
+4. Распаковывает в `~/.local/bin/fan` (fallback: `~/bin/` или `/usr/local/bin/`)
+5. Добавляет в PATH через `.bashrc`/`.zshrc`/`.profile`
+6. Проверяет `fan --version`
+
+Переменные окружения:
+
+| Переменная | Описание |
+|------------|----------|
+| `FAN_INSTALL_DIR` | Кастомная директория установки (вместо `~/.local/bin`) |
+| `CI` | Тихий режим без подтверждений |
+
+Windows:
+```powershell
+irm http://185.219.41.46/fan/dist/install.ps1 | iex
+```
+
+### Самообновление (fan update)
+
+```bash
+fan update          # проверить + скачать + заменить
+fan update --check  # только проверить наличие обновления
+fan update --force  # без подтверждения
+fan update --json   # машинный вывод
+```
+
+**Как работает:**
+1. Читает `manifest.json` с сервера обновлений
+2. Сравнивает версию с текущей
+3. Скачивает архив для текущей платформы
+4. Проверяет SHA-256
+5. Создаёт backup текущего бинарника + assets
+6. Распаковывает новый бинарник и assets
+7. При ошибке — откат из backup
+
+Сервер обновлений: `http://185.219.41.46/fan/dist` (задаётся константой `UPDATE_SERVER_URL` в `self-update.ts`).
+
+Проверка обновления также запускается автоматически при старте TUI (каждый сеанс).
+
+### Деплой дистрибутивов на сервер
+
+После сборки бинарников (`scripts/build-binaries.sh`) в `packages/coding-agent/binaries/`:
+
+```bash
+# 1. Скопировать manifest.json и архивы в локальный репозиторий
+cp packages/coding-agent/binaries/manifest.json ~/fan-repo/dist/
+cp packages/coding-agent/binaries/fan-*.tar.gz ~/fan-repo/dist/
+cp packages/coding-agent/binaries/fan-*.zip ~/fan-repo/dist/
+
+# 2. Обновить install скрипты
+cp scripts/install.sh ~/fan-repo/dist/
+cp scripts/install.ps1 ~/fan-repo/dist/
+
+# 3. Деплоить всё на сервер
+fan-repo publish
+# → rsync ~/fan-repo/ → root@185.219.41.46:/var/www/fan-repo/
+```
+
+Или за один шаг:
+```bash
+scripts/build-binaries.sh && \
+cp packages/coding-agent/binaries/manifest.json ~/fan-repo/dist/ && \
+cp packages/coding-agent/binaries/fan-*.* ~/fan-repo/dist/ && \
+cp scripts/install.sh scripts/install.ps1 ~/fan-repo/dist/ && \
+fan-repo publish
+```
 
 ---
 

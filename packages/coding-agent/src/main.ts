@@ -51,6 +51,7 @@ import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { ExtensionSelectorComponent } from "./modes/interactive/components/extension-selector.js";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.js";
 import { handleConfigCommand, handlePackageCommand } from "./package-manager-cli.js";
+import { handleUpdateCommand } from "./cli/self-update.js";
 import { isLocalPath } from "./utils/paths.js";
 
 async function handleInitCommand(args: string[]): Promise<boolean> {
@@ -745,6 +746,10 @@ export async function main(args: string[]) {
 	if (offlineMode) {
 		process.env.FAN_OFFLINE = "1";
 		process.env.FAN_SKIP_VERSION_CHECK = "1";
+	}
+
+	if (await handleUpdateCommand(args)) {
+		return;
 	}
 
 	if (await handlePackageCommand(args)) {
