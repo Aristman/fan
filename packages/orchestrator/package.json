@@ -1,6 +1,6 @@
 {
 	"name": "@fan/orchestrator",
-	"version": "0.7.0",
+	"version": "0.7.1",
 	"fan": {
 		"name": "fan-orchestrator",
 		"type": "extension",
