@@ -1,51 +1,51 @@
 {
-  "name": "fan-orchestrator",
-  "version": "2.0.1",
-  "description": "Multi-agent orchestration platform for FAN — delegate tasks to workers, manage parallel pool, track dependencies, adversary verification",
-  "type": "module",
-  "fan": {
-    "name": "fan-orchestrator",
-    "type": "extension",
-    "displayName": "FAN Orchestrator v2",
-    "description": "Multi-agent orchestration platform — delegate tasks to specialized workers, manage parallel pool with write-locking, track task dependencies, adversary verification",
-    "version": "2.0.1",
-    "main": "dist/index.js",
-    "entry": "src/index.ts",
-    "author": "FAN Team",
-    "tags": [
-      "orchestrator",
-      "multi-agent",
-      "workers",
-      "tasks",
-      "planning",
-      "verification",
-      "parallel",
-      "delegation"
-    ]
-  },
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    }
-  },
-  "scripts": {
-    "clean": "shx rm -rf dist",
-    "copy-assets": "shx mkdir -p dist/agents && shx cp src/agents/*.json dist/agents/ 2>/dev/null; true",
-    "build": "tsgo -p tsconfig.build.json && npm run copy-assets",
-    "dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
-    "test": "vitest run"
-  },
-  "dependencies": {
-    "@itone/fan-ai": "*",
-    "@itone/fan-coding-agent": "*",
-    "@itone/fan-tui": "*",
-    "@sinclair/typebox": "^0.34.0"
-  },
-  "devDependencies": {
-    "shx": "^0.4.0",
-    "vitest": "^3.2.4"
-  }
+	"name": "fan-orchestrator",
+	"version": "0.7.2",
+	"description": "Multi-agent orchestration platform for FAN — delegate tasks to workers, manage parallel pool, track dependencies, adversary verification",
+	"type": "module",
+	"fan": {
+		"name": "fan-orchestrator",
+		"type": "extension",
+		"displayName": "FAN Orchestrator v2",
+		"description": "Multi-agent orchestration platform — delegate tasks to specialized workers, manage parallel pool with write-locking, track task dependencies, adversary verification",
+		"version": "2.0.2",
+		"main": "dist/index.js",
+		"entry": "src/index.ts",
+		"author": "FAN Team",
+		"tags": [
+			"orchestrator",
+			"multi-agent",
+			"workers",
+			"tasks",
+			"planning",
+			"verification",
+			"parallel",
+			"delegation"
+		]
+	},
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"scripts": {
+		"clean": "shx rm -rf dist",
+		"copy-assets": "shx mkdir -p dist/agents && shx cp src/agents/*.json dist/agents/ 2>/dev/null; true",
+		"build": "tsgo -p tsconfig.build.json && npm run copy-assets",
+		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@itone/fan-ai": "*",
+		"@itone/fan-coding-agent": "*",
+		"@itone/fan-tui": "*",
+		"@sinclair/typebox": "^0.34.0"
+	},
+	"devDependencies": {
+		"shx": "^0.4.0",
+		"vitest": "^3.2.4"
+	}
 }

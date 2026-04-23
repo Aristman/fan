@@ -1,6 +1,6 @@
 {
 	"name": "@fan/db",
-	"version": "0.7.1",
+	"version": "0.7.2",
 	"description": "FAN database layer — Prisma + SQLite",
 	"type": "module",
 	"main": "./dist/index.js",

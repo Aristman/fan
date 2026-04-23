@@ -11,7 +11,7 @@
  * - Uses StringEnum from @itone/fan-ai for Google API compatibility
  */
 
-import type { ExtensionAPI, ExtensionContext } from "@itone/fan-coding-agent";
+import { type ExtensionAPI, type ExtensionContext, getMarkdownTheme } from "@itone/fan-coding-agent";
 import { StringEnum } from "@itone/fan-ai";
 import { Type } from "@sinclair/typebox";
 import { Markdown, Text, Container } from "@itone/fan-tui";
@@ -418,7 +418,7 @@ export default function (fan: ExtensionAPI) {
       container.addChild(headerComp);
 
       if (workerOutput) {
-        container.addChild(new Markdown(workerOutput, 0, 0, {} as any));
+        container.addChild(new Markdown(workerOutput, 0, 0, getMarkdownTheme()));
       }
 
       if (footer) {

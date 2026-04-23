@@ -12,6 +12,29 @@ import type { InstalledPackage, RepoEntry, RepoIndex, RepoPackage } from "./type
 const FETCH_TIMEOUT_MS = 10_000;
 const INDEX_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
+/**
+ * Compare two semver strings.
+ * Returns > 0 if a > b, < 0 if a < b, 0 if equal.
+ * Supports major.minor.patch and pre-release tags.
+ */
+export function semverCompare(a: string, b: string): number {
+	const parse = (v: string) => {
+		const match = v.match(/^(\d+)\.(\d+)\.(\d+)(?:-(.+))?$/);
+		if (!match) return { major: 0, minor: 0, patch: 0, pre: null };
+		return { major: +match[1]!, minor: +match[2]!, patch: +match[3]!, pre: match[4] ?? null };
+	};
+	const pa = parse(a);
+	const pb = parse(b);
+	if (pa.major !== pb.major) return pa.major - pb.major;
+	if (pa.minor !== pb.minor) return pa.minor - pb.minor;
+	if (pa.patch !== pb.patch) return pa.patch - pb.patch;
+	// Pre-release: no pre-release > pre-release (e.g. 1.0.0 > 1.0.0-alpha)
+	if (pa.pre === null && pb.pre === null) return 0;
+	if (pa.pre === null) return 1;
+	if (pb.pre === null) return -1;
+	return pa.pre.localeCompare(pb.pre);
+}
+
 interface CacheEntry {
 	data: RepoIndex;
 	fetchedAt: number;
@@ -275,7 +298,7 @@ export class RepoClient {
 		for (const installed of repoPackages) {
 			try {
 				const latest = await this.getPackage(installed.name, repos);
-				if (latest && latest.version !== installed.version) {
+				if (latest && semverCompare(latest.version, installed.version) > 0) {
 					updates.set(installed.name, {
 						current: installed.version,
 						latest: latest.version,
