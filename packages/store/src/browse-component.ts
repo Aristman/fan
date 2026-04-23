@@ -1,8 +1,9 @@
 /**
  * FAN Store — Interactive package browser.
  *
- * Full-screen browser with repo tabs, install/update/remove actions,
- * and automatic re-open after each action.
+ * Full-screen browser with repo tabs, type filter tabs, fuzzy search,
+ * details overlay, install/update/remove actions, and automatic
+ * re-open after each action.
  */
 
 import type { ExtensionContext } from "@itone/fan-coding-agent";
@@ -11,15 +12,38 @@ import type { RepoClient } from "./repo-client.js";
 import type { ArchiveInstaller } from "./installer.js";
 import type { StoreConfig } from "./config.js";
 import type { RepoPackage, InstalledPackage } from "./types.js";
-import { getKeybindings } from "@itone/fan-tui";
+import {
+	fuzzyFilter,
+	matchesKey,
+	Key,
+	Input,
+} from "@itone/fan-tui";
+import { existsSync, readFileSync } from "node:fs";
 import { ProgressOverlay } from "./progress-overlay.js";
 
 // ─── Types ────────────────────────────────────
+
+type PackageTypeFilter = "all" | "extension" | "skill" | "theme" | "bundle";
+
+interface SkillFrontmatter {
+	name?: string;
+	description?: string;
+	triggers?: string[];
+	examples?: string[];
+	[key: string]: unknown;
+}
+
+interface MergedPackage {
+	repo: RepoPackage;
+	installed: InstalledPackage | undefined;
+}
 
 interface BrowserData {
 	allPackages: RepoPackage[];
 	installedPackages: InstalledPackage[];
 	updates: Map<string, { current: string; latest: string }>;
+	mergedPackages: MergedPackage[];
+	typeCounts: Record<PackageTypeFilter, number>;
 }
 
 type BrowserAction =
@@ -36,6 +60,10 @@ interface OperationResult {
 
 const CANCELLED: OperationResult = { success: false, message: "", cancelled: true };
 
+const TYPE_FILTERS: PackageTypeFilter[] = ["all", "extension", "skill", "theme", "bundle"];
+
+const VISIBLE_COUNT = 12;
+
 // ─── Helpers ──────────────────────────────────
 
 function getTypeBadge(type: string): string {
@@ -46,6 +74,99 @@ function getTypeBadge(type: string): string {
 		case "bundle": return "[bundle]";
 		default: return `[${type}]`;
 	}
+}
+
+function getTypeLabel(tf: PackageTypeFilter): string {
+	if (tf === "all") return "All";
+	return tf.slice(0, 1).toUpperCase() + tf.slice(1);
+}
+
+function parseSimpleFrontmatter(yaml: string): SkillFrontmatter | null {
+	try {
+		const result: SkillFrontmatter = {};
+		for (const line of yaml.split("\n")) {
+			const trimmed = line.trim();
+			if (!trimmed || trimmed.startsWith("#")) continue;
+			const colonIdx = trimmed.indexOf(":");
+			if (colonIdx === -1) continue;
+			const key = trimmed.slice(0, colonIdx).trim();
+			let value: unknown = trimmed.slice(colonIdx + 1).trim();
+			if (
+				typeof value === "string" &&
+				((value.startsWith('"') && value.endsWith('"')) ||
+					(value.startsWith("'") && value.endsWith("'")))
+			) {
+				value = value.slice(1, -1);
+			}
+			if (typeof value === "string" && value.startsWith("[") && value.endsWith("]")) {
+				value = value
+					.slice(1, -1)
+					.split(",")
+					.map((s) => s.trim().replace(/^['"]|['"]$/g, ""))
+					.filter(Boolean);
+			}
+			if (key) result[key] = value;
+		}
+		return Object.keys(result).length > 0 ? result : null;
+	} catch {
+		return null;
+	}
+}
+
+function readSkillFrontmatter(installPath: string): SkillFrontmatter | null {
+	try {
+		const skillMdPath = `${installPath}/SKILL.md`;
+		if (!existsSync(skillMdPath)) return null;
+		const content = readFileSync(skillMdPath, "utf-8");
+		const match = content.match(/^---\n([\s\S]*?)\n---/);
+		if (!match?.[1]) return null;
+		return parseSimpleFrontmatter(match[1]);
+	} catch {
+		return null;
+	}
+}
+
+function computeTypeCounts(mergedPackages: MergedPackage[]): Record<PackageTypeFilter, number> {
+	const counts: Record<PackageTypeFilter, number> = {
+		all: mergedPackages.length,
+		extension: 0,
+		skill: 0,
+		theme: 0,
+		bundle: 0,
+	};
+	for (const m of mergedPackages) {
+		const t = m.repo.type as PackageTypeFilter;
+		if (t in counts) counts[t]++;
+	}
+	return counts;
+}
+
+function computeVisibleItems(
+	mergedPackages: MergedPackage[],
+	enabledRepos: { name: string }[],
+	selectedRepoIndex: number,
+	typeFilter: PackageTypeFilter,
+	searchQuery: string,
+): MergedPackage[] {
+	let filtered = mergedPackages;
+
+	// Repo filter (0 = all repos)
+	if (selectedRepoIndex > 0 && selectedRepoIndex <= enabledRepos.length) {
+		const repoName = enabledRepos[selectedRepoIndex - 1]!.name;
+		filtered = filtered.filter((m) => m.repo.repoName === repoName);
+	}
+
+	// Type filter
+	if (typeFilter !== "all") {
+		filtered = filtered.filter((m) => m.repo.type === typeFilter);
+	}
+
+	// Fuzzy search
+	if (searchQuery.trim()) {
+		filtered = fuzzyFilter(filtered, searchQuery, (m) => `${m.repo.name} ${m.repo.description}`);
+	}
+
+	return filtered;
 }
 
 /**
@@ -95,7 +216,7 @@ export async function showExtensionBrowser(
 	}
 
 	// ── Phase 1: Load all data ──
-	const data = await ctx.ui.custom<BrowserData | null>((tui, themeInstance, _kb, done) => {
+	const rawData = await ctx.ui.custom<BrowserData | null>((tui, themeInstance, _kb, done) => {
 		const overlay = new ProgressOverlay(tui, themeInstance, "Loading packages...", () => done(null));
 
 		(async () => {
@@ -107,21 +228,8 @@ export async function showExtensionBrowser(
 					repoClient.checkUpdates(repoInstalled, config.repositories),
 				]);
 
-				// Fetch packages per-repo to tag each with repoName
-				const allPackages: RepoPackage[] = [];
-				const seen = new Set<string>();
-				for (const repo of enabledRepos) {
-					try {
-						const index = await repoClient.fetchIndex(repo.url);
-						for (const pkg of index.packages) {
-							if (seen.has(pkg.name)) continue;
-							seen.add(pkg.name);
-							allPackages.push({ ...pkg, repoName: repo.name, repoUrl: repo.url });
-						}
-					} catch {
-						// skip unreachable repos
-					}
-				}
+				// Fetch packages via repoClient (deduplication built-in)
+				const allPackages = await repoClient.getAllPackages(config.repositories);
 				allPackages.sort((a, b) => a.name.localeCompare(b.name));
 
 				// Enrich installed packages with update status
@@ -133,7 +241,15 @@ export async function showExtensionBrowser(
 					}
 				}
 
-				done({ allPackages, installedPackages, updates: updatesMap });
+				// Build merged packages
+				const mergedPackages: MergedPackage[] = allPackages.map((repo) => ({
+					repo,
+					installed: installedPackages.find((i) => i.name === repo.name),
+				}));
+
+				const typeCounts = computeTypeCounts(mergedPackages);
+
+				done({ allPackages, installedPackages, updates: updatesMap, mergedPackages, typeCounts });
 			} catch (err) {
 				ctx.ui.notify(
 					`Failed to load packages: ${err instanceof Error ? err.message : String(err)}`,
@@ -146,107 +262,255 @@ export async function showExtensionBrowser(
 		return overlay;
 	});
 
-	if (!data) return;
+	if (!rawData) return;
+	const data: BrowserData = rawData;
 
 	// ── Phase 2: Interactive browser loop ──
-	const REPO_TABS = ["All", ...enabledRepos.map((r) => r.name)];
-	const kb = getKeybindings();
-
-	const getFilteredPackages = (repoIndex: number): RepoPackage[] => {
-		if (repoIndex === 0) return data.allPackages;
-		return data.allPackages.filter((p) => p.repoName === REPO_TABS[repoIndex]);
-	};
 
 	// eslint-disable-next-line no-constant-condition
 	while (true) {
 		const action = await ctx.ui.custom<BrowserAction>((tui, theme, _kb, done) => {
-			let selectedRepoIndex = 0;
-			let selectedPackageIndex = 0;
+			// ── State ──
+			let focusTarget: "list" | "search" | "details" = "list";
+			let selectedRepoIndex = 0; // 0 = All repos
+			let typeFilterIndex = 0;
+			let searchQuery = "";
+			let searchFocused = false;
+			let selectedIndex = 0;
 			let scrollOffset = 0;
-			let packagesForDisplay = getFilteredPackages(0);
-			const visibleCount = 12;
+			let showDetails = false;
+			let detailPkg: MergedPackage | null = null;
 
+			const REPO_TABS = ["All", ...enabledRepos.map((r) => r.name)];
+			const searchInput = new Input();
+			searchInput.focused = false;
+			searchInput.setValue("");
+
+			// ── Compute visible items ──
+			let visibleItems: MergedPackage[] = [];
+
+			function rebuildVisible(): void {
+				const typeFilter = TYPE_FILTERS[typeFilterIndex] as PackageTypeFilter;
+				visibleItems = computeVisibleItems(
+					data.mergedPackages,
+					enabledRepos,
+					selectedRepoIndex,
+					typeFilter,
+					searchQuery,
+				);
+				// Clamp selection
+				if (visibleItems.length === 0) {
+					selectedIndex = 0;
+					scrollOffset = 0;
+				} else if (selectedIndex >= visibleItems.length) {
+					selectedIndex = visibleItems.length - 1;
+				}
+				if (selectedIndex < scrollOffset) scrollOffset = selectedIndex;
+				if (selectedIndex >= scrollOffset + VISIBLE_COUNT)
+					scrollOffset = Math.max(0, selectedIndex - VISIBLE_COUNT + 1);
+			}
+
+			rebuildVisible();
+
+			// ── Render helpers ──
+
+			function renderRepoTabs(): string {
+				const tabParts = REPO_TABS.map((repo, i) => {
+					const active = i === selectedRepoIndex;
+					const label = ` ${repo} `;
+					return active ? `►${label}◄` : label;
+				});
+				return tabParts.join(theme.fg("dim", " │ "));
+			}
+
+			function renderTypeTabs(): string {
+				const parts = TYPE_FILTERS.map((tf, i) => {
+					const count = data.typeCounts[tf];
+					const label = `${getTypeLabel(tf)}(${count})`;
+					return typeFilterIndex === i
+						? theme.bg("selectedBg", ` ${label} `)
+						: ` ${label} `;
+				});
+				return parts.join(" ");
+			}
+
+			function renderSearchRow(): string {
+				if (searchFocused) {
+					const inputLines = searchInput.render(60);
+					return theme.fg("muted", " 🔍 ") + (inputLines[0] || "");
+				} else if (searchQuery) {
+					return theme.fg("muted", ` 🔍 ${searchQuery}`);
+				} else {
+					return theme.fg("dim", " 🔍 type to search... (/)");
+				}
+			}
+
+			function renderPackageList(width: number): string[] {
+				const lines: string[] = [];
+				const slice = visibleItems.slice(scrollOffset, scrollOffset + VISIBLE_COUNT);
+
+				for (let i = 0; i < slice.length; i++) {
+					const m = slice[i];
+					const globalIdx = scrollOffset + i;
+					const isSelected = globalIdx === selectedIndex;
+					const { repo, installed } = m;
+
+					// Cursor
+					const cursor = isSelected ? theme.fg("accent", "❯ ") : "  ";
+
+					// Status icon
+					let statusIcon = theme.fg("dim", "○");
+					if (installed) {
+						statusIcon = installed.updateAvailable
+							? theme.fg("warning", "↑")
+							: theme.fg("success", "✓");
+					}
+
+					// Name
+					const nameStr = isSelected ? theme.bold(repo.name) : repo.name;
+
+					// Type badge
+					const typeStr = theme.fg("dim", getTypeBadge(repo.type));
+
+					// Version
+					let versionStr: string;
+					if (installed && installed.updateAvailable && installed.updateVersion) {
+						versionStr = theme.fg("warning", `${installed.version} → ${installed.updateVersion}`);
+					} else if (installed) {
+						versionStr = theme.fg("success", `v${repo.version}`);
+					} else {
+						versionStr = theme.fg("muted", `v${repo.version}`);
+					}
+
+					// Description (truncated)
+					const descMaxLen = Math.max(10, width - 4 - 2 - repo.name.length - 2 - 7 - 2 - versionStr.length - 2);
+					const desc = repo.description;
+					const truncated = desc.length > descMaxLen ? desc.slice(0, descMaxLen - 1) + "…" : desc;
+
+					lines.push(`${cursor}${statusIcon} ${nameStr}  ${typeStr} ${versionStr}  ${theme.fg("dim", truncated)}`);
+				}
+
+				return lines;
+			}
+
+			function renderDetailsOverlay(width: number): string[] {
+				if (!detailPkg) return [];
+				const lines: string[] = [];
+				const { repo, installed } = detailPkg;
+				const w = Math.min(width, 60);
+				const isSkill = repo.type === "skill";
+				const skillFrontmatterData = isSkill ? readSkillFrontmatter(installed?.installedPath ?? "") : null;
+
+				// Top border
+				lines.push(theme.fg("border", "─".repeat(w)));
+
+				// Header
+				const typeBadge = `[${repo.type}]`;
+				lines.push(` ${theme.bold(repo.name)} ${theme.fg("dim", `v${repo.version}`)} ${typeBadge}`);
+				lines.push("");
+
+				// Description
+				lines.push(` ${repo.description || "No description"}`);
+				lines.push("");
+
+				// Info section
+				lines.push(` ${theme.fg("accent", "── Info ──")}`);
+				lines.push(`  Repo:     ${repo.repoName}`);
+				if (repo.updatedAt) {
+					lines.push(`  Updated:  ${new Date(repo.updatedAt).toISOString().split("T")[0]}`);
+				}
+				if (installed) {
+					lines.push(`  Path:     ${installed.installedPath}`);
+					lines.push(`  Status:   ${theme.fg("success", "installed")} v${installed.version}`);
+				} else {
+					lines.push(`  Status:   ${theme.fg("muted", "not installed")}`);
+				}
+
+				// Skill-specific section
+				lines.push("");
+				if (isSkill && skillFrontmatterData) {
+					lines.push(` ${theme.fg("accent", "── Skill ──")}`);
+					if (skillFrontmatterData.description) {
+						lines.push(`  Desc:     ${skillFrontmatterData.description}`);
+					}
+					const skip = new Set(["name", "description"]);
+					for (const [k, v] of Object.entries(skillFrontmatterData)) {
+						if (!skip.has(k) && typeof v !== "object") {
+							lines.push(`  ${k}:       ${String(v)}`);
+						}
+					}
+				}
+
+				lines.push("");
+				lines.push(theme.fg("border", "─".repeat(w)));
+
+				// Actions footer
+				const actions: string[] = [];
+				if (!installed) actions.push("ENTER install");
+				if (installed?.updateAvailable) actions.push("ENTER update");
+				if (installed) actions.push("R remove");
+				actions.push("ESC back");
+				lines.push(theme.fg("dim", ` ${actions.join(" │ ")}`));
+
+				return lines;
+			}
+
+			// ── Return component ──
 			return {
 				render: (width: number): string[] => {
 					const lines: string[] = [];
 
 					// ── Repo tabs ──
-					const tabParts = REPO_TABS.map((repo, i) => {
-						const active = i === selectedRepoIndex;
-						const label = ` ${repo} `;
-						return active ? `►${label}◄` : label;
-					});
-					lines.push(tabParts.join(theme.fg("dim", " │ ")));
+					lines.push(renderRepoTabs());
+
+					// ── Type filter tabs ──
+					lines.push(renderTypeTabs());
+
+					// ── Search row ──
+					lines.push(renderSearchRow());
 
 					// ── Package count ──
 					lines.push(
-						theme.fg("dim", `${packagesForDisplay.length} package${packagesForDisplay.length !== 1 ? "s" : ""}`),
+						theme.fg("dim", ` ${visibleItems.length} package${visibleItems.length !== 1 ? "s" : ""}`),
 					);
 					lines.push("");
 
 					// ── Package list ──
-					const slice = packagesForDisplay.slice(scrollOffset, scrollOffset + visibleCount);
-					for (let i = 0; i < slice.length; i++) {
-						const pkg = slice[i];
-						const globalIdx = scrollOffset + i;
-						const isSelected = globalIdx === selectedPackageIndex;
-
-						const installed = data.installedPackages.find((inst) => inst.name === pkg.name);
-
-						// Cursor
-						const cursor = isSelected ? theme.fg("accent", "❯ ") : "  ";
-
-						// Status icon
-						let statusIcon = theme.fg("dim", "○");
-						if (installed) {
-							statusIcon = installed.updateAvailable
-								? theme.fg("warning", "↑")
-								: theme.fg("success", "✓");
-						}
-
-						// Name
-						const nameStr = isSelected ? theme.bold(pkg.name) : pkg.name;
-
-						// Type badge
-						const typeStr = theme.fg("dim", getTypeBadge(pkg.type));
-
-						// Version
-						let versionStr: string;
-						if (installed && installed.updateAvailable && installed.updateVersion) {
-							versionStr = theme.fg("warning", `${installed.version} → ${installed.updateVersion}`);
-						} else if (installed) {
-							versionStr = theme.fg("success", `v${pkg.version}`);
-						} else {
-							versionStr = theme.fg("muted", `v${pkg.version}`);
-						}
-
-						// Description (truncated)
-						const descMaxLen = Math.max(10, width - 4 - 2 - pkg.name.length - 2 - 7 - 2 - versionStr.length - 2);
-						const desc = pkg.description;
-						const truncated = desc.length > descMaxLen ? desc.slice(0, descMaxLen - 1) + "…" : desc;
-
-						lines.push(`${cursor}${statusIcon} ${nameStr}  ${typeStr} ${versionStr}  ${theme.fg("dim", truncated)}`);
-					}
+					const listLines = renderPackageList(width);
+					lines.push(...listLines);
 
 					// ── Scroll indicator ──
-					if (packagesForDisplay.length > visibleCount) {
+					if (visibleItems.length > VISIBLE_COUNT) {
 						lines.push("");
 						lines.push(
 							theme.fg(
 								"dim",
-								`[${scrollOffset + 1}–${Math.min(scrollOffset + visibleCount, packagesForDisplay.length)} of ${packagesForDisplay.length}]`,
+								`[${scrollOffset + 1}–${Math.min(scrollOffset + VISIBLE_COUNT, visibleItems.length)} of ${visibleItems.length}]`,
 							),
 						);
 					}
 
+					// ── Details overlay ──
+					if (showDetails && detailPkg) {
+						lines.push("");
+						const overlayLines = renderDetailsOverlay(width);
+						lines.push(...overlayLines);
+					}
+
 					// ── Footer ──
 					lines.push("");
-					lines.push(
-						theme.fg(
-							"dim",
-							"↑↓ navigate │ ←→ repos │ ENTER install/update │ BACKSPACE remove │ ESC exit",
-						),
-					);
+					if (focusTarget === "search") {
+						lines.push(theme.fg("dim", " ESC/↓ unfocus │ Type to fuzzy search"));
+					} else if (showDetails) {
+						lines.push(theme.fg("dim", " ENTER action │ R remove │ ESC back"));
+					} else {
+						lines.push(
+							theme.fg(
+								"dim",
+								"↑↓ navigate │ ←→ repos │ TAB type filter │ / search │ ENTER action │ BSPC remove │ ESC exit",
+							),
+						);
+					}
 
 					return lines;
 				},
@@ -254,73 +518,157 @@ export async function showExtensionBrowser(
 				invalidate: () => tui.requestRender(),
 
 				handleInput: (input: string): void => {
-					const pkg = packagesForDisplay[selectedPackageIndex];
+					// ── Details overlay mode ──
+					if (showDetails && detailPkg) {
+						if (matchesKey(input, Key.escape)) {
+							showDetails = false;
+							detailPkg = null;
+							tui.requestRender();
+							return;
+						}
+						if (matchesKey(input, Key.enter)) {
+							const { repo, installed } = detailPkg;
+							if (!installed) {
+								done({ type: "install", pkg: repo });
+							} else if (installed.updateAvailable) {
+								done({ type: "update", pkg: repo, installed });
+							}
+							return;
+						}
+						if (matchesKey(input, "r") && detailPkg.installed) {
+							done({ type: "remove", pkg: detailPkg.repo, installed: detailPkg.installed });
+							return;
+						}
+						return;
+					}
+
+					// ── Search mode ──
+					if (searchFocused) {
+						if (matchesKey(input, Key.escape)) {
+							searchFocused = false;
+							searchInput.focused = false;
+							focusTarget = "list";
+							tui.requestRender();
+							return;
+						}
+						if (matchesKey(input, Key.enter) || matchesKey(input, Key.down)) {
+							searchFocused = false;
+							searchInput.focused = false;
+							focusTarget = "list";
+							tui.requestRender();
+							return;
+						}
+						searchInput.handleInput(input);
+						const newQuery = searchInput.getValue();
+						if (newQuery !== searchQuery) {
+							searchQuery = newQuery;
+							rebuildVisible();
+						}
+						return;
+					}
+
+					// ── List mode ──
 
 					// ESC — exit
-					if (kb.matches(input, "tui.select.cancel")) {
+					if (matchesKey(input, Key.escape)) {
 						done({ type: "exit" });
 						return;
 					}
 
+					// "/" or Ctrl+F — focus search
+					if (matchesKey(input, Key.slash) || matchesKey(input, Key.ctrl("f"))) {
+						searchFocused = true;
+						searchInput.focused = true;
+						focusTarget = "search";
+						tui.requestRender();
+						return;
+					}
+
+					// TAB — cycle type filter forward
+					if (matchesKey(input, Key.tab)) {
+						typeFilterIndex = (typeFilterIndex + 1) % TYPE_FILTERS.length;
+						rebuildVisible();
+						tui.requestRender();
+						return;
+					}
+
+					// Shift+TAB — cycle type filter backward
+					if (matchesKey(input, Key.shift(Key.tab))) {
+						typeFilterIndex = (typeFilterIndex - 1 + TYPE_FILTERS.length) % TYPE_FILTERS.length;
+						rebuildVisible();
+						tui.requestRender();
+						return;
+					}
+
 					// ← — prev repo tab
-					if (input === "\u001b[D") {
+					if (matchesKey(input, Key.left)) {
 						if (selectedRepoIndex > 0) {
 							selectedRepoIndex--;
-							selectedPackageIndex = 0;
-							scrollOffset = 0;
-							packagesForDisplay = getFilteredPackages(selectedRepoIndex);
+							rebuildVisible();
 						}
 						tui.requestRender();
 						return;
 					}
 
 					// → — next repo tab
-					if (input === "\u001b[C") {
+					if (matchesKey(input, Key.right)) {
 						if (selectedRepoIndex < REPO_TABS.length - 1) {
 							selectedRepoIndex++;
-							selectedPackageIndex = 0;
-							scrollOffset = 0;
-							packagesForDisplay = getFilteredPackages(selectedRepoIndex);
+							rebuildVisible();
 						}
 						tui.requestRender();
 						return;
 					}
 
-					if (!pkg) return;
-
-					const installed = data.installedPackages.find((i) => i.name === pkg.name);
-
 					// ↑ — scroll up
-					if (kb.matches(input, "tui.select.up") || input === "k") {
-						if (selectedPackageIndex > 0) {
-							selectedPackageIndex--;
-							if (selectedPackageIndex < scrollOffset) scrollOffset = selectedPackageIndex;
+					if (matchesKey(input, Key.up) || input === "k") {
+						if (selectedIndex > 0) {
+							selectedIndex--;
+							if (selectedIndex < scrollOffset) scrollOffset = selectedIndex;
 						}
 						tui.requestRender();
+						return;
+					}
+
 					// ↓ — scroll down
-					} else if (kb.matches(input, "tui.select.down") || input === "j") {
-						if (selectedPackageIndex < packagesForDisplay.length - 1) {
-							selectedPackageIndex++;
-							if (selectedPackageIndex >= scrollOffset + visibleCount)
-								scrollOffset = selectedPackageIndex - visibleCount + 1;
+					if (matchesKey(input, Key.down) || input === "j") {
+						if (selectedIndex < visibleItems.length - 1) {
+							selectedIndex++;
+							if (selectedIndex >= scrollOffset + VISIBLE_COUNT)
+								scrollOffset = selectedIndex - VISIBLE_COUNT + 1;
 						}
 						tui.requestRender();
-					// ENTER — install or update
-					} else if (kb.matches(input, "tui.select.confirm") || input === "\n") {
-						if (installed && installed.updateAvailable) {
-							done({ type: "update", pkg, installed });
-						} else if (!installed) {
-							done({ type: "install", pkg });
+						return;
+					}
+
+					// ENTER — install, update, or show details
+					if (matchesKey(input, Key.enter)) {
+						const m = visibleItems[selectedIndex];
+						if (!m) return;
+						const { repo, installed } = m;
+						if (!installed) {
+							done({ type: "install", pkg: repo });
+						} else if (installed.updateAvailable) {
+							done({ type: "update", pkg: repo, installed });
 						} else {
-							ctx.ui.notify(`${pkg.name} is already up to date`, "info");
+							// Installed & up to date → show details overlay
+							detailPkg = m;
+							showDetails = true;
+							tui.requestRender();
 						}
+						return;
+					}
+
 					// BACKSPACE — remove
-					} else if (input === "\u007f" || input === "\b") {
-						if (installed) {
-							done({ type: "remove", pkg, installed });
+					if (matchesKey(input, Key.backspace)) {
+						const m = visibleItems[selectedIndex];
+						if (!m) return;
+						if (m.installed) {
+							done({ type: "remove", pkg: m.repo, installed: m.installed });
 						} else {
-							ctx.ui.notify(`${pkg.name} is not installed`, "info");
+							ctx.ui.notify(`${m.repo.name} is not installed`, "info");
 						}
+						return;
 					}
 				},
 			};
@@ -349,6 +697,11 @@ export async function showExtensionBrowser(
 			ctx.ui.notify(result.message, result.success ? "info" : "error");
 			if (result.success) {
 				data.installedPackages = db.getPackages();
+				data.mergedPackages = data.allPackages.map((repo) => ({
+					repo,
+					installed: data.installedPackages.find((i) => i.name === repo.name),
+				}));
+				data.typeCounts = computeTypeCounts(data.mergedPackages);
 			}
 
 		} else if (action.type === "update") {
@@ -371,7 +724,6 @@ export async function showExtensionBrowser(
 			ctx.ui.notify(result.message, result.success ? "info" : "error");
 
 			if (result.success) {
-				// Refresh update status for the updated package
 				const newUpdates = await repoClient.checkUpdates(
 					data.installedPackages.filter((p) => p.source === "repo"),
 					config.repositories,
@@ -389,6 +741,11 @@ export async function showExtensionBrowser(
 					}
 					return inst;
 				});
+				data.mergedPackages = data.allPackages.map((repo) => ({
+					repo,
+					installed: data.installedPackages.find((i) => i.name === repo.name),
+				}));
+				data.typeCounts = computeTypeCounts(data.mergedPackages);
 			}
 
 		} else if (action.type === "remove") {
@@ -410,6 +767,11 @@ export async function showExtensionBrowser(
 			if (result.success) {
 				data.installedPackages = data.installedPackages.filter((i) => i.name !== action.pkg.name);
 				data.updates.delete(action.pkg.name);
+				data.mergedPackages = data.allPackages.map((repo) => ({
+					repo,
+					installed: data.installedPackages.find((i) => i.name === repo.name),
+				}));
+				data.typeCounts = computeTypeCounts(data.mergedPackages);
 			}
 		}
 

@@ -136,6 +136,39 @@ export class RepoClient {
 	}
 
 	/**
+	 * Get all packages across all configured repositories.
+	 * Priority: repos with lower priority number first (first seen wins).
+	 */
+	async getAllPackages(repos: RepoEntry[], typeFilter?: string): Promise<RepoPackage[]> {
+		const enabledRepos = repos
+			.filter(r => r.enabled)
+			.sort((a, b) => a.priority - b.priority);
+
+		const allPackages: RepoPackage[] = [];
+		const seen = new Set<string>();
+
+		for (const repo of enabledRepos) {
+			try {
+				const index = await this.fetchIndex(repo.url);
+				const packages = typeFilter
+					? index.packages.filter(p => p.type === typeFilter)
+					: index.packages;
+
+				for (const pkg of packages) {
+					if (!seen.has(pkg.name)) {
+						seen.add(pkg.name);
+						allPackages.push({ ...pkg, repoName: repo.name, repoUrl: repo.url });
+					}
+				}
+			} catch (err) {
+				// Skip faulty repos silently
+			}
+		}
+
+		return allPackages;
+	}
+
+	/**
 	 * Find a specific package by name across all configured repositories.
 	 * Priority: repos with lower priority number first.
 	 */

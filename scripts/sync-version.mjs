@@ -58,6 +58,12 @@ for (const pkgPath of targets) {
   const raw = readFileSync(pkgPath, 'utf8');
   const pkg = JSON.parse(raw);
 
+  if (pkg.versionSync === false) {
+    const rel = pkgPath.replace(ROOT + '/', '');
+    console.log(`  ${rel}: skipped (versionSync: false)`);
+    continue;
+  }
+
   if (pkg.version === VERSION) continue;
 
   const rel = pkgPath.replace(ROOT + '/', '');

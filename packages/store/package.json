@@ -1,7 +1,20 @@
 {
 	"name": "@fan/store",
-	"version": "0.6.0",
+	"version": "0.7.0",
+	"versionSync": false,
 	"description": "FAN Store — package manager for extensions, skills, themes from repositories and archives",
+	"fan": {
+		"name": "fan-store",
+		"type": "extension",
+		"displayName": "FAN Store",
+		"description": "Package manager for extensions, skills, and themes. Browse, install, update, and remove packages from configured repositories.",
+		"version": "0.7.0",
+		"main": "dist/index.js",
+		"entry": "src/store-extension.ts",
+		"author": "FAN Team",
+		"tags": ["store", "packages", "extensions", "skills", "themes"],
+		"bundled": true
+	},
 	"type": "module",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
