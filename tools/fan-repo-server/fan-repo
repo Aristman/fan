@@ -454,7 +454,7 @@ cmd_publish() {
             error "rsync not installed"
         fi
         info "Syncing to $target ..."
-        rsync -avz --delete \
+        rsync -avz \
             --exclude='.git/' \
             --exclude='*.bak.*' \
             "$REPO_DIR/" "$target/"
