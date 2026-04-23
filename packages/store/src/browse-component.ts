@@ -34,7 +34,7 @@ interface SkillFrontmatter {
 }
 
 interface MergedPackage {
-	repo: RepoPackage;
+	repo: RepoPackage | null;
 	installed: InstalledPackage | undefined;
 }
 
@@ -49,7 +49,7 @@ interface BrowserData {
 type BrowserAction =
 	| { type: "install"; pkg: RepoPackage }
 	| { type: "update"; pkg: RepoPackage; installed: InstalledPackage }
-	| { type: "remove"; pkg: RepoPackage; installed: InstalledPackage }
+	| { type: "remove"; pkg: RepoPackage | null; installed: InstalledPackage }
 	| { type: "exit" };
 
 interface OperationResult {
@@ -135,8 +135,8 @@ function computeTypeCounts(mergedPackages: MergedPackage[]): Record<PackageTypeF
 		bundle: 0,
 	};
 	for (const m of mergedPackages) {
-		const t = m.repo.type as PackageTypeFilter;
-		if (t in counts) counts[t]++;
+		const t = (m.repo?.type ?? m.installed?.type) as PackageTypeFilter;
+		if (t && t in counts) counts[t]++;
 	}
 	return counts;
 }
@@ -153,17 +153,21 @@ function computeVisibleItems(
 	// Repo filter (0 = all repos)
 	if (selectedRepoIndex > 0 && selectedRepoIndex <= enabledRepos.length) {
 		const repoName = enabledRepos[selectedRepoIndex - 1]!.name;
-		filtered = filtered.filter((m) => m.repo.repoName === repoName);
+		filtered = filtered.filter((m) => m.repo?.repoName === repoName);
 	}
 
 	// Type filter
 	if (typeFilter !== "all") {
-		filtered = filtered.filter((m) => m.repo.type === typeFilter);
+		filtered = filtered.filter((m) => (m.repo?.type ?? m.installed?.type) === typeFilter);
 	}
 
 	// Fuzzy search
 	if (searchQuery.trim()) {
-		filtered = fuzzyFilter(filtered, searchQuery, (m) => `${m.repo.name} ${m.repo.description}`);
+		filtered = fuzzyFilter(filtered, searchQuery, (m) => {
+			const name = m.repo?.name ?? m.installed?.name ?? "";
+			const desc = m.repo?.description ?? "";
+			return `${name} ${desc}`;
+		});
 	}
 
 	return filtered;
@@ -198,6 +202,26 @@ async function withProgressOverlay(
 
 		return overlay;
 	});
+}
+
+
+// ─── Merge helper ────────────────────────────
+
+function buildMergedPackages(allPackages: RepoPackage[], installedPackages: InstalledPackage[]): MergedPackage[] {
+	const merged: MergedPackage[] = allPackages.map((repo) => ({
+		repo,
+		installed: installedPackages.find((i) => i.name === repo.name),
+	}));
+
+	// Include locally installed packages not present in remote index
+	const repoNames = new Set(allPackages.map((p) => p.name));
+	for (const local of installedPackages) {
+		if (!repoNames.has(local.name)) {
+			merged.push({ repo: null, installed: local });
+		}
+	}
+
+	return merged;
 }
 
 // ─── Main entry point ────────────────────────
@@ -241,11 +265,8 @@ export async function showExtensionBrowser(
 					}
 				}
 
-				// Build merged packages
-				const mergedPackages: MergedPackage[] = allPackages.map((repo) => ({
-					repo,
-					installed: installedPackages.find((i) => i.name === repo.name),
-				}));
+				// Build merged packages (remote + local-only)
+				const mergedPackages = buildMergedPackages(allPackages, installedPackages);
 
 				const typeCounts = computeTypeCounts(mergedPackages);
 
@@ -355,6 +376,12 @@ export async function showExtensionBrowser(
 					const isSelected = globalIdx === selectedIndex;
 					const { repo, installed } = m;
 
+					// Effective display values (fall back to installed data for local-only packages)
+					const displayName = repo?.name ?? installed?.name ?? "unknown";
+					const displayType = repo?.type ?? installed?.type ?? "extension";
+					const displayVersion = repo?.version ?? installed?.version ?? "?";
+					const displayDesc = repo?.description ?? (installed ? "Locally installed (not in repo)" : "");
+
 					// Cursor
 					const cursor = isSelected ? theme.fg("accent", "❯ ") : "  ";
 
@@ -367,24 +394,24 @@ export async function showExtensionBrowser(
 					}
 
 					// Name
-					const nameStr = isSelected ? theme.bold(repo.name) : repo.name;
+					const nameStr = isSelected ? theme.bold(displayName) : displayName;
 
 					// Type badge
-					const typeStr = theme.fg("dim", getTypeBadge(repo.type));
+					const typeStr = theme.fg("dim", getTypeBadge(displayType));
 
 					// Version
 					let versionStr: string;
 					if (installed && installed.updateAvailable && installed.updateVersion) {
 						versionStr = theme.fg("warning", `${installed.version} → ${installed.updateVersion}`);
 					} else if (installed) {
-						versionStr = theme.fg("success", `v${repo.version}`);
+						versionStr = theme.fg("success", `v${displayVersion}`);
 					} else {
-						versionStr = theme.fg("muted", `v${repo.version}`);
+						versionStr = theme.fg("muted", `v${displayVersion}`);
 					}
 
 					// Description (truncated)
-					const descMaxLen = Math.max(10, width - 4 - 2 - repo.name.length - 2 - 7 - 2 - versionStr.length - 2);
-					const desc = repo.description;
+					const descMaxLen = Math.max(10, width - 4 - 2 - displayName.length - 2 - 7 - 2 - versionStr.length - 2);
+					const desc = displayDesc;
 					const truncated = desc.length > descMaxLen ? desc.slice(0, descMaxLen - 1) + "…" : desc;
 
 					lines.push(`${cursor}${statusIcon} ${nameStr}  ${typeStr} ${versionStr}  ${theme.fg("dim", truncated)}`);
@@ -397,26 +424,34 @@ export async function showExtensionBrowser(
 				if (!detailPkg) return [];
 				const lines: string[] = [];
 				const { repo, installed } = detailPkg;
+
+				// Effective display values (fall back to installed data for local-only packages)
+				const detailName = repo?.name ?? installed?.name ?? "unknown";
+				const detailType = repo?.type ?? installed?.type ?? "extension";
+				const detailVersion = repo?.version ?? installed?.version ?? "?";
+				const detailDesc = repo?.description ?? (installed ? "Locally installed (not in repo)" : "No description");
+				const detailRepoName = repo?.repoName ?? "local";
+
 				const w = Math.min(width, 60);
-				const isSkill = repo.type === "skill";
+				const isSkill = detailType === "skill";
 				const skillFrontmatterData = isSkill ? readSkillFrontmatter(installed?.installedPath ?? "") : null;
 
 				// Top border
 				lines.push(theme.fg("border", "─".repeat(w)));
 
 				// Header
-				const typeBadge = `[${repo.type}]`;
-				lines.push(` ${theme.bold(repo.name)} ${theme.fg("dim", `v${repo.version}`)} ${typeBadge}`);
+				const typeBadge = `[${detailType}]`;
+				lines.push(` ${theme.bold(detailName)} ${theme.fg("dim", `v${detailVersion}`)} ${typeBadge}`);
 				lines.push("");
 
 				// Description
-				lines.push(` ${repo.description || "No description"}`);
+				lines.push(` ${detailDesc}`);
 				lines.push("");
 
 				// Info section
 				lines.push(` ${theme.fg("accent", "── Info ──")}`);
-				lines.push(`  Repo:     ${repo.repoName}`);
-				if (repo.updatedAt) {
+				lines.push(`  Repo:     ${detailRepoName}`);
+				if (repo?.updatedAt) {
 					lines.push(`  Updated:  ${new Date(repo.updatedAt).toISOString().split("T")[0]}`);
 				}
 				if (installed) {
@@ -528,9 +563,9 @@ export async function showExtensionBrowser(
 						}
 						if (matchesKey(input, Key.enter)) {
 							const { repo, installed } = detailPkg;
-							if (!installed) {
+							if (!installed && repo) {
 								done({ type: "install", pkg: repo });
-							} else if (installed.updateAvailable) {
+							} else if (installed?.updateAvailable && repo) {
 								done({ type: "update", pkg: repo, installed });
 							}
 							return;
@@ -646,9 +681,9 @@ export async function showExtensionBrowser(
 						const m = visibleItems[selectedIndex];
 						if (!m) return;
 						const { repo, installed } = m;
-						if (!installed) {
+						if (!installed && repo) {
 							done({ type: "install", pkg: repo });
-						} else if (installed.updateAvailable) {
+						} else if (installed?.updateAvailable && repo) {
 							done({ type: "update", pkg: repo, installed });
 						} else {
 							// Installed & up to date → show details overlay
@@ -666,7 +701,7 @@ export async function showExtensionBrowser(
 						if (m.installed) {
 							done({ type: "remove", pkg: m.repo, installed: m.installed });
 						} else {
-							ctx.ui.notify(`${m.repo.name} is not installed`, "info");
+							ctx.ui.notify(`${m.repo?.name ?? "unknown"} is not installed`, "info");
 						}
 						return;
 					}
@@ -697,10 +732,7 @@ export async function showExtensionBrowser(
 			ctx.ui.notify(result.message, result.success ? "info" : "error");
 			if (result.success) {
 				data.installedPackages = db.getPackages();
-				data.mergedPackages = data.allPackages.map((repo) => ({
-					repo,
-					installed: data.installedPackages.find((i) => i.name === repo.name),
-				}));
+				data.mergedPackages = buildMergedPackages(data.allPackages, data.installedPackages);
 				data.typeCounts = computeTypeCounts(data.mergedPackages);
 			}
 
@@ -741,23 +773,21 @@ export async function showExtensionBrowser(
 					}
 					return inst;
 				});
-				data.mergedPackages = data.allPackages.map((repo) => ({
-					repo,
-					installed: data.installedPackages.find((i) => i.name === repo.name),
-				}));
+				data.mergedPackages = buildMergedPackages(data.allPackages, data.installedPackages);
 				data.typeCounts = computeTypeCounts(data.mergedPackages);
 			}
 
 		} else if (action.type === "remove") {
-			const confirmed = await ctx.ui.select(`Remove ${action.pkg.name}?`, ["Yes", "No"]);
+			const removeName = action.pkg?.name ?? action.installed.name;
+			const confirmed = await ctx.ui.select(`Remove ${removeName}?`, ["Yes", "No"]);
 			if (confirmed !== "Yes") continue;
 
 			const result = await withProgressOverlay(
 				ctx,
-				`Removing ${action.pkg.name}...`,
+				`Removing ${removeName}...`,
 				async (_signal, setMessage) => {
 					await installer.uninstall(action.installed, (_stage, detail) => setMessage(detail ?? _stage));
-					return { success: true, message: `✅ Removed ${action.pkg.name}` };
+					return { success: true, message: `✅ Removed ${removeName}` };
 				},
 			);
 
@@ -765,12 +795,9 @@ export async function showExtensionBrowser(
 			ctx.ui.notify(result.message, result.success ? "info" : "error");
 
 			if (result.success) {
-				data.installedPackages = data.installedPackages.filter((i) => i.name !== action.pkg.name);
-				data.updates.delete(action.pkg.name);
-				data.mergedPackages = data.allPackages.map((repo) => ({
-					repo,
-					installed: data.installedPackages.find((i) => i.name === repo.name),
-				}));
+				data.installedPackages = data.installedPackages.filter((i) => i.name !== removeName);
+				data.updates.delete(removeName);
+				data.mergedPackages = buildMergedPackages(data.allPackages, data.installedPackages);
 				data.typeCounts = computeTypeCounts(data.mergedPackages);
 			}
 		}
