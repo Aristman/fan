@@ -61,7 +61,11 @@ require_repo() {
 tar_field() {
     local archive="$1" field="$2"
     local pkg_json_path
-    pkg_json_path=$(tar -tzf "$archive" 2>/dev/null | grep -m1 'package.json' || true)
+    # Prefer root-level package.json (<dirname>/package.json), fall back to any
+    pkg_json_path=$(tar -tzf "$archive" 2>/dev/null | grep -E '^[^/]+/package\.json$' | head -1 || true)
+    if [[ -z "$pkg_json_path" ]]; then
+        pkg_json_path=$(tar -tzf "$archive" 2>/dev/null | grep -m1 'package.json' || true)
+    fi
     if [[ -z "$pkg_json_path" ]]; then
         echo ""
         return
@@ -80,9 +84,18 @@ detect_type() {
     local archive="$1"
     local contents
     contents=$(tar -tzf "$archive" 2>/dev/null | head -20 || true)
-    if echo "$contents" | grep -qE '(extensions/|skills/|themes/)'; then
+    # Check for SKILL.md and theme.json at root level first
+    if echo "$contents" | grep -qE '^[^/]+/SKILL\.md$'; then
+        echo "skill"; return
+    fi
+    if echo "$contents" | grep -qE '^[^/]+/theme\.json$'; then
+        echo "theme"; return
+    fi
+    # Only classify as bundle if extensions/skills/themes are at top level
+    if echo "$contents" | grep -qE '^[^/]+/(extensions/|skills/|themes/)'; then
         echo "bundle"; return
     fi
+    # Re-check SKILL.md and theme.json without root anchor as fallback
     if echo "$contents" | grep -q 'SKILL.md'; then
         echo "skill"; return
     fi
@@ -125,18 +138,28 @@ for archive_path in sorted(glob.glob(os.path.join(pkg_dir, '*.tar.gz')) + glob.g
 
     try:
         with tarfile.open(archive_path, 'r:gz') as tf:
+            # Prefer root-level package.json (e.g. "skillname/package.json")
+            root_pkg = None
+            other_pkg = None
             for member in tf.getmembers():
                 if member.name.endswith('package.json'):
-                    f = tf.extractfile(member)
-                    if f:
-                        try:
-                            data = json.loads(f.read().decode())
-                            name = data.get('name', '')
-                            version = data.get('version', '')
-                            description = data.get('description', '')
-                            author = data.get('author', '')
-                        except: pass
-                    break
+                    parts = member.name.split('/')
+                    if len(parts) == 2 and member.isfile():
+                        root_pkg = member
+                        break
+                    elif other_pkg is None and member.isfile():
+                        other_pkg = member
+            target = root_pkg or other_pkg
+            if target:
+                f = tf.extractfile(target)
+                if f:
+                    try:
+                        data = json.loads(f.read().decode())
+                        name = data.get('name', '')
+                        version = data.get('version', '')
+                        description = data.get('description', '')
+                        author = data.get('author', '')
+                    except: pass
     except: pass
 
     if not name:
@@ -151,7 +174,13 @@ for archive_path in sorted(glob.glob(os.path.join(pkg_dir, '*.tar.gz')) + glob.g
     try:
         with tarfile.open(archive_path, 'r:gz') as tf:
             names = [m.name for m in tf.getmembers()]
-            if any('extensions/' in n or 'skills/' in n or 'themes/' in n for n in names):
+            # Check root-level markers first
+            if any(n.split('/')[0] + '/SKILL.md' == n for n in names):
+                type_ = 'skill'
+            elif any(n.split('/')[0] + '/theme.json' == n for n in names):
+                type_ = 'theme'
+            # Only classify as bundle if extensions/skills/themes at top level
+            elif any(n.startswith(n.split('/')[0] + '/extensions/') or n.startswith(n.split('/')[0] + '/skills/') or n.startswith(n.split('/')[0] + '/themes/') for n in names):
                 type_ = 'bundle'
             elif any('SKILL.md' in n for n in names):
                 type_ = 'skill'

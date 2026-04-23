@@ -54,6 +54,7 @@ Runtime: Bun · Monorepo: npm workspaces · Core: fan-ai + fan-agent-core + fan-
 - `packages/coding-agent/src/cli/init-wizard.ts` — `fan init` setup wizard
 - `packages/coding-agent/src/cli/diagnostics.ts` — `fan doctor` diagnostics module
 - `packages/coding-agent/src/cli/server-command.ts` — `fan server` lifecycle management (start/stop/status)
+- `skills/` — 11 pre-installed skills (SKILL.md format, FAN Store source)
 
 ## Phase Progress
 - [x] Phase 1 — Project fork & setup (monorepo, renamed @fan/*, build pipeline)
@@ -65,6 +66,28 @@ Runtime: Bun · Monorepo: npm workspaces · Core: fan-ai + fan-agent-core + fan-
 - [x] Phase 6 — Dashboard Client (Lit web UI, model settings, budget viz)
 - [x] Phase 7 — Polish & release (CLI packaging, init wizard, doctor, server command, --web flag, CI/CD delivery, docs)
 - [x] Phase 7.1 — Orchestrator extraction (removed hardcoded integration from core, standalone FAN Store extension, auto-discovery)
+
+## Available Skills
+
+FAN ships with 11 pre-installed skills in `skills/`. Source files are local; installable via FAN Store (`http://185.219.41.46/fan/`). All skills are v1.0.0.
+
+| Skill | Description | Key Use Case |
+|-------|-------------|--------------|
+| `ask-answer` | Interactive dialog via TUI (arrows, enter, esc) | Confirm actions, collect user preferences |
+| `auto-tests` | Autonomous test generation (8 languages) | Cover untested modules with green tests |
+| `bug-fix` | Autonomous bug-fix agent (reproduce→fix→verify) | Fix reported bugs with minimal diff |
+| `code-research` | READ-ONLY deep code analysis | Understand architecture, trace dependencies |
+| `deep-dive` | Deep-dive analysis from repo-explorer reports | Investigate specific aspects of a codebase |
+| `fan-forge` | Extension & skill factory (7-phase pipeline) | Create new extensions/skills for fan |
+| `idea-lab` | Idea research (technical/business/creative) | Evaluate ideas with SWOT, alternatives, action plans |
+| `repo-explorer` | Git repo analysis (GitHub & local) | Explore new/unknown codebases |
+| `research-spec-generator` | Research + spec generation | Investigate topics, create specifications |
+| `skill-improver` | AutoResearch optimization of skills | Iteratively improve skill quality |
+| `smoke-tester` | E2E UI testing via Playwright MCP | Smoke-test web applications |
+
+- **Local sources:** `skills/<name>/SKILL.md` — each skill follows fan skill format
+- **Install via CLI:** `fan store install <skill-name>` (from FAN Store)
+- **Slash commands:** `/skill:<name>` (when `enableSkillCommands: true`)
 
 ## Phase 6 Dashboard — Architecture Notes
 - **WebUI is a thin frontend.** Disk (JSONL) = single source of truth. No in-memory session stores.

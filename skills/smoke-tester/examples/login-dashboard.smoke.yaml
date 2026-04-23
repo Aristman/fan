@@ -1,0 +1,105 @@
+name: Login and Dashboard Flow
+url: https://example.com
+tags: [critical, auth, smoke]
+viewport: 1280x720
+variables:
+  email: "${SMOKE_TEST_EMAIL}"
+  password: "${SMOKE_TEST_PASSWORD}"
+  invalid_email: not-an-email
+  invalid_password: wrong
+
+steps:
+  - name: Open Login Page
+    actions:
+      - type: navigate
+        url: /login
+    expects:
+      - type: element_visible
+        ref: heading "Sign In"
+      - type: element_visible
+        ref: textbox "Email"
+      - type: element_visible
+        ref: textbox "Password"
+      - type: element_visible
+        ref: button "Sign In"
+
+  - name: Submit Empty Form
+    actions:
+      - type: click
+        ref: button "Sign In"
+    expects:
+      - type: element_visible
+        ref: text "Email is required"
+      - type: element_visible
+        ref: text "Password is required"
+      - type: url_contains
+        value: /login
+
+  - name: Invalid Email Format
+    actions:
+      - type: fill_form
+        values:
+          - ref: textbox "Email"
+            value: not-an-email
+          - ref: textbox "Password"
+            value: somepassword
+      - type: click
+        ref: button "Sign In"
+    expects:
+      - type: element_visible
+        ref: text "Please enter a valid email"
+
+  - name: Invalid Credentials
+    actions:
+      - type: fill_form
+        values:
+          - ref: textbox "Email"
+            value: wrong@example.com
+          - ref: textbox "Password"
+            value: wrongpassword
+      - type: click
+        ref: button "Sign In"
+    expects:
+      - type: element_visible
+        ref: text "Invalid email or password"
+      - type: url_contains
+        value: /login
+
+  - name: Valid Login
+    actions:
+      - type: fill_form
+        values:
+          - ref: textbox "Email"
+            value: "${SMOKE_TEST_EMAIL}"
+          - ref: textbox "Password"
+            value: "${SMOKE_TEST_PASSWORD}"
+      - type: click
+        ref: button "Sign In"
+    expects:
+      - type: url_contains
+        value: /dashboard
+      - type: element_visible
+        ref: heading "Dashboard"
+      - type: not_visible
+        ref: button "Sign In"
+    screenshot: after_login
+
+  - name: Dashboard Content
+    actions:
+      - type: wait_for
+        text: Dashboard
+    expects:
+      - type: element_visible
+        ref: heading "Dashboard"
+      - type: console_no_errors
+
+  - name: Logout
+    actions:
+      - type: click
+        ref: button "Logout"
+    expects:
+      - type: url_contains
+        value: /login
+      - type: element_visible
+        ref: heading "Sign In"
+    screenshot: after_logout

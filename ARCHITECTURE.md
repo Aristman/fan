@@ -179,6 +179,30 @@ Lit-based web UI client connecting to FAN API:
 
 ---
 
+## Skills (`skills/`)
+
+FAN includes 11 pre-installed skills in the `skills/` directory. Each skill follows the fan skill format (`SKILL.md` with frontmatter). Skills are also published to FAN Store and can be installed/updated via `fan store`.
+
+| Skill | Files | Description |
+|-------|-------|-------------|
+| `ask-answer` | 3 | Interactive TUI dialog (question, questionnaire tools) |
+| `auto-tests` | 8 | Autonomous test generation, 8 languages (Kotlin, Java, TS, Python, Rust, Go, C#, C++) |
+| `bug-fix` | 2 | Autonomous bug-fix agent (reproduce → root cause → fix → verify) |
+| `code-research` | 2 | READ-ONLY deep codebase analysis (no file modifications) |
+| `deep-dive` | 3 | Deep-dive investigation from repo-explorer reports |
+| `fan-forge` | 19 | Extension & skill factory (7-phase pipeline, adapted from pi-forge) |
+| `idea-lab` | 8 | Idea research and analysis (technical / business / creative) |
+| `repo-explorer` | 9 | Git repository analysis (GitHub & local), structured reports |
+| `research-spec-generator` | 5 | Research + specification generation with iterative interviewing |
+| `skill-improver` | 4 | AutoResearch optimization loop for existing skills |
+| `smoke-tester` | 10 | E2E UI testing via Playwright MCP, screenshot reports |
+
+**Total:** 11 skills, 73 files. All at v1.0.0.
+
+**FAN Store:** `http://185.219.41.46/fan/` — install via `fan store install <name>`.
+
+---
+
 ## Deployment Modes
 
 | Mode | Invocation | Description |
@@ -458,6 +482,7 @@ Task received
 | [docs/guides/orchestrator.md](./docs/guides/orchestrator.md) | Orchestrator guide |
 | [docs/guides/dashboard.md](./docs/guides/dashboard.md) | Dashboard guide |
 | [docs/guides/api-reference.md](./docs/guides/api-reference.md) | API documentation |
+| [skills/](./skills/) | 11 pre-installed skills (SKILL.md, FAN Store) |
 
 ---
 

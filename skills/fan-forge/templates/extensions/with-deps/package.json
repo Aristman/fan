@@ -1,0 +1,12 @@
+{
+	"name": "my-extension-with-deps",
+	"version": "1.0.0",
+	"description": "Extension with npm dependencies",
+	"private": true,
+	"dependencies": {
+		"zod": "^3.23.0"
+	},
+	"pi": {
+		"extensions": ["./src/index.ts"]
+	}
+}

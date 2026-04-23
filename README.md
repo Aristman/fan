@@ -85,6 +85,30 @@ delegate_task(tasks=[
 
 Workers display live tool calls during execution, timing, and usage stats on completion. See [docs/guides/orchestrator.md](docs/guides/orchestrator.md) for details.
 
+## Skills
+
+FAN ships with 11 pre-installed skills — reusable prompt templates that extend agent capabilities. Skills are installed via FAN Store and invoked with `/skill:<name>`.
+
+| Skill | Description |
+|-------|-------------|
+| `ask-answer` | Interactive TUI dialog (confirm actions, collect preferences) |
+| `auto-tests` | Autonomous test generation (Kotlin, TS, Python, Rust, Go, C#) |
+| `bug-fix` | Bug-fix agent: reproduce → find cause → fix → verify |
+| `code-research` | Read-only code analysis with tracing & Mermaid diagrams |
+| `deep-dive` | Deep-dive module analysis from repo-explorer reports |
+| `fan-forge` | Extension & skill factory (7-phase pipeline) |
+| `idea-lab` | Idea research (technical/business/creative) with SWOT & brainstorm |
+| `repo-explorer` | Git repo analysis (GitHub + local), C4 architecture |
+| `research-spec-generator` | Cyclic research + spec generation |
+| `skill-improver` | AutoResearch skill optimization (baseline → mutation → keep/discard) |
+| `smoke-tester` | E2E UI testing via Playwright MCP (MD/YAML scenarios) |
+
+```bash
+fan store install <name>   # Install from FAN Store
+```
+
+Source files: [`skills/`](skills/)
+
 ## Documentation
 
 | Document | Description |

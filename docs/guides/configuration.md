@@ -162,6 +162,8 @@ Custom token counts: `thinkingBudgets.minimal`, `.low`, `.medium`, `.high` (all 
 | `themes` | `string[]` | Theme paths |
 | `packages` | `PackageSource[]` | npm/git packages (string or `{ source, extensions?, skills?, ... }`) |
 
+> **Pre-installed skills:** FAN ships with 11 skills in `skills/` (ask-answer, auto-tests, bug-fix, code-research, deep-dive, fan-forge, idea-lab, repo-explorer, research-spec-generator, skill-improver, smoke-tester). These are loaded automatically. Additional skills can be installed via FAN Store (`fan store install <name>`).
+
 ### Advanced
 
 | Setting | Type | Description |
