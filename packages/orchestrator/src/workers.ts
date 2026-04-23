@@ -1,163 +1,141 @@
 /**
- * FAN Orchestrator — Worker Registry and Slot Pool
+ * FAN Orchestrator v2 — Worker Registry & Slot Pool
  *
- * Manages worker lifecycle (registry) and concurrency (slot pool).
- * Only one implement worker can run at a time.
- * Explore/plan/verify workers share a separate parallel pool.
+ * Manages worker lifecycle (register, update, list) and the parallel
+ * execution pool with FIFO queue. Only one write worker at a time;
+ * explore/plan/verify can run in parallel up to `parallelWorkers`.
  */
 
-import { randomUUID } from "node:crypto";
-import type { Waiter, WorkerHandle, WorkerState, WorkerType } from "./types.js";
+import type { AgentType, WorkerHandle, Waiter } from "./types.js";
+import { AGENT_REGISTRY } from "./agents/index.js";
 
-// ---- Worker Registry ----
+function isWriteAgent(agentType: string): boolean {
+  const def = AGENT_REGISTRY[agentType];
+  return def ? !def.readOnly : false;
+}
 
-const workers = new Map<string, WorkerHandle>();
+const workerRegistry = new Map<string, WorkerHandle>();
+let workerIdCounter = 0;
 
 /** Generate a unique worker ID */
 export function genWorkerId(): string {
-	return randomUUID();
+  return `worker-${Date.now()}-${++workerIdCounter}`;
 }
 
-/** Register a new worker */
+/** Register a new worker handle */
 export function registerWorker(handle: WorkerHandle): void {
-	workers.set(handle.id, handle);
+  workerRegistry.set(handle.id, handle);
 }
 
 /** Get a worker by ID */
 export function getWorker(id: string): WorkerHandle | undefined {
-	return workers.get(id);
+  return workerRegistry.get(id);
 }
 
-/** List all workers */
+/** List all workers (any status) */
 export function listWorkers(): WorkerHandle[] {
-	return Array.from(workers.values());
+  return Array.from(workerRegistry.values());
 }
 
-/** Get workers with active (non-terminal) status */
+/** List only active (running or spawning) workers */
 export function activeWorkers(): WorkerHandle[] {
-	const terminalStates: WorkerState[] = ["completed", "failed", "aborted"];
-	return listWorkers().filter((w) => !terminalStates.includes(w.status));
+  return listWorkers().filter((w) => w.status === "running" || w.status === "spawning");
 }
 
-/** Check if any write (implement) worker is currently active */
+/** Check if any write-capable worker is currently running */
 export function hasActiveWriteWorker(): boolean {
-	return activeWorkers().some((w) => w.agentType === "implement");
+  return listWorkers().some((w) => w.status === "running" && isWriteAgent(w.agentType));
 }
 
-/** Update a worker's fields */
+/** Update fields on an existing worker */
 export function updateWorker(id: string, updates: Partial<WorkerHandle>): void {
-	const worker = workers.get(id);
-	if (worker) {
-		Object.assign(worker, updates);
-	}
+  const w = workerRegistry.get(id);
+  if (w) Object.assign(w, updates);
 }
 
-// ---- Slot Pool ----
+// ── Slot Pool with Queue ───────────────────────────────────────────────────
 
-// Track current slot usage per agent type
-const slotCount = new Map<WorkerType, number>();
-
-// FIFO queue of waiting workers
-const queue: Waiter[] = [];
+let activeSlotCount = 0;
+let activeWriteSlots = 0;
+const waitQueue: Waiter[] = [];
 
 /**
- * Acquire a slot for a worker of the given type.
- * Blocks if the pool is full.
- * - Implement workers: max 1 at a time (exclusive write slot)
- * - Other workers: limited by maxParallel
+ * Acquire an execution slot. If pool is full, the caller waits in queue.
  */
-export function acquireSlot(agentType: WorkerType, maxParallel: number): Promise<void> {
-	const current = slotCount.get(agentType) ?? 0;
-	const effectiveMax = agentType === "implement" ? 1 : maxParallel;
-
-	if (current < effectiveMax) {
-		// Additional check: if implement, also check no other write workers
-		if (agentType === "implement" && hasActiveWriteWorker()) {
-			// Must wait
-			return new Promise<void>((resolve) => {
-				queue.push({ agentType, resolve });
-			});
-		}
-
-		slotCount.set(agentType, current + 1);
-		return Promise.resolve();
-	}
-
-	// Pool full, queue up
-	return new Promise<void>((resolve) => {
-		queue.push({ agentType, resolve });
-	});
+export function acquireSlot(agentType: AgentType, maxParallel: number): Promise<void> {
+  return new Promise((resolve) => {
+    if (activeSlotCount < maxParallel) {
+      if (isWriteAgent(agentType) && activeWriteSlots >= 1) {
+        waitQueue.push({ agentType, resolve });
+        return;
+      }
+      activeSlotCount++;
+      if (isWriteAgent(agentType)) activeWriteSlots++;
+      resolve();
+      return;
+    }
+    waitQueue.push({ agentType, resolve });
+  });
 }
 
 /**
- * Release a slot after a worker completes.
- * Wakes the next waiter in the queue if applicable.
+ * Release an execution slot and start the next queued worker if possible.
  */
-export function releaseSlot(agentType: WorkerType, _maxParallel: number): void {
-	const current = slotCount.get(agentType) ?? 0;
-	if (current > 0) {
-		slotCount.set(agentType, current - 1);
-	}
-
-	// Wake next waiter in queue (FIFO)
-	while (queue.length > 0) {
-		const waiter = queue[0];
-		const waiterCurrent = slotCount.get(waiter.agentType) ?? 0;
-		const effectiveMax = waiter.agentType === "implement" ? 1 : _maxParallel;
-
-		if (waiter.agentType === "implement" && hasActiveWriteWorker()) {
-			break; // Can't release write slot yet
-		}
-
-		if (waiterCurrent < effectiveMax) {
-			queue.shift();
-			slotCount.set(waiter.agentType, waiterCurrent + 1);
-			waiter.resolve();
-		} else {
-			break; // Pool still full for this type
-		}
-	}
+export function releaseSlot(agentType: AgentType, maxParallel: number): void {
+  activeSlotCount = Math.max(0, activeSlotCount - 1);
+  if (isWriteAgent(agentType)) activeWriteSlots = Math.max(0, activeWriteSlots - 1);
+  while (waitQueue.length > 0 && activeSlotCount < maxParallel) {
+    const next = waitQueue.shift()!;
+    if (isWriteAgent(next.agentType) && activeWriteSlots >= 1) {
+      waitQueue.unshift(next);
+      break;
+    }
+    activeSlotCount++;
+    if (isWriteAgent(next.agentType)) activeWriteSlots++;
+    next.resolve();
+  }
 }
 
-/** Get the current queue length */
+/** Get current queue depth */
 export function getQueueLength(): number {
-	return queue.length;
+  return waitQueue.length;
 }
 
-// ---- Display Helpers ----
+// ── Status display helpers ─────────────────────────────────────────────────
 
-/** Status icon for worker states */
-export function statusIcon(status: WorkerState): string {
-	const icons: Record<WorkerState, string> = {
-		spawning: "⏳",
-		running: "▶",
-		completed: "✓",
-		failed: "✗",
-		aborted: "⊘",
-	};
-	return icons[status] ?? "?";
+/** Status icon for worker/task display */
+export function statusIcon(status: string): string {
+  switch (status) {
+    case "completed": return "✅";
+    case "running": return "🔄";
+    case "spawning": return "⏳";
+    case "failed": return "❌";
+    default: return "⏹️";
+  }
 }
 
-/** Status text with color (plain text fallback if no theme) */
-export function statusColor(
-	status: WorkerState,
-	text: string,
-	theme?: { fg: (color: string, t: string) => string },
-): string {
-	if (!theme) return text;
-	const colors: Record<WorkerState, string> = {
-		spawning: "warning",
-		running: "accent",
-		completed: "success",
-		failed: "error",
-		aborted: "muted",
-	};
-	return theme.fg(colors[status], text);
+/** Color a status string using TUI theme */
+export function statusColor(status: string, text: string, theme: any): string {
+  switch (status) {
+    case "completed": return theme.fg("success", text);
+    case "running":
+    case "spawning": return theme.fg("warning", text);
+    case "failed": return theme.fg("error", text);
+    default: return theme.fg("muted", text);
+  }
 }
 
-// For testing: reset state
-export function _resetRegistry(): void {
-	workers.clear();
-	slotCount.clear();
-	queue.length = 0;
+// ── Test Helpers ───────────────────────────────────────────────────────────
+
+/** Reset slot pool state (for test isolation) */
+export function __resetSlotPool(): void {
+  activeSlotCount = 0;
+  activeWriteSlots = 0;
+  waitQueue.length = 0;
+}
+
+/** Reset worker registry (for test isolation) */
+export function __resetWorkerRegistry(): void {
+  workerRegistry.clear();
+  workerIdCounter = 0;
 }

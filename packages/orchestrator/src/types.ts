@@ -1,152 +1,110 @@
 /**
- * FAN Orchestrator — Core Types
+ * FAN Orchestrator v2 — Type definitions
  */
 
-/** Worker agent type, maps to built-in agent definitions */
-export type WorkerType = "explore" | "plan" | "implement" | "verify";
+/** Types of worker agents */
+export type AgentType = string;
 
-/** How tasks are executed */
-export type ExecutionMode = "single" | "parallel" | "chain";
-
-/** Task classification for model routing */
-export type TaskType = "coding" | "quick" | "analysis" | "chat";
-
-/** Task lifecycle status */
-export type TaskStatus = "pending" | "in_progress" | "completed" | "blocked" | "failed";
-
-/** Worker execution state */
+/** Worker lifecycle states */
 export type WorkerState = "spawning" | "running" | "completed" | "failed" | "aborted";
-
-/** Provider selection mode */
-export type ProviderMode = "cloud" | "local" | "auto";
-
-/** Agent definition loaded from .md file */
-export interface AgentConfig {
-	name: string;
-	description: string;
-	tools?: string[];
-	model?: string;
-	systemPrompt: string;
-	source: "user" | "project" | "builtin";
-	filePath: string;
-}
-
-/** Result of agent discovery */
-export interface AgentDiscoveryResult {
-	agents: AgentConfig[];
-	projectAgentsDir: string | null;
-}
 
 /** Orchestrator configuration */
 export interface OrchestratorConfig {
-	cloud: { model: string; provider?: string };
-	local: { model: string; provider?: string };
-	providerMode: ProviderMode;
-	parallelWorkers: number;
-	workerTimeout: number;
-	maxRetries: number;
-	planTimeout: number;
-	agentTimeouts: Partial<Record<WorkerType, number>>;
-	dangerousCommands: string[];
+  cloud: {
+    defaultModel: string;
+    defaultProvider: string;
+    models: Record<string, string>;
+    providers: Record<string, { name: string; models: string[]; apiBase?: string }>;
+  };
+  local: {
+    defaultModel: string;
+    defaultProvider: string;
+    models: Record<string, string>;
+    providers: Record<string, { name: string; models: string[]; apiBase?: string }>;
+  };
+  providerMode: "cloud" | "local" | "auto";
+  maxWorkers: number;
+  parallelWorkers: number;
+  maxRetries: number;
+  stallTimeout: number;
+  dangerousCommands: string[];
 }
 
-/** A registered worker instance */
+/** Result returned by a worker after completion */
+export interface WorkerResult {
+  text: string;
+  messageCount: number;
+}
+
+/** Handle for a spawned worker */
 export interface WorkerHandle {
-	id: string;
-	agentType: WorkerType;
-	model?: string;
-	status: WorkerState;
-	startTime: number;
-	endTime?: number;
-	result?: string;
-	error?: string;
-	task?: string;
+  id: string;
+  agentType: AgentType;
+  model: string;
+  status: WorkerState;
+  startTime: number;
+  endTime?: number;
+  result?: string;
+  error?: string;
 }
 
-/** A queued slot request */
-export interface Waiter {
-	agentType: WorkerType;
-	resolve: () => void;
+/** Parsed task notification from worker XML */
+export interface TaskNotification {
+  taskId: string;
+  status: string;
+  agentType: string;
+  model: string;
+  summary: string;
+  result: string;
+  messageCount: number;
+  durationMs: number;
 }
 
-/** Tool call metadata for notifications */
+/** Task status values */
+export type TaskStatus = "pending" | "in_progress" | "completed" | "blocked" | "failed";
+
+/** Tracked task with dependencies */
+export interface Task {
+  id: string;
+  subject: string;
+  description: string;
+  status: TaskStatus;
+  owner?: string;
+  blocks: string[];
+  blockedBy: string[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** Agent definition with prompt, tools, and flags */
+export interface AgentDefinition {
+  type: AgentType;
+  label: string;
+  prompt: string;
+  tools: string[];
+  readOnly: boolean;
+  description: string;
+  useFor: string;
+  icon: string;
+}
+
+/** Waiter in the worker slot queue */
+export type Waiter = { agentType: AgentType; resolve: () => void };
+
+/** Tool call info extracted from worker events */
 export interface ToolCallInfo {
-	name: string;
-	preview: string;
+  name: string;
+  preview: string;
 }
 
-/** Worker progress snapshot */
+/** Progress info passed from rpc.ts to index.ts via onProgress */
 export interface WorkerProgress {
-	status: WorkerState;
-	messageCount: number;
-	toolCalls?: ToolCallInfo[];
-	model?: string;
+  status: string;
+  messageCount: number;
+  toolCalls?: ToolCallInfo[];
+  model?: string;
 }
 
-/** A single tracked task */
-export interface SubagentTask {
-	id: string;
-	type: TaskType;
-	status: TaskStatus;
-	description: string;
-	agentType: WorkerType;
-	parentTaskId?: string;
-	blocks?: string[];
-	owner?: string;
-	blockedBy?: string[];
-	result?: string;
-	error?: string;
-	usage?: UsageStats;
-	createdAt: Date;
-	updatedAt: Date;
-}
-
-/** Task classification result */
-export interface TaskClassification {
-	taskType: TaskType;
-	workerType: WorkerType;
-	confidence: number;
-	reasoning: string;
-}
-
-/** Usage stats for a single subagent execution */
-export interface UsageStats {
-	input: number;
-	output: number;
-	cacheRead: number;
-	cacheWrite: number;
-	cost: number;
-	contextTokens: number;
-	turns: number;
-}
-
-/** Result of a single subagent execution */
-export interface SingleResult {
-	agent: string;
-	agentSource: "user" | "project" | "builtin" | "unknown";
-	task: string;
-	exitCode: number;
-	messages: any[];
-	stderr: string;
-	usage: UsageStats;
-	model?: string;
-	stopReason?: string;
-	errorMessage?: string;
-	step?: number;
-	startTime?: number;
-	endTime?: number;
-}
-
-/** Details attached to tool results for TUI rendering */
-export interface SubagentDetails {
-	mode: ExecutionMode;
-	agentScope: "user" | "project" | "both";
-	projectAgentsDir: string | null;
-	results: SingleResult[];
-}
-
-/** Orchestrator state (managed by extension) */
-export interface OrchestratorState {
-	enabled: boolean;
-	tasks: Map<string, SubagentTask>;
-}
+/**
+ * For colors, use theme.fg("muted", text), theme.fg("success", text), etc.
+ */

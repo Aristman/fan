@@ -35,7 +35,7 @@ To disable the orchestrator, remove or rename its folder in `~/.fan/agent/extens
 
 ## Coordinator Mode
 
-Coordinator mode changes the LLM's role from "doer" to "manager." When active, the agent does **not** use code tools directly — it only delegates via `delegate_task` and tracks progress with `TaskCreate`/`TaskUpdate`.
+Coordinator mode changes the LLM's role from "doer" to "manager." When active, the agent does **not** use code tools directly — it only delegates via `Agent` and tracks progress with `TaskCreate`/`TaskUpdate`.
 
 ### Enabling Coordinator Mode
 
@@ -48,7 +48,7 @@ Coordinator mode changes the LLM's role from "doer" to "manager." When active, t
 | Aspect | Normal Mode | Coordinator Mode |
 |--------|------------|-----------------|
 | Agent role | Direct executor | Delegation manager |
-| Tool usage | Agent reads/writes/runs | Agent only calls `delegate_task`, `TaskCreate`, etc. |
+| Tool usage | Agent reads/writes/runs | Agent only calls `Agent`, `TaskCreate`, etc. |
 | Task tracking | None | Automatic task creation and status updates |
 | Verification | Manual | Automatic verify worker after implementation |
 
@@ -73,6 +73,10 @@ The coordinator receives your request and:
 | **plan** | read, grep, find, ls | Read-only | Deep architectural analysis, implementation planning |
 | **implement** | read, write, edit, bash, grep, find, ls | Full | Making code changes, running tests, building |
 | **verify** | read, grep, find, ls, bash | Read-only | Build checks, test runs, lint, adversarial code review |
+| **bug-fix** | read, write, edit, bash, grep, find, ls | Full | Targeted bug fixes with minimal changes |
+| **code-research** | read, grep, find, ls, bash | Read-only | Deep code analysis, dependency tracing, pattern mining |
+| **tests-impl** | read, write, edit, bash, grep, find, ls | Full | Writing unit/integration tests for existing code |
+| **docs-impl** | read, write, edit, bash, grep, find, ls | Full | Writing and updating documentation |
 
 ### Concurrency Rules
 
@@ -80,49 +84,53 @@ The coordinator receives your request and:
 - **Explore/plan/verify workers:** up to `parallelWorkers` concurrently (default: 3).
 - Workers queue automatically when the pool is full.
 
-## The `delegate_task` Tool
+## Orchestrator Tools
 
-The core mechanism for spawning workers. Called by the coordinator (or manually via `/delegate`).
+The orchestrator provides 6 tools for the coordinator:
 
-### Parameters
+### `Agent`
+
+Spawns a worker to execute a task. Called by the coordinator to delegate work.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `agentType` | string | Yes | One of: `explore`, `plan`, `implement`, `verify` |
+| `agentType` | string | Yes | One of: `explore`, `plan`, `implement`, `verify`, `bug-fix`, `code-research`, `tests-impl`, `docs-impl` |
 | `task` | string | Yes | Self-contained task description with all context |
 | `context` | string | No | Additional context (e.g., explore output, plan text) |
 
-### Execution Modes
+### `SendMessage`
 
-| Mode | Flag | Description |
-|------|------|-------------|
-| **single** | default | One worker, one task |
-| **parallel** | `parallel: true` | Up to 8 tasks, 4 concurrent |
-| **chain** | `chain: [...]` | Sequential tasks with `{previous}` placeholder |
+Sends a message from the coordinator to a running worker (interactive follow-up).
 
-### Chain Example
+### `StopAgent`
 
-When using the `/plan` workflow, the coordinator chains workers together:
+Stops a running worker by agent ID.
 
-```
-explore → plan → (present to user)
-```
+### `TaskCreate`
 
-Each step receives the previous step's output via the `{previous}` placeholder in the task prompt.
+Creates a new task with subject, description, and optional dependencies.
+
+### `TaskUpdate`
+
+Updates task status, owner, or other fields.
+
+### `TaskList`
+
+Lists tasks with optional status filter.
 
 ### Worker Isolation
 
-Workers run in separate `fan` subprocesses. They cannot see:
+Workers run as separate `fan --mode rpc` processes communicating via JSON-over-stdio. They cannot see:
 
 - The main conversation history
-- Other workers' outputs (unless passed via `context` or `{previous}`)
+- Other workers' outputs (unless passed via `context`)
 - The coordinator's reasoning
 
 This means **worker prompts must be self-contained.** Include file paths, line numbers, exact change descriptions, and any relevant code snippets.
 
 ## Slash Commands
 
-### `/orchestrator [on|off|stop|config|mode|status]`
+### `/orchestrator [on|off|stop|config|status]`
 
 Master control for the orchestrator.
 
@@ -130,7 +138,6 @@ Master control for the orchestrator.
 - `/orchestrator off` — Disable coordinator mode (agent returns to direct execution).
 - `/orchestrator stop` — Cancel all running workers.
 - `/orchestrator config` — Show current configuration.
-- `/orchestrator mode` — Display current execution mode.
 - `/orchestrator status` — Show workers and tasks overview.
 
 ### `/plan [task description]`
@@ -143,44 +150,13 @@ Strategic planning workflow. Runs explore → plan and presents the plan to you 
 
 This spawns an explore worker to gather context, then a plan worker to produce a structured implementation plan. You review the plan before deciding whether to proceed.
 
-### `/tasks [status]`
+### `TaskList`
 
-View tracked tasks. Optionally filter by status.
-
-```
-/tasks              # Show all tasks
-/tasks in_progress  # Show only in-progress tasks
-/tasks completed    # Show only completed tasks
-```
-
-### `/agents [scope]`
-
-List available worker agents.
-
-```
-/agents      # All agents (user + project)
-/agents user # User-defined agents only
-/agents project # Project agents only
-```
-
-Agents are discovered from three sources (highest priority wins):
-
-1. **Built-in:** `packages/orchestrator/src/agents/*.md`
-2. **User:** `~/.fan/agent/agents/*.md`
-3. **Project:** `.fan/agents/*.md` (walked up to git root)
-
-### `/delegate <agentType> <task>`
-
-Quick delegate a task to a specific worker without full coordinator mode.
-
-```
-/delegate explore "Find all files that import from packages/orchestrator"
-/delegate verify "Run tests and check for regressions in the API gateway"
-```
+Use the `TaskList` tool to view tracked tasks. Optionally filter by status.
 
 ## Task Management
 
-Tasks are the coordinator's way of tracking progress. They're created with `TaskCreate`, updated with `TaskUpdate`, and viewed with `list_tasks`.
+Tasks are the coordinator's way of tracking progress. They're created with `TaskCreate`, updated with `TaskUpdate`, and viewed with `TaskList`.
 
 ### Task Lifecycle
 
@@ -258,13 +234,13 @@ Triggered by: describe the task with coordinator mode active (Alt+O).
 Best for: checking existing changes without modification.
 
 ```
-User: /delegate verify "Run the full test suite and check for regressions"
+User: [with coordinator mode on] Run the full test suite and check for regressions
 ```
 
 Execution:
 
-1. **Implement** worker applies any pending fixes (if chained).
-2. **Verify** worker runs tests, linters, and reviews code.
+1. Coordinator delegates to a **verify** worker.
+2. Verify worker runs tests, linters, and reviews code.
 3. Reports `VERDICT: PASS`, `VERDICT: FAIL`, or `VERDICT: PARTIAL`.
 
 ## Configuration
@@ -278,13 +254,22 @@ Configuration lives in `packages/orchestrator/src/config.json`.
     "providerMode": "cloud",
     "parallelWorkers": 3,
     "workerTimeout": 300000,
+    "stallTimeout": 60000,
     "maxRetries": 2,
     "planTimeout": 300000,
     "agentTimeouts": {
         "explore": 120000,
         "plan": 180000,
         "implement": 300000,
-        "verify": 180000
+        "verify": 180000,
+        "bug-fix": 300000,
+        "code-research": 180000,
+        "tests-impl": 300000,
+        "docs-impl": 240000
+    },
+    "agentModels": {
+        "explore": { "provider": "local", "model": "ollama/qwen3:32b" },
+        "verify": { "provider": "cloud", "model": "zai/glm-4.5-air" }
     },
     "dangerousCommands": [
         "rm -rf", "git push --force", "npm publish",
@@ -300,13 +285,12 @@ Configuration lives in `packages/orchestrator/src/config.json`.
 |---------|---------|-------------|
 | `providerMode` | `"cloud"` | `cloud` or `local` — which model config to use |
 | `parallelWorkers` | `3` | Max concurrent non-implement workers |
-| `workerTimeout` | `300000` (5 min) | Default timeout for worker subprocesses |
+| `workerTimeout` | `300000` (5 min) | Default timeout for worker RPC processes |
+| `stallTimeout` | `60000` (1 min) | Timeout for stalled workers (no output) |
 | `maxRetries` | `2` | Retry count on worker failure |
 | `planTimeout` | `300000` (5 min) | Timeout for plan-only workflows |
-| `agentTimeouts.explore` | `120000` (2 min) | Timeout for explore workers |
-| `agentTimeouts.plan` | `180000` (3 min) | Timeout for plan workers |
-| `agentTimeouts.implement` | `300000` (5 min) | Timeout for implement workers |
-| `agentTimeouts.verify` | `180000` (3 min) | Timeout for verify workers |
+| `agentTimeouts.<type>` | varies | Per-agent-type timeout override |
+| `agentModels.<type>` | — | Per-agent-type model override (provider + model) |
 
 ## Permissions
 
@@ -345,9 +329,9 @@ The orchestrator enforces this (exclusive write slot), but it's good to plan for
 Don't wait for one explore worker to finish before starting another. If you need to investigate three independent subsystems, spawn three explore workers at once:
 
 ```
-delegate_task(agentType=explore, task="Investigate the API gateway auth middleware")
-delegate_task(agentType=explore, task="Investigate the WebSocket handler")
-delegate_task(agentType=explore, task="Investigate the database schema")
+Agent(agentType=explore, task="Investigate the API gateway auth middleware")
+Agent(agentType=explore, task="Investigate the WebSocket handler")
+Agent(agentType=explore, task="Investigate the database schema")
 ```
 
 ### 3. Max 3 Implementation Attempts
@@ -381,11 +365,4 @@ Blocked tasks automatically wait for their dependencies to complete.
 
 ### 7. Always Verify After Implement
 
-The coordinator does this automatically, but if you're using `/delegate` directly, remember to follow up with a verify worker:
-
-```
-/delegate implement "Add rate limiting middleware"
-/delegate verify "Check the new middleware: run tests, review code, verify API still works"
-```
-
-Look for `VERDICT: PASS`, `VERDICT: FAIL`, or `VERDICT: PARTIAL` in the verify output.
+The coordinator does this automatically. Look for `VERDICT: PASS`, `VERDICT: FAIL`, or `VERDICT: PARTIAL` in the verify worker output.

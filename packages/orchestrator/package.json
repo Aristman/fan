@@ -4,22 +4,25 @@
 	"fan": {
 		"name": "fan-orchestrator",
 		"type": "extension",
-		"displayName": "FAN Orchestrator",
-		"description": "Multi-agent orchestrator with delegate_task, task management, workers, and slash commands",
-		"version": "1.0.0",
+		"displayName": "FAN Orchestrator v2",
+		"description": "Orchestrator extension v2: 8 worker types, RPC mode, Agent/SendMessage/StopAgent tools",
+		"version": "2.0.0",
 		"main": "dist/index.js",
-		"entry": "src/orchestrator-extension.ts",
+		"entry": "src/index.ts",
 		"author": "FAN Team",
 		"tags": [
 			"orchestrator",
 			"multi-agent",
 			"workers",
 			"tasks",
-			"planning"
+			"planning",
+			"verification",
+			"parallel",
+			"delegation"
 		],
 		"bundled": true
 	},
-	"description": "FAN orchestrator — multi-agent task decomposition and coordination",
+	"description": "FAN orchestrator v2 — multi-agent task decomposition and coordination with RPC workers",
 	"type": "module",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -31,7 +34,7 @@
 	},
 	"scripts": {
 		"clean": "shx rm -rf dist",
-		"copy-assets": "shx mkdir -p dist/agents dist/prompts && shx cp src/agents/*.md dist/agents/ && shx cp src/prompts/*.md dist/prompts/",
+		"copy-assets": "shx mkdir -p dist/agents && shx cp src/agents/*.json dist/agents/ 2>/dev/null; true",
 		"build": "tsgo -p tsconfig.build.json && npm run copy-assets",
 		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
 		"test": "vitest run"
@@ -39,7 +42,6 @@
 	"dependencies": {
 		"@itone/fan-ai": "*",
 		"@itone/fan-coding-agent": "*",
-		"@itone/fan-agent-core": "*",
 		"@itone/fan-tui": "*",
 		"@sinclair/typebox": "^0.34.0"
 	},

@@ -115,7 +115,7 @@ Lit web components (ChatPanel with streaming, file attachments, artifact renderi
 > **Note:** The orchestrator is now a standalone FAN extension (not hardcoded into the core). It ships with FAN (bundled) and is auto-discovered by the extension loader. No static imports exist in the coding-agent core.
 
 Coordinator extension for fan-coding-agent. Multi-agent task decomposition and
-coordination via subprocess-based subagent delegation.
+coordination via RPC-based subagent delegation (`fan --mode rpc`).
 
 **Components:**
 - **types.ts** — Core types (WorkerType, ExecutionMode, AgentConfig, UsageStats, SubagentTask)
@@ -125,21 +125,21 @@ coordination via subprocess-based subagent delegation.
 - **permissions.ts** — Dangerous command detection (8 regex patterns), tool_call event handler with block/allow UI
 - **subagent-runner.ts** — Spawns fan subprocesses with JSON streaming, abort support, usage tracking, retry/fallback logic
 - **task-manager.ts** — Task lifecycle (CRUD, status transitions, blocking, serialization)
-- **orchestrator-tools.ts** — LLM-callable tools (delegate_task, list_tasks, cancel_task, classify_task, TaskCreate, TaskUpdate)
-- **orchestrator-extension.ts** — Extension wiring with slash commands (/orchestrator, /tasks, /agents, /delegate, /plan), coordinator mode, task widget
+- **orchestrator-tools.ts** — LLM-callable tools (Agent, SendMessage, StopAgent, TaskCreate, TaskUpdate, TaskList)
+- **orchestrator-extension.ts** — Extension wiring with slash commands (/orchestrator, /plan), coordinator mode, task widget
 
-**Built-in workers (4):** explore (fast recon), plan (implementation plans),
-implement (general-purpose), verify (code review).
+**Built-in workers (8):** explore (fast recon), plan (implementation plans),
+implement (general-purpose), verify (code review), bug-fix (targeted fixes),
+code-research (deep code analysis), tests-impl (test writing), docs-impl (documentation).
 
-**Execution modes:** single (agent+task), parallel (up to 8 tasks, 4 concurrent),
-chain (sequential with {previous} placeholder).
+**Worker spawning:** RPC mode (`fan --mode rpc`) — each worker runs as a
+detached fan RPC process with JSON-over-stdio communication.
 
-**Workflow prompts (3):** implement (explore→plan→implement), plan-only (explore→plan),
-verify (implement→verify→fix).
+**Workflow prompts (2):** implement (explore→plan→implement), plan-only (explore→plan).
 
-**Slash commands:** /orchestrator (on/off/stop/config/mode/retry/status), /tasks, /agents, /delegate, /plan
+**Slash commands:** /orchestrator (on/off/stop/config/status), /plan
 
-**Coordinator mode:** Alt+O toggle, system prompt injection, auto-delegation via delegate_task
+**Coordinator mode:** Alt+O toggle, system prompt injection, auto-delegation via Agent tool
 
 **Task widget:** Collapsible checklist above editor (Alt+T toggle), auto-hide on no active tasks
 

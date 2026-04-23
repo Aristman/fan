@@ -1,156 +1,134 @@
 /**
- * FAN Orchestrator — Configuration
+ * FAN Orchestrator v2 — Configuration
  *
- * Loads config from config.json with fallback to defaults.
- * Provides model resolution and cloud health checking.
+ * Loads config.json with defaults, resolves model per agent type and provider mode.
+ * Also handles cloud health checking for auto mode.
  */
 
-import { execSync } from "node:child_process";
-import * as fs from "node:fs";
-import * as path from "node:path";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { OrchestratorConfig, WorkerType } from "./types.js";
+import type { OrchestratorConfig } from "./types.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
-/** Default configuration values */
+// ── Defaults ───────────────────────────────────────────────────────────────
+
 export const DEFAULTS: OrchestratorConfig = {
-	cloud: { model: "zai/glm-4.5-air" },
-	local: { model: "ollama/qwen3:32b" },
-	providerMode: "cloud",
-	parallelWorkers: 3,
-	workerTimeout: 300_000,
-	maxRetries: 2,
-	planTimeout: 300_000,
-	agentTimeouts: {
-		explore: 120_000,
-		plan: 180_000,
-		implement: 300_000,
-		verify: 180_000,
-	},
-	dangerousCommands: [
-		"rm -rf",
-		"git push --force",
-		"npm publish",
-		"DROP TABLE",
-		"TRUNCATE",
-		"DELETE FROM",
-		"mkfs",
-		"shutdown",
-	],
+  cloud: {
+    defaultModel: "",
+    defaultProvider: "",
+    models: {},
+    providers: {},
+  },
+  local: {
+    defaultModel: "",
+    defaultProvider: "ollama",
+    models: {},
+    providers: {},
+  },
+  providerMode: "auto",
+  maxWorkers: 10,
+  parallelWorkers: 3,
+  maxRetries: 2,
+  stallTimeout: 300_000,
+  dangerousCommands: ["rm -rf /", "rm -rf .", "git push --force", "npm publish", "DROP TABLE"],
 };
 
-/** Cloud health cache */
-let cloudHealthCached: "unknown" | "available" | "unavailable" = "unknown";
-let cloudHealthCheckTime = 0;
-const CLOUD_HEALTH_CACHE_MS = 5 * 60 * 1000; // 5 minutes
+// ── Config loading ─────────────────────────────────────────────────────────
 
 /**
- * Deep merge two objects (target overrides source).
- */
-function deepMerge<T extends Record<string, any>>(source: T, target: Partial<T>): T {
-	const result = { ...source };
-	for (const key of Object.keys(target) as (keyof T)[]) {
-		const targetVal = target[key];
-		if (
-			targetVal &&
-			typeof targetVal === "object" &&
-			!Array.isArray(targetVal) &&
-			typeof source[key] === "object" &&
-			!Array.isArray(source[key])
-		) {
-			result[key] = deepMerge(source[key] as any, targetVal as any) as T[keyof T];
-		} else if (targetVal !== undefined) {
-			result[key] = targetVal as T[keyof T];
-		}
-	}
-	return result;
-}
-
-/**
- * Load orchestrator configuration.
- * Reads from config.json next to this module (dist/ directory),
- * merges with defaults. Falls back to defaults on missing file or parse error.
+ * Load configuration from config.json, falling back to defaults for missing fields.
  */
 export function loadConfig(): OrchestratorConfig {
-	// Try config.json in the same directory as this compiled file (dist/)
-	const configPath = path.join(__dirname, "config.json");
-
-	if (fs.existsSync(configPath)) {
-		try {
-			const raw = fs.readFileSync(configPath, "utf-8");
-			const userConfig = JSON.parse(raw);
-			return deepMerge(DEFAULTS, userConfig);
-		} catch (e) {
-			console.warn(`[FAN Orchestrator] Failed to parse config.json: ${(e as Error).message}. Using defaults.`);
-		}
-	}
-
-	return { ...DEFAULTS };
+  const configPath = join(__dirname, "..", "config.json");
+  try {
+    const raw = JSON.parse(readFileSync(configPath, "utf-8")) as Partial<OrchestratorConfig>;
+    return {
+      cloud: {
+        defaultModel: raw.cloud?.defaultModel ?? DEFAULTS.cloud.defaultModel,
+        defaultProvider: raw.cloud?.defaultProvider ?? DEFAULTS.cloud.defaultProvider,
+        models: raw.cloud?.models ?? {},
+        providers: raw.cloud?.providers ?? {},
+      },
+      local: {
+        defaultModel: raw.local?.defaultModel ?? DEFAULTS.local.defaultModel,
+        defaultProvider: raw.local?.defaultProvider ?? DEFAULTS.local.defaultProvider,
+        models: raw.local?.models ?? {},
+        providers: raw.local?.providers ?? {},
+      },
+      providerMode: raw.providerMode ?? DEFAULTS.providerMode,
+      maxWorkers: raw.maxWorkers ?? DEFAULTS.maxWorkers,
+      parallelWorkers: raw.parallelWorkers ?? DEFAULTS.parallelWorkers,
+      maxRetries: raw.maxRetries ?? DEFAULTS.maxRetries,
+      stallTimeout: raw.stallTimeout ?? DEFAULTS.stallTimeout,
+      dangerousCommands: raw.dangerousCommands ?? DEFAULTS.dangerousCommands,
+    };
+  } catch (err) {
+    return { ...DEFAULTS };
+  }
 }
 
+// ── Config persistence ───────────────────────────────────────────────────────
+
+export function configExists(): boolean {
+  return existsSync(join(__dirname, "..", "config.json"));
+}
+
+export function saveConfig(config: OrchestratorConfig): void {
+  const configPath = join(__dirname, "..", "config.json");
+  writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n", "utf-8");
+}
+
+// ── Model resolution ───────────────────────────────────────────────────────
+
 /**
- * Resolve the model to use for a given agent type.
- * Returns the model for the current provider mode.
+ * Resolve the model string for a given agent type and provider mode.
+ * Agent-specific overrides take priority over provider default.
  */
 export function resolveModel(
-	agentType: WorkerType,
-	config: OrchestratorConfig,
-	mode?: "cloud" | "local" | "auto",
+  agentType: string,
+  config: OrchestratorConfig,
+  mode: "cloud" | "local" = "cloud",
 ): string {
-	const providerMode = mode ?? config.providerMode;
-	const provider = providerMode === "local" ? config.local : config.cloud;
-	return provider.model;
+  if (mode === "local") {
+    return config.local.models[agentType] ?? config.local.defaultModel;
+  }
+  return config.cloud.models[agentType] ?? config.cloud.defaultModel;
+}
+
+// ── Cloud health check ─────────────────────────────────────────────────────
+
+let cloudHealthStatus: "unknown" | "available" | "unavailable" = "unknown";
+let lastHealthCheck = 0;
+
+/** Check if cloud provider is reachable (fan binary exists and responds) */
+async function checkCloudHealth(): Promise<boolean> {
+  try {
+    const { execSync } = await import("node:child_process");
+    const cmd = process.platform === "win32" ? "fan.cmd" : "fan";
+    execSync(`${cmd} --version`, { timeout: 5000, stdio: "pipe" });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
- * Check if cloud provider is available by running a quick health check.
- */
-async function checkCloudHealth(): Promise<"available" | "unavailable"> {
-	try {
-		const invocation = getFnaInvocation(["--version"]);
-		execSync(`${invocation.command} ${invocation.args.join(" ")}`, {
-			timeout: 5000,
-			stdio: "pipe",
-		});
-		return "available";
-	} catch {
-		return "unavailable";
-	}
-}
-
-/**
- * Get cloud provider status, with 5-minute cache.
+ * Get cloud status with 5-minute cache.
  */
 export async function getCloudStatus(): Promise<"available" | "unavailable"> {
-	const now = Date.now();
-	if (now - cloudHealthCheckTime < CLOUD_HEALTH_CACHE_MS && cloudHealthCached !== "unknown") {
-		return cloudHealthCached === "available" ? "available" : "unavailable";
-	}
-	cloudHealthCached = await checkCloudHealth();
-	cloudHealthCheckTime = now;
-	return cloudHealthCached;
+  const now = Date.now();
+  if (cloudHealthStatus !== "unknown" && (now - lastHealthCheck) < 300_000) {
+    return cloudHealthStatus === "available" ? "available" : "unavailable";
+  }
+  lastHealthCheck = now;
+  const healthy = await checkCloudHealth();
+  cloudHealthStatus = healthy ? "available" : "unavailable";
+  return cloudHealthStatus;
 }
 
-/**
- * Synchronous getter for cached cloud health value.
- * Returns "unknown" if no check has been performed yet.
- */
+/** Get current cloud health status (cached value) */
 export function getCloudHealthCached(): "unknown" | "available" | "unavailable" {
-	return cloudHealthCached;
-}
-
-/** Get the fan binary invocation — reuse from subagent-runner */
-function getFnaInvocation(args: string[]): { command: string; args: string[] } {
-	const currentScript = process.argv[1];
-	if (currentScript && fs.existsSync(currentScript)) {
-		return { command: process.execPath, args: [currentScript, ...args] };
-	}
-	const execName = path.basename(process.execPath).toLowerCase();
-	const isGenericRuntime = /^(node|bun)(\.exe)?$/.test(execName);
-	if (!isGenericRuntime) {
-		return { command: process.execPath, args };
-	}
-	return { command: "fan", args };
+  return cloudHealthStatus;
 }

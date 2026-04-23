@@ -1,77 +1,29 @@
 /**
- * Dangerous command detection for the Orchestrator.
+ * FAN Orchestrator v2 — Permission System
  *
- * Provides a single exported function `isDangerousCommand` that inspects
- * a bash/shell command string and returns a human-readable reason if the
- * command is considered dangerous, or `null` when it appears safe.
- *
- * Covered danger categories:
- *  1. `rm -rf` — recursive forced delete
- *  2. `git push --force` — force push to remote
- *  3. `npm|yarn|pnpm publish` — publishing to a registry
- *  4. SQL destructive ops — DROP / TRUNCATE / DELETE FROM
- *  5. Disk format/partition — format, mkfs, fdisk
- *  6. System power — shutdown, reboot, halt, poweroff
- *  7. Recursive chmod/chown on root
- *  8. `find -delete`
+ * Detects dangerous bash commands via regex and shows a confirm dialog.
  */
 
 /**
- * Check whether a shell command is dangerous.
- *
- * @param cmd - The raw command string to evaluate.
- * @returns A human-readable danger reason, or `null` if the command is safe.
+ * Check if a command is dangerous. Returns a human-readable reason
+ * or null if the command is safe.
  */
 export function isDangerousCommand(cmd: string): string | null {
-	// Strip quoted content to avoid false positives from grep/echo/cat of dangerous strings
-	const stripped = cmd.replace(/'(?:[^'\\]|\\.)*'/g, '""').replace(/"(?:[^"\\]|\\.)*"/g, '""');
+  const c = cmd.toLowerCase().trim();
 
-	// 1. rm recursive + force (any flag ordering)
-	if (
-		/\brm\s+.*(?:-[a-zA-Z]*r[a-zA-Z]*|--recursive).*\s+.*(?:-[a-zA-Z]*f[a-zA-Z]*|--force)/i.test(stripped) ||
-		/\brm\s+.*(?:-[a-zA-Z]*f[a-zA-Z]*|--force).*\s+.*(?:-[a-zA-Z]*r[a-zA-Z]*|--recursive)/i.test(stripped)
-	) {
-		return "Recursive forced delete (rm -rf)";
-	}
-	// Also catch rm -rf (combined short flags)
-	if (/\brm\s+.*-[a-zA-Z]*rf[a-zA-Z]*/i.test(stripped) || /\brm\s+.*-[a-zA-Z]*fr[a-zA-Z]*/i.test(stripped)) {
-		return "Recursive forced delete (rm -rf)";
-	}
+  // rm with BOTH recursive AND force
+  if (/\brm\b/.test(c) && /-([a-zA-Z]*r[a-zA-Z]*|--recursive)/.test(c) && /-([a-zA-Z]*f[a-zA-Z]*|--force)/.test(c)) {
+    return "rm recursive+force";
+  }
 
-	// 2. git push --force
-	if (/\bgit\s+push\s+.*(?:--force\b|-f\b|--force-with-lease\b)/i.test(stripped)) {
-		return "Force push to remote";
-	}
+  if (/\bgit\s+push.*(--force|-f)\b/.test(c)) return "git push --force";
+  if (/\b(npm|yarn|pnpm)\s+publish\b/.test(c)) return "package publish";
+  if (/\b(DROP|TRUNCATE|DELETE\s+FROM)\b(\s+(TABLE|DATABASE|SCHEMA))?\b/i.test(c)) return "SQL destructive";
+  if (/\b(format|mkfs)\b/.test(c)) return "disk format";
+  if (/\b(shutdown|reboot|halt|poweroff)\b/.test(c)) return "system shutdown";
+  // chmod/chown on root paths — -r/-R handled after toLowerCase()
+  if (/\b(chmod|chown)\s+(-r|-R|--recursive)?\s*[0-7]{3,4}\s+\//.test(c)) return "chmod on /";
+  if (/\bfind\b.*-delete\b/.test(c)) return "find -delete";
 
-	// 3. npm/yarn/pnpm publish
-	if (/\b(?:npm|yarn|pnpm)\s+publish\b/i.test(stripped)) {
-		return "Publishing package to registry";
-	}
-
-	// 4. SQL destructive operations
-	if (/\b(?:DROP|TRUNCATE)\s+(?:TABLE|DATABASE|SCHEMA)\b/i.test(stripped) || /\bDELETE\s+FROM\b/i.test(stripped)) {
-		return "Destructive SQL operation";
-	}
-
-	// 5. Disk format
-	if (/\b(?:format|mkfs|fdisk)\s/i.test(stripped)) {
-		return "Disk format/partition operation";
-	}
-
-	// 6. System shutdown/reboot
-	if (/\b(?:shutdown|reboot|halt|poweroff)\b/i.test(stripped) && !/\bservice\b/i.test(stripped)) {
-		return "System power operation";
-	}
-
-	// 7. chmod/chown recursive on root
-	if (/\b(?:chmod|chown)\s+(?:-[a-zA-Z]*R[a-zA-Z]*|--recursive)\b.*\/(?:\s|$)/i.test(stripped)) {
-		return "Recursive permission change on root directory";
-	}
-
-	// 8. find -delete
-	if (/\bfind\b.*\s-delete\b/i.test(stripped)) {
-		return "Find with delete operation";
-	}
-
-	return null;
+  return null;
 }

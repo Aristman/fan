@@ -25,7 +25,7 @@ Runtime: Bun · Monorepo: npm workspaces · Core: fan-ai + fan-agent-core + fan-
 
 ## Orchestrator Rules (Coordinator Mode)
 - **1 task = 1 worker.** Tasks are created from plan decomposition, workers are launched based on tasks. Never launch one worker to cover multiple tasks.
-- **Flow:** Plan → `TaskCreate` (all tasks) → `delegate_task` per task → `TaskUpdate` after worker completes → next task.
+- **Flow:** Plan → `TaskCreate` (all tasks) → `Agent` per task → `TaskUpdate` after worker completes → next task.
 - **Task transitions:** `pending` → `in_progress` → `completed` (direct `pending` → `completed` is not allowed).
 
 ## Code Conventions
@@ -59,8 +59,9 @@ Runtime: Bun · Monorepo: npm workspaces · Core: fan-ai + fan-agent-core + fan-
 - [x] Phase 1 — Project fork & setup (monorepo, renamed @fan/*, build pipeline)
 - [x] Phase 2 — Model Management (ProviderRouter, FallbackChain, BudgetTracker, ModelManager)
 - [x] Phase 3 — Client API Gateway (Hono REST+WS, auth, 14 endpoints, server mode)
-- [x] Phase 4 — Orchestrator standalone extension (delegate_task tool, 4 workers, 3 workflows, slash commands, 29 tests)
+- [x] Phase 4 — Orchestrator standalone extension (Agent tool, 8 workers, slash commands, tests)
 - [x] Phase 5 — Orchestrator Hardening as extension (coordinator mode, task widget, /plan, config, workers, permissions, retry/fallback)
+- [x] Phase 5.1 — Orchestrator v2 migration (Agent/SendMessage/StopAgent tools, RPC worker spawning, 8 agent types, removed chain/parallel modes)
 - [x] Phase 6 — Dashboard Client (Lit web UI, model settings, budget viz)
 - [x] Phase 7 — Polish & release (CLI packaging, init wizard, doctor, server command, --web flag, CI/CD delivery, docs)
 - [x] Phase 7.1 — Orchestrator extraction (removed hardcoded integration from core, standalone FAN Store extension, auto-discovery)
@@ -92,7 +93,7 @@ Runtime: Bun · Monorepo: npm workspaces · Core: fan-ai + fan-agent-core + fan-
 - Dashboard: `docs/develop/tests/dashboard-phase6.md`
 - Orchestrator: `docs/develop/tests/orchestrator-phase4.md`
 - Quick build: `npm run build` (10 packages, 0 errors)
-- Quick test: `cd packages/orchestrator && npx vitest run` (95 tests)
+- Quick test: `cd packages/orchestrator && npx vitest run`
 - Dashboard dev: `cd packages/dashboard && npm run dev` → http://localhost:5174
 - CLI: `fan` — interactive TUI mode
 - Setup wizard: `fan init` — first-time configuration

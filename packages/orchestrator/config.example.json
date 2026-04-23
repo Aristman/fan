@@ -1,29 +1,10 @@
 {
-    "cloud": {
-        "model": "zai/glm-4.5-air"
-    },
-    "local": {
-        "model": "ollama/qwen3:32b"
-    },
-    "providerMode": "cloud",
-    "parallelWorkers": 3,
-    "workerTimeout": 300000,
-    "maxRetries": 2,
-    "planTimeout": 300000,
-    "agentTimeouts": {
-        "explore": 120000,
-        "plan": 180000,
-        "implement": 300000,
-        "verify": 180000
-    },
-    "dangerousCommands": [
-        "rm -rf",
-        "git push --force",
-        "npm publish",
-        "DROP TABLE",
-        "TRUNCATE",
-        "DELETE FROM",
-        "mkfs",
-        "shutdown"
-    ]
+  "cloud": { "defaultModel": "", "defaultProvider": "", "models": {}, "providers": {} },
+  "local": { "defaultModel": "", "defaultProvider": "ollama", "models": {}, "providers": {} },
+  "providerMode": "cloud",
+  "maxWorkers": 10,
+  "parallelWorkers": 3,
+  "maxRetries": 2,
+  "stallTimeout": 300000,
+  "dangerousCommands": ["rm -rf /", "rm -rf .", "git push --force", "npm publish", "DROP TABLE"]
 }
