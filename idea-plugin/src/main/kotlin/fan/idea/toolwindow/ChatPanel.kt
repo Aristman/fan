@@ -401,6 +401,7 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     }
 
     fun dispose() {
+        inputPanel.dispose()
         scope.cancel()
     }
 }

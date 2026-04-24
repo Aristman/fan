@@ -202,14 +202,14 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 				newSession: async (options) => {
 					const result = await runtime.newSession(options);
 					if (!result.cancelled) {
-						await bindSessionExtensions();
+						bindSessionExtensions();
 					}
 					return result;
 				},
 				fork: async (entryId) => {
 					const result = await runtime.fork(entryId);
 					if (!result.cancelled) {
-						await bindSessionExtensions();
+						bindSessionExtensions();
 					}
 					return result;
 				},
@@ -217,7 +217,7 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 				switchSession: async (sessionPath) => {
 					const result = await runtime.switchSession(sessionPath);
 					if (!result.cancelled) {
-						await bindSessionExtensions();
+						bindSessionExtensions();
 					}
 					return result;
 				},
@@ -319,7 +319,7 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 		if (!path) return false;
 		console.log(`[session-adapter] Switching runtime to session ${sessionId} (${path})`);
 		await runtime.switchSession(path);
-		await bindSessionExtensions();
+		bindSessionExtensions();
 		diskCacheTime = 0; // invalidate cache after switch
 		resubscribeAfterSwitch();
 		return true;
@@ -374,7 +374,7 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 		// --- createSession: new session on disk via runtime ---
 		async createSession(opts?: { title?: string }) {
 			await runtime.newSession();
-			await bindSessionExtensions();
+			bindSessionExtensions();
 			diskCacheTime = 0;
 			resubscribeAfterSwitch();
 			return {
