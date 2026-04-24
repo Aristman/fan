@@ -1,116 +1,129 @@
 package fan.idea.toolwindow
 
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
-import fan.idea.ui.chat.FanChatPanel
 import com.intellij.openapi.util.Disposer
-import com.intellij.openapi.util.Key
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
 import com.intellij.ui.content.ContentFactory
-import com.intellij.ui.content.ContentManager
 import fan.idea.FanPlugin
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
+import fan.idea.api.ConnectionStatus
+import fan.idea.core.events.MessageListener
+import fan.idea.core.services.FanMessageService
+import fan.idea.core.services.FanSessionService
+import fan.idea.ui.chat.FanChatPanel
+import fan.idea.ui.chat.FanInputPanel
+import fan.idea.ui.chat.FanSessionListPanel
+import fan.idea.ui.chat.FanSessionNavigator
+import kotlinx.coroutines.runBlocking
+import java.awt.BorderLayout
+import javax.swing.JPanel
+import javax.swing.SwingUtilities
 
 class FanToolWindowFactory : ToolWindowFactory {
     private val log = Logger.getInstance(FanToolWindowFactory::class.java)
 
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
         val plugin = project.getService(FanPlugin::class.java)
+        val messageService = project.getService(FanMessageService::class.java)
+        val sessionService = project.getService(FanSessionService::class.java)
 
-        val contentManager = toolWindow.contentManager
         val contentFactory = ContentFactory.getInstance()
 
-        // Create panels
-        val welcomePanel = WelcomePanel(project)
-        val sessionListPanel = SessionListPanel(project)
+        // Create navigator + panels
+        val navigator = FanSessionNavigator(project)
+        val sessionListPanel = FanSessionListPanel(project)
         val chatPanel = FanChatPanel(project)
+        val inputPanel = FanInputPanel(project)
 
-        // Always start with session list — server will auto-start if needed
-        val initialPanel = sessionListPanel
+        navigator.addPanel(FanSessionNavigator.View.SESSION_LIST, sessionListPanel)
+        navigator.addPanel(FanSessionNavigator.View.CHAT, chatPanel)
 
-        val content = contentFactory.createContent(initialPanel, "", false)
-        contentManager.addContent(content)
+        // Root layout: NORTH (header area — empty for now, back button is in chatPanel),
+        // CENTER = navigator, SOUTH = input panel
+        val rootPanel = JPanel(BorderLayout())
+        rootPanel.add(navigator, BorderLayout.CENTER)
+        rootPanel.add(inputPanel, BorderLayout.SOUTH)
 
-        // Store references for view switching
-        val viewSwitcher = ViewSwitcher(
-            toolWindow = toolWindow,
-            contentManager = contentManager,
-            contentFactory = contentFactory,
-            welcomePanel = welcomePanel,
-            sessionListPanel = sessionListPanel,
-            chatPanel = chatPanel,
-            scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        )
-        viewSwitchers[project] = viewSwitcher
+        val content = contentFactory.createContent(rootPanel, "", false)
+        toolWindow.contentManager.addContent(content)
 
-        // Register panel disposal when tool window is closed
+        // Wire: session list double-click → open session → show chat
+        sessionListPanel.onSessionSelected = { sessionId ->
+            log.info("ToolWindow: session selected: $sessionId")
+            ApplicationManager.getApplication().executeOnPooledThread {
+                    val result = runBlocking { sessionService.selectSession(sessionId) }
+                    if (result.isSuccess) {
+                    SwingUtilities.invokeLater {
+                        navigator.showChat()
+                        inputPanel.focusInput()
+                    }
+                }
+            }
+        }
+
+        // Wire: input send → sendMessage → show chat (if new message from session list view)
+        inputPanel.onSendMessage = { text ->
+            log.info("ToolWindow: send message, length=${text.length}")
+            if (navigator.getCurrentView() == FanSessionNavigator.View.SESSION_LIST) {
+                // New message: stay in session list, message service will create session
+            }
+            ApplicationManager.getApplication().executeOnPooledThread {
+                try {
+                    val result = runBlocking { messageService.sendMessage(text) }
+                    if (result.isSuccess) {
+                        SwingUtilities.invokeLater {
+                            if (navigator.getCurrentView() == FanSessionNavigator.View.SESSION_LIST) {
+                                navigator.showChat()
+                                inputPanel.focusInput()
+                            }
+                        }
+                    } else {
+                        log.info("ToolWindow: send failed: ${result.exceptionOrNull()?.message}")
+                        SwingUtilities.invokeLater {
+                            inputPanel.setText(text)
+                        }
+                    }
+                } catch (t: Throwable) {
+                    log.info("ToolWindow: send exception: ${t.message}")
+                    SwingUtilities.invokeLater {
+                        inputPanel.setText(text)
+                    }
+                }
+            }
+        }
+
+        // Wire: chat panel back button → show session list
+        chatPanel.getBackButton().addActionListener {
+            log.info("ToolWindow: back to session list")
+            sessionService.navigateToSessionList()
+            navigator.showSessionList()
+        }
+
+        // Wire: generating state → input panel stop/send buttons
+        val messageBusConnection = project.messageBus.connect()
+        messageBusConnection.subscribe(MessageListener.TOPIC, object : MessageListener {
+            override fun onGeneratingChanged(@Suppress("PARAMETER_NAME_CHANGED_ON_OVERRIDE") generating: Boolean) {
+                SwingUtilities.invokeLater {
+                    inputPanel.isGenerating = generating
+                }
+            }
+        })
+
+        // Start with session list view
+        navigator.showSessionList()
+
+        // Dispose on close
         Disposer.register(toolWindow.disposable) {
-            welcomePanel.dispose()
             sessionListPanel.dispose()
             chatPanel.dispose()
-            viewSwitcher.dispose()
+            inputPanel.dispose()
+            messageBusConnection.disconnect()
             plugin.dispose()
         }
 
-        // Auto-connect: start server if needed, then connect
+        // Auto-connect
         plugin.ensureConnected()
-    }
-
-
-
-    companion object {
-        val VIEW_SWITCHER_KEY = Key.create<ViewSwitcher>("fan.view.switcher")
-        private val viewSwitchers = mutableMapOf<Project, ViewSwitcher>()
-
-        fun getViewSwitcher(project: Project): ViewSwitcher? = viewSwitchers[project]
-    }
-}
-
-/**
- * Manages switching between Tool Window views.
- */
-class ViewSwitcher(
-    val toolWindow: ToolWindow,
-    private val contentManager: ContentManager,
-    private val contentFactory: ContentFactory,
-    private val welcomePanel: WelcomePanel,
-    private val sessionListPanel: SessionListPanel,
-    private val chatPanel: FanChatPanel,
-    val scope: CoroutineScope
-) {
-    private var currentView: View = View.WELCOME
-
-    enum class View { WELCOME, SESSION_LIST, CHAT }
-
-    fun showWelcome() {
-        if (currentView == View.WELCOME) return
-        currentView = View.WELCOME
-        contentManager.removeAllContents(true)
-        contentManager.addContent(contentFactory.createContent(welcomePanel, "", false))
-    }
-
-    fun showSessionList() {
-        if (currentView == View.SESSION_LIST) return
-        currentView = View.SESSION_LIST
-        contentManager.removeAllContents(true)
-        contentManager.addContent(contentFactory.createContent(sessionListPanel, "", false))
-    }
-
-    fun showChat() {
-        if (currentView == View.CHAT) return
-        currentView = View.CHAT
-        contentManager.removeAllContents(true)
-        contentManager.addContent(contentFactory.createContent(chatPanel, "", false))
-        chatPanel.focusInput()
-    }
-
-    fun getCurrentView(): View = currentView
-
-    fun dispose() {
-        scope.cancel()
     }
 }
