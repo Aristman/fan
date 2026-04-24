@@ -75,7 +75,7 @@ class FanPlugin(private val project: Project) {
             // Try auto-detection first
             val config = serverDetector.readServerConfig()
             val baseUrl: String
-            val token: String
+            var token: String
 
             if (config != null) {
                 baseUrl = serverDetector.getBaseUrl(config)

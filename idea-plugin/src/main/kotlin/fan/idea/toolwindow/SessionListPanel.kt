@@ -1,19 +1,19 @@
 package fan.idea.toolwindow
 
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.ui.components.JBList
+import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
-import com.intellij.ui.components.JBButton
-import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBTextField
 import com.intellij.util.ui.JBUI
+import javax.swing.JButton
 import fan.idea.FanPluginManager
 import fan.idea.api.SessionSummary
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.awt.BorderLayout
@@ -38,14 +38,14 @@ class SessionListPanel(private val project: Project) : JPanel(BorderLayout()) {
     private val scope = CoroutineScope(SupervisorJob())
 
     // UI Components
-    private val searchBar = JBTextField().apply { placeholderText = "Search sessions..." }
+    private val searchBar = JBTextField().apply { toolTipText = "Search sessions..." }
     private val sessionListModel = DefaultListModel<String>()
     private val sessionList = JBList(sessionListModel)
     private val messageInput = JBTextArea(2, 20).apply {
         lineWrap = true
         wrapStyleWord = true
     }
-    private val sendButton = JBButton("Send")
+    private val sendButton = JButton("Send")
     private val emptyLabel = JBLabel("No sessions yet. Type a message to start a new chat.")
 
     // State
@@ -214,9 +214,7 @@ class SessionListPanel(private val project: Project) : JPanel(BorderLayout()) {
     }
 
     private fun getViewSwitcher(): ViewSwitcher? {
-        val toolWindow = ToolWindowManager.getInstance(project)
-            .getToolWindow("FAN Agent") ?: return null
-        return toolWindow.getUserData(FanToolWindowFactory.VIEW_SWITCHER_KEY)
+        return FanToolWindowFactory.getViewSwitcher(project)
     }
 
     fun focusInput() {

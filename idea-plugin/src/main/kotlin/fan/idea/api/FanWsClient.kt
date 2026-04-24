@@ -341,7 +341,7 @@ class FanWsClient {
         val result = mutableMapOf<String, Any?>()
         for ((key, element) in obj) {
             result[key] = when (element) {
-                is JsonPrimitive -> element.contentOrNull ?: element.booleanOrNull
+                is JsonPrimitive -> element.contentOrNull ?: element.content.toBooleanStrictOrNull()
                 else -> element.toString()
             }
         }
@@ -374,7 +374,7 @@ class FanWsClient {
      * Exponential back-off: 1 s × 2^attempt, capped at 30 s.
      */
     private fun calculateBackoff(attempt: Int): Long {
-        val delay = BASE_RECONNECT_DELAY_MS * (2.0.pow(attempt.toDouble()))
-        return min(delay, MAX_RECONNECT_DELAY_MS).toLong()
+        val delayMs = BASE_RECONNECT_DELAY_MS * (2.0.pow(attempt.toDouble()))
+        return min(delayMs, MAX_RECONNECT_DELAY_MS.toDouble()).toLong()
     }
 }

@@ -1,7 +1,6 @@
 package fan.idea.toolwindow
 
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.util.ui.JBUI
@@ -12,6 +11,7 @@ import fan.idea.settings.FanPluginSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.awt.BorderLayout
@@ -20,6 +20,7 @@ import java.awt.Dimension
 import java.awt.FlowLayout
 import java.awt.Color
 import javax.swing.BorderFactory
+import javax.swing.Box
 import javax.swing.BoxLayout
 import javax.swing.JButton
 import javax.swing.JLabel
@@ -300,7 +301,7 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
                     JBUI.CurrentTheme.Advertiser.borderColor(), 1, 1, 1, 1
                 )
                 panel.isOpaque = true
-                panel.background = JBUI.CurrentTheme.Advertiser.backgroundColor()
+                panel.background = Color(255, 235, 238)
             }
         }
 
@@ -383,9 +384,7 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     }
 
     private fun getViewSwitcher(): ViewSwitcher? {
-        val toolWindow = ToolWindowManager.getInstance(project)
-            .getToolWindow("FAN Agent") ?: return null
-        return toolWindow.getUserData(FanToolWindowFactory.VIEW_SWITCHER_KEY)
+        return FanToolWindowFactory.getViewSwitcher(project)
     }
 
     fun dispose() {

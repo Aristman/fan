@@ -434,8 +434,8 @@ sealed interface FanEvent {
         val isError: Boolean
     ) : FanEvent
     data class MessageEnd(val messageId: String?) : FanEvent
-    data class TurnEnd : FanEvent
-    data class AgentEnd : FanEvent
+    object TurnEnd : FanEvent
+    object AgentEnd : FanEvent
     data class Error(val message: String) : FanEvent
     data class Connected(val sessionId: String) : FanEvent
 }

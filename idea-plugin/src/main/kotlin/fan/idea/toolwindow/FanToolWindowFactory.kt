@@ -9,6 +9,7 @@ import fan.idea.FanPluginManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 class FanToolWindowFactory : ToolWindowFactory {
 
@@ -35,7 +36,7 @@ class FanToolWindowFactory : ToolWindowFactory {
         contentManager.addContent(content)
 
         // Store references for view switching
-        toolWindow.putUserData(VIEW_SWITCHER_KEY, ViewSwitcher(
+        val viewSwitcher = ViewSwitcher(
             toolWindow = toolWindow,
             contentManager = contentManager,
             contentFactory = contentFactory,
@@ -43,20 +44,22 @@ class FanToolWindowFactory : ToolWindowFactory {
             sessionListPanel = sessionListPanel,
             chatPanel = chatPanel,
             scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        ))
+        )
+        viewSwitchers[project] = viewSwitcher
 
         // Auto-connect if server is available
         if (plugin.isServerAvailable()) {
-            plugin.connect()
+            CoroutineScope(Dispatchers.IO).launch { plugin.connect() }
         }
     }
 
-    override fun disposeToolWindow() {
-        // Cleanup handled by FanPluginManager.dispose()
-    }
+
 
     companion object {
         val VIEW_SWITCHER_KEY = Key.create<ViewSwitcher>("fan.view.switcher")
+        private val viewSwitchers = mutableMapOf<Project, ViewSwitcher>()
+
+        fun getViewSwitcher(project: Project): ViewSwitcher? = viewSwitchers[project]
     }
 }
 

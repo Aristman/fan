@@ -7,7 +7,6 @@ import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPasswordField
 import com.intellij.ui.components.JBTextField
 import com.intellij.util.ui.FormBuilder
-import org.jetbrains.annotations.Nls
 import javax.swing.JComponent
 import javax.swing.JPanel
 
@@ -18,7 +17,7 @@ import javax.swing.JPanel
 class FanPluginConfigurable : Configurable {
 
     private val serverUrlField = JBTextField(30)
-    private val authTokenField = JBPasswordField(30)
+    private val authTokenField = JBPasswordField()
     private val showThinkingCheckBox = JBCheckBox("Show thinking blocks")
     private val contextAutoAttachCheckBox = JBCheckBox("Auto-attach file context to messages")
     private val maxContextLinesField = JBTextField(10)
@@ -45,7 +44,7 @@ class FanPluginConfigurable : Configurable {
     private val settings: FanPluginSettings
         get() = FanPluginSettings.getInstance()
 
-    override fun getDisplayName(): @Nls String = "FAN Agent"
+    override fun getDisplayName() = "FAN Agent"
 
     override fun createComponent(): JComponent = mainPanel
 

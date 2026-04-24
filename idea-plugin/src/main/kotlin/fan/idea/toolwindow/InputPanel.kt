@@ -4,13 +4,14 @@ import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.editor.impl.EditorImpl
 import com.intellij.openapi.fileTypes.FileTypes
 import com.intellij.openapi.project.Project
-import com.intellij.ui.components.JBButton
 import com.intellij.util.ui.JBUI
+import javax.swing.JButton
 import fan.idea.FanPluginManager
 import fan.idea.settings.FanPluginSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import java.awt.BorderLayout
 import java.awt.Dimension
@@ -25,8 +26,8 @@ class InputPanel(private val project: Project) : JPanel(BorderLayout()) {
 
     private val editor: com.intellij.openapi.editor.Editor
     private val editorComponent: java.awt.Component
-    private val sendButton = JBButton("Send")
-    private val stopButton = JBButton("Stop")
+    private val sendButton = JButton("Send")
+    private val stopButton = JButton("Stop")
 
     var onSendMessage: ((String) -> Unit)? = null
 
@@ -41,7 +42,7 @@ class InputPanel(private val project: Project) : JPanel(BorderLayout()) {
         // Style the editor
         (editor as? EditorImpl)?.apply {
             setOneLineMode(false)
-            preferredSize = Dimension(Integer.MAX_VALUE, 60)
+            setPreferredSize(Dimension(Integer.MAX_VALUE, 60))
         }
 
         val editorPane = JPanel(BorderLayout()).apply {

@@ -2,14 +2,14 @@ package fan.idea.toolwindow
 
 import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.wm.ToolWindowManager
-import com.intellij.ui.components.JBButton
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.JBUI
 import fan.idea.FanPluginManager
+import javax.swing.JButton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -25,8 +25,8 @@ class WelcomePanel(private val project: Project) : JPanel(BorderLayout()) {
 
     private val statusLabel = JBLabel("<html><b>FAN Server not found</b></html>")
     private val descriptionLabel = JBLabel("Could not detect a running FAN Server.")
-    private val startButton = JBButton("Start FAN Server")
-    private val settingsButton = JBButton("Configure Settings")
+    private val startButton = JButton("Start FAN Server")
+    private val settingsButton = JButton("Configure Settings")
     private val progressLabel = JBLabel("Starting...")
 
     init {
@@ -81,9 +81,7 @@ class WelcomePanel(private val project: Project) : JPanel(BorderLayout()) {
     }
 
     private fun getViewSwitcher(): ViewSwitcher? {
-        val toolWindow = ToolWindowManager.getInstance(project)
-            .getToolWindow("FAN Agent") ?: return null
-        return toolWindow.getUserData(FanToolWindowFactory.VIEW_SWITCHER_KEY)
+        return FanToolWindowFactory.getViewSwitcher(project)
     }
 
     fun dispose() {
