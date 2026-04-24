@@ -83,10 +83,13 @@ class FanPlugin(private val project: Project) {
             // Observe WS events
             launchEventObserver()
 
-            // Load sessions
+            // Load sessions — filter by project CWD
             val sessionsResult = apiClient!!.listSessions()
             if (sessionsResult.isSuccess) {
-                _sessions.value = sessionsResult.getOrThrow().sessions
+                val projectPath = project.basePath ?: ""
+                val allSessions = sessionsResult.getOrThrow().sessions
+                _sessions.value = filterSessionsForProject(allSessions, projectPath)
+                log.info("Loaded ${_sessions.value.size} sessions for project (total on server: ${allSessions.size})")
             } else {
                 log.info("Failed to load sessions: ${sessionsResult.exceptionOrNull()?.message}")
             }
@@ -230,7 +233,8 @@ class FanPlugin(private val project: Project) {
 
         val result = client.listSessions()
         if (result.isSuccess) {
-            _sessions.value = result.getOrThrow().sessions
+            val projectPath = project.basePath ?: ""
+            _sessions.value = filterSessionsForProject(result.getOrThrow().sessions, projectPath)
         }
         result.map { }
     }
@@ -352,6 +356,22 @@ class FanPlugin(private val project: Project) {
             wsClient?.connectionState?.collect { status ->
                 _connectionStatus.value = status
             }
+        }
+    }
+
+    /**
+     * Filter sessions to only those belonging to the current project.
+     * FAN server stores sessions under ~/.fan/agent/sessions/<encoded-cwd>/
+     * where encoded-cwd is like --home-user-projects-myapp--
+     * We match the sessionFile path against the project's encoded CWD.
+     */
+    private fun filterSessionsForProject(sessions: List<SessionSummary>, projectPath: String): List<SessionSummary> {
+        if (projectPath.isBlank()) return sessions
+        // Encode project path the same way FAN does: strip leading /, replace / and : with -
+        val encodedCwd = "--${projectPath.removePrefix("/").replace("/", "-").replace(":", "-")}--"
+        return sessions.filter { session ->
+            val file = session.sessionFile ?: return@filter false
+            file.contains(encodedCwd)
         }
     }
 
