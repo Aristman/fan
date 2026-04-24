@@ -193,6 +193,42 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 		ensureRuntimeSubscription();
 	}
 
+	// Bind extensions to the current runtime session so they receive session_start event.
+	// Must be called after every switchSession/newSession since a new AgentSession is created.
+	async function bindSessionExtensions(): Promise<void> {
+		await runtime.session.bindExtensions({
+			commandContextActions: {
+				waitForIdle: () => runtime.session.agent.waitForIdle(),
+				newSession: async (options) => {
+					const result = await runtime.newSession(options);
+					if (!result.cancelled) {
+						await bindSessionExtensions();
+					}
+					return result;
+				},
+				fork: async (entryId) => {
+					const result = await runtime.fork(entryId);
+					if (!result.cancelled) {
+						await bindSessionExtensions();
+					}
+					return result;
+				},
+				navigateTree: async (targetId, options) => runtime.session.navigateTree(targetId, options),
+				switchSession: async (sessionPath) => {
+					const result = await runtime.switchSession(sessionPath);
+					if (!result.cancelled) {
+						await bindSessionExtensions();
+					}
+					return result;
+				},
+				reload: async () => runtime.session.reload(),
+			},
+			onError: (error) => {
+				console.error(`[extension] ${error.extensionPath}: ${error.error}`);
+			},
+		});
+	}
+
 	// --- Helpers ---
 	function convertMessage(
 		msg: any,
@@ -283,6 +319,7 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 		if (!path) return false;
 		console.log(`[session-adapter] Switching runtime to session ${sessionId} (${path})`);
 		await runtime.switchSession(path);
+		await bindSessionExtensions();
 		diskCacheTime = 0; // invalidate cache after switch
 		resubscribeAfterSwitch();
 		return true;
@@ -337,6 +374,7 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 		// --- createSession: new session on disk via runtime ---
 		async createSession(opts?: { title?: string }) {
 			await runtime.newSession();
+			await bindSessionExtensions();
 			diskCacheTime = 0;
 			resubscribeAfterSwitch();
 			return {
@@ -402,6 +440,8 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 				},
 			];
 		},
+
+		bindSessionExtensions,
 	};
 }
 
@@ -1089,6 +1129,7 @@ export async function main(args: string[]) {
 			process.exit(1);
 		}
 		const adapter = createSessionAdapter(runtime);
+		await adapter.bindSessionExtensions();
 		const { port, stop } = await startServer(modelManager, adapter, {
 			port: parsed.port || 3456,
 			host: parsed.host || "localhost",
