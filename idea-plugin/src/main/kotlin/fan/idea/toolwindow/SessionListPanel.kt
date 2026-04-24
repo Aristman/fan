@@ -9,6 +9,7 @@ import com.intellij.ui.components.JBTextField
 import com.intellij.util.ui.JBUI
 import javax.swing.JButton
 import fan.idea.FanPluginManager
+import fan.idea.api.ConnectionStatus
 import fan.idea.api.SessionSummary
 import com.intellij.openapi.diagnostic.Logger
 import kotlinx.coroutines.CoroutineScope
@@ -98,20 +99,20 @@ class SessionListPanel(private val project: Project) : JPanel(BorderLayout()) {
             plugin.connectionStatus.collect { status ->
                 javax.swing.SwingUtilities.invokeLater {
                     when (status) {
-                        fan.idea.api.ConnectionStatus.CONNECTED -> {
+                        ConnectionStatus.CONNECTED -> {
                             sendButton.isEnabled = true
                             statusLabel.text = "Connected"
                         }
-                        fan.idea.api.ConnectionStatus.CONNECTING,
-                        fan.idea.api.ConnectionStatus.RECONNECTING -> {
+                        ConnectionStatus.CONNECTING,
+                        ConnectionStatus.RECONNECTING -> {
                             sendButton.isEnabled = false
                             statusLabel.text = "Connecting to FAN Server..."
                         }
-                        fan.idea.api.ConnectionStatus.DISCONNECTED -> {
+                        ConnectionStatus.DISCONNECTED -> {
                             sendButton.isEnabled = false
                             statusLabel.text = "Disconnected"
                         }
-                        fan.idea.api.ConnectionStatus.ERROR -> {
+                        ConnectionStatus.ERROR -> {
                             sendButton.isEnabled = false
                             statusLabel.text = "Connection failed"
                         }
