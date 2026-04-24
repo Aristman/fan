@@ -296,10 +296,12 @@ class FanPlugin(private val project: Project) {
 
         log.info("Project: $projectPath, assigned port: $port")
 
-        // Check if server is already reachable on our port
+        // Kill any existing server on our port — it may be from a previous run with wrong CWD
         if (serverDetector.isPortReachable(port)) {
-            log.info("Server reachable on port $port, connecting...")
-            return@withContext connect(port)
+            log.info("Port $port is occupied, killing existing server...")
+            serverDetector.killServerOnPort(port)
+            // Wait for port to be released
+            delay(1000)
         }
 
         // Start server with our port in the project directory

@@ -139,6 +139,41 @@ class ServerDetector {
         }
     }
 
+    /**
+     * Kill any process listening on the given port.
+     * Uses `lsof -ti :<port>` to find PIDs, then kills them.
+     */
+    fun killServerOnPort(port: Int) {
+        try {
+            val findProcess = ProcessBuilder("bash", "-c", "lsof -ti :$port 2>/dev/null")
+                .redirectErrorStream(true)
+                .start()
+            val pids = findProcess.inputStream.bufferedReader().readText().trim()
+            findProcess.waitFor()
+
+            if (pids.isNotBlank()) {
+                for (pid in pids.split("\n")) {
+                    val pidTrimmed = pid.trim()
+                    if (pidTrimmed.isNotBlank()) {
+                        log.info("Killing process $pidTrimmed on port $port")
+                        try {
+                            val kill = ProcessBuilder("kill", pidTrimmed)
+                                .redirectErrorStream(true)
+                                .start()
+                            kill.waitFor(5, TimeUnit.SECONDS)
+                        } catch (e: Exception) {
+                            log.info("Failed to kill process $pidTrimmed: ${e.message}")
+                        }
+                    }
+                }
+            } else {
+                log.info("No process found on port $port")
+            }
+        } catch (e: Exception) {
+            log.info("Failed to find/kill process on port $port: ${e.message}")
+        }
+    }
+
     private fun getPid(process: Process?): Long {
         return try {
             process?.pid() ?: -1
