@@ -1,5 +1,6 @@
 package fan.idea.toolwindow
 
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.ui.components.JBList
 import com.intellij.ui.components.JBLabel
@@ -8,9 +9,12 @@ import com.intellij.ui.components.JBTextArea
 import com.intellij.ui.components.JBTextField
 import com.intellij.util.ui.JBUI
 import javax.swing.JButton
-import fan.idea.FanPluginManager
+import javax.swing.SwingUtilities
 import fan.idea.api.ConnectionStatus
 import fan.idea.api.SessionSummary
+import fan.idea.core.services.FanConnectionService
+import fan.idea.core.services.FanMessageService
+import fan.idea.core.services.FanSessionService
 import com.intellij.openapi.diagnostic.Logger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -19,6 +23,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.awt.BorderLayout
+import java.awt.Color
 import java.awt.CardLayout
 import java.awt.event.KeyAdapter
 import java.awt.event.KeyEvent
@@ -37,7 +42,12 @@ import javax.swing.event.DocumentListener
 
 class SessionListPanel(private val project: Project) : JPanel(BorderLayout()) {
     private val log = Logger.getInstance(SessionListPanel::class.java)
-    private val plugin get() = project.getService(FanPluginManager::class.java).fanPlugin
+    private val connectionService: FanConnectionService
+        get() = ApplicationManager.getApplication().getService(FanConnectionService::class.java)
+    private val sessionService: FanSessionService
+        get() = project.getService(FanSessionService::class.java)
+    private val messageService: FanMessageService
+        get() = project.getService(FanMessageService::class.java)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     // UI Components
@@ -51,7 +61,7 @@ class SessionListPanel(private val project: Project) : JPanel(BorderLayout()) {
     private val sendButton = JButton("Send")
     private val emptyLabel = JBLabel("No sessions yet. Type a message to start a new chat.")
     private val statusLabel = JBLabel("").apply {
-        foreground = java.awt.Color.GRAY
+        foreground = Color.GRAY
         border = JBUI.Borders.empty(2, 8)
     }
 
@@ -96,8 +106,8 @@ class SessionListPanel(private val project: Project) : JPanel(BorderLayout()) {
 
         // Observe connection status
         scope.launch {
-            plugin.connectionStatus.collect { status ->
-                javax.swing.SwingUtilities.invokeLater {
+            connectionService.getConnectionStatus(project).collect { status ->
+                SwingUtilities.invokeLater {
                     when (status) {
                         ConnectionStatus.CONNECTED -> {
                             sendButton.isEnabled = true
@@ -121,10 +131,10 @@ class SessionListPanel(private val project: Project) : JPanel(BorderLayout()) {
             }
         }
 
-        // Observe sessions from plugin
+        // Observe sessions from service
         scope.launch {
-            plugin.sessions.collect { sessionList ->
-                javax.swing.SwingUtilities.invokeLater { updateSessionList(sessionList) }
+            sessionService.sessions.collect { sessionList ->
+                SwingUtilities.invokeLater { updateSessionList(sessionList) }
             }
         }
 
@@ -174,26 +184,26 @@ class SessionListPanel(private val project: Project) : JPanel(BorderLayout()) {
         messageInput.text = ""
         sendButton.isEnabled = false
 
-        com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
+        ApplicationManager.getApplication().executeOnPooledThread {
             try {
-                log.info("SessionListPanel: calling plugin.sendMessage...")
-                val result = runBlocking { plugin.sendMessage(text) }
+                log.info("SessionListPanel: calling messageService.sendMessage...")
+                val result = runBlocking { messageService.sendMessage(text) }
                 log.info("SessionListPanel: sendMessage result=${result.isSuccess}")
                 if (result.isFailure) {
                     log.info("SessionListPanel: error=${result.exceptionOrNull()?.message}")
-                    javax.swing.SwingUtilities.invokeLater {
+                    SwingUtilities.invokeLater {
                         messageInput.text = text
                         sendButton.isEnabled = true
                     }
                 } else {
-                    javax.swing.SwingUtilities.invokeLater {
+                    SwingUtilities.invokeLater {
                         sendButton.isEnabled = true
                         getViewSwitcher()?.showChat()
                     }
                 }
             } catch (t: Throwable) {
                 log.info("SessionListPanel: exception=${t.message}")
-                javax.swing.SwingUtilities.invokeLater {
+                SwingUtilities.invokeLater {
                     messageInput.text = text
                     sendButton.isEnabled = true
                 }
@@ -202,11 +212,11 @@ class SessionListPanel(private val project: Project) : JPanel(BorderLayout()) {
     }
 
     private fun openSession(sessionId: String) {
-        com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
+        ApplicationManager.getApplication().executeOnPooledThread {
             try {
-                val result = runBlocking { plugin.switchSession(sessionId) }
+                val result = runBlocking { sessionService.selectSession(sessionId) }
                 if (result.isSuccess) {
-                    javax.swing.SwingUtilities.invokeLater {
+                    SwingUtilities.invokeLater {
                         getViewSwitcher()?.showChat()
                     }
                 }

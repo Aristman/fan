@@ -1,16 +1,18 @@
 package fan.idea.toolwindow
 
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.JBUI
-import fan.idea.FanPluginManager
+import fan.idea.FanPlugin
+import fan.idea.core.services.FanServerService
 import javax.swing.JButton
+import javax.swing.SwingUtilities
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.awt.BorderLayout
@@ -20,7 +22,8 @@ import javax.swing.JPanel
 import javax.swing.SwingConstants
 
 class WelcomePanel(private val project: Project) : JPanel(BorderLayout()) {
-    private val plugin get() = project.getService(FanPluginManager::class.java).fanPlugin
+    private val plugin: FanPlugin get() = project.getService(FanPlugin::class.java)
+    private val serverService: FanServerService get() = project.getService(FanServerService::class.java)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     private val statusLabel = JBLabel("<html><b>FAN Server not found</b></html>")
@@ -59,26 +62,26 @@ class WelcomePanel(private val project: Project) : JPanel(BorderLayout()) {
             progressLabel.isVisible = true
             descriptionLabel.text = "Starting FAN Server..."
 
-            com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
+            ApplicationManager.getApplication().executeOnPooledThread {
                 try {
-                    val result = runBlocking { plugin.ensureServerAndConnect() }
+                    val result = runBlocking { serverService.ensureServerAndConnect() }
                     if (result.isSuccess) {
-                        javax.swing.SwingUtilities.invokeLater {
+                        SwingUtilities.invokeLater {
                             descriptionLabel.text = "✅ Connected! Loading sessions..."
                         }
                         Thread.sleep(500)
-                        javax.swing.SwingUtilities.invokeLater {
+                        SwingUtilities.invokeLater {
                             getViewSwitcher()?.showSessionList()
                         }
                     } else {
-                        javax.swing.SwingUtilities.invokeLater {
+                        SwingUtilities.invokeLater {
                             descriptionLabel.text = "❌ Failed: ${result.exceptionOrNull()?.message}"
                             startButton.isEnabled = true
                             progressLabel.isVisible = false
                         }
                     }
                 } catch (t: Throwable) {
-                    javax.swing.SwingUtilities.invokeLater {
+                    SwingUtilities.invokeLater {
                         descriptionLabel.text = "❌ Failed: ${t.message}"
                         startButton.isEnabled = true
                         progressLabel.isVisible = false

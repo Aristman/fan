@@ -7,7 +7,8 @@ import com.intellij.openapi.util.Key
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
 import com.intellij.ui.content.ContentFactory
-import fan.idea.FanPluginManager
+import com.intellij.ui.content.ContentManager
+import fan.idea.FanPlugin
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -17,8 +18,7 @@ class FanToolWindowFactory : ToolWindowFactory {
     private val log = Logger.getInstance(FanToolWindowFactory::class.java)
 
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
-        val manager = project.getService(FanPluginManager::class.java)
-        val plugin = manager.fanPlugin
+        val plugin = project.getService(FanPlugin::class.java)
 
         val contentManager = toolWindow.contentManager
         val contentFactory = ContentFactory.getInstance()
@@ -52,19 +52,11 @@ class FanToolWindowFactory : ToolWindowFactory {
             sessionListPanel.dispose()
             chatPanel.dispose()
             viewSwitcher.dispose()
+            plugin.dispose()
         }
 
         // Auto-connect: start server if needed, then connect
-        com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
-            try {
-                val result = kotlinx.coroutines.runBlocking { plugin.ensureServerAndConnect() }
-                if (result.isFailure) {
-                    log.info("Failed to connect to FAN Server: ${result.exceptionOrNull()?.message}")
-                }
-            } catch (t: Throwable) {
-                log.info("Failed to connect to FAN Server: ${t.message}")
-            }
-        }
+        plugin.ensureConnected()
     }
 
 
@@ -82,7 +74,7 @@ class FanToolWindowFactory : ToolWindowFactory {
  */
 class ViewSwitcher(
     val toolWindow: ToolWindow,
-    private val contentManager: com.intellij.ui.content.ContentManager,
+    private val contentManager: ContentManager,
     private val contentFactory: ContentFactory,
     private val welcomePanel: WelcomePanel,
     private val sessionListPanel: SessionListPanel,

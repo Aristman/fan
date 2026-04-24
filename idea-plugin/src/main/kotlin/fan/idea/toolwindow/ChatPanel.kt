@@ -1,12 +1,17 @@
 package fan.idea.toolwindow
 
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.util.ui.JBUI
-import fan.idea.FanPluginManager
+import fan.idea.api.ConnectionStatus
 import fan.idea.api.FanEvent
 import fan.idea.api.SessionMessage
+import fan.idea.core.events.MessageListener
+import fan.idea.core.services.FanConnectionService
+import fan.idea.core.services.FanMessageService
+import fan.idea.core.services.FanSessionService
 import fan.idea.settings.FanPluginSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -28,8 +33,17 @@ import javax.swing.SwingConstants
 import javax.swing.SwingUtilities
 
 class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
-    private val plugin get() = project.getService(FanPluginManager::class.java).fanPlugin
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    private val connectionService: FanConnectionService
+        get() = ApplicationManager.getApplication().getService(FanConnectionService::class.java)
+    private val sessionService: FanSessionService
+        get() = project.getService(FanSessionService::class.java)
+    private val messageService: FanMessageService
+        get() = project.getService(FanMessageService::class.java)
+
+    private val messageBusConnection =
+        project.messageBus.connect()
 
     // Components
     private val chatScrollPane: JBScrollPane
@@ -51,6 +65,13 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     private val statusBar = StatusBar()
 
     init {
+        // Subscribe to MessageListener for WS events
+        messageBusConnection.subscribe(MessageListener.TOPIC, object : MessageListener {
+            override fun onMessageReceived(event: FanEvent) {
+                handleEvent(event)
+            }
+        })
+
         // App bar (top)
         val appBar = JPanel(BorderLayout()).apply {
             border = JBUI.Borders.empty(4, 8)
@@ -82,23 +103,18 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
 
         // Listeners
         backButton.addActionListener {
-            plugin.navigateToSessionList()
+            sessionService.navigateToSessionList()
             getViewSwitcher()?.showSessionList()
-        }
-
-        // Observe events
-        scope.launch {
-            plugin.events.collect { event -> handleEvent(event) }
         }
 
         // Observe connection status
         scope.launch {
-            plugin.connectionStatus.collect { status -> updateConnectionStatus(status) }
+            connectionService.getConnectionStatus(project).collect { status -> updateConnectionStatus(status) }
         }
 
         // Observe session changes (for loading history)
         scope.launch {
-            plugin.currentSessionId.collect { id ->
+            sessionService.currentSessionId.collect { id ->
                 if (id != null && !messagesLoaded) {
                     loadMessages()
                 }
@@ -107,8 +123,8 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
 
         // Observe generating state for stop button
         scope.launch {
-            plugin.isGenerating.collect { generating ->
-                javax.swing.SwingUtilities.invokeLater {
+            messageService.isGenerating.collect { generating ->
+                SwingUtilities.invokeLater {
                     inputPanel.setGenerating(generating)
                 }
             }
@@ -116,7 +132,7 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
 
         // Show user message in chat when sent (from any input)
         scope.launch {
-            plugin.lastUserMessage.collect { msg ->
+            messageService.lastUserMessage.collect { msg ->
                 if (msg != null) {
                     withContextToEdt {
                         val panel = createMessageBubble("user")
@@ -241,7 +257,7 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     private fun loadMessages() {
         messagesLoaded = true
         scope.launch {
-            val result = plugin.getSessionMessages()
+            val result = sessionService.getSessionMessages()
             if (result.isFailure) return@launch
 
             withContextToEdt {
@@ -271,8 +287,8 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
                 }
 
                 // Update title
-                plugin.currentSessionId.value?.let { id ->
-                    val session = plugin.sessions.value.find { it.id == id }
+                sessionService.currentSessionId.value?.let { id ->
+                    val session = sessionService.sessions.value.find { it.id == id }
                     titleLabel.text = session?.title?.ifBlank { null } ?: "Chat"
                 }
 
@@ -370,7 +386,7 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
         return panel
     }
 
-    private fun updateConnectionStatus(status: fan.idea.api.ConnectionStatus) {
+    private fun updateConnectionStatus(status: ConnectionStatus) {
         withContextToEdt {
             statusBar.updateStatus(status)
         }
@@ -401,6 +417,7 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     }
 
     fun dispose() {
+        messageBusConnection.disconnect()
         inputPanel.dispose()
         scope.cancel()
     }

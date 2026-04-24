@@ -33,6 +33,7 @@ dependencies {
         exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib")
     }
     implementation("com.vladsch.flexmark:flexmark-all:0.64.8")
+    implementation("org.jsoup:jsoup:1.18.1")
 
     testImplementation("junit:junit:4.13.2")
 }

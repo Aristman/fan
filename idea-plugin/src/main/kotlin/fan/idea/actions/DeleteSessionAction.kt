@@ -3,12 +3,13 @@ package fan.idea.actions
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.project.Project
-import fan.idea.FanPluginManager
+import fan.idea.core.services.FanSessionService
 import fan.idea.notifications.FanNotificationGroup
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.swing.JOptionPane
 
 /**
@@ -22,7 +23,7 @@ class DeleteSessionAction(
 ) : AnAction("Delete Session") {
     
     private val scope = CoroutineScope(SupervisorJob())
-    private val plugin get() = project.getService(FanPluginManager::class.java).fanPlugin
+    private val sessionService: FanSessionService get() = project.getService(FanSessionService::class.java)
     
     override fun actionPerformed(e: AnActionEvent) {
         val confirm = JOptionPane.showConfirmDialog(
@@ -36,8 +37,8 @@ class DeleteSessionAction(
         if (confirm != JOptionPane.YES_OPTION) return
         
         scope.launch(Dispatchers.IO) {
-            val result = plugin.deleteSession(sessionId)
-            kotlinx.coroutines.withContext(Dispatchers.Main) {
+            val result = sessionService.deleteSession(sessionId)
+            withContext(Dispatchers.Main) {
                 if (result.isSuccess) {
                     FanNotificationGroup.info("FAN Agent", "Session deleted.")
                 } else {

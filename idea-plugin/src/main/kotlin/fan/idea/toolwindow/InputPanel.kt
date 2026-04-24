@@ -1,13 +1,16 @@
 package fan.idea.toolwindow
 
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.command.WriteCommandAction
+import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.editor.impl.EditorImpl
 import com.intellij.openapi.fileTypes.FileTypes
 import com.intellij.openapi.project.Project
 import com.intellij.util.ui.JBUI
 import javax.swing.JButton
-import fan.idea.FanPluginManager
+import javax.swing.SwingUtilities
+import fan.idea.core.services.FanMessageService
 import fan.idea.settings.FanPluginSettings
 import com.intellij.openapi.diagnostic.Logger
 import kotlinx.coroutines.CoroutineScope
@@ -17,6 +20,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.awt.BorderLayout
+import java.awt.Component
 import java.awt.Dimension
 import java.awt.FlowLayout
 import java.awt.event.KeyAdapter
@@ -25,11 +29,11 @@ import javax.swing.JPanel
 
 class InputPanel(private val project: Project) : JPanel(BorderLayout()) {
     private val log = Logger.getInstance(InputPanel::class.java)
-    private val plugin get() = project.getService(FanPluginManager::class.java).fanPlugin
+    private val messageService: FanMessageService get() = project.getService(FanMessageService::class.java)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    private val editor: com.intellij.openapi.editor.Editor
-    private val editorComponent: java.awt.Component
+    private val editor: Editor
+    private val editorComponent: Component
     private val sendButton = JButton("Send")
     private val stopButton = JButton("Stop")
 
@@ -75,7 +79,7 @@ class InputPanel(private val project: Project) : JPanel(BorderLayout()) {
         })
 
         sendButton.addActionListener { doSend() }
-        stopButton.addActionListener { plugin.stopGeneration() }
+        stopButton.addActionListener { messageService.stopGeneration() }
     }
 
     fun setGenerating(generating: Boolean) {
@@ -102,25 +106,25 @@ class InputPanel(private val project: Project) : JPanel(BorderLayout()) {
         } else null
 
         sendButton.isEnabled = false
-        com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
+        ApplicationManager.getApplication().executeOnPooledThread {
             try {
-                log.info("InputPanel: calling plugin.sendMessage...")
-                val result = runBlocking { plugin.sendMessage(text, context) }
+                log.info("InputPanel: calling messageService.sendMessage...")
+                val result = runBlocking { messageService.sendMessage(text, context) }
                 log.info("InputPanel: sendMessage result=${result.isSuccess}")
                 if (result.isFailure) {
                     log.info("InputPanel: error=${result.exceptionOrNull()?.message}")
-                    javax.swing.SwingUtilities.invokeLater {
+                    SwingUtilities.invokeLater {
                         WriteCommandAction.runWriteCommandAction(project) {
                             editor.document.setText(text)
                         }
                         sendButton.isEnabled = true
                     }
                 } else {
-                    javax.swing.SwingUtilities.invokeLater { sendButton.isEnabled = true }
+                    SwingUtilities.invokeLater { sendButton.isEnabled = true }
                 }
             } catch (t: Throwable) {
                 log.info("InputPanel: exception=${t.message}")
-                javax.swing.SwingUtilities.invokeLater {
+                SwingUtilities.invokeLater {
                     WriteCommandAction.runWriteCommandAction(project) {
                         editor.document.setText(text)
                     }
