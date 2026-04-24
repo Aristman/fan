@@ -13,7 +13,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.awt.BorderLayout
 import java.awt.Component
 import java.awt.Dimension
@@ -30,7 +29,7 @@ import javax.swing.SwingUtilities
 
 class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     private val plugin get() = project.getService(FanPluginManager::class.java).fanPlugin
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     // Components
     private val chatScrollPane: JBScrollPane
@@ -109,7 +108,7 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
         // Observe generating state for stop button
         scope.launch {
             plugin.isGenerating.collect { generating ->
-                withContext(Dispatchers.Main) {
+                javax.swing.SwingUtilities.invokeLater {
                     inputPanel.setGenerating(generating)
                 }
             }

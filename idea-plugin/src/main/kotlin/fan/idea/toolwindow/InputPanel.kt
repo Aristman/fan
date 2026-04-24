@@ -1,5 +1,6 @@
 package fan.idea.toolwindow
 
+import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.editor.impl.EditorImpl
 import com.intellij.openapi.fileTypes.FileTypes
@@ -14,7 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.runBlocking
 import java.awt.BorderLayout
 import java.awt.Dimension
 import java.awt.FlowLayout
@@ -25,7 +26,7 @@ import javax.swing.JPanel
 class InputPanel(private val project: Project) : JPanel(BorderLayout()) {
     private val log = Logger.getInstance(InputPanel::class.java)
     private val plugin get() = project.getService(FanPluginManager::class.java).fanPlugin
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     private val editor: com.intellij.openapi.editor.Editor
     private val editorComponent: java.awt.Component
@@ -89,9 +90,11 @@ class InputPanel(private val project: Project) : JPanel(BorderLayout()) {
     private fun doSend() {
         val text = editor.document.text.trim()
         if (text.isBlank()) return
-        log.info("doSend() called, text length: ${text.length}")
+        log.info("InputPanel: doSend, text length=${text.length}")
 
-        editor.document.setText("")
+        WriteCommandAction.runWriteCommandAction(project) {
+            editor.document.setText("")
+        }
 
         val settings = FanPluginSettings.getInstance()
         val context = if (settings.contextAutoAttach) {
@@ -99,27 +102,31 @@ class InputPanel(private val project: Project) : JPanel(BorderLayout()) {
         } else null
 
         sendButton.isEnabled = false
-        try {
-            scope.launch {
-                log.info("Coroutine started, calling plugin.sendMessage...")
-                val result = plugin.sendMessage(text, context)
-                log.info("sendMessage result: isFailure=${result.isFailure}")
+        com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
+            try {
+                log.info("InputPanel: calling plugin.sendMessage...")
+                val result = runBlocking { plugin.sendMessage(text, context) }
+                log.info("InputPanel: sendMessage result=${result.isSuccess}")
                 if (result.isFailure) {
-                    val error = result.exceptionOrNull()?.message ?: "Unknown error"
-                    log.info("Failed to send message: $error")
-                    withContext(Dispatchers.Main) {
-                        // Put text back so user can retry
+                    log.info("InputPanel: error=${result.exceptionOrNull()?.message}")
+                    javax.swing.SwingUtilities.invokeLater {
+                        WriteCommandAction.runWriteCommandAction(project) {
+                            editor.document.setText(text)
+                        }
+                        sendButton.isEnabled = true
+                    }
+                } else {
+                    javax.swing.SwingUtilities.invokeLater { sendButton.isEnabled = true }
+                }
+            } catch (t: Throwable) {
+                log.info("InputPanel: exception=${t.message}")
+                javax.swing.SwingUtilities.invokeLater {
+                    WriteCommandAction.runWriteCommandAction(project) {
                         editor.document.setText(text)
                     }
-                }
-                withContext(Dispatchers.Main) {
                     sendButton.isEnabled = true
                 }
             }
-        } catch (e: Throwable) {
-            log.info("Failed to launch send coroutine: ${e.message}")
-            sendButton.isEnabled = true
-            editor.document.setText(text)
         }
     }
 

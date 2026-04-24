@@ -12,7 +12,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.launch
 
 class FanToolWindowFactory : ToolWindowFactory {
     private val log = Logger.getInstance(FanToolWindowFactory::class.java)
@@ -61,10 +60,14 @@ class FanToolWindowFactory : ToolWindowFactory {
 
         // Auto-connect if server is available
         if (plugin.isServerAvailable()) {
-            viewSwitcher.scope.launch(Dispatchers.IO) {
-                val result = plugin.connect()
-                if (result.isFailure) {
-                    log.info("Failed to connect to FAN Server: ${result.exceptionOrNull()?.message}")
+            com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
+                try {
+                    val result = kotlinx.coroutines.runBlocking { plugin.connect() }
+                    if (result.isFailure) {
+                        log.info("Failed to connect to FAN Server: ${result.exceptionOrNull()?.message}")
+                    }
+                } catch (t: Throwable) {
+                    log.info("Failed to connect to FAN Server: ${t.message}")
                 }
             }
         }

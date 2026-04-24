@@ -12,7 +12,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.runBlocking
 import java.awt.BorderLayout
 import java.awt.GridLayout
 import javax.swing.Box
@@ -21,7 +21,7 @@ import javax.swing.SwingConstants
 
 class WelcomePanel(private val project: Project) : JPanel(BorderLayout()) {
     private val plugin get() = project.getService(FanPluginManager::class.java).fanPlugin
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     private val statusLabel = JBLabel("<html><b>FAN Server not found</b></html>")
     private val descriptionLabel = JBLabel("Could not detect a running FAN Server.")
@@ -59,15 +59,27 @@ class WelcomePanel(private val project: Project) : JPanel(BorderLayout()) {
             progressLabel.isVisible = true
             descriptionLabel.text = "Starting FAN Server..."
 
-            scope.launch {
-                val result = plugin.startServerAndConnect()
-                withContext(Dispatchers.Main) {
+            com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
+                try {
+                    val result = runBlocking { plugin.startServerAndConnect() }
                     if (result.isSuccess) {
-                        descriptionLabel.text = "✅ Connected! Loading sessions..."
-                        delay(500)
-                        getViewSwitcher()?.showSessionList()
+                        javax.swing.SwingUtilities.invokeLater {
+                            descriptionLabel.text = "✅ Connected! Loading sessions..."
+                        }
+                        Thread.sleep(500)
+                        javax.swing.SwingUtilities.invokeLater {
+                            getViewSwitcher()?.showSessionList()
+                        }
                     } else {
-                        descriptionLabel.text = "❌ Failed: ${result.exceptionOrNull()?.message}"
+                        javax.swing.SwingUtilities.invokeLater {
+                            descriptionLabel.text = "❌ Failed: ${result.exceptionOrNull()?.message}"
+                            startButton.isEnabled = true
+                            progressLabel.isVisible = false
+                        }
+                    }
+                } catch (t: Throwable) {
+                    javax.swing.SwingUtilities.invokeLater {
+                        descriptionLabel.text = "❌ Failed: ${t.message}"
                         startButton.isEnabled = true
                         progressLabel.isVisible = false
                     }

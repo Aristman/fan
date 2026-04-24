@@ -16,7 +16,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.runBlocking
 import java.awt.BorderLayout
 import java.awt.CardLayout
 import java.awt.event.KeyAdapter
@@ -37,7 +37,7 @@ import javax.swing.event.DocumentListener
 class SessionListPanel(private val project: Project) : JPanel(BorderLayout()) {
     private val log = Logger.getInstance(SessionListPanel::class.java)
     private val plugin get() = project.getService(FanPluginManager::class.java).fanPlugin
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     // UI Components
     private val searchBar = JBTextField().apply { toolTipText = "Search sessions..." }
@@ -87,9 +87,7 @@ class SessionListPanel(private val project: Project) : JPanel(BorderLayout()) {
         // Observe sessions from plugin
         scope.launch {
             plugin.sessions.collect { sessionList ->
-                withContext(Dispatchers.Main) {
-                    updateSessionList(sessionList)
-                }
+                javax.swing.SwingUtilities.invokeLater { updateSessionList(sessionList) }
             }
         }
 
@@ -135,39 +133,48 @@ class SessionListPanel(private val project: Project) : JPanel(BorderLayout()) {
     private fun sendMessage() {
         val text = messageInput.text.trim()
         if (text.isBlank()) return
-        log.info("SessionListPanel.sendMessage() called, text length: ${text.length}")
-
+        log.info("SessionListPanel: sendMessage, text length=${text.length}")
         messageInput.text = ""
         sendButton.isEnabled = false
-        try {
-            scope.launch {
-                log.info("Coroutine started, calling plugin.sendMessage...")
-                val result = plugin.sendMessage(text)
-                log.info("sendMessage result: isFailure=${result.isFailure}")
-                withContext(Dispatchers.Main) {
-                    sendButton.isEnabled = true
-                    if (result.isFailure) {
-                        log.info("Failed to send message from session list: ${result.exceptionOrNull()?.message}")
+
+        com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
+            try {
+                log.info("SessionListPanel: calling plugin.sendMessage...")
+                val result = runBlocking { plugin.sendMessage(text) }
+                log.info("SessionListPanel: sendMessage result=${result.isSuccess}")
+                if (result.isFailure) {
+                    log.info("SessionListPanel: error=${result.exceptionOrNull()?.message}")
+                    javax.swing.SwingUtilities.invokeLater {
                         messageInput.text = text
-                    } else {
+                        sendButton.isEnabled = true
+                    }
+                } else {
+                    javax.swing.SwingUtilities.invokeLater {
+                        sendButton.isEnabled = true
                         getViewSwitcher()?.showChat()
                     }
                 }
+            } catch (t: Throwable) {
+                log.info("SessionListPanel: exception=${t.message}")
+                javax.swing.SwingUtilities.invokeLater {
+                    messageInput.text = text
+                    sendButton.isEnabled = true
+                }
             }
-        } catch (e: Throwable) {
-            log.info("Failed to launch send coroutine: ${e.message}")
-            sendButton.isEnabled = true
-            messageInput.text = text
         }
     }
 
     private fun openSession(sessionId: String) {
-        scope.launch {
-            val result = plugin.switchSession(sessionId)
-            withContext(Dispatchers.Main) {
+        com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
+            try {
+                val result = runBlocking { plugin.switchSession(sessionId) }
                 if (result.isSuccess) {
-                    getViewSwitcher()?.showChat()
+                    javax.swing.SwingUtilities.invokeLater {
+                        getViewSwitcher()?.showChat()
+                    }
                 }
+            } catch (t: Throwable) {
+                log.info("SessionListPanel: openSession error=${t.message}")
             }
         }
     }
