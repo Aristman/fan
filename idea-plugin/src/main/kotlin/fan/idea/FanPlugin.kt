@@ -47,48 +47,23 @@ class FanPlugin(private val project: Project) {
     }
 
     /**
-     * Connect to FAN Server. Auto-detects from server.json or uses manual settings.
+     * Connect to FAN Server using the per-project port from settings.
      * For local connections, token is auto-provisioned silently without user interaction.
      */
-    suspend fun connect(): Result<Unit> = withContext(Dispatchers.IO) {
+    suspend fun connect(port: Int = settings.serverPort): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             _connectionStatus.value = ConnectionStatus.CONNECTING
 
-            // Resolve connection info
-            val config = serverDetector.readServerConfig()
-            val baseUrl: String
-            val existingToken: String?
+            val baseUrl = "http://localhost:$port"
 
-            if (config != null) {
-                baseUrl = serverDetector.getBaseUrl(config)
-                existingToken = config.token?.takeIf { it.isNotBlank() } ?: settings.authToken
+            // Detect if local (always local for per-project servers)
+            settings.isLocalConnection = true
+
+            // Local server — empty token (FAN_NO_AUTH mode)
+            val token = if (!settings.authToken.isNullOrBlank()) {
+                settings.authToken
             } else {
-                baseUrl = settings.serverUrl
-                existingToken = settings.authToken
-            }
-
-            // Detect if local
-            val host = config?.host?.takeIf { it.isNotBlank() } ?: run {
-                try { java.net.URI(baseUrl).host ?: "localhost" } catch (e: Exception) { "localhost" }
-            }
-            val isLocal = serverDetector.isLocalHost(host)
-            settings.isLocalConnection = isLocal
-
-            // Resolve or create token
-            val token = when {
-                !existingToken.isNullOrBlank() -> existingToken
-                isLocal -> {
-                    // Local server — try without token (FAN_NO_AUTH mode)
-                    // If server requires auth, user should set token in Settings
-                    ""
-                }
-                else -> {
-                    // Remote server without token — fail
-                    _connectionStatus.value = ConnectionStatus.ERROR
-                    return@withContext Result.failure(
-                        Exception("No auth token. Enter token in Settings → Tools → FAN Agent")
-                    )
-                }
+                ""
             }
 
             // Create API client and health check
@@ -136,6 +111,7 @@ class FanPlugin(private val project: Project) {
      */
     suspend fun sendMessage(text: String, context: String? = null): Result<Unit> = withContext(Dispatchers.IO) {
         val client = apiClient ?: return@withContext Result.failure(Exception("Not connected"))
+        val port = settings.serverPort
 
         // Emit user message so ChatPanel can display it immediately
         _lastUserMessage.value = text
@@ -164,9 +140,7 @@ class FanPlugin(private val project: Project) {
             if (result.isFailure) return@withContext Result.failure(result.exceptionOrNull()!!)
 
             // Connect WS to this session for streaming
-            val config = serverDetector.readServerConfig()
-            val baseUrl = config?.let { serverDetector.getBaseUrl(it) } ?: settings.serverUrl
-            val wsUrl = serverDetector.getWsUrl(config ?: ServerConfig(port = 3456), sessionId)
+            val wsUrl = "ws://localhost:$port/api/ws/$sessionId"
             wsClient?.connect(wsUrl, sessionId, settings.authToken)
 
             settings.lastSessionId = sessionId
@@ -181,6 +155,7 @@ class FanPlugin(private val project: Project) {
      */
     suspend fun switchSession(sessionId: String): Result<Unit> = withContext(Dispatchers.IO) {
         val client = apiClient ?: return@withContext Result.failure(Exception("Not connected"))
+        val port = settings.serverPort
 
         try {
             // Disconnect current WS
@@ -196,8 +171,7 @@ class FanPlugin(private val project: Project) {
             settings.lastSessionId = sessionId
 
             // Connect WS to new session
-            val config = serverDetector.readServerConfig()
-            val wsUrl = serverDetector.getWsUrl(config ?: ServerConfig(port = 3456), sessionId)
+            val wsUrl = "ws://localhost:$port/api/ws/$sessionId"
             wsClient?.connect(wsUrl, sessionId, settings.authToken)
 
             Result.success(Unit)
@@ -304,25 +278,42 @@ class FanPlugin(private val project: Project) {
     fun isServerAvailable(): Boolean = serverDetector.hasServerJson()
 
     /**
-     * Ensure server is running and connect. Starts server if needed.
-     * For local connections, uses FAN_NO_AUTH=1.
+     * Ensure server is running and connect using per-project port.
+     * Assigns a deterministic port from the project path hash if not yet assigned.
      */
     suspend fun ensureServerAndConnect(): Result<Unit> = withContext(Dispatchers.IO) {
         _connectionStatus.value = ConnectionStatus.CONNECTING
 
-        // Check if already reachable
-        if (serverDetector.isServerReachable()) {
-            log.info("Server is already reachable, connecting...")
-            return@withContext connect()
+        val projectPath = project.basePath
+            ?: return@withContext run {
+                _connectionStatus.value = ConnectionStatus.ERROR
+                Result.failure(Exception("No project directory"))
+            }
+
+        // Resolve port: use stored or assign new
+        val port = if (settings.serverPort > 0) {
+            settings.serverPort
+        } else {
+            val newPort = serverDetector.getPortForProject(projectPath)
+            settings.serverPort = newPort
+            newPort
         }
 
-        // Try to start server in the current project directory
-        val projectDir = project.basePath?.let { java.io.File(it) }
-        log.info("Server not reachable, attempting to start in: ${projectDir?.absolutePath ?: "default"}...")
-        val started = serverDetector.startServer(projectDir)
+        log.info("Project: $projectPath, assigned port: $port")
+
+        // Check if server is reachable on our port
+        if (serverDetector.isPortReachable(port)) {
+            log.info("Server reachable on port $port, connecting...")
+            return@withContext connect(port)
+        }
+
+        // Start server with our port
+        val projectDir = java.io.File(projectPath)
+        log.info("Starting server on port $port in $projectPath...")
+        val started = serverDetector.startServer(projectDir, port)
         if (!started) {
             _connectionStatus.value = ConnectionStatus.ERROR
-            return@withContext Result.failure(Exception("Failed to start FAN Server. Make sure 'fan' CLI is installed and in PATH."))
+            return@withContext Result.failure(Exception("Failed to start FAN Server on port $port"))
         }
 
         // Wait for server to be ready
@@ -330,22 +321,28 @@ class FanPlugin(private val project: Project) {
         val maxRetries = 15
         while (retries < maxRetries) {
             delay(1000)
-            if (serverDetector.isServerReachable()) {
-                log.info("Server started and reachable after ${retries + 1}s")
-                return@withContext connect()
+            if (serverDetector.isPortReachable(port)) {
+                log.info("Server started on port $port after ${retries + 1}s")
+                return@withContext connect(port)
             }
             retries++
         }
 
         _connectionStatus.value = ConnectionStatus.ERROR
-        Result.failure(Exception("Server did not start within ${maxRetries}s"))
+        Result.failure(Exception("Server did not start on port $port within ${maxRetries}s"))
     }
 
     /**
-     * Start FAN Server and then connect.
+     * Start FAN Server and then connect (legacy — uses per-project port from settings).
      */
     suspend fun startServerAndConnect(): Result<Unit> = withContext(Dispatchers.IO) {
-        val started = serverDetector.startServer()
+        val port = settings.serverPort
+        if (port <= 0) {
+            return@withContext Result.failure(Exception("No port assigned. Use ensureServerAndConnect() instead."))
+        }
+
+        val projectDir = project.basePath?.let { java.io.File(it) }
+        val started = serverDetector.startServer(projectDir, port)
         if (!started) {
             return@withContext Result.failure(Exception("Failed to start FAN Server"))
         }
@@ -355,13 +352,8 @@ class FanPlugin(private val project: Project) {
         val maxRetries = 10
         while (retries < maxRetries) {
             delay(1000)
-            val config = serverDetector.readServerConfig()
-            if (config != null) {
-                val client = FanApiClient(serverDetector.getBaseUrl(config))
-                val health = client.healthCheck()
-                if (health.isSuccess) {
-                    return@withContext connect()
-                }
+            if (serverDetector.isPortReachable(port)) {
+                return@withContext connect(port)
             }
             retries++
         }
@@ -379,7 +371,7 @@ class FanPlugin(private val project: Project) {
                         _isGenerating.value = false
                         currentAssistantText.clear()
                         currentThinkingText.clear()
-                        refreshSessions() // Refresh session list to update message counts
+                        refreshSessions()
                     }
                     is FanEvent.TextDelta -> currentAssistantText.append(event.delta)
                     is FanEvent.ThinkingDelta -> currentThinkingText.append(event.delta)
@@ -396,6 +388,11 @@ class FanPlugin(private val project: Project) {
     }
 
     fun dispose() {
+        // Stop the per-project server when project closes
+        if (settings.serverPort > 0) {
+            serverDetector.stopServer(settings.serverPort)
+            log.info("Stopped FAN Server for project on port ${settings.serverPort}")
+        }
         wsClient?.destroy()
         scope.cancel()
     }

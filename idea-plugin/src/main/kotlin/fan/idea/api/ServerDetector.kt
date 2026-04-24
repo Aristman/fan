@@ -8,7 +8,7 @@ import java.nio.file.Path
 
 /**
  * Detects FAN Server configuration from ~/.fan/agent/server.json
- * and provides methods for health checks and auto-start.
+ * and provides methods for health checks, auto-start, and per-project port assignment.
  */
 class ServerDetector {
     private val log = Logger.getInstance(ServerDetector::class.java)
@@ -25,6 +25,16 @@ class ServerDetector {
         private const val FAN_BINARY = "fan"
         private const val DEFAULT_HOST = "localhost"
         private const val DEFAULT_PORT = 3456
+        private const val PORT_RANGE_MIN = 3500
+        private const val PORT_RANGE_SIZE = 5500
+    }
+
+    /**
+     * Derive a deterministic port from the project path hash (range 3500–8999).
+     */
+    fun getPortForProject(projectPath: String): Int {
+        val hash = projectPath.hashCode().let { if (it < 0) -it else it }
+        return PORT_RANGE_MIN + (hash % PORT_RANGE_SIZE)
     }
 
     /**
@@ -77,7 +87,19 @@ class ServerDetector {
     }
 
     /**
-     * Check if the server is reachable via health check.
+     * Check if a FAN server is reachable on the given port via health check.
+     */
+    suspend fun isPortReachable(port: Int): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val client = FanApiClient("http://localhost:$port")
+            client.healthCheck().isSuccess
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Check if the server is reachable via health check (legacy — reads global server.json).
      */
     suspend fun isServerReachable(): Boolean = withContext(Dispatchers.IO) {
         val config = readServerConfig()
@@ -91,17 +113,23 @@ class ServerDetector {
     }
 
     /**
-     * Attempt to auto-start FAN Server using ProcessBuilder.
+     * Check if server is running for a specific project port.
+     */
+    suspend fun hasServerRunningForProject(port: Int): Boolean = isPortReachable(port)
+
+    /**
+     * Attempt to auto-start FAN Server using ProcessBuilder on the specified port.
      * Sets FAN_NO_AUTH=1 so the plugin can connect without tokens.
      * @param workingDir  Project directory to run the server in.
+     * @param port  Port to start the server on.
      * @return true if the process was launched (doesn't guarantee it's ready).
      */
-    suspend fun startServer(workingDir: java.io.File? = null): Boolean = withContext(Dispatchers.IO) {
+    suspend fun startServer(workingDir: java.io.File? = null, port: Int = DEFAULT_PORT): Boolean = withContext(Dispatchers.IO) {
         try {
-            val builder = ProcessBuilder(FAN_BINARY, "server", "start")
+            val args = listOf(FAN_BINARY, "server", "start", "--port", port.toString())
+            val builder = ProcessBuilder(args)
                 .redirectErrorStream(true)
                 .apply {
-                    // Start server without auth so plugin can connect without tokens
                     environment()["FAN_NO_AUTH"] = "1"
                     if (workingDir != null && workingDir.isDirectory) {
                         directory(workingDir)
@@ -117,7 +145,7 @@ class ServerDetector {
                 return@withContext false
             }
 
-            log.info("fan server start command executed in: ${workingDir?.absolutePath ?: "default dir"}")
+            log.info("fan server start command executed on port $port in: ${workingDir?.absolutePath ?: "default dir"}")
             true
         } catch (e: Exception) {
             log.info("Failed to start FAN Server: ${e.message}")
@@ -139,6 +167,39 @@ class ServerDetector {
             process.waitFor() == 0
         } catch (e: Exception) {
             false
+        }
+    }
+
+    /**
+     * Stop FAN Server running on the given port.
+     */
+    fun stopServer(port: Int) {
+        try {
+            val config = readServerConfig()
+            if (config != null && config.port == port && config.pid != null) {
+                killProcess(config.pid)
+                log.info("Stopped FAN Server (PID ${config.pid}) on port $port")
+                return
+            }
+
+            val process = ProcessBuilder(FAN_BINARY, "server", "stop")
+                .redirectErrorStream(true)
+                .start()
+            process.waitFor(10, java.util.concurrent.TimeUnit.SECONDS)
+            log.info("Ran 'fan server stop' for port $port")
+        } catch (e: Exception) {
+            log.info("Failed to stop FAN Server on port $port: ${e.message}")
+        }
+    }
+
+    private fun killProcess(pid: Int) {
+        try {
+            ProcessBuilder("kill", pid.toString())
+                .redirectErrorStream(true)
+                .start()
+                .waitFor(5, java.util.concurrent.TimeUnit.SECONDS)
+        } catch (e: Exception) {
+            log.info("Failed to kill process $pid: ${e.message}")
         }
     }
 
