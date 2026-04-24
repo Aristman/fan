@@ -58,6 +58,10 @@ intellijPlatform {
 }
 
 tasks {
+    runIde {
+        jvmArgs("-Dide.browser.jcef.args=--no-sandbox --disable-gpu")
+    }
+
     buildSearchableOptions {
         enabled = false
     }
