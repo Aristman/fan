@@ -61,7 +61,7 @@ class WelcomePanel(private val project: Project) : JPanel(BorderLayout()) {
 
             com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
                 try {
-                    val result = runBlocking { plugin.startServerAndConnect() }
+                    val result = runBlocking { plugin.ensureServerAndConnect() }
                     if (result.isSuccess) {
                         javax.swing.SwingUtilities.invokeLater {
                             descriptionLabel.text = "✅ Connected! Loading sessions..."

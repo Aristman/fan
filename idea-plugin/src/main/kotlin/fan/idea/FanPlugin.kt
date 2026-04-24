@@ -273,11 +273,6 @@ class FanPlugin(private val project: Project) {
     }
 
     /**
-     * Check if server.json exists (for Welcome screen decision).
-     */
-    fun isServerAvailable(): Boolean = serverDetector.hasServerJson()
-
-    /**
      * Ensure server is running and connect using per-project port.
      * Assigns a deterministic port from the project path hash if not yet assigned.
      */
@@ -301,13 +296,13 @@ class FanPlugin(private val project: Project) {
 
         log.info("Project: $projectPath, assigned port: $port")
 
-        // Check if server is reachable on our port
+        // Check if server is already reachable on our port
         if (serverDetector.isPortReachable(port)) {
             log.info("Server reachable on port $port, connecting...")
             return@withContext connect(port)
         }
 
-        // Start server with our port
+        // Start server with our port in the project directory
         val projectDir = java.io.File(projectPath)
         log.info("Starting server on port $port in $projectPath...")
         val started = serverDetector.startServer(projectDir, port)
@@ -316,7 +311,7 @@ class FanPlugin(private val project: Project) {
             return@withContext Result.failure(Exception("Failed to start FAN Server on port $port"))
         }
 
-        // Wait for server to be ready
+        // Wait for server to be ready (health check)
         var retries = 0
         val maxRetries = 15
         while (retries < maxRetries) {
@@ -330,35 +325,6 @@ class FanPlugin(private val project: Project) {
 
         _connectionStatus.value = ConnectionStatus.ERROR
         Result.failure(Exception("Server did not start on port $port within ${maxRetries}s"))
-    }
-
-    /**
-     * Start FAN Server and then connect (legacy — uses per-project port from settings).
-     */
-    suspend fun startServerAndConnect(): Result<Unit> = withContext(Dispatchers.IO) {
-        val port = settings.serverPort
-        if (port <= 0) {
-            return@withContext Result.failure(Exception("No port assigned. Use ensureServerAndConnect() instead."))
-        }
-
-        val projectDir = project.basePath?.let { java.io.File(it) }
-        val started = serverDetector.startServer(projectDir, port)
-        if (!started) {
-            return@withContext Result.failure(Exception("Failed to start FAN Server"))
-        }
-
-        // Wait for server to be ready (health check with retries)
-        var retries = 0
-        val maxRetries = 10
-        while (retries < maxRetries) {
-            delay(1000)
-            if (serverDetector.isPortReachable(port)) {
-                return@withContext connect(port)
-            }
-            retries++
-        }
-
-        Result.failure(Exception("Server did not start within ${maxRetries}s"))
     }
 
     private fun launchEventObserver() {
@@ -388,11 +354,7 @@ class FanPlugin(private val project: Project) {
     }
 
     fun dispose() {
-        // Stop the per-project server when project closes
-        if (settings.serverPort > 0) {
-            serverDetector.stopServer(settings.serverPort)
-            log.info("Stopped FAN Server for project on port ${settings.serverPort}")
-        }
+        serverDetector.stopServer()
         wsClient?.destroy()
         scope.cancel()
     }
