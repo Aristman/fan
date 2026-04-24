@@ -17,9 +17,8 @@ repositories {
 
 dependencies {
     intellijPlatform {
-        create("IC", "2024.1")
+        create("IC", "2024.2.2")
         testFramework(org.jetbrains.intellij.platform.gradle.TestFrameworkType.Platform)
-        instrumentationTools()
     }
 
     implementation("com.squareup.okhttp3:okhttp:4.12.0") {
@@ -52,14 +51,15 @@ tasks.withType<JavaCompile> {
 intellijPlatform {
     pluginVerification {
         ides {
-            ide("IC", "2024.1")
+            ide("IC", "2024.2.2")
         }
     }
 }
 
 tasks {
     runIde {
-        jvmArgs("-Dide.browser.jcef.args=--no-sandbox --disable-gpu")
+        jvmArgs("--add-opens=java.base/java.lang=ALL-UNNAMED")
+        systemProperty("ide.browser.jcef.args", "--no-sandbox --disable-gpu --disable-dev-shm-usage")
     }
 
     buildSearchableOptions {

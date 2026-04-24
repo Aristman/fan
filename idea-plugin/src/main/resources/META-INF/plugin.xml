@@ -19,7 +19,7 @@
                     icon="fan.idea.icons.FanIcon"/>
 
         <applicationConfigurable
-            instance="fan.idea.settings.FanPluginConfigurable"
+            configurationClassName="fan.idea.settings.FanPluginConfigurable"
             id="fan.settings"
             displayName="FAN Agent"/>
 
