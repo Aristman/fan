@@ -88,8 +88,22 @@ class FanPlugin(private val project: Project) {
                         log.info("Auto-provisioned auth token for local server")
                         newToken
                     } else {
-                        log.info("Failed to auto-provision token (server may use FAN_NO_AUTH): ${result.exceptionOrNull()?.message}")
-                        "" // Try without token — server might not require auth
+                        // Token creation failed — probe whether server uses FAN_NO_AUTH
+                        // by trying an auth-required endpoint with empty token
+                        log.info("Failed to auto-provision token: ${result.exceptionOrNull()?.message}")
+                        log.info("Probing server for FAN_NO_AUTH mode...")
+                        val probeClient = FanApiClient(baseUrl, "")
+                        val probe = probeClient.listSessions()
+                        if (probe.isSuccess) {
+                            log.info("Server accepts requests without token (FAN_NO_AUTH mode)")
+                            ""
+                        } else {
+                            val probeEx = probe.exceptionOrNull()
+                            log.info("Server requires auth (probe failed: ${probeEx?.message}). Starting server with FAN_NO_AUTH=1 is recommended.")
+                            return@withContext Result.failure(
+                                Exception("Server requires auth. Start FAN Server with FAN_NO_AUTH=1 or provide a token in Settings → Tools → FAN Agent")
+                            )
+                        }
                     }
                 }
                 else -> {
@@ -134,6 +148,8 @@ class FanPlugin(private val project: Project) {
             val sessionsResult = apiClient!!.listSessions()
             if (sessionsResult.isSuccess) {
                 _sessions.value = sessionsResult.getOrThrow().sessions
+            } else {
+                log.info("Failed to load sessions: ${sessionsResult.exceptionOrNull()?.message}")
             }
 
             // Restore last session
