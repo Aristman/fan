@@ -1,5 +1,5 @@
 # Documentation Manifest
-> Last updated: 2026-04-24 (spec_idea-plugin-tui-styling)
+> Last updated: 2026-04-24 (roadmap-idea-plugin-v2-unified)
 
 ## User-Facing Documentation
 | File | Status | Description |
@@ -25,7 +25,8 @@
 | `docs/develop/tests/orchestrator-phase4.md` | ✅ | Orchestrator test report |
 | `docs/roadmaps/orchestrator-ui-upgrade.md` | ✅ | Orchestrator UI upgrade roadmap |
 | `docs/roadmaps/roadmap-idea-plugin-v2-from-orf.md` | ✅ | IDEA plugin v2 roadmap — 1st edition (ORF patterns, 6 phases) |
-| `docs/roadmaps/roadmap-idea-plugin-v2-from-orf-ed2.md` | ✅ | IDEA plugin v2 roadmap — 2nd edition (JCEF-only, no JEditorPane fallback) |
+| `docs/roadmaps/roadmap-idea-plugin-v2-from-orf-ed2.md` | ⚠️ | IDEA plugin v2 roadmap — 2nd edition (superseded by unified) |
+| `docs/roadmaps/roadmap-idea-plugin-v2-unified.md` | ✅ | IDEA plugin v2 unified roadmap — merged: architecture (ORF patterns) + visual system (TUI-style JCEF styling) |
 
 ## Status Legend
 - ✅ — up to date
