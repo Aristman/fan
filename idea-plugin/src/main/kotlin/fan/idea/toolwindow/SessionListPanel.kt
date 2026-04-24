@@ -49,15 +49,20 @@ class SessionListPanel(private val project: Project) : JPanel(BorderLayout()) {
     }
     private val sendButton = JButton("Send")
     private val emptyLabel = JBLabel("No sessions yet. Type a message to start a new chat.")
+    private val statusLabel = JBLabel("").apply {
+        foreground = java.awt.Color.GRAY
+        border = JBUI.Borders.empty(2, 8)
+    }
 
     // State
     private val sessions = mutableMapOf<String, SessionSummary>()
 
     init {
-        // Top: Search bar
+        // Top: Search bar + connection status
         val topPanel = JPanel(BorderLayout()).apply {
             border = JBUI.Borders.empty(5, 8)
             add(searchBar, BorderLayout.CENTER)
+            add(statusLabel, BorderLayout.SOUTH)
         }
 
         // Center: Session list + empty label
@@ -83,6 +88,37 @@ class SessionListPanel(private val project: Project) : JPanel(BorderLayout()) {
         add(topPanel, BorderLayout.NORTH)
         add(centerPanel, BorderLayout.CENTER)
         add(bottomPanel, BorderLayout.SOUTH)
+
+        // Send disabled until connected
+        sendButton.isEnabled = false
+        statusLabel.text = "Connecting to FAN Server..."
+
+        // Observe connection status
+        scope.launch {
+            plugin.connectionStatus.collect { status ->
+                javax.swing.SwingUtilities.invokeLater {
+                    when (status) {
+                        fan.idea.api.ConnectionStatus.CONNECTED -> {
+                            sendButton.isEnabled = true
+                            statusLabel.text = "Connected"
+                        }
+                        fan.idea.api.ConnectionStatus.CONNECTING,
+                        fan.idea.api.ConnectionStatus.RECONNECTING -> {
+                            sendButton.isEnabled = false
+                            statusLabel.text = "Connecting to FAN Server..."
+                        }
+                        fan.idea.api.ConnectionStatus.DISCONNECTED -> {
+                            sendButton.isEnabled = false
+                            statusLabel.text = "Disconnected"
+                        }
+                        fan.idea.api.ConnectionStatus.ERROR -> {
+                            sendButton.isEnabled = false
+                            statusLabel.text = "Connection failed"
+                        }
+                    }
+                }
+            }
+        }
 
         // Observe sessions from plugin
         scope.launch {
