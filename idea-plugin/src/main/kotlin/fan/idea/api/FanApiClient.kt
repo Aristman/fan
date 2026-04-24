@@ -214,7 +214,7 @@ class FanApiClient(
                 )
             }
         } catch (e: IOException) {
-            log.warn("API $method $path failed: ${e.message}")
+            log.info("API $method $path failed: ${e.message}")
             Result.failure(e)
         }
     }

@@ -44,7 +44,7 @@ class ServerDetector {
             val content = file.readText(Charsets.UTF_8)
             Json.decodeFromString<ServerConfig>(content)
         } catch (e: Exception) {
-            log.warn("Failed to parse server.json: ${e.message}")
+            log.info("Failed to parse server.json: ${e.message}")
             null
         }
     }
@@ -90,14 +90,14 @@ class ServerDetector {
             val exited = process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)
             if (exited && process.exitValue() != 0) {
                 val output = process.inputStream.bufferedReader().readText()
-                log.warn("fan server start failed: $output")
+                log.info("fan server start failed: $output")
                 return@withContext false
             }
 
             log.info("fan server start command executed")
             true
         } catch (e: Exception) {
-            log.warn("Failed to start FAN Server: ${e.message}")
+            log.info("Failed to start FAN Server: ${e.message}")
             false
         }
     }

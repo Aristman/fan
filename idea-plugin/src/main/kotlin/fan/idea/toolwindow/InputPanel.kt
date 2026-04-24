@@ -8,11 +8,13 @@ import com.intellij.util.ui.JBUI
 import javax.swing.JButton
 import fan.idea.FanPluginManager
 import fan.idea.settings.FanPluginSettings
+import com.intellij.openapi.diagnostic.Logger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.awt.BorderLayout
 import java.awt.Dimension
 import java.awt.FlowLayout
@@ -21,8 +23,9 @@ import java.awt.event.KeyEvent
 import javax.swing.JPanel
 
 class InputPanel(private val project: Project) : JPanel(BorderLayout()) {
+    private val log = Logger.getInstance(InputPanel::class.java)
     private val plugin get() = project.getService(FanPluginManager::class.java).fanPlugin
-    private val scope = CoroutineScope(SupervisorJob())
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val editor: com.intellij.openapi.editor.Editor
     private val editorComponent: java.awt.Component
@@ -86,6 +89,7 @@ class InputPanel(private val project: Project) : JPanel(BorderLayout()) {
     private fun doSend() {
         val text = editor.document.text.trim()
         if (text.isBlank()) return
+        log.info("doSend() called, text length: ${text.length}")
 
         editor.document.setText("")
 
@@ -94,10 +98,28 @@ class InputPanel(private val project: Project) : JPanel(BorderLayout()) {
             extractEditorContext()
         } else null
 
-        onSendMessage?.invoke(text)
-
-        scope.launch {
-            plugin.sendMessage(text, context)
+        sendButton.isEnabled = false
+        try {
+            scope.launch {
+                log.info("Coroutine started, calling plugin.sendMessage...")
+                val result = plugin.sendMessage(text, context)
+                log.info("sendMessage result: isFailure=${result.isFailure}")
+                if (result.isFailure) {
+                    val error = result.exceptionOrNull()?.message ?: "Unknown error"
+                    log.info("Failed to send message: $error")
+                    withContext(Dispatchers.Main) {
+                        // Put text back so user can retry
+                        editor.document.setText(text)
+                    }
+                }
+                withContext(Dispatchers.Main) {
+                    sendButton.isEnabled = true
+                }
+            }
+        } catch (e: Throwable) {
+            log.info("Failed to launch send coroutine: ${e.message}")
+            sendButton.isEnabled = true
+            editor.document.setText(text)
         }
     }
 

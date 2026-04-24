@@ -1,6 +1,8 @@
 package fan.idea.toolwindow
 
+import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.Key
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
@@ -9,9 +11,11 @@ import fan.idea.FanPluginManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 class FanToolWindowFactory : ToolWindowFactory {
+    private val log = Logger.getInstance(FanToolWindowFactory::class.java)
 
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
         val manager = project.getService(FanPluginManager::class.java)
@@ -47,9 +51,22 @@ class FanToolWindowFactory : ToolWindowFactory {
         )
         viewSwitchers[project] = viewSwitcher
 
+        // Register panel disposal when tool window is closed
+        Disposer.register(toolWindow.disposable) {
+            welcomePanel.dispose()
+            sessionListPanel.dispose()
+            chatPanel.dispose()
+            viewSwitcher.dispose()
+        }
+
         // Auto-connect if server is available
         if (plugin.isServerAvailable()) {
-            CoroutineScope(Dispatchers.IO).launch { plugin.connect() }
+            viewSwitcher.scope.launch(Dispatchers.IO) {
+                val result = plugin.connect()
+                if (result.isFailure) {
+                    log.info("Failed to connect to FAN Server: ${result.exceptionOrNull()?.message}")
+                }
+            }
         }
     }
 
@@ -73,7 +90,7 @@ class ViewSwitcher(
     private val welcomePanel: WelcomePanel,
     private val sessionListPanel: SessionListPanel,
     private val chatPanel: ChatPanel,
-    private val scope: CoroutineScope
+    val scope: CoroutineScope
 ) {
     private var currentView: View = View.WELCOME
 
@@ -102,4 +119,8 @@ class ViewSwitcher(
     }
 
     fun getCurrentView(): View = currentView
+
+    fun dispose() {
+        scope.cancel()
+    }
 }

@@ -21,7 +21,7 @@ import javax.swing.SwingConstants
 
 class WelcomePanel(private val project: Project) : JPanel(BorderLayout()) {
     private val plugin get() = project.getService(FanPluginManager::class.java).fanPlugin
-    private val scope = CoroutineScope(SupervisorJob())
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val statusLabel = JBLabel("<html><b>FAN Server not found</b></html>")
     private val descriptionLabel = JBLabel("Could not detect a running FAN Server.")

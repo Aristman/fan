@@ -193,7 +193,7 @@ class FanWsClient {
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                log.warn("WS failure: ${t.message}")
+                log.info("WS failure: ${t.message}")
                 _connectionState.tryEmit(ConnectionStatus.ERROR)
                 scheduleReconnect()
             }
@@ -226,11 +226,11 @@ class FanWsClient {
                     _events.tryEmit(FanEvent.Error(message))
                 }
                 else -> {
-                    log.debug("Unknown WS message type: $type")
+                    log.info("Unknown WS message type: $type")
                 }
             }
         } catch (e: Exception) {
-            log.warn("Failed to parse WS message: ${e.message}")
+            log.info("Failed to parse WS message: ${e.message}")
         }
     }
 
@@ -296,7 +296,7 @@ class FanWsClient {
                 _events.tryEmit(FanEvent.ToolExecutionEnd(toolName, toolCallId, result, isError))
             }
 
-            else -> log.debug("Unknown agent event type: $type")
+            else -> log.info("Unknown agent event type: $type")
         }
     }
 
@@ -352,7 +352,7 @@ class FanWsClient {
 
     private fun scheduleReconnect() {
         if (reconnectAttempt >= MAX_RECONNECT_ATTEMPTS) {
-            log.warn("Max reconnect attempts ($MAX_RECONNECT_ATTEMPTS) reached")
+            log.info("Max reconnect attempts ($MAX_RECONNECT_ATTEMPTS) reached")
             _connectionState.tryEmit(ConnectionStatus.ERROR)
             return
         }

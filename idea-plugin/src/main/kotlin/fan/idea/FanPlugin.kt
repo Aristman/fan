@@ -34,35 +34,16 @@ class FanPlugin(private val project: Project) {
     private val _isGenerating = MutableStateFlow(false)
     val isGenerating: StateFlow<Boolean> = _isGenerating.asStateFlow()
 
+    private val _lastUserMessage = MutableStateFlow<String?>(null)
+    val lastUserMessage: StateFlow<String?> = _lastUserMessage.asStateFlow()
+
     // Current assistant message being streamed
     private var currentAssistantText = StringBuilder()
     private var currentThinkingText = StringBuilder()
 
     init {
-        // Merge WS events into our event flow
-        scope.launch {
-            wsClient?.events?.collect { event ->
-                _events.emit(event)
-                when (event) {
-                    is FanEvent.AgentStart -> _isGenerating.value = true
-                    is FanEvent.AgentEnd -> {
-                        _isGenerating.value = false
-                        currentAssistantText.clear()
-                        currentThinkingText.clear()
-                    }
-                    is FanEvent.TextDelta -> currentAssistantText.append(event.delta)
-                    is FanEvent.ThinkingDelta -> currentThinkingText.append(event.delta)
-                    else -> {}
-                }
-            }
-        }
-
-        // Merge WS connection state
-        scope.launch {
-            wsClient?.connectionState?.collect { status ->
-                _connectionStatus.value = status
-            }
-        }
+        // Dead coroutines removed — wsClient is null at init time.
+        // Real event observers are started in launchEventObserver() called from connect().
     }
 
     /**
@@ -107,7 +88,7 @@ class FanPlugin(private val project: Project) {
                         log.info("Auto-provisioned auth token for local server")
                         newToken
                     } else {
-                        log.warn("Failed to auto-provision token (server may use FAN_NO_AUTH): ${result.exceptionOrNull()?.message}")
+                        log.info("Failed to auto-provision token (server may use FAN_NO_AUTH): ${result.exceptionOrNull()?.message}")
                         "" // Try without token — server might not require auth
                     }
                 }
@@ -126,7 +107,7 @@ class FanPlugin(private val project: Project) {
                 // If health check failed with 401 and we're local, retry without token
                 val ex = healthResult.exceptionOrNull()
                 if (isLocal && ex is FanApiException && ex.statusCode == 401) {
-                    log.warn("Health check failed with 401 on local server, retrying without token")
+                    log.info("Health check failed with 401 on local server, retrying without token")
                     apiClient = FanApiClient(baseUrl, "")
                     val retry = apiClient!!.healthCheck()
                     if (retry.isFailure) {
@@ -164,7 +145,7 @@ class FanPlugin(private val project: Project) {
             _connectionStatus.value = ConnectionStatus.CONNECTED
             Result.success(Unit)
         } catch (e: Exception) {
-            log.warn("Failed to connect: ${e.message}")
+            log.info("Failed to connect: ${e.message}")
             _connectionStatus.value = ConnectionStatus.ERROR
             Result.failure(e)
         }
@@ -175,6 +156,9 @@ class FanPlugin(private val project: Project) {
      */
     suspend fun sendMessage(text: String, context: String? = null): Result<Unit> = withContext(Dispatchers.IO) {
         val client = apiClient ?: return@withContext Result.failure(Exception("Not connected"))
+
+        // Emit user message so ChatPanel can display it immediately
+        _lastUserMessage.value = text
 
         try {
             // Create session if needed

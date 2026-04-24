@@ -30,7 +30,7 @@ import javax.swing.SwingUtilities
 
 class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     private val plugin get() = project.getService(FanPluginManager::class.java).fanPlugin
-    private val scope = CoroutineScope(SupervisorJob())
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     // Components
     private val chatScrollPane: JBScrollPane
@@ -111,6 +111,20 @@ class ChatPanel(private val project: Project) : JPanel(BorderLayout()) {
             plugin.isGenerating.collect { generating ->
                 withContext(Dispatchers.Main) {
                     inputPanel.setGenerating(generating)
+                }
+            }
+        }
+
+        // Show user message in chat when sent (from any input)
+        scope.launch {
+            plugin.lastUserMessage.collect { msg ->
+                if (msg != null) {
+                    withContextToEdt {
+                        val panel = createMessageBubble("user")
+                        panel.add(JLabel("<html>${escapeHtml(msg)}</html>"))
+                        appendMessagePanel(panel)
+                        scrollToBottom()
+                    }
                 }
             }
         }
