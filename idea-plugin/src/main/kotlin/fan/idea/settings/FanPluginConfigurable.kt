@@ -18,6 +18,7 @@ class FanPluginConfigurable : Configurable {
 
     private val serverUrlField = JBTextField(30)
     private val authTokenField = JBPasswordField()
+    private val authTokenLabel = JBLabel("Auth Token:")
     private val showThinkingCheckBox = JBCheckBox("Show thinking blocks")
     private val contextAutoAttachCheckBox = JBCheckBox("Auto-attach file context to messages")
     private val maxContextLinesField = JBTextField(10)
@@ -28,7 +29,7 @@ class FanPluginConfigurable : Configurable {
     private val mainPanel: JPanel by lazy {
         FormBuilder.createFormBuilder()
             .addLabeledComponent(JBLabel("Server URL:"), serverUrlField, 1, false)
-            .addLabeledComponent(JBLabel("Auth Token:"), authTokenField, 1, false)
+            .addLabeledComponent(authTokenLabel, authTokenField, 1, false)
             .addSeparator()
             .addLabeledComponent(JBLabel("Max context lines:"), maxContextLinesField, 1, false)
             .addComponent(showThinkingCheckBox, 1)
@@ -46,12 +47,17 @@ class FanPluginConfigurable : Configurable {
 
     override fun getDisplayName() = "FAN Agent"
 
-    override fun createComponent(): JComponent = mainPanel
+    override fun createComponent(): JComponent {
+        // Hide token field for local connections
+        updateTokenVisibility()
+        return mainPanel
+    }
 
     override fun isModified(): Boolean {
         val s = settings
+        val isLocal = s.isLocalConnection
         return serverUrlField.text != s.serverUrl
-            || String(authTokenField.password) != s.authToken
+            || (!isLocal && String(authTokenField.password) != s.authToken)
             || showThinkingCheckBox.isSelected != s.showThinking
             || contextAutoAttachCheckBox.isSelected != s.contextAutoAttach
             || maxContextLinesField.text != s.maxContextLines.toString()
@@ -75,7 +81,9 @@ class FanPluginConfigurable : Configurable {
         }
 
         settings.serverUrl = url
-        settings.authToken = String(authTokenField.password)
+        if (!settings.isLocalConnection) {
+            settings.authToken = String(authTokenField.password)
+        }
         settings.showThinking = showThinkingCheckBox.isSelected
         settings.contextAutoAttach = contextAutoAttachCheckBox.isSelected
         settings.maxContextLines = lines
@@ -94,5 +102,16 @@ class FanPluginConfigurable : Configurable {
         notifyBudgetCheckBox.isSelected = s.notifyBudgetAlerts
         notifyConnectionCheckBox.isSelected = s.notifyConnectionLost
         notifyAgentDoneCheckBox.isSelected = s.notifyAgentDone
+
+        updateTokenVisibility()
+    }
+
+    /**
+     * Show or hide the Auth Token label and field based on isLocalConnection.
+     */
+    private fun updateTokenVisibility() {
+        val isLocal = settings.isLocalConnection
+        authTokenLabel.isVisible = !isLocal
+        authTokenField.isVisible = !isLocal
     }
 }

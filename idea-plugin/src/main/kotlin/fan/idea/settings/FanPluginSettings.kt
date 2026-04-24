@@ -24,6 +24,7 @@ class FanPluginSettings : PersistentStateComponent<FanPluginSettings.State> {
         // Connection
         var serverUrl: String = "http://localhost:3456",
         var authToken: String = "",
+        var isLocalConnection: Boolean = true,
 
         // Session
         var lastSessionId: String? = null,
@@ -57,6 +58,10 @@ class FanPluginSettings : PersistentStateComponent<FanPluginSettings.State> {
     var authToken: String
         get() = state.authToken
         set(value) { state.authToken = value }
+
+    var isLocalConnection: Boolean
+        get() = state.isLocalConnection
+        set(value) { state.isLocalConnection = value }
 
     // --- Session ---
     var lastSessionId: String?

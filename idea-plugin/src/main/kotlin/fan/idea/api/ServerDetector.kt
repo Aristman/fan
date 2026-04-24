@@ -50,6 +50,17 @@ class ServerDetector {
     }
 
     /**
+     * Check if the given host is local (localhost, 127.0.0.1, ::1).
+     */
+    fun isLocalHost(host: String): Boolean {
+        val h = host.lowercase()
+            .removePrefix("http://")
+            .removePrefix("https://")
+            .removeSuffix("/")
+        return h == "localhost" || h == "127.0.0.1" || h == "[::1]" || h == "::1" || h == "0.0.0.0"
+    }
+
+    /**
      * Build the base URL from server config.
      */
     fun getBaseUrl(config: ServerConfig): String {

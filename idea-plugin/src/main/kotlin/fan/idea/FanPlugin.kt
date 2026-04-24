@@ -67,45 +67,78 @@ class FanPlugin(private val project: Project) {
 
     /**
      * Connect to FAN Server. Auto-detects from server.json or uses manual settings.
+     * For local connections, token is auto-provisioned silently without user interaction.
      */
     suspend fun connect(): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             _connectionStatus.value = ConnectionStatus.CONNECTING
 
-            // Try auto-detection first
+            // Resolve connection info
             val config = serverDetector.readServerConfig()
             val baseUrl: String
-            var token: String
+            val existingToken: String?
 
             if (config != null) {
                 baseUrl = serverDetector.getBaseUrl(config)
-                token = config.token?.takeIf { it.isNotBlank() } ?: settings.authToken
+                existingToken = config.token?.takeIf { it.isNotBlank() } ?: settings.authToken
             } else {
                 baseUrl = settings.serverUrl
-                token = settings.authToken
+                existingToken = settings.authToken
             }
 
-            if (token.isBlank()) {
-                // Create a new token
-                val tempClient = FanApiClient(baseUrl)
-                val tokenResult = tempClient.createToken("IntelliJ")
-                if (tokenResult.isFailure) {
-                    _connectionStatus.value = ConnectionStatus.ERROR
-                    return@withContext Result.failure(tokenResult.exceptionOrNull()
-                        ?: Exception("Failed to create auth token"))
+            // Detect if local
+            val host = config?.host?.takeIf { it.isNotBlank() } ?: run {
+                try { java.net.URI(baseUrl).host ?: "localhost" } catch (e: Exception) { "localhost" }
+            }
+            val isLocal = serverDetector.isLocalHost(host)
+            settings.isLocalConnection = isLocal
+
+            // Resolve or create token
+            val token = when {
+                !existingToken.isNullOrBlank() -> existingToken
+                isLocal -> {
+                    // Try to auto-create token silently for local connections
+                    log.info("Local server detected, auto-provisioning auth token...")
+                    val tempClient = FanApiClient(baseUrl)
+                    val result = tempClient.createToken("IntelliJ")
+                    if (result.isSuccess) {
+                        val newToken = result.getOrThrow().token.token
+                        settings.authToken = newToken
+                        log.info("Auto-provisioned auth token for local server")
+                        newToken
+                    } else {
+                        log.warn("Failed to auto-provision token (server may use FAN_NO_AUTH): ${result.exceptionOrNull()?.message}")
+                        "" // Try without token — server might not require auth
+                    }
                 }
-                val newToken = tokenResult.getOrThrow().token.token
-                settings.authToken = newToken
-                token = newToken
+                else -> {
+                    // Remote server without token — fail
+                    return@withContext Result.failure(
+                        Exception("No auth token. Enter token in Settings → Tools → FAN Agent")
+                    )
+                }
             }
 
             // Create API client and health check
             apiClient = FanApiClient(baseUrl, token)
             val healthResult = apiClient!!.healthCheck()
             if (healthResult.isFailure) {
-                _connectionStatus.value = ConnectionStatus.ERROR
-                return@withContext Result.failure(healthResult.exceptionOrNull()
-                    ?: Exception("Health check failed"))
+                // If health check failed with 401 and we're local, retry without token
+                val ex = healthResult.exceptionOrNull()
+                if (isLocal && ex is FanApiException && ex.statusCode == 401) {
+                    log.warn("Health check failed with 401 on local server, retrying without token")
+                    apiClient = FanApiClient(baseUrl, "")
+                    val retry = apiClient!!.healthCheck()
+                    if (retry.isFailure) {
+                        _connectionStatus.value = ConnectionStatus.ERROR
+                        return@withContext Result.failure(retry.exceptionOrNull()
+                            ?: Exception("Health check failed"))
+                    }
+                } else {
+                    _connectionStatus.value = ConnectionStatus.ERROR
+                    return@withContext Result.failure(healthResult.exceptionOrNull()
+                        ?: Exception("Health check failed"))
+                }
             }
 
             log.info("Connected to FAN Server at $baseUrl (status: ${healthResult.getOrThrow().status})")
