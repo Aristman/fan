@@ -1,0 +1,696 @@
+/* === FAN Chat Styles — TUI-Style JCEF Rendering === */
+
+/* ═══════════════════════════════════════════════════════
+   1. CSS VARIABLES — DARK THEME (default, Darcula-adapted)
+   ═══════════════════════════════════════════════════════ */
+
+:root {
+  /* Common (theme-independent) */
+  --fan-font-size: 14px;
+  --fan-font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  --fan-message-radius: 12px;
+  --fan-block-radius: 8px;
+
+  /* === Dark Theme === */
+  --fan-bg-color: #1e1e2e;
+  --fan-text-color: #d4d4d4;
+  --fan-text-secondary: #8abeb7;
+  --fan-user-bg: #343541;
+  --fan-user-text: #e4e4e4;
+  --fan-assistant-bg: transparent;
+  --fan-system-color: #808080;
+  --fan-border-color: #3d3d5c;
+  --fan-accent: #8abeb7;
+  --fan-accent-secondary: #f0c674;
+  --fan-code-bg: #282c34;
+  --fan-code-border: #3d3d5c;
+  --fan-code-text: #b5bd68;
+  --fan-code-lang-label: #8abeb7;
+  --fan-tool-pending-bg: #282832;
+  --fan-tool-success-bg: #283228;
+  --fan-tool-error-bg: #3c2828;
+  --fan-error-bg: #3c2828;
+  --fan-error-text: #cc6666;
+  --fan-warning-text: #f0c674;
+  --fan-thinking-text: #808080;
+  --fan-thinking-bg: #282832;
+  --fan-md-heading: #f0c674;
+  --fan-md-link: #81a2be;
+  --fan-md-code: #8abeb7;
+  --fan-md-quote: #808080;
+  --fan-md-list-bullet: #8abeb7;
+  --fan-diff-added: #b5bd68;
+  --fan-diff-removed: #cc6666;
+  --fan-diff-context: #808080;
+  --fan-footer-text: #666666;
+}
+
+/* ═══════════════════════════════════════════════════════
+   1b. CSS VARIABLES — LIGHT THEME
+   ═══════════════════════════════════════════════════════ */
+
+[data-fan-theme="light"] {
+  --fan-bg-color: #fafafa;
+  --fan-text-color: #1e1e2e;
+  --fan-text-secondary: #5a8080;
+  --fan-user-bg: #e8e8e8;
+  --fan-user-text: #2a2a2a;
+  --fan-assistant-bg: transparent;
+  --fan-system-color: #6c6c6c;
+  --fan-border-color: #d0d0d0;
+  --fan-accent: #5a8080;
+  --fan-accent-secondary: #9a7326;
+  --fan-code-bg: #f0f0f0;
+  --fan-code-border: #d0d0d0;
+  --fan-code-text: #588458;
+  --fan-code-lang-label: #5a8080;
+  --fan-tool-pending-bg: #e8e8f0;
+  --fan-tool-success-bg: #e8f0e8;
+  --fan-tool-error-bg: #f0e8e8;
+  --fan-error-bg: #f0e8e8;
+  --fan-error-text: #aa5555;
+  --fan-warning-text: #9a7326;
+  --fan-thinking-text: #6c6c6c;
+  --fan-thinking-bg: #e8e8f0;
+  --fan-md-heading: #9a7326;
+  --fan-md-link: #547da7;
+  --fan-md-code: #5a8080;
+  --fan-md-quote: #6c6c6c;
+  --fan-md-list-bullet: #588458;
+  --fan-diff-added: #588458;
+  --fan-diff-removed: #aa5555;
+  --fan-diff-context: #6c6c6c;
+  --fan-footer-text: #767676;
+}
+
+/* ═══════════════════════════════════════════════════════
+   2. BASE / TYPOGRAPHY
+   ═══════════════════════════════════════════════════════ */
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--fan-font-family);
+  font-size: var(--fan-font-size);
+  line-height: 1.6;
+  color: var(--fan-text-color);
+  background: var(--fan-bg-color);
+  padding: 12px;
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+#fan-messages-container {
+  min-height: calc(100vh - 80px);
+  padding-bottom: 8px;
+}
+
+/* ═══════════════════════════════════════════════════════
+   3. USER MESSAGES (bubbles, right-aligned)
+   ═══════════════════════════════════════════════════════ */
+
+.fan-message {
+  margin: 8px 0;
+}
+
+.fan-user-message {
+  background: var(--fan-user-bg);
+  color: var(--fan-user-text);
+  max-width: 80%;
+  margin-left: auto;
+  padding: 10px 14px;
+  border-radius: var(--fan-message-radius);
+  border-bottom-right-radius: 4px;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+/* ═══════════════════════════════════════════════════════
+   4. ASSISTANT MESSAGES (full-width, transparent)
+   ═══════════════════════════════════════════════════════ */
+
+.fan-assistant-message {
+  background: var(--fan-assistant-bg);
+  color: var(--fan-text-color);
+  max-width: 100%;
+  padding: 6px 8px;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+/* ═══════════════════════════════════════════════════════
+   5. SYSTEM MESSAGES (centered, italic, muted)
+   ═══════════════════════════════════════════════════════ */
+
+.fan-system-message {
+  color: var(--fan-system-color);
+  font-style: italic;
+  text-align: center;
+  padding: 8px 0;
+  font-size: 0.85em;
+}
+
+/* ═══════════════════════════════════════════════════════
+   6. ERROR MESSAGES (red-bordered block)
+   ═══════════════════════════════════════════════════════ */
+
+.fan-error-message {
+  background: var(--fan-error-bg);
+  border-left: 3px solid var(--fan-error-text);
+  color: var(--fan-error-text);
+  padding: 10px 14px;
+  border-radius: var(--fan-block-radius);
+}
+
+.fan-error-title {
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.fan-error-body {
+  opacity: 0.9;
+}
+
+/* ═══════════════════════════════════════════════════════
+   7. STREAMING CURSOR
+   ═══════════════════════════════════════════════════════ */
+
+.fan-streaming-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background: var(--fan-accent);
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  animation: fan-blink 1s step-end infinite;
+}
+
+@keyframes fan-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* ═══════════════════════════════════════════════════════
+   8. THINKING BLOCKS
+   ═══════════════════════════════════════════════════════ */
+
+.fan-thinking-block {
+  margin: 6px 0;
+  border-radius: var(--fan-block-radius);
+  background: var(--fan-thinking-bg);
+  border-left: 3px solid var(--fan-accent);
+}
+
+.fan-thinking-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.fan-thinking-arrow {
+  color: var(--fan-system-color);
+  transition: transform 0.2s ease;
+  font-size: 0.8em;
+}
+
+.fan-thinking-arrow.collapsed {
+  transform: rotate(-90deg);
+}
+
+.fan-thinking-label {
+  color: var(--fan-thinking-text);
+  font-style: italic;
+}
+
+.fan-thinking-spinner {
+  color: var(--fan-accent);
+  font-size: 0.9em;
+}
+
+.fan-thinking-content {
+  max-height: 5000px;
+  opacity: 1;
+  transition: max-height 0.3s ease, opacity 0.3s ease;
+  overflow: hidden;
+}
+
+.fan-thinking-content.collapsed {
+  max-height: 0;
+  opacity: 0;
+}
+
+.fan-thinking-text {
+  padding: 4px 12px 12px;
+  color: var(--fan-thinking-text);
+  font-style: italic;
+}
+
+/* ═══════════════════════════════════════════════════════
+   9. TOOL CALL BLOCKS
+   ═══════════════════════════════════════════════════════ */
+
+.fan-tool-block {
+  margin: 6px 0;
+  border-radius: var(--fan-block-radius);
+  overflow: hidden;
+  transition: background 0.2s ease;
+}
+
+.fan-tool-pending {
+  background: var(--fan-tool-pending-bg);
+  border-left: 3px solid var(--fan-accent);
+}
+
+.fan-tool-success {
+  background: var(--fan-tool-success-bg);
+  border-left: 3px solid var(--fan-diff-added);
+}
+
+.fan-tool-error {
+  background: var(--fan-tool-error-bg);
+  border-left: 3px solid var(--fan-error-text);
+}
+
+.fan-tool-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 0.9em;
+}
+
+.fan-tool-arrow {
+  color: var(--fan-system-color);
+  transition: transform 0.2s ease;
+  font-size: 0.8em;
+}
+
+.fan-tool-arrow.collapsed {
+  transform: rotate(-90deg);
+}
+
+.fan-tool-icon {
+  font-size: 1em;
+}
+
+.fan-tool-name {
+  font-weight: 600;
+  color: var(--fan-text-color);
+}
+
+.fan-tool-summary {
+  color: var(--fan-system-color);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fan-tool-status {
+  font-size: 0.85em;
+}
+
+.fan-tool-content {
+  max-height: 5000px;
+  opacity: 1;
+  transition: max-height 0.3s ease, opacity 0.3s ease;
+  overflow: hidden;
+}
+
+.fan-tool-content.collapsed {
+  max-height: 0;
+  opacity: 0;
+}
+
+.fan-tool-args,
+.fan-tool-result {
+  padding: 4px 12px 12px;
+  font-family: var(--fan-font-family);
+  font-size: 0.85em;
+  line-height: 1.5;
+}
+
+/* ═══════════════════════════════════════════════════════
+   10. DIFF RENDERING
+   ═══════════════════════════════════════════════════════ */
+
+.fan-diff-added {
+  color: var(--fan-diff-added);
+  background: rgba(181, 189, 104, 0.1);
+}
+
+.fan-diff-removed {
+  color: var(--fan-diff-removed);
+  background: rgba(204, 102, 102, 0.1);
+}
+
+.fan-diff-context {
+  color: var(--fan-diff-context);
+}
+
+/* ═══════════════════════════════════════════════════════
+   11. CODE BLOCKS
+   ═══════════════════════════════════════════════════════ */
+
+.fan-code-block {
+  margin: 8px 0;
+  border-radius: var(--fan-block-radius);
+  background: var(--fan-code-bg);
+  border: 1px solid var(--fan-code-border);
+  overflow: hidden;
+}
+
+.fan-code-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid var(--fan-code-border);
+}
+
+[data-fan-theme="light"] .fan-code-header {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.fan-code-lang {
+  color: var(--fan-code-lang-label);
+  font-style: italic;
+  font-size: 0.85em;
+  font-family: var(--fan-font-family);
+}
+
+.fan-code-copy {
+  background: none;
+  border: none;
+  color: var(--fan-system-color);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.8em;
+  transition: background 0.15s ease, color 0.15s ease;
+  font-family: var(--fan-font-family);
+}
+
+.fan-code-copy:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--fan-text-color);
+}
+
+[data-fan-theme="light"] .fan-code-copy:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.fan-code-copy.copied {
+  color: var(--fan-diff-added);
+}
+
+pre {
+  margin: 0;
+  padding: 12px;
+  overflow-x: auto;
+  font-family: var(--fan-font-family);
+  font-size: 0.9em;
+  line-height: 1.5;
+  background: transparent !important;
+}
+
+code {
+  color: var(--fan-code-text);
+  font-family: var(--fan-font-family);
+}
+
+/* Inline code */
+code:not(pre code) {
+  background: var(--fan-code-bg);
+  color: var(--fan-md-code);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.9em;
+  font-family: var(--fan-font-family);
+}
+
+/* ═══════════════════════════════════════════════════════
+   12. MARKDOWN ELEMENTS
+   ═══════════════════════════════════════════════════════ */
+
+h1, h2, h3, h4, h5, h6 {
+  color: var(--fan-md-heading);
+  font-weight: 700;
+  margin: 12px 0 6px;
+}
+
+h1 {
+  text-decoration: underline;
+  font-size: 1.3em;
+}
+
+h2 { font-size: 1.2em; }
+h3 { font-size: 1.1em; }
+
+a {
+  color: var(--fan-md-link);
+  text-decoration: underline;
+}
+
+blockquote {
+  border-left: 3px solid var(--fan-md-quote);
+  color: var(--fan-md-quote);
+  padding-left: 12px;
+  margin: 8px 0;
+  font-style: italic;
+}
+
+ul, ol {
+  padding-left: 20px;
+  margin: 4px 0;
+}
+
+li {
+  color: var(--fan-text-color);
+  margin: 2px 0;
+}
+
+li::marker {
+  color: var(--fan-md-list-bullet);
+}
+
+ol li::marker {
+  color: var(--fan-md-list-bullet);
+}
+
+hr {
+  border: none;
+  border-top: 1px solid var(--fan-md-quote);
+  margin: 12px 0;
+}
+
+strong { font-weight: 700; }
+em { font-style: italic; }
+del { text-decoration: line-through; opacity: 0.7; }
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 8px 0;
+}
+
+th, td {
+  border: 1px solid var(--fan-border-color);
+  padding: 6px 10px;
+  text-align: left;
+}
+
+th {
+  background: var(--fan-tool-pending-bg);
+  font-weight: 600;
+}
+
+/* ═══════════════════════════════════════════════════════
+   13. CLARIFICATION BLOCKS
+   ═══════════════════════════════════════════════════════ */
+
+.fan-clarification-block {
+  margin: 12px 0;
+  padding: 12px;
+  border-radius: var(--fan-block-radius);
+  background: rgba(138, 190, 183, 0.08);
+  border: 1px solid var(--fan-accent);
+}
+
+.fan-clarification-question {
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: var(--fan-text-color);
+}
+
+.fan-clarification-options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fan-clarification-option {
+  background: none;
+  border: 1px solid transparent;
+  padding: 8px 12px;
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  gap: 8px;
+  border-radius: 6px;
+  color: var(--fan-text-color);
+  font-family: var(--fan-font-family);
+  font-size: 0.95em;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.fan-clarification-option:hover {
+  background: rgba(138, 190, 183, 0.15);
+  border-color: var(--fan-accent);
+}
+
+.fan-clarification-option:focus {
+  outline: 2px solid var(--fan-accent);
+  outline-offset: -2px;
+}
+
+.fan-option-prefix {
+  color: var(--fan-accent);
+  font-weight: 700;
+}
+
+.fan-option-label {
+  flex: 1;
+}
+
+.fan-option-desc {
+  color: var(--fan-system-color);
+  font-size: 0.85em;
+  margin-left: auto;
+  max-width: 40%;
+  text-align: right;
+}
+
+/* ═══════════════════════════════════════════════════════
+   14. FOOTER
+   ═══════════════════════════════════════════════════════ */
+
+.fan-footer {
+  border-top: 1px solid var(--fan-border-color);
+  padding: 6px 12px;
+  font-size: 0.8em;
+  color: var(--fan-footer-text);
+  font-family: var(--fan-font-family);
+  position: sticky;
+  bottom: 0;
+  background: var(--fan-bg-color);
+  margin-top: 8px;
+}
+
+.fan-footer-line-1 {
+  margin-bottom: 2px;
+}
+
+.fan-footer-line-2 {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.fan-footer-context {
+  font-weight: 600;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.fan-context-normal { color: var(--fan-diff-added); }
+.fan-context-warning { color: var(--fan-accent-secondary); }
+.fan-context-critical { color: var(--fan-error-text); }
+
+.fan-footer-context-separator {
+  color: var(--fan-system-color);
+  margin: 0 2px;
+}
+
+.fan-footer-model {
+  font-style: italic;
+}
+
+/* ═══════════════════════════════════════════════════════
+   15. SCROLLBAR
+   ═══════════════════════════════════════════════════════ */
+
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--fan-border-color);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--fan-accent);
+}
+
+/* ═══════════════════════════════════════════════════════
+   16. FADE ANIMATION
+   ═══════════════════════════════════════════════════════ */
+
+.fan-fade-out {
+  opacity: 0;
+  transition: opacity 0.3s ease-out;
+}
+
+/* ═══════════════════════════════════════════════════════
+   17. HIGHLIGHT.JS THEME OVERRIDES
+   ═══════════════════════════════════════════════════════ */
+
+.hljs {
+  background: transparent !important;
+  padding: 0 !important;
+}
+
+.hljs-keyword { color: #c678dd; }
+.hljs-string { color: #98c379; }
+.hljs-number { color: #d19a66; }
+.hljs-comment { color: #5c6370; font-style: italic; }
+.hljs-function { color: #61afef; }
+.hljs-title { color: #61afef; }
+.hljs-params { color: var(--fan-text-color); }
+.hljs-built_in { color: #e6c07b; }
+.hljs-type { color: #e6c07b; }
+.hljs-meta { color: #61afef; }
+.hljs-attr { color: #d19a66; }
+.hljs-attribute { color: #98c379; }
+.hljs-variable { color: #e06c75; }
+.hljs-literal { color: #d19a66; }
+.hljs-symbol { color: #61afef; }
+.hljs-bullet { color: var(--fan-md-list-bullet); }
+.hljs-selector-class { color: #d19a66; }
+.hljs-selector-tag { color: #e06c75; }
+.hljs-selector-id { color: #61afef; }
+.hljs-name { color: #e06c75; }
+.hljs-tag { color: #e06c75; }
+.hljs-attribute { color: #98c379; }

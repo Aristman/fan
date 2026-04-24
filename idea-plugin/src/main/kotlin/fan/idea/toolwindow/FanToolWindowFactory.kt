@@ -2,6 +2,7 @@ package fan.idea.toolwindow
 
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
+import fan.idea.ui.chat.FanChatPanel
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.Key
 import com.intellij.openapi.wm.ToolWindow
@@ -26,7 +27,7 @@ class FanToolWindowFactory : ToolWindowFactory {
         // Create panels
         val welcomePanel = WelcomePanel(project)
         val sessionListPanel = SessionListPanel(project)
-        val chatPanel = ChatPanel(project)
+        val chatPanel = FanChatPanel(project)
 
         // Always start with session list — server will auto-start if needed
         val initialPanel = sessionListPanel
@@ -78,7 +79,7 @@ class ViewSwitcher(
     private val contentFactory: ContentFactory,
     private val welcomePanel: WelcomePanel,
     private val sessionListPanel: SessionListPanel,
-    private val chatPanel: ChatPanel,
+    private val chatPanel: FanChatPanel,
     val scope: CoroutineScope
 ) {
     private var currentView: View = View.WELCOME

@@ -31,6 +31,9 @@ class FanPluginSettings : PersistentStateComponent<FanPluginSettings.State> {
         var lastSessionId: String? = null,
         var lastProjectPath: String? = null,
 
+        // Chat UI
+        var chatFontSize: Int = 14,
+
         // UI
         var toolWindowAnchor: String = "right",
         var showThinking: Boolean = true,
@@ -76,6 +79,11 @@ class FanPluginSettings : PersistentStateComponent<FanPluginSettings.State> {
     var lastProjectPath: String?
         get() = state.lastProjectPath
         set(value) { state.lastProjectPath = value }
+
+    // --- Chat UI ---
+    var chatFontSize: Int
+        get() = state.chatFontSize
+        set(value) { state.chatFontSize = value }
 
     // --- UI ---
     var toolWindowAnchor: String

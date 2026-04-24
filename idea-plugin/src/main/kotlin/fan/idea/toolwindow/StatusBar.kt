@@ -9,7 +9,7 @@ import javax.swing.JPanel
 
 /**
  * Simple connection status indicator: colored dot + text.
- * Used in ChatPanel's app bar to show connection state.
+ * Used in FanChatPanel's app bar to show connection state.
  */
 class StatusBar : JPanel(FlowLayout(FlowLayout.LEFT, 5, 0)) {
     private val dot = JPanel()
