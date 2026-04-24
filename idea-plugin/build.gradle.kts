@@ -17,15 +17,21 @@ repositories {
 
 dependencies {
     intellijPlatform {
-        create("IC", "2023.2.5")
+        create("IC", "2024.1")
         testFramework(org.jetbrains.intellij.platform.gradle.TestFrameworkType.Platform)
+        instrumentationTools()
     }
 
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("com.squareup.okhttp3:okhttp-sse:4.12.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.8.1")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0") {
+        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines")
+    }
+    implementation("com.squareup.okhttp3:okhttp-sse:4.12.0") {
+        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines")
+    }
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json-jvm:1.6.3") {
+        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines")
+        exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib")
+    }
     implementation("com.vladsch.flexmark:flexmark-all:0.64.8")
 
     testImplementation("junit:junit:4.13.2")
@@ -33,12 +39,19 @@ dependencies {
 
 kotlin {
     jvmToolchain(21)
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    }
+}
+
+tasks.withType<JavaCompile> {
+    targetCompatibility = "17"
 }
 
 intellijPlatform {
     pluginVerification {
         ides {
-            ide("IC", "2023.2.5")
+            ide("IC", "2024.1")
         }
     }
 }
