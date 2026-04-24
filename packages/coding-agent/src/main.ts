@@ -448,14 +448,14 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 type AppMode = "interactive" | "print" | "json" | "rpc" | "server";
 
 function resolveAppMode(parsed: Args, stdinIsTTY: boolean): AppMode {
-	if (process.env.FAN_FORCE_SERVER_MODE === "1" || parsed.web || parsed.mode === "server") {
+	// Explicit --mode flag always takes priority over environment variables
+	if (parsed.mode === "server") return "server";
+	if (parsed.mode === "rpc") return "rpc";
+	if (parsed.mode === "json") return "json";
+
+	// Then check environment / implicit modes
+	if (process.env.FAN_FORCE_SERVER_MODE === "1" || parsed.web) {
 		return "server";
-	}
-	if (parsed.mode === "rpc") {
-		return "rpc";
-	}
-	if (parsed.mode === "json") {
-		return "json";
 	}
 	if (parsed.print || !stdinIsTTY) {
 		return "print";
