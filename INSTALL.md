@@ -19,7 +19,34 @@ Complete installation instructions for FAN (Filin Agent Next) — a local AI run
 
 ---
 
-## Method A: Download Pre-built Binary
+## Method A: One-Liner Installer (Recommended)
+
+The fastest way to install FAN. The script detects your OS and architecture automatically.
+
+### macOS / Linux
+
+```bash
+curl -fsSL http://185.219.41.46/fan/dist/install.sh | bash
+```
+
+### Windows (PowerShell)
+
+```powershell
+irm http://185.219.41.46/fan/dist/install.ps1 | iex
+```
+
+The installer will:
+1. Detect OS and architecture
+2. Download the latest binary
+3. Verify SHA-256 checksum
+4. Extract to `~/.local/share/fan/` (Unix) or `%LOCALAPPDATA%\fan` (Windows)
+5. Create a symlink or add to PATH automatically
+
+**Custom install location:** set `FAN_INSTALL_DIR` or `FAN_BIN_DIR` environment variables before running the script.
+
+---
+
+## Method B: Download Pre-built Binary
 
 ### Step 1: Download
 
@@ -109,7 +136,7 @@ fan --web
 
 ---
 
-## Method B: Install from Source
+## Method C: Install from Source
 
 For contributors or users who want to modify FAN.
 
