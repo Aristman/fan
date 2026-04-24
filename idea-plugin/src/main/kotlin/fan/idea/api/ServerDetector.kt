@@ -77,13 +77,32 @@ class ServerDetector {
     }
 
     /**
+     * Check if the server is reachable via health check.
+     */
+    suspend fun isServerReachable(): Boolean = withContext(Dispatchers.IO) {
+        val config = readServerConfig()
+        if (config == null) return@withContext false
+        try {
+            val client = FanApiClient(getBaseUrl(config))
+            client.healthCheck().isSuccess
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
      * Attempt to auto-start FAN Server using ProcessBuilder.
+     * Sets FAN_NO_AUTH=1 so the plugin can connect without tokens.
      * Returns true if the process was launched (doesn't guarantee it's ready).
      */
     suspend fun startServer(): Boolean = withContext(Dispatchers.IO) {
         try {
             val process = ProcessBuilder(FAN_BINARY, "server", "start")
                 .redirectErrorStream(true)
+                .apply {
+                    // Start server without auth so plugin can connect without tokens
+                    environment()["FAN_NO_AUTH"] = "1"
+                }
                 .start()
 
             // Wait briefly for the process to fork (fan server start is a daemon launcher)

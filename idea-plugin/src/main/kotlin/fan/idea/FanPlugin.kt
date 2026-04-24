@@ -78,34 +78,9 @@ class FanPlugin(private val project: Project) {
             val token = when {
                 !existingToken.isNullOrBlank() -> existingToken
                 isLocal -> {
-                    // Try to auto-create token silently for local connections
-                    log.info("Local server detected, auto-provisioning auth token...")
-                    val tempClient = FanApiClient(baseUrl)
-                    val result = tempClient.createToken("IntelliJ")
-                    if (result.isSuccess) {
-                        val newToken = result.getOrThrow().token.token
-                        settings.authToken = newToken
-                        log.info("Auto-provisioned auth token for local server")
-                        newToken
-                    } else {
-                        // Token creation failed — probe whether server uses FAN_NO_AUTH
-                        // by trying an auth-required endpoint with empty token
-                        log.info("Failed to auto-provision token: ${result.exceptionOrNull()?.message}")
-                        log.info("Probing server for FAN_NO_AUTH mode...")
-                        val probeClient = FanApiClient(baseUrl, "")
-                        val probe = probeClient.listSessions()
-                        if (probe.isSuccess) {
-                            log.info("Server accepts requests without token (FAN_NO_AUTH mode)")
-                            ""
-                        } else {
-                            val probeEx = probe.exceptionOrNull()
-                            log.info("Server requires auth (probe failed: ${probeEx?.message}). Starting server with FAN_NO_AUTH=1 is recommended.")
-                            _connectionStatus.value = ConnectionStatus.ERROR
-                            return@withContext Result.failure(
-                                Exception("Server requires auth. Start FAN Server with FAN_NO_AUTH=1 or provide a token in Settings → Tools → FAN Agent")
-                            )
-                        }
-                    }
+                    // Local server — try without token (FAN_NO_AUTH mode)
+                    // If server requires auth, user should set token in Settings
+                    ""
                 }
                 else -> {
                     // Remote server without token — fail
@@ -327,6 +302,43 @@ class FanPlugin(private val project: Project) {
      * Check if server.json exists (for Welcome screen decision).
      */
     fun isServerAvailable(): Boolean = serverDetector.hasServerJson()
+
+    /**
+     * Ensure server is running and connect. Starts server if needed.
+     * For local connections, uses FAN_NO_AUTH=1.
+     */
+    suspend fun ensureServerAndConnect(): Result<Unit> = withContext(Dispatchers.IO) {
+        _connectionStatus.value = ConnectionStatus.CONNECTING
+
+        // Check if already reachable
+        if (serverDetector.isServerReachable()) {
+            log.info("Server is already reachable, connecting...")
+            return@withContext connect()
+        }
+
+        // Try to start server
+        log.info("Server not reachable, attempting to start...")
+        val started = serverDetector.startServer()
+        if (!started) {
+            _connectionStatus.value = ConnectionStatus.ERROR
+            return@withContext Result.failure(Exception("Failed to start FAN Server. Make sure 'fan' CLI is installed and in PATH."))
+        }
+
+        // Wait for server to be ready
+        var retries = 0
+        val maxRetries = 15
+        while (retries < maxRetries) {
+            delay(1000)
+            if (serverDetector.isServerReachable()) {
+                log.info("Server started and reachable after ${retries + 1}s")
+                return@withContext connect()
+            }
+            retries++
+        }
+
+        _connectionStatus.value = ConnectionStatus.ERROR
+        Result.failure(Exception("Server did not start within ${maxRetries}s"))
+    }
 
     /**
      * Start FAN Server and then connect.

@@ -28,12 +28,8 @@ class FanToolWindowFactory : ToolWindowFactory {
         val sessionListPanel = SessionListPanel(project)
         val chatPanel = ChatPanel(project)
 
-        // Determine initial view
-        val initialPanel = if (plugin.isServerAvailable()) {
-            sessionListPanel  // Server detected → show session list
-        } else {
-            welcomePanel  // No server → show welcome
-        }
+        // Always start with session list — server will auto-start if needed
+        val initialPanel = sessionListPanel
 
         val content = contentFactory.createContent(initialPanel, "", false)
         contentManager.addContent(content)
@@ -58,17 +54,15 @@ class FanToolWindowFactory : ToolWindowFactory {
             viewSwitcher.dispose()
         }
 
-        // Auto-connect if server is available
-        if (plugin.isServerAvailable()) {
-            com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
-                try {
-                    val result = kotlinx.coroutines.runBlocking { plugin.connect() }
-                    if (result.isFailure) {
-                        log.info("Failed to connect to FAN Server: ${result.exceptionOrNull()?.message}")
-                    }
-                } catch (t: Throwable) {
-                    log.info("Failed to connect to FAN Server: ${t.message}")
+        // Auto-connect: start server if needed, then connect
+        com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
+            try {
+                val result = kotlinx.coroutines.runBlocking { plugin.ensureServerAndConnect() }
+                if (result.isFailure) {
+                    log.info("Failed to connect to FAN Server: ${result.exceptionOrNull()?.message}")
                 }
+            } catch (t: Throwable) {
+                log.info("Failed to connect to FAN Server: ${t.message}")
             }
         }
     }
