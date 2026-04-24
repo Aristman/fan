@@ -10,13 +10,10 @@ import com.intellij.ui.components.JBTextField
 import com.intellij.util.ui.JBUI
 import fan.idea.api.ConnectionStatus
 import fan.idea.api.SessionSummary
+import fan.idea.core.events.ConnectionListener
+import fan.idea.core.events.SessionListener
 import fan.idea.core.services.FanConnectionService
 import fan.idea.core.services.FanSessionService
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.launch
 import java.awt.BorderLayout
 import java.awt.CardLayout
 import java.awt.event.MouseAdapter
@@ -40,7 +37,8 @@ class FanSessionListPanel(private val project: Project) : JPanel(BorderLayout())
         get() = ApplicationManager.getApplication().getService(FanConnectionService::class.java)
     private val sessionService: FanSessionService
         get() = project.getService(FanSessionService::class.java)
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    private val messageBusConnection = project.messageBus.connect()
 
     private val searchBar = JBTextField().apply { toolTipText = "Search sessions..." }
     private val sessionListModel = DefaultListModel<String>()
@@ -81,9 +79,9 @@ class FanSessionListPanel(private val project: Project) : JPanel(BorderLayout())
 
         statusLabel.text = "Connecting to FAN Server..."
 
-        // Observe connection status
-        scope.launch {
-            connectionService.getConnectionStatus(project).collect { status ->
+        // Subscribe to connection status changes
+        messageBusConnection.subscribe(ConnectionListener.TOPIC, object : ConnectionListener {
+            override fun onConnectionStateChanged(status: ConnectionStatus) {
                 SwingUtilities.invokeLater {
                     statusLabel.text = when (status) {
                         ConnectionStatus.CONNECTED -> "Connected"
@@ -93,12 +91,24 @@ class FanSessionListPanel(private val project: Project) : JPanel(BorderLayout())
                     }
                 }
             }
-        }
+        })
 
-        // Observe sessions
-        scope.launch {
-            sessionService.sessions.collect { sessionList ->
-                SwingUtilities.invokeLater { updateSessionList(sessionList) }
+        // Subscribe to session list updates
+        messageBusConnection.subscribe(SessionListener.TOPIC, object : SessionListener {
+            override fun onSessionsUpdated(sessions: List<SessionSummary>) {
+                SwingUtilities.invokeLater { updateSessionList(sessions) }
+            }
+        })
+
+        // Initialize with current sessions (if already loaded)
+        val currentSessions = sessionService.sessions.value
+        if (currentSessions.isNotEmpty()) {
+            updateSessionList(currentSessions)
+            statusLabel.text = when (connectionService.getConnectionStatus(project).value) {
+                ConnectionStatus.CONNECTED -> "Connected"
+                ConnectionStatus.CONNECTING, ConnectionStatus.RECONNECTING -> "Connecting..."
+                ConnectionStatus.DISCONNECTED -> "Disconnected"
+                ConnectionStatus.ERROR -> "Connection failed"
             }
         }
 
@@ -181,6 +191,6 @@ class FanSessionListPanel(private val project: Project) : JPanel(BorderLayout())
     }
 
     fun dispose() {
-        scope.cancel()
+        messageBusConnection.disconnect()
     }
 }

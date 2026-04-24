@@ -38,6 +38,7 @@ class FanSessionService(private val project: Project) {
             val projectPath = project.basePath ?: ""
             _sessions.value = filterSessionsForProject(result.getOrThrow().sessions, projectPath)
             log.info("Loaded ${_sessions.value.size} sessions for project")
+            publishSessionsUpdated()
         }
         result.map { }
     }
@@ -103,6 +104,7 @@ class FanSessionService(private val project: Project) {
         if (result.isFailure) return@withContext Result.failure(result.exceptionOrNull()!!)
 
         _sessions.value = _sessions.value.filter { it.id != sessionId }
+        publishSessionsUpdated()
         publishSessionDeleted(sessionId)
 
         if (_currentSessionId.value == sessionId) {
@@ -122,6 +124,7 @@ class FanSessionService(private val project: Project) {
         if (result.isSuccess) {
             val projectPath = project.basePath ?: ""
             _sessions.value = filterSessionsForProject(result.getOrThrow().sessions, projectPath)
+            publishSessionsUpdated()
         }
         result.map { }
     }
@@ -181,6 +184,14 @@ class FanSessionService(private val project: Project) {
             project.messageBus.syncPublisher(SessionListener.TOPIC).onSessionSelected(session)
         } catch (e: Exception) {
             log.info("Failed to publish session selected: ${e.message}")
+        }
+    }
+
+    private fun publishSessionsUpdated() {
+        try {
+            project.messageBus.syncPublisher(SessionListener.TOPIC).onSessionsUpdated(_sessions.value)
+        } catch (e: Exception) {
+            log.info("Failed to publish sessions updated: ${e.message}")
         }
     }
 }

@@ -7,6 +7,7 @@ interface SessionListener {
     fun onSessionCreated(session: SessionSummary) {}
     fun onSessionDeleted(id: String) {}
     fun onSessionSelected(session: SessionSummary) {}
+    fun onSessionsUpdated(sessions: List<SessionSummary>) {}
 
     companion object {
         val TOPIC: Topic<SessionListener> = Topic.create(

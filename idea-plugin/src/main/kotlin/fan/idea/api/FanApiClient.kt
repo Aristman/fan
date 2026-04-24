@@ -162,18 +162,33 @@ class FanApiClient(
         executeRequest("DELETE", "/api/tokens/$id")
             .map { json.decodeFromString<RevokeTokenResponse>(it) }
 
+    /**
+     * Non-suspend sendMessage for use from non-coroutine contexts (e.g. executeOnPooledThread).
+     */
+    fun sendMessageSync(
+        sessionId: String,
+        message: String,
+        streamingBehavior: String? = null
+    ): Result<SendMessageResponse> =
+        executeRequestSync(
+            "POST", "/api/sessions/$sessionId/messages",
+            body = json.encodeToJsonElement(
+                SendMessageRequest(message = message, streamingBehavior = streamingBehavior)
+            ).toString()
+        ).map { json.decodeFromString<SendMessageResponse>(it) }
+
     // ── Low-level HTTP executor ──────────────────────────────────────────
 
     /**
      * Executes an HTTP request and returns the raw response body string on success,
-     * or a [FanApiException] on failure.
+     * or a [FanApiException] on failure.  Must be called from a background thread.
      */
-    private suspend fun executeRequest(
+    private fun executeRequestSync(
         method: String,
         path: String,
         body: String? = null
-    ): Result<String> = withContext(Dispatchers.IO) {
-        try {
+    ): Result<String> {
+        return try {
             val requestBuilder = Request.Builder()
                 .url("$baseUrl$path")
                 .apply {
@@ -191,7 +206,7 @@ class FanApiClient(
                     requestBuilder.post(requestBody)
                 }
                 "DELETE" -> requestBuilder.delete()
-                else -> return@withContext Result.failure(
+                else -> return Result.failure(
                     IllegalArgumentException("Unsupported HTTP method: $method")
                 )
             }
@@ -217,6 +232,17 @@ class FanApiClient(
             log.info("API $method $path failed: ${e.message}")
             Result.failure(e)
         }
+    }
+
+    /**
+     * Suspended version – delegates to [executeRequestSync] on IO dispatcher.
+     */
+    private suspend fun executeRequest(
+        method: String,
+        path: String,
+        body: String? = null
+    ): Result<String> = withContext(Dispatchers.IO) {
+        executeRequestSync(method, path, body)
     }
 }
 

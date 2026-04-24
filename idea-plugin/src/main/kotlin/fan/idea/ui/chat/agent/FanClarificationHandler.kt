@@ -7,7 +7,6 @@ import fan.idea.core.services.FanConnectionService
 import fan.idea.core.services.FanSessionService
 import fan.idea.ui.chat.ClarificationOption
 import fan.idea.ui.chat.FanHtmlDocumentManager
-import kotlinx.coroutines.runBlocking
 
 class FanClarificationHandler(
     private val project: Project,
@@ -31,11 +30,9 @@ class FanClarificationHandler(
         // Send the selected option as a message
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
-                runBlocking {
-                    val sessionId = sessionService.currentSessionId.value ?: return@runBlocking
-                    val client = connectionService.getApiClient(project) ?: return@runBlocking
-                    client.sendMessage(sessionId, optionValue)
-                }
+                val sessionId = sessionService.currentSessionId.value ?: return@executeOnPooledThread
+                val client = connectionService.getApiClient(project) ?: return@executeOnPooledThread
+                client.sendMessageSync(sessionId, optionValue)
             } catch (e: Exception) {
                 log.info("Failed to send clarification response: ${e.message}")
             }
