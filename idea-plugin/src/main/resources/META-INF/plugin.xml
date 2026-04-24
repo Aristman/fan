@@ -27,6 +27,7 @@
             displayType="BALLOON"
             key="fan.notification.group.name"/>
 
+        <statusBarWidgetFactory implementation="fan.idea.ui.status.FanStatusWidgetFactory" id="FAN_ConnectionStatus"/>
 
     </extensions>
 

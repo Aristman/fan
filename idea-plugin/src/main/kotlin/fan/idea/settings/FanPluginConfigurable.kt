@@ -7,6 +7,7 @@ import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPasswordField
 import com.intellij.ui.components.JBTextField
 import com.intellij.util.ui.FormBuilder
+import javax.swing.JComboBox
 import javax.swing.JComponent
 import javax.swing.JPanel
 
@@ -25,12 +26,14 @@ class FanPluginConfigurable : Configurable {
     private val notifyBudgetCheckBox = JBCheckBox("Budget alert notifications")
     private val notifyConnectionCheckBox = JBCheckBox("Connection lost notifications")
     private val notifyAgentDoneCheckBox = JBCheckBox("Agent done notifications")
+    private val chatFontSizeCombo = JComboBox(arrayOf(12, 13, 14, 15, 16))
 
     private val mainPanel: JPanel by lazy {
         FormBuilder.createFormBuilder()
             .addLabeledComponent(JBLabel("Server URL:"), serverUrlField, 1, false)
             .addLabeledComponent(authTokenLabel, authTokenField, 1, false)
             .addSeparator()
+            .addLabeledComponent(JBLabel("Chat Font Size:"), chatFontSizeCombo, 1, false)
             .addLabeledComponent(JBLabel("Max context lines:"), maxContextLinesField, 1, false)
             .addComponent(showThinkingCheckBox, 1)
             .addComponent(contextAutoAttachCheckBox, 1)
@@ -64,6 +67,7 @@ class FanPluginConfigurable : Configurable {
             || notifyBudgetCheckBox.isSelected != s.notifyBudgetAlerts
             || notifyConnectionCheckBox.isSelected != s.notifyConnectionLost
             || notifyAgentDoneCheckBox.isSelected != s.notifyAgentDone
+            || chatFontSizeCombo.selectedItem as? Int != s.chatFontSize
     }
 
     @Throws(ConfigurationException::class)
@@ -90,6 +94,7 @@ class FanPluginConfigurable : Configurable {
         settings.notifyBudgetAlerts = notifyBudgetCheckBox.isSelected
         settings.notifyConnectionLost = notifyConnectionCheckBox.isSelected
         settings.notifyAgentDone = notifyAgentDoneCheckBox.isSelected
+        settings.chatFontSize = chatFontSizeCombo.selectedItem as? Int ?: 14
     }
 
     override fun reset() {
@@ -102,6 +107,7 @@ class FanPluginConfigurable : Configurable {
         notifyBudgetCheckBox.isSelected = s.notifyBudgetAlerts
         notifyConnectionCheckBox.isSelected = s.notifyConnectionLost
         notifyAgentDoneCheckBox.isSelected = s.notifyAgentDone
+        chatFontSizeCombo.selectedItem = s.chatFontSize
 
         updateTokenVisibility()
     }
