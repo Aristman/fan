@@ -100,6 +100,7 @@ class FanPlugin(private val project: Project) {
                         } else {
                             val probeEx = probe.exceptionOrNull()
                             log.info("Server requires auth (probe failed: ${probeEx?.message}). Starting server with FAN_NO_AUTH=1 is recommended.")
+                            _connectionStatus.value = ConnectionStatus.ERROR
                             return@withContext Result.failure(
                                 Exception("Server requires auth. Start FAN Server with FAN_NO_AUTH=1 or provide a token in Settings → Tools → FAN Agent")
                             )
@@ -108,6 +109,7 @@ class FanPlugin(private val project: Project) {
                 }
                 else -> {
                     // Remote server without token — fail
+                    _connectionStatus.value = ConnectionStatus.ERROR
                     return@withContext Result.failure(
                         Exception("No auth token. Enter token in Settings → Tools → FAN Agent")
                     )
@@ -118,22 +120,9 @@ class FanPlugin(private val project: Project) {
             apiClient = FanApiClient(baseUrl, token)
             val healthResult = apiClient!!.healthCheck()
             if (healthResult.isFailure) {
-                // If health check failed with 401 and we're local, retry without token
-                val ex = healthResult.exceptionOrNull()
-                if (isLocal && ex is FanApiException && ex.statusCode == 401) {
-                    log.info("Health check failed with 401 on local server, retrying without token")
-                    apiClient = FanApiClient(baseUrl, "")
-                    val retry = apiClient!!.healthCheck()
-                    if (retry.isFailure) {
-                        _connectionStatus.value = ConnectionStatus.ERROR
-                        return@withContext Result.failure(retry.exceptionOrNull()
-                            ?: Exception("Health check failed"))
-                    }
-                } else {
-                    _connectionStatus.value = ConnectionStatus.ERROR
-                    return@withContext Result.failure(healthResult.exceptionOrNull()
-                        ?: Exception("Health check failed"))
-                }
+                _connectionStatus.value = ConnectionStatus.ERROR
+                return@withContext Result.failure(healthResult.exceptionOrNull()
+                    ?: Exception("Health check failed"))
             }
 
             log.info("Connected to FAN Server at $baseUrl (status: ${healthResult.getOrThrow().status})")
