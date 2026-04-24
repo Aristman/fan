@@ -36,6 +36,7 @@ Runtime: Bun · Monorepo: npm workspaces · Core: fan-ai + fan-agent-core + fan-
 - Skills follow fan skill format (SKILL.md)
 - Session persistence: JSONL (fan format) + Prisma metadata
 - No auth (local runtime, single-user, API key for client connections)
+- Never use fully qualified names in code — always import types properly at the top of the file
 - Environment vars in .env (never committed)
 
 ## Key Files
