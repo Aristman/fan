@@ -93,17 +93,21 @@ class ServerDetector {
     /**
      * Attempt to auto-start FAN Server using ProcessBuilder.
      * Sets FAN_NO_AUTH=1 so the plugin can connect without tokens.
-     * Returns true if the process was launched (doesn't guarantee it's ready).
+     * @param workingDir  Project directory to run the server in.
+     * @return true if the process was launched (doesn't guarantee it's ready).
      */
-    suspend fun startServer(): Boolean = withContext(Dispatchers.IO) {
+    suspend fun startServer(workingDir: java.io.File? = null): Boolean = withContext(Dispatchers.IO) {
         try {
-            val process = ProcessBuilder(FAN_BINARY, "server", "start")
+            val builder = ProcessBuilder(FAN_BINARY, "server", "start")
                 .redirectErrorStream(true)
                 .apply {
                     // Start server without auth so plugin can connect without tokens
                     environment()["FAN_NO_AUTH"] = "1"
+                    if (workingDir != null && workingDir.isDirectory) {
+                        directory(workingDir)
+                    }
                 }
-                .start()
+            val process = builder.start()
 
             // Wait briefly for the process to fork (fan server start is a daemon launcher)
             val exited = process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)
@@ -113,7 +117,7 @@ class ServerDetector {
                 return@withContext false
             }
 
-            log.info("fan server start command executed")
+            log.info("fan server start command executed in: ${workingDir?.absolutePath ?: "default dir"}")
             true
         } catch (e: Exception) {
             log.info("Failed to start FAN Server: ${e.message}")

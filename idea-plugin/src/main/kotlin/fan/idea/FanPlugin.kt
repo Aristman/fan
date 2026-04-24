@@ -316,9 +316,10 @@ class FanPlugin(private val project: Project) {
             return@withContext connect()
         }
 
-        // Try to start server
-        log.info("Server not reachable, attempting to start...")
-        val started = serverDetector.startServer()
+        // Try to start server in the current project directory
+        val projectDir = project.basePath?.let { java.io.File(it) }
+        log.info("Server not reachable, attempting to start in: ${projectDir?.absolutePath ?: "default"}...")
+        val started = serverDetector.startServer(projectDir)
         if (!started) {
             _connectionStatus.value = ConnectionStatus.ERROR
             return@withContext Result.failure(Exception("Failed to start FAN Server. Make sure 'fan' CLI is installed and in PATH."))
