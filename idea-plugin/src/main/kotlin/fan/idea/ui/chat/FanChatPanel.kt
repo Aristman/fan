@@ -7,6 +7,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.JBUI
 import fan.idea.api.ConnectionStatus
+import fan.idea.api.SessionMessage
 import fan.idea.api.FanEvent
 import fan.idea.core.events.ConnectionListener
 import fan.idea.core.events.MessageListener
@@ -22,6 +23,7 @@ import java.awt.event.ComponentEvent
 import javax.swing.JButton
 import javax.swing.JPanel
 import javax.swing.SwingUtilities
+import javax.swing.Timer
 
 class FanChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     private val log = Logger.getInstance(FanChatPanel::class.java)
@@ -43,6 +45,7 @@ class FanChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     private val clarificationHandler: FanClarificationHandler
 
     @Volatile private var initialized = false
+    private val pendingMessages: MutableList<SessionMessage> = mutableListOf()
 
     init {
         docManager = FanHtmlDocumentManager(chatView)
@@ -71,6 +74,13 @@ class FanChatPanel(private val project: Project) : JPanel(BorderLayout()) {
                 if (!initialized) {
                     initialized = true
                     loadChatHtml()
+                    // Delay rendering to give JCEF time to initialize the JS bridge
+                    Timer(500) {
+                        if (pendingMessages.isNotEmpty()) {
+                            log.info("Rendering ${pendingMessages.size} pending messages after JCEF init")
+                            renderPendingMessages()
+                        }
+                    }.start()
                 }
             }
         })
@@ -117,6 +127,44 @@ class FanChatPanel(private val project: Project) : JPanel(BorderLayout()) {
 
     fun loadSessionMessages(messagesHtml: String) {
         docManager.setBody(messagesHtml)
+    }
+
+    fun loadHistory(messages: List<SessionMessage>) {
+        pendingMessages.clear()
+        pendingMessages.addAll(messages)
+        if (initialized) {
+            renderPendingMessages()
+        }
+        // If not initialized yet, messages will be rendered after JCEF loads (in componentShown)
+    }
+
+    fun addUserMessage(content: String) {
+        if (initialized) {
+            docManager.addUserMessage(content)
+            docManager.scrollToBottom()
+        } else {
+            pendingMessages.add(SessionMessage(
+                id = "pending-${System.currentTimeMillis()}",
+                role = "user",
+                content = content,
+                createdAt = ""
+            ))
+        }
+    }
+
+    private fun renderPendingMessages() {
+        if (pendingMessages.isEmpty()) return
+        val count = pendingMessages.size
+        for (msg in pendingMessages) {
+            when (msg.role) {
+                "user" -> docManager.addUserMessage(msg.content)
+                "assistant" -> docManager.addAssistantMessage(msg.content)
+                // Skip tool messages — we can't reconstruct tool call UI from just text
+            }
+        }
+        docManager.scrollToBottom()
+        pendingMessages.clear()
+        log.info("Rendered $count pending messages")
     }
 
     fun clearMessages() {

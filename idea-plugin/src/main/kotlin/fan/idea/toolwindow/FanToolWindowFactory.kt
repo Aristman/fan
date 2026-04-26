@@ -53,9 +53,14 @@ class FanToolWindowFactory : ToolWindowFactory {
         sessionListPanel.onSessionSelected = { sessionId ->
             log.info("ToolWindow: session selected: $sessionId")
             ApplicationManager.getApplication().executeOnPooledThread {
-                    val result = runBlocking { sessionService.selectSession(sessionId) }
-                    if (result.isSuccess) {
+                val selectResult = runBlocking { sessionService.selectSession(sessionId) }
+                if (selectResult.isSuccess) {
+                    // Load existing messages
+                    val messagesResult = runBlocking { sessionService.getSessionMessages() }
                     SwingUtilities.invokeLater {
+                        if (messagesResult.isSuccess) {
+                            chatPanel.loadHistory(messagesResult.getOrThrow())
+                        }
                         navigator.showChat()
                         inputPanel.focusInput()
                     }
@@ -74,10 +79,12 @@ class FanToolWindowFactory : ToolWindowFactory {
                     val result = runBlocking { messageService.sendMessage(text) }
                     if (result.isSuccess) {
                         SwingUtilities.invokeLater {
+                            chatPanel.addUserMessage(text)  // Show user's own message
                             if (navigator.getCurrentView() == FanSessionNavigator.View.SESSION_LIST) {
                                 navigator.showChat()
-                                inputPanel.focusInput()
                             }
+                            inputPanel.setText("")
+                            inputPanel.focusInput()
                         }
                     } else {
                         log.info("ToolWindow: send failed: ${result.exceptionOrNull()?.message}")
