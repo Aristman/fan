@@ -18,7 +18,7 @@
         <toolWindow id="FAN Agent"
                     factoryClass="fan.idea.toolwindow.FanToolWindowFactory"
                     anchor="right"
-                    icon="fan.idea.icons.FanIcon"/>
+                    icon="/icons/fan_icon.svg"/>
 
         <applicationConfigurable
             configurationClassName="fan.idea.settings.FanPluginConfigurable"
