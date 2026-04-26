@@ -142,7 +142,6 @@ class FanSessionService(private val project: Project) {
     }
 
     fun navigateToSessionList() {
-        connectionService.disconnectWs(project)
         _currentSessionId.value = null
     }
 

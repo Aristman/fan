@@ -66,9 +66,8 @@ class FanChatPanel(private val project: Project) : JPanel(BorderLayout()) {
         add(chatView, BorderLayout.CENTER)
 
         // Defer HTML loading until the component is visible.
-        // JCEF with off-screen rendering disabled requires a native window handle
-        // to load and render content. The panel is created before being added
-        // to the CardLayout, so loadHTML() would silently fail.
+        // Even with off-screen rendering enabled, we wait for the component to be
+        // shown to ensure proper initialization within the CardLayout container.
         addComponentListener(object : ComponentAdapter() {
             override fun componentShown(e: ComponentEvent) {
                 if (!initialized) {
@@ -80,6 +79,9 @@ class FanChatPanel(private val project: Project) : JPanel(BorderLayout()) {
                             log.info("Rendering ${pendingMessages.size} pending messages after JCEF init")
                             renderPendingMessages()
                         }
+                        // Force JCEF repaint after showing
+                        chatView.repaint()
+                        chatView.revalidate()
                     }.start()
                 }
             }

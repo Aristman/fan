@@ -13,7 +13,7 @@ class JcefFanChatView : JPanel(BorderLayout()) {
     private val log = Logger.getInstance(JcefFanChatView::class.java)
 
     private val cefBrowser: JBCefBrowser = JBCefBrowserBuilder()
-        .setOffScreenRendering(false)
+        .setOffScreenRendering(true)
         .build()
 
     @Volatile private var isReady = false
