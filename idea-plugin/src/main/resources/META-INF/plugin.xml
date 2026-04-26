@@ -8,6 +8,8 @@
         Connect to your local FAN Server for AI-assisted coding directly in your IDE.
     ]]></description>
 
+    <resource-bundle>messages.FanBundle</resource-bundle>
+
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.modules.lang</depends>
     <depends optional="true">com.jetbrains.jcef</depends>
