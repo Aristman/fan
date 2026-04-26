@@ -17,6 +17,8 @@ import fan.idea.ui.chat.jcef.JcefFanChatView
 import fan.idea.settings.FanPluginSettings
 import java.awt.BorderLayout
 import java.awt.FlowLayout
+import java.awt.event.ComponentAdapter
+import java.awt.event.ComponentEvent
 import javax.swing.JButton
 import javax.swing.JPanel
 import javax.swing.SwingUtilities
@@ -40,6 +42,8 @@ class FanChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     private val agentHandler: FanAgentEventHandler
     private val clarificationHandler: FanClarificationHandler
 
+    @Volatile private var initialized = false
+
     init {
         docManager = FanHtmlDocumentManager(chatView)
         agentHandler = FanAgentEventHandler(docManager)
@@ -58,14 +62,18 @@ class FanChatPanel(private val project: Project) : JPanel(BorderLayout()) {
         add(headerPanel, BorderLayout.NORTH)
         add(chatView, BorderLayout.CENTER)
 
-        // Load HTML
-        val settings = FanPluginSettings.getInstance()
-        val fontSize = settings.chatFontSize
-        docManager.loadHtml(fontSize)
-
-        // Apply initial theme
-        val isDark = isDarkTheme()
-        docManager.updateTheme(isDark)
+        // Defer HTML loading until the component is visible.
+        // JCEF with off-screen rendering disabled requires a native window handle
+        // to load and render content. The panel is created before being added
+        // to the CardLayout, so loadHTML() would silently fail.
+        addComponentListener(object : ComponentAdapter() {
+            override fun componentShown(e: ComponentEvent) {
+                if (!initialized) {
+                    initialized = true
+                    loadChatHtml()
+                }
+            }
+        })
 
         // Subscriptions
         messageBusConnection.subscribe(MessageListener.TOPIC, object : MessageListener {
@@ -116,6 +124,14 @@ class FanChatPanel(private val project: Project) : JPanel(BorderLayout()) {
     }
 
     fun getBackButton(): JButton = backButton
+
+    private fun loadChatHtml() {
+        val settings = FanPluginSettings.getInstance()
+        val fontSize = settings.chatFontSize
+        docManager.loadHtml(fontSize)
+        docManager.updateTheme(isDarkTheme())
+        log.info("Chat HTML loaded after component shown")
+    }
 
     private fun isDarkTheme(): Boolean {
         return EditorColorsManager.getInstance().isDarkEditor

@@ -43,7 +43,9 @@ class JcefFanChatView : JPanel(BorderLayout()) {
 
     fun loadHtml(html: String) {
         isReady = false
-        pendingScripts.clear()
+        // Do NOT clear pendingScripts here — scripts queued before the HTML was
+        // loaded (e.g. clarification bridge, theme updates) must be preserved
+        // and flushed once the new HTML finishes loading.
         cefBrowser.loadHTML(html)
     }
 
