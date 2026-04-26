@@ -106,6 +106,7 @@ class FanToolWindowFactory : ToolWindowFactory {
             log.info("ToolWindow: back to session list")
             sessionService.navigateToSessionList()
             navigator.showSessionList()
+            sessionListPanel.refreshStatus()
         }
 
         // Wire: generating state → input panel stop/send buttons

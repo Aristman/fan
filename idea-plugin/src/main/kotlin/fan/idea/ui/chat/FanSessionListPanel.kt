@@ -104,12 +104,13 @@ class FanSessionListPanel(private val project: Project) : JPanel(BorderLayout())
         val currentSessions = sessionService.sessions.value
         if (currentSessions.isNotEmpty()) {
             updateSessionList(currentSessions)
-            statusLabel.text = when (connectionService.getConnectionStatus(project).value) {
-                ConnectionStatus.CONNECTED -> "Connected"
-                ConnectionStatus.CONNECTING, ConnectionStatus.RECONNECTING -> "Connecting..."
-                ConnectionStatus.DISCONNECTED -> "Disconnected"
-                ConnectionStatus.ERROR -> "Connection failed"
-            }
+        }
+        // Always sync status with actual connection state, not just when sessions are loaded
+        statusLabel.text = when (connectionService.getConnectionStatus(project).value) {
+            ConnectionStatus.CONNECTED -> "Connected"
+            ConnectionStatus.CONNECTING, ConnectionStatus.RECONNECTING -> "Connecting..."
+            ConnectionStatus.DISCONNECTED -> "Disconnected"
+            ConnectionStatus.ERROR -> "Connection failed"
         }
 
         // Double-click → open
@@ -188,6 +189,20 @@ class FanSessionListPanel(private val project: Project) : JPanel(BorderLayout())
 
     fun focusInput() {
         searchBar.requestFocusInWindow()
+    }
+
+    fun refreshStatus() {
+        val currentStatus = connectionService.getConnectionStatus(project).value
+        statusLabel.text = when (currentStatus) {
+            ConnectionStatus.CONNECTED -> "Connected"
+            ConnectionStatus.CONNECTING, ConnectionStatus.RECONNECTING -> "Connecting..."
+            ConnectionStatus.DISCONNECTED -> "Disconnected"
+            ConnectionStatus.ERROR -> "Connection failed"
+        }
+        val currentSessions = sessionService.sessions.value
+        if (currentSessions.isNotEmpty()) {
+            updateSessionList(currentSessions)
+        }
     }
 
     fun dispose() {
