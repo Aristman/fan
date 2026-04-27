@@ -50,6 +50,8 @@ export interface SessionAdapter {
 	subscribeToSession(sessionId: string, handler: (event: any) => void): () => void;
 	/** Get available models from ModelRegistry */
 	getAvailableModels(): Promise<ModelInfo[]>;
+	/** Bind extensions to the current session (called after session switch/create) */
+	bindSessionExtensions(): Promise<void>;
 }
 
 // ============================================================================

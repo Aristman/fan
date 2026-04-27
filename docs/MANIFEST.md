@@ -1,40 +1,34 @@
 # Documentation Manifest
-> Last updated: 2026-04-23
+> Last updated: 2026-04-24 (roadmap-idea-plugin-v2-unified)
 
 ## User-Facing Documentation
-
 | File | Status | Description |
 |------|--------|-------------|
-| `CLAUDE.md` | ✅ | Quick context for LLM sessions, orchestrator rules, CLI commands, test instructions, available skills |
-| `ARCHITECTURE.md` | ✅ | Comprehensive architecture reference, packages, data flow, API, DB schema, skills catalog |
 | `INSTALL.md` | ✅ | Installation guide (Windows/Linux/macOS) |
 | `CONTRIBUTING.md` | ✅ | Contribution guide |
-| `MIGRATION.md` | ✅ | Migration from upstream fan/pi |
-| `docs/guides/orchestrator.md` | ✅ | Orchestrator v2 guide — tools, agent types, workflows, configuration |
-| `docs/guides/dashboard.md` | ✅ | Dashboard client guide |
-| `docs/guides/configuration.md` | ✅ | Settings reference (includes pre-installed skills note) |
+| `docs/guides/configuration.md` | ✅ | Settings reference |
+| `docs/guides/orchestrator.md` | ✅ | Orchestrator guide |
+| `docs/guides/dashboard.md` | ✅ | Dashboard guide |
 | `docs/guides/api-reference.md` | ✅ | API documentation |
-| `README.md` | ✅ | Project overview — features, quick start, CLI, orchestrator, skills, architecture, development |
-| `.env.example` | ✅ | Environment variable template |
 
 ## AI/Developer Documentation
-
 | File | Status | Description |
 |------|--------|-------------|
-| `packages/orchestrator/README.md` | ✅ | Orchestrator package overview — v2 features, configuration, installation |
-| `skills/*/SKILL.md` (11 skills) | ✅ | Skill specifications — ask-answer, auto-tests, bug-fix, code-research, deep-dive, fan-forge, idea-lab, repo-explorer, research-spec-generator, skill-improver, smoke-tester |
-| `docs/specs/spec_runtime-agent_2026-04-10.md` | ✅ | Current runtime-agent specification |
-| `docs/specs/MVP-SPEC.md` | ✅ | Archived (superseded web SaaS concept) |
-| `docs/develop/tests/dashboard-phase6.md` | ⚠️ | Dashboard test report (26/30 passed) — may need update after changes |
-| `docs/develop/tests/orchestrator-phase4.md` | ⚠️ | Orchestrator v1 test report — references old tools (delegate_task, /tasks, /agents, /delegate) |
-| `docs/develop/tests/orchestrator-phase5.md` | ⚠️ | Orchestrator v1 test report — references old tools and modes |
-| `docs/orchestrator-comparison.md` | ⚠️ | Upstream vs FAN comparison — references removed v1 features (classify_task, chain, /agents, /delegate) |
-| `docs/roadmaps/orchestrator-ui-upgrade.md` | ⚠️ | Roadmap — references old v1 API (delegate_task) |
-| `docs/backlogs/package-fork-backlog.md` | ✅ | Package fork backlog |
-| `docs/backlogs/setup-wizard-backlog.md` | ✅ | Setup wizard backlog |
-| `docs/pi-changelogs/pi-changelog-0.68.0.md` | ✅ | Upstream pi changelog (historical) |
+| `CLAUDE.md` | ✅ | Quick context for LLM sessions |
+| `ARCHITECTURE.md` | ✅ | Architecture, packages, data flow |
+| `MIGRATION.md` | ✅ | Migration from upstream fan/pi |
+| `docs/specs/spec_runtime-agent_2026-04-10.md` | ✅ | Runtime-agent specification (current) |
+| `docs/specs/spec_idea-plugin-integration_2026-04-24.md` | ✅ | IntelliJ Platform Plugin integration spec |
+| `docs/specs/spec_idea-plugin-tui-styling_2026-04-24.md` | ✅ | IDEA Plugin JCEF chat rendering spec — TUI-style colors, layout, components |
+| `docs/specs/MVP-SPEC.md` | ⚠️ | Archived (superseded, web SaaS concept) |
+| `docs/develop/tests/dashboard-phase6.md` | ✅ | Dashboard test report (26/30 passed) |
+| `docs/develop/tests/orchestrator-phase4.md` | ✅ | Orchestrator test report |
+| `docs/roadmaps/orchestrator-ui-upgrade.md` | ✅ | Orchestrator UI upgrade roadmap |
+| `docs/roadmaps/roadmap-idea-plugin-v2-from-orf.md` | ✅ | IDEA plugin v2 roadmap — 1st edition (ORF patterns, 6 phases) |
+| `docs/roadmaps/roadmap-idea-plugin-v2-from-orf-ed2.md` | ⚠️ | IDEA plugin v2 roadmap — 2nd edition (superseded by unified) |
+| `docs/roadmaps/roadmap-idea-plugin-v2-unified.md` | ✅ | IDEA plugin v2 unified roadmap — merged: architecture (ORF patterns) + visual system (TUI-style JCEF styling) |
 
 ## Status Legend
 - ✅ — up to date
-- ⚠️ — needs update (references orchestrator v1 API)
+- ⚠️ — needs update
 - ❌ — missing
