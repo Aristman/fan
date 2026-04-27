@@ -271,7 +271,7 @@ function extractZipArchive(archivePath: string, destDir: string): Promise<void> 
 			child = spawn(
 				"powershell.exe",
 				["-NoProfile", "-Command", `Expand-Archive -Path '${archivePath}' -DestinationPath '${destDir}' -Force`],
-				{ stdio: "pipe" },
+				{ stdio: "pipe", windowsHide: true },
 			);
 		} else {
 			// Unix: use unzip
@@ -411,8 +411,7 @@ export async function performUpdate(options?: {
 			")",
 			`copy /Y "%SRC%" "%DST%" >NUL 2>&1`,
 			"if errorlevel 1 (",
-			"  echo Failed to apply update: could not copy binary.",
-			"  pause",
+			`  echo Failed to apply update: could not copy binary. > "%WORK%\\\\update-error.log"`,
 			"  exit /b 1",
 			")",
 			`rd /S /Q "%WORK%" >NUL 2>&1`,
