@@ -143,5 +143,87 @@ FAN умеет делегировать задачи специализиров�
 
 ---
 
+## Примеры конфигурации провайдеров
+
+### Filin-LightLLM
+
+Добавьте в `~/.fan/agent/models.json`:
+
+```json
+{
+  "providers": {
+    "filin-lightllm": {
+      "baseUrl": "https://litellm.codefine.io/v1",
+      "api": "openai-completions",
+      "apiKey": "FILIN_API_KEY",
+      "compat": {
+        "supportsDeveloperRole": false,
+        "supportsReasoningEffort": false,
+        "supportsUsageInStreaming": false,
+        "maxTokensField": "max_tokens"
+      },
+      "models": [
+        {
+          "id": "chat",
+          "name": "Filin-LightLLM Chat",
+          "reasoning": true,
+          "input": ["text"],
+          "contextWindow": 128000,
+          "maxTokens": 16384,
+          "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+        }
+      ]
+    }
+  }
+}
+```
+
+Добавьте в `~/.fan/agent/.env`:
+
+```bash
+FILIN_API_KEY=<ваш_ключ>
+```
+
+### Fast Inference
+
+Добавьте в `~/.fan/agent/models.json`:
+
+```json
+{
+  "providers": {
+    "fast-inference": {
+      "baseUrl": "http://<адрес_сервера>:5000/v1",
+      "api": "openai-completions",
+      "apiKey": "FILIN_API_KEY",
+      "compat": {
+        "supportsDeveloperRole": false,
+        "supportsReasoningEffort": false,
+        "supportsUsageInStreaming": false,
+        "maxTokensField": "max_tokens"
+      },
+      "models": [
+        {
+          "id": "Qwen3.6-27B-FP8",
+          "name": "Qwen3.6-27B-FP8",
+          "reasoning": true,
+          "input": ["text"],
+          "contextWindow": 262144,
+          "maxTokens": 16384,
+          "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+        }
+      ]
+    }
+  }
+}
+```
+
+Добавьте в `~/.fan/agent/.env`:
+
+```bash
+FILIN_API_KEY=<ваш_ключ>
+```
+
+---
+
 **Полная документация:
 ** [INSTALL.md](../../INSTALL.md) · [docs/guides/](./) · [docs/guides/orchestrator.md](./orchestrator.md) · [docs/guides/configuration.md](./configuration.md)
