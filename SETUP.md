@@ -141,10 +141,10 @@ This runs diagnostics on your Node version, native modules, configuration files,
 Set provider API keys as environment variables. Create a `.env` file in project root (not committed):
 
 ```bash
-# Provider API keys (note: custom suffix _AFAN_KEY for most providers)
-ANTHROPIC_AFAN_KEY=sk-ant-...
-OPENAI_AFAN_KEY=sk-...
-GEMINI_AFAN_KEY=...
+# Provider API keys (note: custom suffix _API_KEY for most providers)
+ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=sk-...
+GEMINI_API_KEY=...
 ZAI_API_KEY=...
 
 # Runtime flags
@@ -156,15 +156,16 @@ FAN_OFFLINE=1           # Skip version checks
 
 | Provider | Variable |
 |----------|----------|
-| Anthropic | `ANTHROPIC_AFAN_KEY` |
-| OpenAI | `OPENAI_AFAN_KEY` |
-| Google Gemini | `GEMINI_AFAN_KEY` |
-| OpenRouter | `OPENROUTER_AFAN_KEY` |
-| Groq | `GROQ_AFAN_KEY` |
-| xAI | `XAI_AFAN_KEY` |
+| Anthropic | `ANTHROPIC_API_KEY` |
+| OpenAI | `OPENAI_API_KEY` |
+| Google Gemini | `GEMINI_API_KEY` |
+| OpenRouter | `OPENROUTER_API_KEY` |
+| Groq | `GROQ_API_KEY` |
+| xAI | `XAI_API_KEY` |
 | Z.AI | `ZAI_API_KEY` |
-| Mistral | `MISTRAL_AFAN_KEY` |
-| Cerebras | `CEREBRAS_AFAN_KEY` |
+| Mistral | `MISTRAL_API_KEY` |
+| Cerebras | `CEREBRAS_API_KEY` |
+| DeepSeek | `DEEPSEEK_API_KEY` |
 | HuggingFace | `HF_TOKEN` |
 | Ollama / LM Studio | _(no key needed)_ |
 
@@ -315,13 +316,13 @@ cd packages/coding-agent && npm run build
 ```
 
 ### API key not picked up
-Check the env var name — FAN uses `_AFAN_KEY` suffix (not `_API_KEY`):
+Check the env var name — FAN uses standard `_API_KEY` suffix:
 ```bash
 # ❌ Wrong
 export ANTHROPIC_API_KEY=sk-...
 
 # ✅ Correct
-export ANTHROPIC_AFAN_KEY=sk-...
+export ANTHROPIC_API_KEY=sk-...
 ```
 
 Exception: Z.AI uses `ZAI_API_KEY` (no suffix).
@@ -344,11 +345,11 @@ Run `fan doctor` and follow the specific diagnostic advice for each item. Common
 ### No models available
 1. Check that your API keys are set correctly in `.env`:
    ```bash
-   grep _AFAN_KEY .env
+   grep _API_KEY .env
    ```
 2. Verify keys are valid by testing one:
    ```bash
-   curl -H "x-api-key: $ANTHROPIC_AFAN_KEY" https://api.anthropic.com/v1/messages
+   curl -H "x-api-key: $ANTHROPIC_API_KEY" https://api.anthropic.com/v1/messages
    ```
 3. If using custom providers, check that `~/.fan/agent/models.json` is valid JSON and the `baseUrl` is reachable.
 

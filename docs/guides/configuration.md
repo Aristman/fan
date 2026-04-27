@@ -24,20 +24,21 @@ Nested objects merge recursively (partial overrides supported).
 
 | Provider | FAN Variable | Standard Variable |
 |----------|-------------|-------------------|
-| OpenAI | `OPENAI_AFAN_KEY` | `OPENAI_API_KEY` |
-| Anthropic | `ANTHROPIC_AFAN_KEY` | `ANTHROPIC_API_KEY` |
-| Google Gemini | `GEMINI_AFAN_KEY` | `GOOGLE_API_KEY` |
-| Google Cloud (Vertex) | `GOOGLE_CLOUD_AFAN_KEY` | — |
-| Azure OpenAI | `AZURE_OPENAI_AFAN_KEY` | — |
-| Groq | `GROQ_AFAN_KEY` | — |
-| xAI | `XAI_AFAN_KEY` | — |
-| OpenRouter | `OPENROUTER_AFAN_KEY` | — |
-| Mistral | `MISTRAL_AFAN_KEY` | — |
-| Cerebras | `CEREBRAS_AFAN_KEY` | — |
+| OpenAI | `OPENAI_API_KEY` | `OPENAI_API_KEY` |
+| Anthropic | `ANTHROPIC_API_KEY` | `ANTHROPIC_API_KEY` |
+| Google Gemini | `GEMINI_API_KEY` | `GOOGLE_API_KEY` |
+| Google Cloud (Vertex) | `GOOGLE_CLOUD_API_KEY` | — |
+| Azure OpenAI | `AZURE_OPENAI_API_KEY` | — |
+| Groq | `GROQ_API_KEY` | — |
+| xAI | `XAI_API_KEY` | — |
+| OpenRouter | `OPENROUTER_API_KEY` | — |
+| Mistral | `MISTRAL_API_KEY` | — |
+| Cerebras | `CEREBRAS_API_KEY` | — |
+| DeepSeek | `DEEPSEEK_API_KEY` | — |
 | Z.AI | `ZAI_API_KEY` | — |
-| MiniMax | `MINIMAX_AFAN_KEY` | — |
-| Kimi | `KIMI_AFAN_KEY` | — |
-| Vercel AI Gateway | `AI_GATEWAY_AFAN_KEY` | — |
+| MiniMax | `MINIMAX_API_KEY` | — |
+| Kimi | `KIMI_API_KEY` | — |
+| Vercel AI Gateway | `AI_GATEWAY_API_KEY` | — |
 | GitHub Copilot | `COPILOT_GITHUB_TOKEN` | `GH_TOKEN`, `GITHUB_TOKEN` |
 
 Keys can also be set per-provider in `models.json` via `apiKey` (takes precedence over env vars).

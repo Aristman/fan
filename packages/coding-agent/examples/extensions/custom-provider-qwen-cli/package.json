@@ -1,7 +1,7 @@
 {
 	"name": "fan-extension-custom-provider-qwen-cli",
 	"private": true,
-	"version": "0.7.5",
+	"version": "0.7.7",
 	"type": "module",
 	"scripts": {
 		"clean": "echo 'nothing to clean'",

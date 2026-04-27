@@ -100,6 +100,18 @@ export const providersRegistryData = {
 			"wizardModels": [],
 			"authType": "apiKey"
 		},
+		"deepseek": {
+			"displayName": "DeepSeek",
+			"envVars": [
+				"DEEPSEEK_API_KEY"
+			],
+			"primaryEnvVar": "DEEPSEEK_API_KEY",
+			"wizardModels": [
+				"deepseek-chat",
+				"deepseek-reasoner"
+			],
+			"authType": "apiKey"
+		},
 		"zai": {
 			"displayName": "z.ai",
 			"envVars": [
@@ -218,6 +230,7 @@ export const providersRegistryData = {
 		"mistral",
 		"openrouter",
 		"github-copilot",
-		"zai"
+		"zai",
+		"deepseek"
 	]
 } as const;
