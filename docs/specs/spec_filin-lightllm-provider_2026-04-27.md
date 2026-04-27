@@ -3,7 +3,7 @@
 > Дата: 2026-04-27
 > Статус: Draft
 > Тип: Интеграция
-> Версия: 1.0
+> Версия: 1.1
 
 ---
 
@@ -32,8 +32,17 @@
 - `apiKey`: `FILIN_LITELLM_API_KEY` (имя переменной окружения)
 - `models`: массив моделей (определяется через /v1/models)
 
-### 2.2 Обнаружение моделей
-Скрипт для получения списка доступных моделей:
+### 2.2 Список моделей
+LiteLLM proxy экспонирует 2 модели-абстракции:
+
+| Model ID | Назначение |
+|----------|------------|
+| `chat` | Чатовые модели (Chat Completions API) |
+| `completion` | Completion-модели (Text Completions API) |
+
+Имена абстрагируют upstream-провайдеров — конкретная модель определяется конфигурацией proxy.
+
+Для проверки актуального списка:
 ```bash
 curl -s https://litellm.codefine.io/v1/models \
   -H "Authorization: Bearer $FILIN_LITELLM_API_KEY" | jq '.data[].id'
@@ -87,12 +96,21 @@ User (TUI/Dashboard)
       },
       "models": [
         {
-          "id": "<model-id-from-litellm>",
-          "name": "<display-name>",
+          "id": "chat",
+          "name": "Filin-LightLLM Chat",
           "reasoning": false,
-          "input": ["text", "image"],
+          "input": ["text"],
           "contextWindow": 128000,
-          "maxTokens": 4096,
+          "maxTokens": 16384,
+          "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+        },
+        {
+          "id": "completion",
+          "name": "Filin-LightLLM Completion",
+          "reasoning": false,
+          "input": ["text"],
+          "contextWindow": 128000,
+          "maxTokens": 16384,
           "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
         }
       ]
@@ -134,7 +152,7 @@ LiteLLM proxy может потребовать следующие compat-нас
 ### 4.2 Model Schema
 | Поле | Тип | Обязательное | Описание |
 |------|-----|--------------|----------|
-| `id` | string | Да | Идентификатор в LiteLLM proxy |
+| `id` | string | Да | Идентификатор модели в LiteLLM proxy (`chat` или `completion`) |
 | `name` | string | Нет | Отображаемое имя (по умолчанию = id) |
 | `reasoning` | boolean | Нет | Поддержка extended thinking |
 | `input` | string[] | Нет | `["text"]` или `["text", "image"]` |
@@ -216,14 +234,16 @@ LiteLLM proxy может потребовать следующие compat-нас
 
 ## 10. Следующие шаги
 
-1. [ ] Получить API key для litellm.codefine.io
-2. [ ] Выполнить `curl` запрос к `/v1/models` для получения списка моделей
-3. [ ] Определить compat-флаги для каждой модели (тестовый прогон)
-4. [ ] Создать `~/.fan/agent/models.json` с конфигурацией провайдера
-5. [ ] Добавить `FILIN_LITELLM_API_KEY` в `.env`
-6. [ ] Протестировать в TUI: `/model` → выбрать модель → отправить запрос
+1. [x] Получить API key для litellm.codefine.io
+2. [x] Выполнить `curl` запрос к `/v1/models` для получения списка моделей → `chat`, `completion`
+3. [ ] Создать `~/.fan/agent/models.json` с конфигурацией провайдера
+4. [ ] Добавить `FILIN_LITELLM_API_KEY` в `.env`
+5. [ ] Протестировать `chat` модель в TUI: `/model` → `filin-lightllm/chat` → отправить запрос
+6. [ ] Протестировать `completion` модель в TUI: `/model` → `filin-lightllm/completion` → отправить запрос
 7. [ ] Протестировать в Dashboard: Model Settings → выбрать модель → отправить запрос
-8. [ ] При необходимости скорректировать compat-флаги по результатам тестирования
+8. [ ] Определить compat-флаги по результатам тестирования (при необходимости скорректировать)
+9. [ ] Проверить поддержку multimodal input (`image`) для обеих моделей
+10. [ ] При изменении списка моделей на proxy — обновить `models.json`
 
 ---
 
