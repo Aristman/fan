@@ -97,7 +97,7 @@ export class LoginDialogComponent extends Container implements Focusable {
 
 		// Try to open browser
 		const openCmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
-		exec(`${openCmd} "${url}"`);
+		exec(`${openCmd} "${url}"`, { windowsHide: true });
 
 		this.tui.requestRender();
 	}

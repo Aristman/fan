@@ -152,6 +152,7 @@ export async function serverStart(port?: number, host?: string): Promise<void> {
 	const child = spawn(process.execPath, [process.argv[1], ...args], {
 		detached: true,
 		stdio: "ignore",
+		windowsHide: true,
 		env: {
 			...process.env,
 			FAN_SERVER_DAEMON: "1",

@@ -119,7 +119,6 @@ fan store update          # Проверить обновления
 | `code-research` | Глубокий анализ кода (read-only)                      |
 | `repo-explorer` | Анализ Git-репозитория (GitHub / локальный)           |
 | `idea-lab`      | Исследование идей: SWOT, альтернативы, план действий  |
-| `smoke-tester`  | E2E тестирование UI через Playwright                  |
 | `fan-forge`     | Создание расширений и скиллов для FAN                 |
 
 Полный список: `/skill:` → `Tab` для автодополнения.

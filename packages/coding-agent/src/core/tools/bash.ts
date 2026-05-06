@@ -80,6 +80,7 @@ export function createLocalBashOperations(): BashOperations {
 					detached: true,
 					env: env ?? getShellEnv(),
 					stdio: ["ignore", "pipe", "pipe"],
+					windowsHide: true,
 				});
 				let timedOut = false;
 				let timeoutHandle: NodeJS.Timeout | undefined;

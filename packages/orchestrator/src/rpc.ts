@@ -12,9 +12,9 @@ import { resolveModel, getCloudStatus } from "./config.js";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-/** Get the correct fan binary name for the current platform */
+/** Get the currently running fan binary path (works for .exe, .cmd, dev, production) */
 function getFanCommand(): string {
-  return process.platform === "win32" ? "fan.cmd" : "fan";
+  return process.execPath;
 }
 
 /** Shorten home dir to ~ */
@@ -136,7 +136,7 @@ export function runWorker(
       ],
       {
         stdio: ["pipe", "pipe", "pipe"],
-        shell: process.platform === "win32",
+        windowsHide: true,
         env: process.env,
         cwd: options?.cwd ?? process.cwd(),
       },

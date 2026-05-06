@@ -24,9 +24,23 @@ Runtime: Bun · Monorepo: npm workspaces · Core: fan-ai + fan-agent-core + fan-
 - **Commits:** conventional commits style
 
 ## Orchestrator Rules (Coordinator Mode)
+
+### Task Lifecycle
 - **1 task = 1 worker.** Tasks are created from plan decomposition, workers are launched based on tasks. Never launch one worker to cover multiple tasks.
 - **Flow:** Plan → `TaskCreate` (all tasks) → `Agent` per task → `TaskUpdate` after worker completes → next task.
 - **Task transitions:** `pending` → `in_progress` → `completed` (direct `pending` → `completed` is not allowed).
+
+### Centralized Task Management
+- **Only the coordinator manages tasks.** `TaskCreate` and `TaskUpdate` are coordinator-only tools. Workers MUST NOT call `TaskCreate` or `TaskUpdate`.
+- **Pass task context to workers.** Include the target `taskId` in the worker's task description so the coordinator can track progress. Example: *"You are working on task `task-xxx`. Report results back — the coordinator will update the task status."*
+- **Verify task IDs before update.** Before calling `TaskUpdate`, confirm the `taskId` matches a real task from `TaskList` or `TaskCreate` results. Typos in IDs cause phantom stuck tasks.
+- **Workers are pure executors.** Workers receive a task description, execute it, and return results. They do not create, track, or manage tasks. The coordinator owns the task board.
+
+### Session Cleanup
+- **Final step is mandatory.** Before ending the session, the coordinator MUST:
+  1. Call `TaskList` to check for stuck tasks (`pending`/`in_progress`).
+  2. Resolve all stuck tasks (`TaskUpdate` to `completed` or `failed`).
+  3. Output a final report: tasks completed, verification results, summary of changes.
 
 ## Code Conventions
 - TypeScript strict mode
@@ -55,7 +69,7 @@ Runtime: Bun · Monorepo: npm workspaces · Core: fan-ai + fan-agent-core + fan-
 - `packages/coding-agent/src/cli/init-wizard.ts` — `fan init` setup wizard
 - `packages/coding-agent/src/cli/diagnostics.ts` — `fan doctor` diagnostics module
 - `packages/coding-agent/src/cli/server-command.ts` — `fan server` lifecycle management (start/stop/status)
-- `skills/` — 11 pre-installed skills (SKILL.md format, FAN Store source)
+- `skills/` — 8 pre-installed skills (SKILL.md format, FAN Store source)
 
 ## Phase Progress
 - [x] Phase 1 — Project fork & setup (monorepo, renamed @fan/*, build pipeline)
@@ -70,11 +84,10 @@ Runtime: Bun · Monorepo: npm workspaces · Core: fan-ai + fan-agent-core + fan-
 
 ## Available Skills
 
-FAN ships with 11 pre-installed skills in `skills/`. Source files are local; installable via FAN Store (`http://185.219.41.46/fan/`). All skills are v1.0.0.
+FAN ships with 8 pre-installed skills in `skills/`. Source files are local; installable via FAN Store (`http://185.219.41.46/fan/`). All skills are v1.0.0.
 
 | Skill | Description | Key Use Case |
 |-------|-------------|--------------|
-| `ask-answer` | Interactive dialog via TUI (arrows, enter, esc) | Confirm actions, collect user preferences |
 | `auto-tests` | Autonomous test generation (8 languages) | Cover untested modules with green tests |
 | `bug-fix` | Autonomous bug-fix agent (reproduce→fix→verify) | Fix reported bugs with minimal diff |
 | `code-research` | READ-ONLY deep code analysis | Understand architecture, trace dependencies |
@@ -83,8 +96,6 @@ FAN ships with 11 pre-installed skills in `skills/`. Source files are local; ins
 | `idea-lab` | Idea research (technical/business/creative) | Evaluate ideas with SWOT, alternatives, action plans |
 | `repo-explorer` | Git repo analysis (GitHub & local) | Explore new/unknown codebases |
 | `research-spec-generator` | Research + spec generation | Investigate topics, create specifications |
-| `skill-improver` | AutoResearch optimization of skills | Iteratively improve skill quality |
-| `smoke-tester` | E2E UI testing via Playwright MCP | Smoke-test web applications |
 
 - **Local sources:** `skills/<name>/SKILL.md` — each skill follows fan skill format
 - **Install via CLI:** `fan store install <skill-name>` (from FAN Store)

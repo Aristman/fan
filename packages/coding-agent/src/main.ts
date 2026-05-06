@@ -51,7 +51,7 @@ import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { ExtensionSelectorComponent } from "./modes/interactive/components/extension-selector.js";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.js";
 import { handleConfigCommand, handlePackageCommand } from "./package-manager-cli.js";
-import { handleUpdateCommand } from "./cli/self-update.js";
+import { cleanupOldBinaries, handleUpdateCommand } from "./cli/self-update.js";
 import { isLocalPath } from "./utils/paths.js";
 
 async function handleInitCommand(args: string[]): Promise<boolean> {
@@ -782,6 +782,7 @@ async function promptForMissingSessionCwd(
 
 export async function main(args: string[]) {
 	resetTimings();
+	try { cleanupOldBinaries(); } catch { /* non-critical */ }
 	const offlineMode = args.includes("--offline") || isTruthyEnvFlag(process.env.FAN_OFFLINE);
 	if (offlineMode) {
 		process.env.FAN_OFFLINE = "1";
@@ -1158,7 +1159,7 @@ export async function main(args: string[]) {
 			try {
 				const { exec } = await import("node:child_process");
 				const cmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
-				exec(`${cmd} "${url}"`);
+				exec(`${cmd} "${url}"`, { windowsHide: true });
 			} catch {
 				console.log(chalk.dim(`[fan] Could not open browser automatically. Open ${url} manually.`));
 			}
