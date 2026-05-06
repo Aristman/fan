@@ -440,7 +440,7 @@ function resolveExtensionEntries(dir: string): string[] | null {
 			const entries: string[] = [];
 			for (const extPath of manifest.extensions) {
 				const resolvedExtPath = path.resolve(dir, extPath);
-				if (fs.existsSync(resolvedExtPath)) {
+			if (fs.existsSync(resolvedExtPath)) {
 					entries.push(resolvedExtPath);
 				}
 			}

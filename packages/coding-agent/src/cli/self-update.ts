@@ -6,7 +6,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, readdirSync, renameSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, renameSync, realpathSync, rmSync, statSync, unlinkSync } from "node:fs";
 import { join, dirname, basename } from "node:path";
 import { tmpdir } from "node:os";
 import { spawn } from "node:child_process";
@@ -235,6 +235,7 @@ function extractTarGz(archivePath: string, destDir: string): Promise<void> {
 	return new Promise((resolve, reject) => {
 		const child = spawn("tar", ["xzf", archivePath, "-C", destDir], {
 			stdio: "pipe",
+			windowsHide: true,
 		});
 		let stderr = "";
 		child.stderr?.on("data", (data: Buffer) => {
@@ -270,8 +271,8 @@ function extractZipArchive(archivePath: string, destDir: string): Promise<void> 
 			// Windows: use PowerShell Expand-Archive
 			child = spawn(
 				"powershell.exe",
-				["-NoProfile", "-Command", `Expand-Archive -Path '${archivePath}' -DestinationPath '${destDir}' -Force`],
-				{ stdio: "pipe" },
+				["-NoProfile", "-WindowStyle", "Hidden", "-Command", `Expand-Archive -Path '${archivePath}' -DestinationPath '${destDir}' -Force`],
+				{ stdio: "pipe", windowsHide: true },
 			);
 		} else {
 			// Unix: use unzip
@@ -302,6 +303,20 @@ function formatBytes(bytes: number): string {
 // =============================================================================
 // performUpdate
 // =============================================================================
+
+/** Clean up leftover .old binaries from previous updates (Windows only) */
+export function cleanupOldBinaries(): void {
+	if (process.platform !== "win32") return;
+	try {
+		const installDir = dirname(realpathSync(process.execPath));
+		const oldBinary = join(installDir, basename(process.execPath) + ".old");
+		if (existsSync(oldBinary)) {
+			unlinkSync(oldBinary);
+		}
+	} catch {
+		// Non-critical — .old file cleanup can happen next time
+	}
+}
 
 /** Download and apply update */
 export async function performUpdate(options?: {
@@ -392,38 +407,39 @@ export async function performUpdate(options?: {
 	console.log(chalk.dim("Installing new binary..."));
 
 	if (process.platform === "win32") {
-		// Windows: cannot overwrite a running .exe (EBUSY).
-		// Spawn a detached batch helper that waits for this process to exit,
-		// then copies the new binary and cleans up temp files.
-		const helperPath = join(workDir, "apply-update.bat");
-		const bat = [
-			"@echo off",
-			"chcp 65001 >NUL 2>&1",
-			`set "PID=${process.pid}"`,
-			`set "SRC=${newBinary.replace(/\//g, "\\")}"`,
-			`set "DST=${currentBinary.replace(/\//g, "\\")}"`,
-			`set "WORK=${workDir.replace(/\//g, "\\")}"`,
-			":waitloop",
-			`tasklist /FI "PID eq %PID%" 2>NUL | find "%PID%" >NUL`,
-			"if not errorlevel 1 (",
-			"  timeout /t 1 /nobreak >NUL",
-			"  goto waitloop",
-			")",
-			`copy /Y "%SRC%" "%DST%" >NUL 2>&1`,
-			"if errorlevel 1 (",
-			"  echo Failed to apply update: could not copy binary.",
-			"  pause",
-			"  exit /b 1",
-			")",
-			`rd /S /Q "%WORK%" >NUL 2>&1`,
-			"exit /b 0",
-		].join("\r\n");
-		writeFileSync(helperPath, bat, "utf-8");
-		spawn("cmd.exe", ["/C", helperPath], {
-			detached: true,
-			stdio: "ignore",
-			windowsHide: true,
-		}).unref();
+		// On Windows, we can rename a running executable (the OS keeps the file
+		// handle open by inode). This avoids needing a detached helper process.
+		const oldBinary = currentBinary + ".old";
+
+		// Remove any previous .old file
+		try { unlinkSync(oldBinary); } catch { /* ignore */ }
+
+		// Rename current (running) binary to .old
+		try {
+			renameSync(currentBinary, oldBinary);
+		} catch {
+			// If rename fails, try copy+delete as fallback
+			try {
+				copyFileSync(currentBinary, oldBinary);
+				unlinkSync(currentBinary);
+			} catch (err2) {
+				console.log(chalk.red(`Failed to replace binary: ${(err2 as Error).message}`));
+				console.log(chalk.yellow("Try running this command as Administrator."));
+				// Restore from backup
+				try { copyFileSync(join(backupDir, binaryName), currentBinary); } catch { /* ignore */ }
+				return;
+			}
+		}
+
+		// Copy new binary to the original location
+		try {
+			copyFileSync(newBinary, currentBinary);
+		} catch (err) {
+			console.log(chalk.red(`Failed to install new binary: ${(err as Error).message}`));
+			// Restore from backup
+			try { copyFileSync(oldBinary, currentBinary); } catch { /* ignore */ }
+			return;
+		}
 	} else {
 		// Linux/macOS: rename() atomically replaces the running binary.
 		// The kernel keeps the old inode alive for the running process;
@@ -466,21 +482,19 @@ export async function performUpdate(options?: {
 		}
 	}
 
-	// 12. Clean up temp + backup (skip on Windows — helper script handles it)
-	if (process.platform !== "win32") {
-		try {
-			rmSync(workDir, { recursive: true, force: true });
-		} catch {
-			// Non-critical: temp files will be cleaned by OS eventually
-		}
+	// 12. Clean up temp + backup
+	try {
+		rmSync(workDir, { recursive: true, force: true });
+	} catch {
+		// Non-critical: temp files will be cleaned by OS eventually
 	}
 
 	// 13. Print result
 	console.log("");
 	if (process.platform === "win32") {
-		console.log(chalk.green.bold("✓ Update staged!"));
+		console.log(chalk.green.bold("✓ Updated successfully!"));
 		console.log(chalk.dim(`  ${chalk.white(VERSION)} → ${chalk.white(manifest.latest)}`));
-		console.log(chalk.dim("  The new binary will be installed when this process exits."));
+		console.log(chalk.dim("  Restart fan to use the new version."));
 		console.log(chalk.dim(`  Installed to: ${chalk.white(installDir)}`));
 	} else {
 		console.log(chalk.green.bold("✓ Update complete!"));

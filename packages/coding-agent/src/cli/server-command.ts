@@ -152,7 +152,15 @@ export async function serverStart(port?: number, host?: string): Promise<void> {
 	const child = spawn(process.execPath, [process.argv[1], ...args], {
 		detached: true,
 		stdio: "ignore",
-		env: { ...process.env, FAN_SERVER_DAEMON: "1" },
+		windowsHide: true,
+		env: {
+			...process.env,
+			FAN_SERVER_DAEMON: "1",
+			NODE_OPTIONS: [
+				process.env.NODE_OPTIONS,
+				"--use-system-ca",
+			].filter(Boolean).join(" "),
+		},
 	});
 
 	child.unref();

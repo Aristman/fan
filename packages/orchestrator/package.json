@@ -1,14 +1,17 @@
 {
 	"name": "@fan/orchestrator",
-	"version": "0.7.5",
+	"version": "0.8.2",
 	"fan": {
 		"name": "fan-orchestrator",
 		"type": "extension",
 		"displayName": "FAN Orchestrator v2",
 		"description": "Orchestrator extension v2: 8 worker types, RPC mode, Agent/SendMessage/StopAgent tools",
-		"version": "2.0.0",
+		"version": "2.2.2",
 		"main": "dist/index.js",
 		"entry": "src/index.ts",
+		"extensions": [
+			"dist/index.js"
+		],
 		"author": "FAN Team",
 		"tags": [
 			"orchestrator",

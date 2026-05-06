@@ -12,6 +12,11 @@ import type { OrchestratorConfig } from "./types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+/** Extension root — works whether running from dist/ or root. */
+const EXTENSION_ROOT = __dirname.endsWith("/dist") || __dirname.endsWith("\\dist")
+  ? join(__dirname, "..")
+  : __dirname;
+
 // ── Defaults ───────────────────────────────────────────────────────────────
 
 export const DEFAULTS: OrchestratorConfig = {
@@ -41,7 +46,7 @@ export const DEFAULTS: OrchestratorConfig = {
  * Load configuration from config.json, falling back to defaults for missing fields.
  */
 export function loadConfig(): OrchestratorConfig {
-  const configPath = join(__dirname, "..", "config.json");
+  const configPath = join(EXTENSION_ROOT, "config.json");
   try {
     const raw = JSON.parse(readFileSync(configPath, "utf-8")) as Partial<OrchestratorConfig>;
     return {
@@ -72,11 +77,11 @@ export function loadConfig(): OrchestratorConfig {
 // ── Config persistence ───────────────────────────────────────────────────────
 
 export function configExists(): boolean {
-  return existsSync(join(__dirname, "..", "config.json"));
+  return existsSync(join(EXTENSION_ROOT, "config.json"));
 }
 
 export function saveConfig(config: OrchestratorConfig): void {
-  const configPath = join(__dirname, "..", "config.json");
+  const configPath = join(EXTENSION_ROOT, "config.json");
   writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n", "utf-8");
 }
 
@@ -106,8 +111,7 @@ let lastHealthCheck = 0;
 async function checkCloudHealth(): Promise<boolean> {
   try {
     const { execSync } = await import("node:child_process");
-    const cmd = process.platform === "win32" ? "fan.cmd" : "fan";
-    execSync(`${cmd} --version`, { timeout: 5000, stdio: "pipe" });
+    execSync(`${process.execPath} --version`, { timeout: 5000, stdio: "pipe" });
     return true;
   } catch {
     return false;

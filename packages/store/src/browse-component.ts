@@ -17,6 +17,7 @@ import {
 	matchesKey,
 	Key,
 	Input,
+	truncateToWidth,
 } from "@itone/fan-tui";
 import { existsSync, readFileSync } from "node:fs";
 import { ProgressOverlay } from "./progress-overlay.js";
@@ -432,7 +433,7 @@ export async function showExtensionBrowser(
 				const detailDesc = repo?.description ?? (installed ? "Locally installed (not in repo)" : "No description");
 				const detailRepoName = repo?.repoName ?? "local";
 
-				const w = Math.min(width, 60);
+				const w = Math.min(width - 2, 80);
 				const isSkill = detailType === "skill";
 				const skillFrontmatterData = isSkill ? readSkillFrontmatter(installed?.installedPath ?? "") : null;
 
@@ -441,21 +442,21 @@ export async function showExtensionBrowser(
 
 				// Header
 				const typeBadge = `[${detailType}]`;
-				lines.push(` ${theme.bold(detailName)} ${theme.fg("dim", `v${detailVersion}`)} ${typeBadge}`);
+				lines.push(truncateToWidth(` ${theme.bold(detailName)} ${theme.fg("dim", `v${detailVersion}`)} ${typeBadge}`, w));
 				lines.push("");
 
 				// Description
-				lines.push(` ${detailDesc}`);
+				lines.push(truncateToWidth(` ${detailDesc}`, w));
 				lines.push("");
 
 				// Info section
 				lines.push(` ${theme.fg("accent", "── Info ──")}`);
-				lines.push(`  Repo:     ${detailRepoName}`);
+				lines.push(truncateToWidth(`  Repo:     ${detailRepoName}`, w));
 				if (repo?.updatedAt) {
 					lines.push(`  Updated:  ${new Date(repo.updatedAt).toISOString().split("T")[0]}`);
 				}
 				if (installed) {
-					lines.push(`  Path:     ${installed.installedPath}`);
+					lines.push(truncateToWidth(`  Path:     ${installed.installedPath}`, w));
 					lines.push(`  Status:   ${theme.fg("success", "installed")} v${installed.version}`);
 				} else {
 					lines.push(`  Status:   ${theme.fg("muted", "not installed")}`);
@@ -466,12 +467,12 @@ export async function showExtensionBrowser(
 				if (isSkill && skillFrontmatterData) {
 					lines.push(` ${theme.fg("accent", "── Skill ──")}`);
 					if (skillFrontmatterData.description) {
-						lines.push(`  Desc:     ${skillFrontmatterData.description}`);
+						lines.push(truncateToWidth(`  Desc:     ${skillFrontmatterData.description}`, w));
 					}
 					const skip = new Set(["name", "description"]);
 					for (const [k, v] of Object.entries(skillFrontmatterData)) {
 						if (!skip.has(k) && typeof v !== "object") {
-							lines.push(`  ${k}:       ${String(v)}`);
+							lines.push(truncateToWidth(`  ${k}:       ${String(v)}`, w));
 						}
 					}
 				}
@@ -485,7 +486,7 @@ export async function showExtensionBrowser(
 				if (installed?.updateAvailable) actions.push("ENTER update");
 				if (installed) actions.push("R remove");
 				actions.push("ESC back");
-				lines.push(theme.fg("dim", ` ${actions.join(" │ ")}`));
+				lines.push(truncateToWidth(theme.fg("dim", ` ${actions.join(" │ ")}`), w));
 
 				return lines;
 			}

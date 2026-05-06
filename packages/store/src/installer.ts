@@ -242,7 +242,7 @@ export class ArchiveInstaller {
 			execFile(
 				"powershell",
 				["-NoProfile", "-Command", `Expand-Archive -Path '${archivePath}' -DestinationPath '${targetDir}' -Force`],
-				{ timeout: 60_000 },
+				{ timeout: 60_000, windowsHide: true },
 				(err) => {
 					if (err) reject(new Error(`Failed to extract ${archivePath}: ${err.message}`));
 					else resolve();
@@ -312,7 +312,7 @@ export class ArchiveInstaller {
 				execFile(
 					"powershell",
 					["-NoProfile", "-Command", "irm bun.sh/install.ps1 | iex"],
-					{ timeout: 120_000 },
+					{ timeout: 120_000, windowsHide: true },
 					(err) => {
 						if (err) reject(new Error(`Failed to install bun: ${err.message}`));
 						else resolve();
@@ -324,7 +324,7 @@ export class ArchiveInstaller {
 				execFile(
 					"/bin/sh",
 					["-c", "curl -fsSL https://bun.sh/install | bash"],
-					{ timeout: 120_000 },
+					{ timeout: 120_000, windowsHide: true },
 					(err) => {
 						if (err) reject(new Error(`Failed to install bun: ${err.message}`));
 						else resolve();

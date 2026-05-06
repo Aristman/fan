@@ -74,7 +74,11 @@ tar_field() {
 import json, sys
 try:
     data = json.load(sys.stdin)
-    print(data.get('$field', ''))
+    fan = data.get('fan', {})
+    if fan.get('$field'):
+        print(fan['$field'])
+    else:
+        print(data.get('$field', ''))
 except: print('')
 " 2>/dev/null || echo ""
 }
@@ -155,10 +159,11 @@ for archive_path in sorted(glob.glob(os.path.join(pkg_dir, '*.tar.gz')) + glob.g
                 if f:
                     try:
                         data = json.loads(f.read().decode())
-                        name = data.get('name', '')
-                        version = data.get('version', '')
-                        description = data.get('description', '')
-                        author = data.get('author', '')
+                        fan = data.get('fan', {})
+                        name = fan.get('name') or data.get('name', '')
+                        version = fan.get('version') or data.get('version', '')
+                        description = fan.get('description') or data.get('description', '')
+                        author = fan.get('author') or data.get('author', '')
                     except: pass
     except: pass
 
