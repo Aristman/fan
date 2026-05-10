@@ -128,6 +128,24 @@ cd packages/coding-agent
 rm -rf binaries
 mkdir -p binaries/{darwin-arm64,darwin-x64,linux-x64,linux-arm64,windows-x64}
 
+# Patch relative require('../package.json') in bundled dependencies.
+# Bun compiled binaries resolve relative requires from an internal virtual path
+# (B:\~BUN\root\ on Windows) instead of the exe's filesystem location.
+# Dependencies like @aws-sdk and google-auth-library use require('../package.json')
+# to read their version at runtime — this crashes on Windows.
+# Fix: replace the relative require with a static stub before bundling.
+echo "==> Patching dependency requires for cross-platform compiled binaries..."
+PATCH_COUNT=0
+while IFS= read -r -d '' file; do
+    if grep -q "require(['\"]\.*package\.json['\"]" "$file" 2>/dev/null; then
+        sed -i "s/require(['\"]\(\.\.[^'\"]*\)package\.json['\"])/({version:'0.0.0'})/g" "$file"
+        PATCH_COUNT=$((PATCH_COUNT + 1))
+    fi
+done < <(find ../../node_modules/.bun -type f \
+    \( -name "runtimeConfig.js" -o -name "runtimeConfig.browser.js" -o -name "shared.cjs" \) \
+    -print0 2>/dev/null)
+echo "  Patched $PATCH_COUNT file(s)"
+
 # Determine which platforms to build
 if [[ -n "$PLATFORM" ]]; then
     PLATFORMS=("$PLATFORM")
