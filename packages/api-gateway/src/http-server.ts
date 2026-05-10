@@ -30,6 +30,10 @@ import type {
 } from "./types.js";
 import { attachWebSocketHandler } from "./ws-handler.js";
 
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const pkgVersion = require('../../package.json').version;
+
 // ============================================================================
 // Session Adapter Interface
 // ============================================================================
@@ -127,7 +131,7 @@ async function createApp(
 	app.get("/api/health", (c) => {
 		const resp: HealthResponse = {
 			status: "ok",
-			version: "0.1.0",
+			version: pkgVersion,
 			uptime: Math.floor((Date.now() - startTime) / 1000),
 		};
 		return c.json(resp);

@@ -150,31 +150,6 @@ done
 
 echo "==> Bundling FAN-specific assets..."
 
-# Prepare orchestrator assets in a temp directory
-ORCH_ASSETS_DIR=$(mktemp -d)
-trap "rm -rf '$ORCH_ASSETS_DIR'" EXIT
-
-mkdir -p "$ORCH_ASSETS_DIR/orchestrator/agents"
-mkdir -p "$ORCH_ASSETS_DIR/orchestrator/prompts"
-
-# Copy orchestrator config
-if [[ -f ../../packages/orchestrator/src/config.json ]]; then
-    cp ../../packages/orchestrator/src/config.json "$ORCH_ASSETS_DIR/orchestrator/"
-fi
-
-# Copy agent definitions (if they exist)
-for f in ../../packages/orchestrator/src/agents/*.md; do
-    if [[ -f "$f" ]]; then
-        cp "$f" "$ORCH_ASSETS_DIR/orchestrator/agents/"
-    fi
-done
-
-# Copy prompt templates (if they exist)
-for f in ../../packages/orchestrator/src/prompts/*.md; do
-    if [[ -f "$f" ]]; then
-        cp "$f" "$ORCH_ASSETS_DIR/orchestrator/prompts/"
-    fi
-done
 
 echo "==> Creating release archives..."
 
@@ -189,9 +164,6 @@ for platform in "${PLATFORMS[@]}"; do
     mkdir -p binaries/$platform/assets
     cp dist/modes/interactive/assets/* binaries/$platform/assets/
     cp -r dist/core/export-html binaries/$platform/
-
-    # Bundle FAN orchestrator assets
-    cp -r "$ORCH_ASSETS_DIR/orchestrator" binaries/$platform/
 
     # Dashboard
     echo "  Copying dashboard..."
