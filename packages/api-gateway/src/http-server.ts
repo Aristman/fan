@@ -32,7 +32,7 @@ import { attachWebSocketHandler } from "./ws-handler.js";
 
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
-const pkgVersion = require('../../package.json').version;
+const pkgVersion = require('../package.json').version;
 
 // ============================================================================
 // Session Adapter Interface
