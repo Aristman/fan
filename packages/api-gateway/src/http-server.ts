@@ -30,9 +30,12 @@ import type {
 } from "./types.js";
 import { attachWebSocketHandler } from "./ws-handler.js";
 
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
-const pkgVersion = require('../package.json').version;
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { join, dirname } from 'node:path';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const pkgVersion = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf-8')).version;
 
 // ============================================================================
 // Session Adapter Interface
