@@ -211,6 +211,18 @@ for archive_path in sorted(glob.glob(os.path.join(pkg_dir, '*.tar.gz')) + glob.g
         pkg['author'] = author
     packages.append(pkg)
 
+# Sort: group by name (asc), then by version (desc) within each group
+def sort_key(p):
+    parts = p['version'].split('.')
+    nums = []
+    for part in parts:
+        if part.isdigit():
+            nums.append(-int(part))  # negative for descending
+        else:
+            nums.append(part)
+    return (p['name'], tuple(nums))
+packages.sort(key=sort_key)
+
 print(json.dumps(packages, indent=2))
 PYEOF
 )
