@@ -1,6 +1,6 @@
 {
 	"name": "@fan/store",
-	"version": "0.8.7",
+	"version": "0.9.0",
 	"description": "FAN Store — package manager for extensions, skills, themes from repositories and archives",
 	"fan": {
 		"name": "fan-store",
