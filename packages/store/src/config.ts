@@ -29,8 +29,8 @@ export interface StoreConfig {
 const DEFAULTS: StoreConfig = {
 	repositories: [
 		{
-			name: "fan-repo",
-			url: "http://185.219.41.46/fan",
+			name: "fan-store",
+			url: "https://fan.sea-agents.ru/fan-store",
 			enabled: true,
 			priority: 1,
 		},

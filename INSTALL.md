@@ -26,13 +26,13 @@ The fastest way to install FAN. The script detects your OS and architecture auto
 ### macOS / Linux
 
 ```bash
-curl -fsSL http://185.219.41.46/fan/dist/install.sh | bash
+curl -fsSL https://fan.sea-agents.ru/fan-store/dist/install.sh | bash
 ```
 
 ### Windows (PowerShell)
 
 ```powershell
-irm http://185.219.41.46/fan/dist/install.ps1 | iex
+irm https://fan.sea-agents.ru/fan-store/dist/install.ps1 | iex
 ```
 
 The installer will:

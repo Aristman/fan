@@ -8,7 +8,7 @@
 
 - [Обзор](#обзор)
 - [Инструменты](#инструменты)
-  - [fan-repo CLI](#fan-repo-cli)
+  - [fan-store CLI](#fan-store-cli)
   - [setup-vps.sh](#setup-vpssh)
 - [Серверная инфраструктура](#серверная-инфраструктура)
 - [Дистрибутивы и обновления](#дистрибутивы-и-обновления)
@@ -31,44 +31,44 @@ FAN Repo Server — это HTTP-репозиторий для дистрибуц
 
 | Ресурс | URL | Кеширование |
 |--------|-----|-------------|
-| Индекс | `http://185.219.41.46/fan/index.json` | `no-cache` |
-| Пакеты | `http://185.219.41.46/fan/packages/<name>-<ver>.tar.gz` | `immutable` (1 год) |
-| Релизы | `http://185.219.41.46/fan/releases/<name>-<ver>.tar.gz` | `immutable` |
+| Индекс | `https://fan.sea-agents.ru/fan-store/index.json` | `no-cache` |
+| Пакеты | `https://fan.sea-agents.ru/fan-store/packages/<name>-<ver>.tar.gz` | `immutable` (1 год) |
+| Релизы | `https://fan.sea-agents.ru/fan-store/releases/<name>-<ver>.tar.gz` | `immutable` |
 
 ---
 
 ## Инструменты
 
-В `tools/fan-repo-server/` лежат два инструмента:
+В `tools/fan-store-server/` лежат два инструмента:
 
 | Файл | Назначение |
 |------|-----------|
-| `fan-repo` | CLI для управления репозиторием (add, remove, publish, serve) |
+| `fan-store` | CLI для управления репозиторием (add, remove, publish, serve) |
 | `setup-vps.sh` | Одноразовая настройка VPS с nginx |
 
-### fan-repo CLI
+### fan-store CLI
 
 ```bash
 # Подготовить к работе
-chmod +x tools/fan-repo-server/fan-repo
-export PATH="$PATH:$(pwd)/tools/fan-repo-server"
+chmod +x tools/fan-store-server/fan-store
+export PATH="$PATH:$(pwd)/tools/fan-store-server"
 
 # Или symlink
-ln -s $(pwd)/tools/fan-repo-server/fan-repo /usr/local/bin/fan-repo
+ln -s $(pwd)/tools/fan-store-server/fan-store /usr/local/bin/fan-store
 ```
 
 #### Команды
 
 ```bash
-fan-repo init [path]            # Создать новый репозиторий
-fan-repo set-url <url>          # Задать базовый URL репозитория
-fan-repo add <archive.tar.gz>   # Добавить пакет (автоматически обновляет index.json)
-fan-repo remove <name>          # Удалить пакет по имени
-fan-repo list                   # Список всех пакетов
-fan-repo info <name>            # Детали пакета
-fan-repo publish [target]       # Задеплоить на сервер (rsync)
-fan-repo serve [port]           # Локальный HTTP-сервер для тестов (по умолчанию 8888)
-fan-repo help                   # Справка
+fan-store init [path]            # Создать новый репозиторий
+fan-store set-url <url>          # Задать базовый URL репозитория
+fan-store add <archive.tar.gz>   # Добавить пакет (автоматически обновляет index.json)
+fan-store remove <name>          # Удалить пакет по имени
+fan-store list                   # Список всех пакетов
+fan-store info <name>            # Детали пакета
+fan-store publish [target]       # Задеплоить на сервер (rsync)
+fan-store serve [port]           # Локальный HTTP-сервер для тестов (по умолчанию 8888)
+fan-store help                   # Справка
 ```
 
 Алиасы: `rm` → remove, `ls` → list, `show` → info, `push` → publish, `deploy` → publish.
@@ -82,24 +82,24 @@ tar -czf /tmp/fan-orchestrator-1.0.0.tar.gz \
   --transform='s,^\./,fan-orchestrator/,' \
   ./src/ ./package.json ./README.md ./config.example.json
 
-# 2. Добавить в локальный репозиторий (~/fan-repo/)
-cd ~/fan-repo
-fan-repo add /tmp/fan-orchestrator-1.0.0.tar.gz
+# 2. Добавить в локальный репозиторий (~/fan-store/)
+cd ~/fan-store
+fan-store add /tmp/fan-orchestrator-1.0.0.tar.gz
 # → Автоматически: копирует в packages/, пересобирает index.json с SHA-256
 
 # 3. Проверить
-fan-repo list
-fan-repo info fan-orchestrator
+fan-store list
+fan-store info fan-orchestrator
 
 # 4. Задеплоить на сервер
-fan-repo publish
-# → rsync -avz --delete ~/fan-repo/ root@185.219.41.46:/var/www/fan-repo/
+fan-store publish
+# → rsync -avz --delete ~/fan-store/ root@185.219.41.46:/var/www/html/fan-store/
 
 # Или на кастомный таргет:
-fan-repo publish user@other-host:/var/www/repo
+fan-store publish user@other-host:/var/www/repo
 ```
 
-#### Что делает fan-repo add
+#### Что делает fan-store add
 
 1. Копирует архив в `packages/`
 2. Извлекает `name`, `version`, `description` из `package.json` внутри архива
@@ -112,11 +112,11 @@ fan-repo publish user@other-host:/var/www/repo
 
 ```
 REMOTE_HOST = root@185.219.41.46
-REMOTE_PATH = /var/www/fan-repo
-REPO_URL    = http://185.219.41.46/fan
+REMOTE_PATH = /var/www/html/fan-store
+REPO_URL    = https://fan.sea-agents.ru/fan-store
 ```
 
-Перекрытие через env: `FAN_REPO_DIR=/path/to/repo fan-repo list`
+Перекрытие через env: `FAN_REPO_DIR=/path/to/repo fan-store list`
 
 Все env-переменные скрипта (для справки, не нужны в обычной работе):
 
@@ -134,20 +134,20 @@ REPO_URL    = http://185.219.41.46/fan
 
 ```bash
 # Базовый запуск (автогенерация пароля)
-./tools/fan-repo-server/setup-vps.sh root@185.219.41.46
+./tools/fan-store-server/setup-vps.sh root@185.219.41.46
 
 # С указанием auth-credentials
-./tools/fan-repo-server/setup-vps.sh root@185.219.41.46 fan mypassword
+./tools/fan-store-server/setup-vps.sh root@185.219.41.46 fan mypassword
 ```
 
 **Параметры:** `setup-vps.sh <user@host> [auth_user] [auth_password]`
 
 Что делает:
 1. Устанавливает nginx + apache2-utils (для `htpasswd`)
-2. Создаёт `/var/www/fan-repo/packages/` с placeholder `index.json`
+2. Создаёт `/var/www/html/fan-store/packages/` с placeholder `index.json`
 3. Генерирует htpasswd файл (`/etc/nginx/.fan-htpasswd`)
-4. Деплоит nginx-конфиг с Basic Auth в `/etc/nginx/sites-available/fan-repo`
-5. Удаляет default site, включает fan-repo, запускает nginx
+4. Деплоит nginx-конфиг с Basic Auth в `/etc/nginx/sites-available/fan-store`
+5. Удаляет default site, включает fan-store, запускает nginx
 
 > **⚠️ Важно:** Текущий сервер работает **без Basic Auth** (открытый репозиторий). Конфиг в `setup-vps.sh` включает auth. Для открытого доступа нужно убрать блоки `auth_basic` из nginx-конфига или адаптировать скрипт.
 
@@ -160,12 +160,12 @@ REPO_URL    = http://185.219.41.46/fan
 - **OS:** Ubuntu (VPS)
 - **Web:** nginx/1.24.0
 - **Хост:** `185.219.41.46`
-- **Root репозитория:** `/var/www/fan-repo/`
+- **Root репозитория:** `/var/www/html/fan-store/`
 
 ### Структура директорий на сервере
 
 ```
-/var/www/fan-repo/
+/var/www/html/fan-store/
 ├── index.json                          # Индекс репозитория (FAN Store)
 ├── packages/                           # Текущие версии пакетов (.tar.gz)
 │   ├── fan-orchestrator-1.0.0.tar.gz
@@ -193,33 +193,33 @@ server {
     listen 80 default_server;
     server_name _;
 
-    location /fan/ {
-        alias /var/www/fan-repo/;
+    location /fan-store/ {
+        alias /var/www/html/fan-store/;
         add_header X-Content-Type-Options nosniff always;
 
-        location = /fan/index.json {
+        location = /fan-store/index.json {
             add_header Cache-Control "no-cache, must-revalidate" always;
             add_header Content-Type application/json always;
         }
 
-        location /fan/packages/ {
+        location /fan-store/packages/ {
             add_header Cache-Control "public, max-age=31536000, immutable" always;
         }
 
         # Install scripts — always fresh
-        location ~ ^/fan/dist/install\.(sh|ps1)$ {
+        location ~ ^/fan-store/dist/install\.(sh|ps1)$ {
             add_header Cache-Control "no-cache, must-revalidate" always;
             add_header Content-Type text/plain always;
         }
 
         # Manifest — always fresh
-        location = /fan/dist/manifest.json {
+        location = /fan-store/dist/manifest.json {
             add_header Cache-Control "no-cache, must-revalidate" always;
             add_header Content-Type application/json always;
         }
 
         # Platform archives — immutable (versioned in filename)
-        location ~ ^/fan/dist/fan-.*\.(tar\.gz|zip)$ {
+        location ~ ^/fan-store/dist/fan-.*\.(tar\.gz|zip)$ {
             add_header Cache-Control "public, max-age=31536000, immutable" always;
         }
     }
@@ -240,7 +240,7 @@ server {
 Директория `dist/` внутри репозитория хранит бинарные дистрибутивы FAN и инфраструктуру для one-liner установки и самообновления.
 
 ```
-~/fan-repo/dist/
+~/fan-store/dist/
 ├── manifest.json                       # Метаданные версий и платформ
 ├── install.sh                          # Unix installer (curl | bash)
 ├── install.ps1                         # Windows installer (irm | iex)
@@ -260,7 +260,7 @@ server {
   "releaseNotes": "Bug fixes and improvements",
   "platforms": {
     "darwin-arm64": {
-      "url": "http://185.219.41.46/fan/dist/fan-0.4.5-darwin-arm64.tar.gz",
+      "url": "https://fan.sea-agents.ru/fan-store/dist/fan-0.4.5-darwin-arm64.tar.gz",
       "hash": "sha256:abcdef...",
       "size": 12345678
     },
@@ -287,7 +287,7 @@ Manifest генерируется автоматически при сборке
 ### Установка через install.sh
 
 ```bash
-curl -fsSL http://185.219.41.46/fan/dist/install.sh | bash
+curl -fsSL https://fan.sea-agents.ru/fan-store/dist/install.sh | bash
 ```
 
 **Что делает:**
@@ -307,7 +307,7 @@ curl -fsSL http://185.219.41.46/fan/dist/install.sh | bash
 
 Windows:
 ```powershell
-irm http://185.219.41.46/fan/dist/install.ps1 | iex
+irm https://fan.sea-agents.ru/fan-store/dist/install.ps1 | iex
 ```
 
 ### Самообновление (fan update)
@@ -328,7 +328,7 @@ fan update --json   # машинный вывод
 6. Распаковывает новый бинарник и assets
 7. При ошибке — откат из backup
 
-Сервер обновлений: `http://185.219.41.46/fan/dist` (задаётся константой `UPDATE_SERVER_URL` в `self-update.ts`).
+Сервер обновлений: `https://fan.sea-agents.ru/fan-store/dist` (задаётся константой `UPDATE_SERVER_URL` в `self-update.ts`).
 
 Проверка обновления также запускается автоматически при старте TUI (каждый сеанс).
 
@@ -338,26 +338,26 @@ fan update --json   # машинный вывод
 
 ```bash
 # 1. Скопировать manifest.json и архивы в локальный репозиторий
-cp packages/coding-agent/binaries/manifest.json ~/fan-repo/dist/
-cp packages/coding-agent/binaries/fan-*.tar.gz ~/fan-repo/dist/
-cp packages/coding-agent/binaries/fan-*.zip ~/fan-repo/dist/
+cp packages/coding-agent/binaries/manifest.json ~/fan-store/dist/
+cp packages/coding-agent/binaries/fan-*.tar.gz ~/fan-store/dist/
+cp packages/coding-agent/binaries/fan-*.zip ~/fan-store/dist/
 
 # 2. Обновить install скрипты
-cp scripts/install.sh ~/fan-repo/dist/
-cp scripts/install.ps1 ~/fan-repo/dist/
+cp scripts/install.sh ~/fan-store/dist/
+cp scripts/install.ps1 ~/fan-store/dist/
 
 # 3. Деплоить всё на сервер
-fan-repo publish
-# → rsync ~/fan-repo/ → root@185.219.41.46:/var/www/fan-repo/
+fan-store publish
+# → rsync ~/fan-store/ → root@185.219.41.46:/var/www/html/fan-store/
 ```
 
 Или за один шаг:
 ```bash
 scripts/build-binaries.sh && \
-cp packages/coding-agent/binaries/manifest.json ~/fan-repo/dist/ && \
-cp packages/coding-agent/binaries/fan-*.* ~/fan-repo/dist/ && \
-cp scripts/install.sh scripts/install.ps1 ~/fan-repo/dist/ && \
-fan-repo publish
+cp packages/coding-agent/binaries/manifest.json ~/fan-store/dist/ && \
+cp packages/coding-agent/binaries/fan-*.* ~/fan-store/dist/ && \
+cp scripts/install.sh scripts/install.ps1 ~/fan-store/dist/ && \
+fan-store publish
 ```
 
 ---
@@ -367,8 +367,8 @@ fan-repo publish
 ```json
 {
   "repository": {
-    "name": "fan-repo",
-    "url": "http://185.219.41.46/fan",
+    "name": "fan-store",
+    "url": "https://fan.sea-agents.ru/fan-store",
     "updatedAt": "2026-04-19T17:20:00Z"
   },
   "packages": [
@@ -378,7 +378,7 @@ fan-repo publish
       "type": "extension",
       "description": "Multi-agent orchestrator with delegate_task, task management, workers, and slash commands",
       "author": "FAN Team",
-      "downloadUrl": "http://185.219.41.46/fan/packages/fan-orchestrator-1.0.0.tar.gz",
+      "downloadUrl": "https://fan.sea-agents.ru/fan-store/packages/fan-orchestrator-1.0.0.tar.gz",
       "hash": "sha256:6ff90442cbed6b90646c6ab2c155e1eb61b2798b5b6594b9fe60b349b8866f9b"
     }
   ]
@@ -397,7 +397,7 @@ fan-repo publish
 | `hash` | ✅ | SHA-256 хеш (`sha256:<hex>`) |
 | `author` | ❌ | Автор/команда |
 
-> `fan-repo add` автоматически заполняет все поля из `package.json` + хеш + URL.
+> `fan-store add` автоматически заполняет все поля из `package.json` + хеш + URL.
 
 ---
 
@@ -466,7 +466,7 @@ sha256sum "/tmp/${NAME}-${VERSION}.tar.gz"
 
 ### Типы ресурсов (авто-детекция)
 
-Детекция происходит по содержимому архива (`fan-repo add` и `ArchiveInstaller` на клиенте).
+Детекция происходит по содержимому архива (`fan-store add` и `ArchiveInstaller` на клиенте).
 
 | Тип | Детектор | Приоритет |
 |-----|----------|----------|
@@ -476,7 +476,7 @@ sha256sum "/tmp/${NAME}-${VERSION}.tar.gz"
 | `extension` | `index.ts`, `index.js` или `package.json` | 4 |
 | `unknown` | Ничего не подошло — ошибка при установке | — |
 
-> **Примечание:** `fan-repo add` проверяет первые 20 файлов (`head -20`). Если ключевой файл глубже — тип может определиться неверно.
+> **Примечание:** `fan-store add` проверяет первые 20 файлов (`head -20`). Если ключевой файл глубже — тип может определиться неверно.
 
 ---
 
@@ -490,8 +490,8 @@ sha256sum "/tmp/${NAME}-${VERSION}.tar.gz"
 {
   "repositories": [
     {
-      "name": "fan-repo",
-      "url": "http://185.219.41.46/fan",
+      "name": "fan-store",
+      "url": "https://fan.sea-agents.ru/fan-store",
       "enabled": true,
       "priority": 1
     }
@@ -518,8 +518,8 @@ sha256sum "/tmp/${NAME}-${VERSION}.tar.gz"
       "installedAt": 1713534000000,
       "installedPath": "/home/user/.fan/agent/extensions/fan-orchestrator",
       "scope": "user",
-      "repoName": "fan-repo",
-      "repoUrl": "http://185.219.41.46/fan",
+      "repoName": "fan-store",
+      "repoUrl": "https://fan.sea-agents.ru/fan-store",
       "hash": "sha256:..."
     }
   },
@@ -584,46 +584,46 @@ tar -czf "/tmp/${NAME}-${VERSION}.tar.gz" \
 ### 3. Добавление в репозиторий
 
 ```bash
-cd ~/fan-repo
-fan-repo add /tmp/my-extension-1.0.0.tar.gz
-fan-repo list    # проверить
+cd ~/fan-store
+fan-store add /tmp/my-extension-1.0.0.tar.gz
+fan-store list    # проверить
 ```
 
 ### 4. Деплой на сервер
 
 ```bash
-fan-repo publish
+fan-store publish
 ```
 
 ### 5. Верификация
 
 ```bash
 # Проверить index.json на сервере
-curl -s http://185.219.41.46/fan/index.json | python3 -m json.tool
+curl -s https://fan.sea-agents.ru/fan-store/index.json | python3 -m json.tool
 
 # Проверить доступность архива
-curl -sI http://185.219.41.46/fan/packages/my-extension-1.0.0.tar.gz | head -5
+curl -sI https://fan.sea-agents.ru/fan-store/packages/my-extension-1.0.0.tar.gz | head -5
 
 # Локальный тест
-cd ~/fan-repo && fan-repo serve
+cd ~/fan-store && fan-store serve
 # → http://localhost:8888/index.json
 ```
 
 ### 6. Обновление версии
 
 ```bash
-# fan-repo не управляет версиями автоматически — делайте вручную:
+# fan-store не управляет версиями автоматически — делайте вручную:
 
 # 1. Переместить старый архив в releases/
 ssh root@185.219.41.46 \
-  "mv /var/www/fan-repo/packages/my-extension-1.0.0.tar.gz \
-       /var/www/fan-repo/releases/"
+  "mv /var/www/html/fan-store/packages/my-extension-1.0.0.tar.gz \
+       /var/www/html/fan-store/releases/"
 
 # 2. Собрать и добавить новую версию
-fan-repo add /tmp/my-extension-2.0.0.tar.gz
+fan-store add /tmp/my-extension-2.0.0.tar.gz
 
 # 3. Задеплоить
-fan-repo publish
+fan-store publish
 ```
 
 ---
@@ -643,10 +643,10 @@ fan-repo publish
 
 | Проблема | Решение |
 |----------|---------|
-| Пакет не находится | `curl -s http://185.219.41.46/fan/index.json` — проверьте index |
+| Пакет не находится | `curl -s https://fan.sea-agents.ru/fan-store/index.json` — проверьте index |
 | Хеш не совпадает | `sha256sum file.tar.gz` → обновите hash в index.json |
 | 403 на `/packages/` | Нормально — directory listing отключён. Файлы доступны по прямому URL |
-| `fan-repo add` не находит name/version | Убедитесь, что `package.json` с `name` и `version` внутри архива |
+| `fan-store add` не находит name/version | Убедитесь, что `package.json` с `name` и `version` внутри архива |
 | Кешированный старый index | TTL 5 минут на клиенте. Или `rm ~/.fan/agent/store-packages.json` |
 | Офлайн не даёт установить | `FAN_OFFLINE=1` работает только с кешированными данными |
 
@@ -690,5 +690,5 @@ fan-repo publish
 
 | Ресурс | URL | Root |
 |--------|-----|------|
-| FAN Store | `http://185.219.41.46/fan/` | `/var/www/fan-repo/` |
+| FAN Store | `https://fan.sea-agents.ru/fan-store/` | `/var/www/html/fan-store/` |
 | PI Store | `http://185.219.41.46/pi/` | `/opt/repos/pi-store/` |

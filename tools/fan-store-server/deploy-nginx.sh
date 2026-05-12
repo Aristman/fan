@@ -7,8 +7,8 @@
 #
 set -euo pipefail
 
-CONFIG="/etc/nginx/sites-available/fan-repo"
-ENABLED="/etc/nginx/sites-enabled/fan-repo"
+CONFIG="/etc/nginx/sites-available/fan-store"
+ENABLED="/etc/nginx/sites-enabled/fan-store"
 
 echo "==> Deploying nginx config..."
 
@@ -18,7 +18,7 @@ server {
     server_name _;
 
     location /fan/ {
-        alias /var/www/fan-repo/;
+        alias /var/www/html/fan-store/;
         add_header X-Content-Type-Options nosniff always;
 
         # FAN Store index
@@ -74,7 +74,7 @@ echo ""
 echo "Done. Nginx config deployed."
 
 location /fan/ {
-    alias /var/www/fan-repo/;
+    alias /var/www/html/fan-store/;
     add_header X-Content-Type-Options nosniff always;
 
     location = /fan/index.json {

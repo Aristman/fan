@@ -5,11 +5,11 @@
 .DESCRIPTION
     Downloads and installs the latest FAN on Windows.
     Usage:
-        irm http://185.219.41.46/fan/dist/install.ps1 | iex
+        irm https://fan.sea-agents.ru/fan-store/dist/install.ps1 | iex
 .PARAMETER FAN_INSTALL_DIR
     Custom installation directory (default: $env:LOCALAPPDATA\fan)
 .EXAMPLE
-    $env:FAN_INSTALL_DIR = "D:\Tools\fan"; irm http://185.219.41.46/fan/dist/install.ps1 | iex
+    $env:FAN_INSTALL_DIR = "D:\Tools\fan"; irm https://fan.sea-agents.ru/fan-store/dist/install.ps1 | iex
 #>
 
 $ErrorActionPreference = "Stop"
@@ -56,7 +56,7 @@ New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null
 
 try {
     # ─── Fetch manifest ────────────────────────────────────────
-    $manifestUrl = "http://185.219.41.46/fan/dist/manifest.json"
+    $manifestUrl = "https://fan.sea-agents.ru/fan-store/dist/manifest.json"
     Write-Info "Fetching manifest..."
 
     $manifestFile = Join-Path $tmpDir "manifest.json"

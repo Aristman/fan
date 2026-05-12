@@ -256,7 +256,7 @@ for f in sorted(glob.glob(f"fan-{version}-*.tar.gz") + glob.glob(f"fan-{version}
     name = f.replace(f"fan-{version}-", "").replace(".tar.gz", "").replace(".zip", "")
     h = hashlib.sha256(open(f, "rb").read()).hexdigest()
     s = os.path.getsize(f)
-    platforms[name] = {"url": f"http://185.219.41.46/fan/dist/{f}", "hash": f"sha256:{h}", "size": s}
+    platforms[name] = {"url": f"https://fan.sea-agents.ru/fan-store/dist/{f}", "hash": f"sha256:{h}", "size": s}
 manifest = {"latest": version, "releasedAt": released_at, "releaseNotes": "", "platforms": platforms}
 with open("manifest.json", "w") as out:
     json.dump(manifest, out, indent=2)
@@ -267,11 +267,11 @@ for name, p in sorted(platforms.items()):
 PYEOF
 
 # Copy artifacts to dist repo
-DIST_REPO="$HOME/fan-repo/dist"
+DIST_REPO="$HOME/fan-store/dist"
 mkdir -p "$DIST_REPO"
 echo "==> Copying artifacts to $DIST_REPO/"
 cp -v manifest.json "$DIST_REPO/"
 cp -v fan-$VERSION-*.{tar.gz,zip} "$DIST_REPO/" 2>/dev/null
 cp -v "$SCRIPT_DIR/install.sh" "$DIST_REPO/"
 cp -v "$SCRIPT_DIR/install.ps1" "$DIST_REPO/"
-echo "==> Dist repo ready. Run: fan-repo publish"
+echo "==> Dist repo ready. Run: fan-store publish"

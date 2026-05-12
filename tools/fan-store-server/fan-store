@@ -16,8 +16,8 @@ set -euo pipefail
 
 # ── Config ──────────────────────────────────────────────
 REMOTE_HOST="root@185.219.41.46"
-REMOTE_PATH="/var/www/fan-repo"
-REPO_URL="http://185.219.41.46/fan"
+REMOTE_PATH="/var/www/html/fan-store"
+REPO_URL="https://fan.sea-agents.ru/fan-store"
 REPO_DIR=""
 
 # ── Colors ──────────────────────────────────────────────
@@ -503,12 +503,12 @@ cmd_help() {
     echo "  remove <name>          Remove package by name"
     echo "  list                   List all packages"
     echo "  info <name>            Show package details"
-    echo "  publish [target]       Deploy to server (default: root@185.219.41.46:/var/www/fan-repo)"
+    echo "  publish [target]       Deploy to server (default: root@185.219.41.46:/var/www/html/fan-store)"
     echo "  serve [port]           Local HTTP server for testing"
     echo "  help                   Show this help"
     echo ""
-    echo "Default server: root@185.219.41.46:/var/www/fan-repo"
-    echo "Default URL:    http://185.219.41.46/fan/"
+    echo "Default server: root@185.219.41.46:/var/www/html/fan-store"
+    echo "Default URL:    https://fan.sea-agents.ru/fan-store/"
     echo "Environment:"
     echo "  FAN_REPO_DIR           Override repository directory"
     echo ""

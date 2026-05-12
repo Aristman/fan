@@ -196,7 +196,7 @@ FAN includes 8 pre-installed skills in the `skills/` directory. Each skill follo
 
 **Total:** 8 skills, 56 files. All at v1.0.0.
 
-**FAN Store:** `http://185.219.41.46/fan/` — install via `fan store install <name>`.
+**FAN Store:** `https://fan.sea-agents.ru/fan-store/` — install via `fan store install <name>`.
 
 ---
 

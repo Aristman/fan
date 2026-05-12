@@ -10,7 +10,7 @@
 #
 # What it does:
 #   1. Installs Nginx, Apache utilities (for htpasswd)
-#   2. Creates /var/www/fan-repo/
+#   2. Creates /var/www/html/fan-store/
 #   3. Generates htpasswd file (prompts for username/password)
 #   4. Deploys Nginx config with Basic Auth
 #   5. Enables and starts Nginx
@@ -61,21 +61,21 @@ apt-get update -qq
 apt-get install -y -qq nginx apache2-utils >/dev/null
 
 # 2. Create repo directory
-echo "[2/5] Creating /var/www/fan-repo/..."
-mkdir -p /var/www/fan-repo/packages
+echo "[2/5] Creating /var/www/html/fan-store/..."
+mkdir -p /var/www/html/fan-store/packages
 
 # Place a placeholder index.json
-cat > /var/www/fan-repo/index.json <<'EOF'
+cat > /var/www/html/fan-store/index.json <<'EOF'
 {
   "repository": {
-    "name": "fan-repo",
+    "name": "fan-store",
     "url": "PLACEHOLDER_URL",
     "updatedAt": "2026-04-19T00:00:00Z"
   },
   "packages": []
 }
 EOF
-chown -R www-data:www-data /var/www/fan-repo
+chown -R www-data:www-data /var/www/html/fan-store
 
 # 3. Create htpasswd file
 echo "[3/5] Creating htpasswd..."
@@ -86,12 +86,12 @@ chown www-data:www-data "\$HTPASSWD_FILE"
 
 # 4. Deploy Nginx config
 echo "[4/5] Deploying Nginx config..."
-cat > /etc/nginx/sites-available/fan-repo <<'NGINX'
+cat > /etc/nginx/sites-available/fan-store <<'NGINX'
 server {
     listen 80;
     server_name _;
 
-    root /var/www/fan-repo;
+    root /var/www/html/fan-store;
     index index.json;
 
     # Security headers
@@ -142,9 +142,9 @@ server {
 }
 NGINX
 
-# Remove default site, enable fan-repo
+# Remove default site, enable fan-store
 rm -f /etc/nginx/sites-enabled/default
-ln -sf /etc/nginx/sites-available/fan-repo /etc/nginx/sites-enabled/fan-repo
+ln -sf /etc/nginx/sites-available/fan-store /etc/nginx/sites-enabled/fan-store
 
 # 5. Test & start
 echo "[5/5] Starting Nginx..."
@@ -155,7 +155,7 @@ systemctl restart nginx
 echo ""
 echo "✅ FAN repository server is ready!"
 echo "   Auth: $AUTH_USER / ****"
-echo "   Directory: /var/www/fan-repo/"
+echo "   Directory: /var/www/html/fan-store/"
 REMOTE_SCRIPT
 
 echo ""
@@ -166,4 +166,4 @@ echo "  Auth:      $AUTH_USER"
 echo ""
 warn "NOTE: Running over HTTP. Add a domain + Let's Encrypt for HTTPS."
 echo ""
-echo "Next step: configure fan-repo CLI and publish packages."
+echo "Next step: configure fan-store CLI and publish packages."
