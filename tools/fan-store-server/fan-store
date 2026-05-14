@@ -16,7 +16,7 @@ set -euo pipefail
 
 # ── Config ──────────────────────────────────────────────
 REMOTE_HOST="root@185.219.41.46"
-REMOTE_PATH="/var/www/html/fan-store"
+REMOTE_PATH="/opt/repos/fan-store"
 REPO_URL="https://fan.sea-agents.ru/fan-store"
 REPO_DIR=""
 
