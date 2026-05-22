@@ -38,7 +38,7 @@ export interface UpdateCheckResult {
 // Constants
 // =============================================================================
 
-export const UPDATE_SERVER_URL = "http://185.219.41.46/fan/dist";
+export const UPDATE_SERVER_URL = "https://fan.sea-agents.ru/fan-store/dist";
 
 /** Directories/assets to copy from archive when updating */
 const UPDATE_ASSETS = [

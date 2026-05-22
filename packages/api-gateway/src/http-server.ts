@@ -30,6 +30,13 @@ import type {
 } from "./types.js";
 import { attachWebSocketHandler } from "./ws-handler.js";
 
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { join, dirname } from 'node:path';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const pkgVersion = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf-8')).version;
+
 // ============================================================================
 // Session Adapter Interface
 // ============================================================================
@@ -127,7 +134,7 @@ async function createApp(
 	app.get("/api/health", (c) => {
 		const resp: HealthResponse = {
 			status: "ok",
-			version: "0.1.0",
+			version: pkgVersion,
 			uptime: Math.floor((Date.now() - startTime) / 1000),
 		};
 		return c.json(resp);

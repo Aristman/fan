@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
 #
-# fan-repo — CLI tool for managing a local FAN package repository
+# fan-store — CLI tool for managing a local FAN package repository
 #
 # Usage:
-#   fan-repo init [path]            Create a new repo directory
-#   fan-repo add <archive.tar.gz>   Add package to repo (updates index.json)
-#   fan-repo remove <name>          Remove package from repo
-#   fan-repo list                   List all packages
-#   fan-repo info <name>            Show package details
-#   fan-repo publish [target]       Deploy repo to server
-#   fan-repo serve [port]           Local test server
-#   fan-repo set-url <url>          Override repository base URL
+#   fan-store init [path]            Create a new repo directory
+#   fan-store add <archive.tar.gz>   Add package to repo (updates index.json)
+#   fan-store remove <name>          Remove package from repo
+#   fan-store list                   List all packages
+#   fan-store info <name>            Show package details
+#   fan-store publish [target]       Deploy repo to server
+#   fan-store serve [port]           Local test server
+#   fan-store set-url <url>          Override repository base URL
 #
 set -euo pipefail
 
 # ── Config ──────────────────────────────────────────────
 REMOTE_HOST="root@185.219.41.46"
-REMOTE_PATH="/var/www/fan-repo"
-REPO_URL="http://185.219.41.46/fan"
+REMOTE_PATH="/opt/repos/fan-store"
+REPO_URL="https://fan.sea-agents.ru/fan-store"
 REPO_DIR=""
 
 # ── Colors ──────────────────────────────────────────────
@@ -47,7 +47,7 @@ find_repo_dir() {
         fi
         dir=$(dirname "$dir")
     done
-    error "Not a fan-repo directory (no index.json found). Run 'fan-repo init' first."
+    error "Not a fan-store directory (no index.json found). Run 'fan-store init' first."
 }
 
 require_repo() {
@@ -293,8 +293,8 @@ EOF
     dim "  ├── index.json"
     dim "  └── packages/"
     echo ""
-    dim "Next: fan-repo add ./my-extension-1.0.0.tar.gz"
-    dim "       fan-repo publish"
+    dim "Next: fan-store add ./my-extension-1.0.0.tar.gz"
+    dim "       fan-store publish"
 }
 
 cmd_set_url() {
@@ -311,7 +311,7 @@ cmd_set_url() {
 cmd_add() {
     local archive="${1:-}"
     if [[ -z "$archive" ]]; then
-        error "Usage: fan-repo add <archive.tar.gz>"
+        error "Usage: fan-store add <archive.tar.gz>"
     fi
 
     archive=$(realpath "$archive")
@@ -356,7 +356,7 @@ cmd_add() {
 cmd_remove() {
     local name="${1:-}"
     if [[ -z "$name" ]]; then
-        error "Usage: fan-repo remove <name>"
+        error "Usage: fan-store remove <name>"
     fi
 
     require_repo
@@ -426,7 +426,7 @@ PYEOF
 cmd_info() {
     local name="${1:-}"
     if [[ -z "$name" ]]; then
-        error "Usage: fan-repo info <name>"
+        error "Usage: fan-store info <name>"
     fi
 
     require_repo
@@ -492,9 +492,9 @@ cmd_serve() {
 
 cmd_help() {
     echo ""
-    echo -e "${CYAN}fan-repo${NC} — FAN package repository manager"
+    echo -e "${CYAN}fan-store${NC} — FAN package repository manager"
     echo ""
-    echo "Usage: fan-repo <command> [args]"
+    echo "Usage: fan-store <command> [args]"
     echo ""
     echo "Commands:"
     echo "  init [path]            Create a new repository directory"
@@ -503,12 +503,12 @@ cmd_help() {
     echo "  remove <name>          Remove package by name"
     echo "  list                   List all packages"
     echo "  info <name>            Show package details"
-    echo "  publish [target]       Deploy to server (default: root@185.219.41.46:/var/www/fan-repo)"
+    echo "  publish [target]       Deploy to server (default: root@185.219.41.46:/var/www/html/fan-store)"
     echo "  serve [port]           Local HTTP server for testing"
     echo "  help                   Show this help"
     echo ""
-    echo "Default server: root@185.219.41.46:/var/www/fan-repo"
-    echo "Default URL:    http://185.219.41.46/fan/"
+    echo "Default server: root@185.219.41.46:/var/www/html/fan-store"
+    echo "Default URL:    https://fan.sea-agents.ru/fan-store/"
     echo "Environment:"
     echo "  FAN_REPO_DIR           Override repository directory"
     echo ""
@@ -528,5 +528,5 @@ case "$COMMAND" in
     publish|push|deploy) cmd_publish "$@" ;;
     serve)     cmd_serve "$@" ;;
     help|--help|-h|"") cmd_help ;;
-    *)         error "Unknown command: $COMMAND. Run 'fan-repo help'." ;;
+    *)         error "Unknown command: $COMMAND. Run 'fan-store help'." ;;
 esac

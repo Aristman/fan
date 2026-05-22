@@ -2,7 +2,7 @@
 #
 # FAN (fan) one-liner installer for Unix (macOS + Linux).
 # Usage:
-#   curl -fsSL http://185.219.41.46/fan/dist/install.sh | bash
+#   curl -fsSL https://fan.sea-agents.ru/fan-store/dist/install.sh | bash
 #
 # Environment:
 #   FAN_INSTALL_DIR  Custom data directory (default: ~/.local/share/fan)
@@ -161,7 +161,7 @@ main() {
     check_existing
 
     # Fetch manifest
-    MANIFEST_URL="http://185.219.41.46/fan/dist/manifest.json"
+    MANIFEST_URL="https://fan.sea-agents.ru/fan-store/dist/manifest.json"
     info "Fetching manifest..."
 
     TMPDIR_FAN="$(mktemp -d)"
@@ -215,7 +215,7 @@ print(p.get('hash', ''))
             ;;
     esac
 
-    ARCHIVE_URL="http://185.219.41.46/fan/dist/${ARCHIVE_NAME}"
+    ARCHIVE_URL="https://fan.sea-agents.ru/fan-store/dist/${ARCHIVE_NAME}"
     ARCHIVE_FILE="${TMPDIR_FAN}/${ARCHIVE_NAME}"
 
     # Download archive

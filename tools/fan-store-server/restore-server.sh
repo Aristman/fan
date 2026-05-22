@@ -1,13 +1,13 @@
 #!/bin/bash
 #
-# restore-server.sh — Restore /var/www/fan-repo/ directory structure on VPS
+# restore-server.sh — Restore /var/www/html/fan-store/ directory structure on VPS
 #
 # Run as root on the server:
 #   bash restore-server.sh
 #
 set -euo pipefail
 
-REPO_DIR="/var/www/fan-repo"
+REPO_DIR="/var/www/html/fan-store"
 
 echo "==> Restoring FAN repo directory structure..."
 
@@ -19,8 +19,8 @@ mkdir -p "$REPO_DIR/dist"
 cat > "$REPO_DIR/index.json" << 'EOF'
 {
   "repository": {
-    "name": "fan-repo",
-    "url": "http://185.219.41.46/fan/",
+    "name": "fan-store",
+    "url": "https://fan.sea-agents.ru/fan-store/",
     "updatedAt": "2026-04-21T00:00:00Z"
   },
   "packages": []

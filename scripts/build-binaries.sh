@@ -121,6 +121,12 @@ npm run build
 echo "Building dashboard..."
 npm run build:dashboard
 
+# Inline version into api-gateway dist (bun compile cannot resolve __dirname-relative
+# package.json reads at runtime — use the monorepo root version as single source of truth).
+FAN_VERSION=$(node -e "console.log(require('./package.json').version)")
+echo "==> Inlining version v${FAN_VERSION} into api-gateway dist..."
+sed -i "s|JSON\.parse(readFileSync(join(__dirname, '\.\.', 'package\.json'), 'utf-8'))\.version|'${FAN_VERSION}'|g" packages/api-gateway/dist/http-server.js
+
 echo "==> Building FAN (fan) binaries..."
 cd packages/coding-agent
 
@@ -142,39 +148,14 @@ for platform in "${PLATFORMS[@]}"; do
     # call site has a try/catch fallback. For Windows builds, we copy the
     # appropriate .node file alongside the binary below.
     if [[ "$platform" == "windows-x64" ]]; then
-        bun build --compile --external koffi --target=bun-$platform ./dist/bun/cli.js --outfile binaries/$platform/fan.exe
+        bun build --compile --external koffi --no-compile-autoload-dotenv --no-compile-autoload-package-json --target=bun-$platform ./dist/bun/cli.js --outfile binaries/$platform/fan.exe
     else
-        bun build --compile --external koffi --target=bun-$platform ./dist/bun/cli.js --outfile binaries/$platform/fan
+        bun build --compile --external koffi --no-compile-autoload-dotenv --no-compile-autoload-package-json --target=bun-$platform ./dist/bun/cli.js --outfile binaries/$platform/fan
     fi
 done
 
 echo "==> Bundling FAN-specific assets..."
 
-# Prepare orchestrator assets in a temp directory
-ORCH_ASSETS_DIR=$(mktemp -d)
-trap "rm -rf '$ORCH_ASSETS_DIR'" EXIT
-
-mkdir -p "$ORCH_ASSETS_DIR/orchestrator/agents"
-mkdir -p "$ORCH_ASSETS_DIR/orchestrator/prompts"
-
-# Copy orchestrator config
-if [[ -f ../../packages/orchestrator/src/config.json ]]; then
-    cp ../../packages/orchestrator/src/config.json "$ORCH_ASSETS_DIR/orchestrator/"
-fi
-
-# Copy agent definitions (if they exist)
-for f in ../../packages/orchestrator/src/agents/*.md; do
-    if [[ -f "$f" ]]; then
-        cp "$f" "$ORCH_ASSETS_DIR/orchestrator/agents/"
-    fi
-done
-
-# Copy prompt templates (if they exist)
-for f in ../../packages/orchestrator/src/prompts/*.md; do
-    if [[ -f "$f" ]]; then
-        cp "$f" "$ORCH_ASSETS_DIR/orchestrator/prompts/"
-    fi
-done
 
 echo "==> Creating release archives..."
 
@@ -189,9 +170,6 @@ for platform in "${PLATFORMS[@]}"; do
     mkdir -p binaries/$platform/assets
     cp dist/modes/interactive/assets/* binaries/$platform/assets/
     cp -r dist/core/export-html binaries/$platform/
-
-    # Bundle FAN orchestrator assets
-    cp -r "$ORCH_ASSETS_DIR/orchestrator" binaries/$platform/
 
     # Dashboard
     echo "  Copying dashboard..."
@@ -278,7 +256,7 @@ for f in sorted(glob.glob(f"fan-{version}-*.tar.gz") + glob.glob(f"fan-{version}
     name = f.replace(f"fan-{version}-", "").replace(".tar.gz", "").replace(".zip", "")
     h = hashlib.sha256(open(f, "rb").read()).hexdigest()
     s = os.path.getsize(f)
-    platforms[name] = {"url": f"http://185.219.41.46/fan/dist/{f}", "hash": f"sha256:{h}", "size": s}
+    platforms[name] = {"url": f"https://fan.sea-agents.ru/fan-store/dist/{f}", "hash": f"sha256:{h}", "size": s}
 manifest = {"latest": version, "releasedAt": released_at, "releaseNotes": "", "platforms": platforms}
 with open("manifest.json", "w") as out:
     json.dump(manifest, out, indent=2)
@@ -289,11 +267,11 @@ for name, p in sorted(platforms.items()):
 PYEOF
 
 # Copy artifacts to dist repo
-DIST_REPO="$HOME/fan-repo/dist"
+DIST_REPO="$HOME/fan-store/dist"
 mkdir -p "$DIST_REPO"
 echo "==> Copying artifacts to $DIST_REPO/"
 cp -v manifest.json "$DIST_REPO/"
 cp -v fan-$VERSION-*.{tar.gz,zip} "$DIST_REPO/" 2>/dev/null
 cp -v "$SCRIPT_DIR/install.sh" "$DIST_REPO/"
 cp -v "$SCRIPT_DIR/install.ps1" "$DIST_REPO/"
-echo "==> Dist repo ready. Run: fan-repo publish"
+echo "==> Dist repo ready. Run: fan-store publish"

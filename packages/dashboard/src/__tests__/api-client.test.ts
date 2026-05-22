@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "fs";
+import { join } from "path";
 import { FanApiClient, FanApiError } from "../api/client.js";
+
+const apiGatewayPkg = JSON.parse(readFileSync(join(__dirname, "../../../../packages/api-gateway/package.json"), "utf8"));
 
 // Mock fetch globally
 const mockFetch = vi.fn();
@@ -30,11 +34,11 @@ describe("FanApiClient", () => {
 			mockFetch.mockResolvedValueOnce({
 				ok: true,
 				status: 200,
-				json: () => Promise.resolve({ status: "ok", version: "0.1.0", uptime: 123 }),
+				json: () => Promise.resolve({ status: "ok", version: apiGatewayPkg.version, uptime: 123 }),
 			});
 			const result = await client.health();
 			expect(result.status).toBe("ok");
-			expect(result.version).toBe("0.1.0");
+			expect(result.version).toBe(apiGatewayPkg.version);
 
 			const [url, opts] = mockFetch.mock.calls[0];
 			expect(url).toBe("http://localhost:3456/api/health");

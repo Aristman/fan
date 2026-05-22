@@ -84,7 +84,7 @@ Runtime: Bun · Monorepo: npm workspaces · Core: fan-ai + fan-agent-core + fan-
 
 ## Available Skills
 
-FAN ships with 8 pre-installed skills in `skills/`. Source files are local; installable via FAN Store (`http://185.219.41.46/fan/`). All skills are v1.0.0.
+FAN ships with 8 pre-installed skills in `skills/`. Source files are local; installable via FAN Store (`https://fan.sea-agents.ru/fan-store/`). All skills are v1.0.0.
 
 | Skill | Description | Key Use Case |
 |-------|-------------|--------------|
