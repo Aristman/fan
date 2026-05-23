@@ -1,6 +1,6 @@
 {
   "name": "dev-docs-pack",
-  "version": "1.1.0",
+  "version": "1.3.0",
   "description": "Принимает спецификацию, оценивает полноту, проводит интервью и генерирует полный пакет разработки: roadmap с этапами, блочные диаграммы, TDD-roadmap, UI/UX, API, тесты, релиз. Выход: docs/features/<feature>/.",
   "type": "module"
 }

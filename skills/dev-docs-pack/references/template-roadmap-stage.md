@@ -43,17 +43,19 @@
 - [ ] Тесты всё ещё проходят после рефакторинга
 - [ ] Smoke-тесты предыдущих этапов не сломаны
 
-## Ветвление и слияние
+## Ветвление и слияние (worktree для этапа)
 
 1. Переключиться на основную ветку: `git checkout feature/<feature>`
-2. Создать подветку этапа: `git checkout -b feature/<feature>/stage-<N>-<name>`
-3. Реализация (TDD-цикл, отмечать чеклисты в этом файле)
-4. Smoke-тестирование всего проекта
-5. Обновить чеклисты этого файла (отметить выполненные пункты)
-6. Обновление документации (roadmap-main, guides)
-7. Code review
-8. Merge подветки в основную: `git checkout feature/<feature>` → `git merge --no-ff feature/<feature>/stage-<N>-<name>`
-9. После завершения **всех** этапов — merge основной ветки в develop: `git checkout develop` → `git merge --no-ff feature/<feature>`
+2. Создать worktree этапа: `git worktree add .wt/<feature>/stage-<N>-<name> -b feature/<feature>/stage-<N>-<name>`
+3. Переключиться в worktree этапа: `cd .wt/<feature>/stage-<N>-<name>`
+4. Реализация (TDD-цикл, отмечать чеклисты в этом файле)
+5. Smoke-тестирование всего проекта
+6. Обновить чеклисты этого файла (отметить выполненные пункты)
+7. Обновление документации (roadmap-main, guides)
+8. Code review
+9. Merge подветки в основную: `cd <project-root> && git checkout feature/<feature>` → `git merge --no-ff feature/<feature>/stage-<N>-<name>`
+10. Удалить worktree этапа: `git worktree remove .wt/<feature>/stage-<N>-<name>`
+11. После завершения **всех** этапов — пользователь самостоятельно выполняет merge `feature/<feature>` в целевую ветку
 
 ## Smoke-тесты этапа (обязательные)
 

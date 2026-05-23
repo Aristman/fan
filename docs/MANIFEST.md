@@ -27,6 +27,7 @@
 | `docs/roadmaps/roadmap-idea-plugin-v2-from-orf.md` | ✅ | IDEA plugin v2 roadmap — 1st edition (ORF patterns, 6 phases) |
 | `docs/roadmaps/roadmap-idea-plugin-v2-from-orf-ed2.md` | ⚠️ | IDEA plugin v2 roadmap — 2nd edition (superseded by unified) |
 | `docs/roadmaps/roadmap-idea-plugin-v2-unified.md` | ✅ | IDEA plugin v2 unified roadmap — merged: architecture (ORF patterns) + visual system (TUI-style JCEF styling) |
+| `docs/features/fan-confluence/` | ✅ | fan-confluence extension — package разработки (4 этапа, 6 инструментов для Confluence DC) |
 
 ## Status Legend
 - ✅ — up to date
