@@ -68,6 +68,19 @@ export const providersRegistryData = {
 			],
 			"authType": "apiKey"
 		},
+		"xiaomi": {
+			"displayName": "Xiaomi MiMo",
+			"envVars": [
+				"MIMO_API_KEY",
+				"XIAOMI_API_KEY"
+			],
+			"primaryEnvVar": "MIMO_API_KEY",
+			"wizardModels": [
+				"xiaomi/mimo-v2-flash",
+				"xiaomi/mimo-v2-pro"
+			],
+			"authType": "apiKey"
+		},
 		"mistral": {
 			"displayName": "Mistral",
 			"envVars": [
@@ -231,6 +244,7 @@ export const providersRegistryData = {
 		"openrouter",
 		"github-copilot",
 		"zai",
-		"deepseek"
+		"deepseek",
+		"xiaomi"
 	]
 } as const;

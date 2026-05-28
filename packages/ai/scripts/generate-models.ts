@@ -1520,6 +1520,72 @@ async function generateModels() {
 		}
 	}
 
+	// Xiaomi MiMo models (direct API)
+	const XIAOMI_BASE_URL = "https://api.xiaomimimo.com/v1";
+	const xiaomiModels: Model<"openai-completions">[] = [
+		{
+			id: "mimo-v2-flash",
+			name: "MiMo V2 Flash",
+			api: "openai-completions",
+			provider: "xiaomi",
+			baseUrl: XIAOMI_BASE_URL,
+			reasoning: false,
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 262144,
+			maxTokens: 64000,
+		},
+		{
+			id: "mimo-v2-pro",
+			name: "MiMo V2 Pro",
+			api: "openai-completions",
+			provider: "xiaomi",
+			baseUrl: XIAOMI_BASE_URL,
+			reasoning: true,
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 1048576,
+			maxTokens: 32000,
+		},
+		{
+			id: "mimo-v2-omni",
+			name: "MiMo V2 Omni",
+			api: "openai-completions",
+			provider: "xiaomi",
+			baseUrl: XIAOMI_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 262144,
+			maxTokens: 32000,
+		},
+		{
+			id: "mimo-v2.5",
+			name: "MiMo V2.5 (Omni)",
+			api: "openai-completions",
+			provider: "xiaomi",
+			baseUrl: XIAOMI_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 1000000,
+			maxTokens: 128000,
+		},
+		{
+			id: "mimo-v2.5-pro",
+			name: "MiMo V2.5 Pro",
+			api: "openai-completions",
+			provider: "xiaomi",
+			baseUrl: XIAOMI_BASE_URL,
+			reasoning: true,
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 1000000,
+			maxTokens: 128000,
+		},
+	];
+	allModels.push(...xiaomiModels);
+
 	const azureOpenAiModels: Model<Api>[] = allModels
 		.filter((model) => model.provider === "openai" && model.api === "openai-responses")
 		.map((model) => ({
