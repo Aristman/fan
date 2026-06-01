@@ -160,7 +160,9 @@ export const providersRegistryData = {
 				"MINIMAX_API_KEY"
 			],
 			"primaryEnvVar": "MINIMAX_API_KEY",
-			"wizardModels": [],
+			"wizardModels": [
+				"MiniMax-M3"
+			],
 			"authType": "apiKey"
 		},
 		"minimax-cn": {
