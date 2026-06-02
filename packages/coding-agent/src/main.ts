@@ -430,15 +430,13 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 
 		// --- getAvailableModels ---
 		async getAvailableModels() {
-			const current = runtime.session.model;
-			if (!current) return [];
-			return [
-				{
-					provider: current.provider,
-					model: current.id,
-					displayName: current.name,
-				},
-			];
+			runtime.session.modelRegistry.refresh();
+			const models = runtime.session.modelRegistry.getAvailable();
+			return models.map((m) => ({
+				provider: m.provider,
+				model: m.id,
+				displayName: m.name,
+			}));
 		},
 
 		bindSessionExtensions,
@@ -1124,6 +1122,10 @@ export async function main(args: string[]) {
 
 	if (appMode === "server") {
 		printTimings();
+		// Local server — no auth required (only accessible from localhost)
+		if (!process.env.FAN_NO_AUTH) {
+			process.env.FAN_NO_AUTH = "1";
+		}
 		const modelManager = runtime.session.modelManager;
 		if (!modelManager) {
 			console.error("Error: ModelManager is not available. Server mode requires model management to be enabled.");

@@ -412,6 +412,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			// =================================================================
 
 			case "set_model": {
+				await session.modelRegistry.refresh();
 				const models = await session.modelRegistry.getAvailable();
 				const model = models.find((m) => m.provider === command.provider && m.id === command.modelId);
 				if (!model) {
@@ -422,6 +423,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 
 			case "cycle_model": {
+				await session.modelRegistry.refresh();
 				const result = await session.cycleModel();
 				if (!result) {
 					return success(id, "cycle_model", null);
@@ -430,6 +432,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 
 			case "get_available_models": {
+				await session.modelRegistry.refresh();
 				const models = await session.modelRegistry.getAvailable();
 				return success(id, "get_available_models", { models });
 			}

@@ -943,15 +943,21 @@ async function generateModels() {
 		});
 	}
 
-	const minimaxDirectSupportedIds = new Set(["MiniMax-M2.7", "MiniMax-M2.7-highspeed"]);
+	const minimaxDirectSupportedIds = new Set(["MiniMax-M2.7", "MiniMax-M2.7-highspeed", "MiniMax-M3"]);
 
 	for (const candidate of allModels) {
 		if (
 			(candidate.provider === "minimax" || candidate.provider === "minimax-cn") &&
 			minimaxDirectSupportedIds.has(candidate.id)
 		) {
-			candidate.contextWindow = 204800;
-			candidate.maxTokens = 131072;
+			// M3 has 1M context, others have 204K
+			if (candidate.id === "MiniMax-M3") {
+				candidate.contextWindow = 1000000;
+				candidate.maxTokens = 131072;
+			} else {
+				candidate.contextWindow = 204800;
+				candidate.maxTokens = 131072;
+			}
 		}
 	}
 
@@ -962,6 +968,39 @@ async function generateModels() {
 			!minimaxDirectSupportedIds.has(candidate.id)
 		) {
 			allModels.splice(i, 1);
+		}
+	}
+
+	// MiniMax-M3 — not yet in models.dev, add explicitly
+	const minimaxM3Models: Model<any>[] = [
+		{
+			id: "MiniMax-M3",
+			name: "MiniMax M3",
+			api: "anthropic-messages",
+			provider: "minimax",
+			baseUrl: "https://api.minimax.io/anthropic",
+			reasoning: true,
+			input: ["text"],
+			cost: { input: 0.3, output: 1.2, cacheRead: 0.06, cacheWrite: 0.375 },
+			contextWindow: 1000000,
+			maxTokens: 131072,
+		},
+		{
+			id: "MiniMax-M3",
+			name: "MiniMax M3",
+			api: "anthropic-messages",
+			provider: "minimax-cn",
+			baseUrl: "https://api.minimaxi.com/anthropic",
+			reasoning: true,
+			input: ["text"],
+			cost: { input: 0.3, output: 1.2, cacheRead: 0.06, cacheWrite: 0.375 },
+			contextWindow: 1000000,
+			maxTokens: 131072,
+		},
+	];
+	for (const model of minimaxM3Models) {
+		if (!allModels.some(m => m.provider === model.provider && m.id === model.id)) {
+			allModels.push(model);
 		}
 	}
 
@@ -1519,6 +1558,72 @@ async function generateModels() {
 			allModels.push(model);
 		}
 	}
+
+	// Xiaomi MiMo models (direct API)
+	const XIAOMI_BASE_URL = "https://api.xiaomimimo.com/v1";
+	const xiaomiModels: Model<"openai-completions">[] = [
+		{
+			id: "mimo-v2-flash",
+			name: "MiMo V2 Flash",
+			api: "openai-completions",
+			provider: "xiaomi",
+			baseUrl: XIAOMI_BASE_URL,
+			reasoning: false,
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 262144,
+			maxTokens: 64000,
+		},
+		{
+			id: "mimo-v2-pro",
+			name: "MiMo V2 Pro",
+			api: "openai-completions",
+			provider: "xiaomi",
+			baseUrl: XIAOMI_BASE_URL,
+			reasoning: true,
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 1048576,
+			maxTokens: 32000,
+		},
+		{
+			id: "mimo-v2-omni",
+			name: "MiMo V2 Omni",
+			api: "openai-completions",
+			provider: "xiaomi",
+			baseUrl: XIAOMI_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 262144,
+			maxTokens: 32000,
+		},
+		{
+			id: "mimo-v2.5",
+			name: "MiMo V2.5 (Omni)",
+			api: "openai-completions",
+			provider: "xiaomi",
+			baseUrl: XIAOMI_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 1000000,
+			maxTokens: 128000,
+		},
+		{
+			id: "mimo-v2.5-pro",
+			name: "MiMo V2.5 Pro",
+			api: "openai-completions",
+			provider: "xiaomi",
+			baseUrl: XIAOMI_BASE_URL,
+			reasoning: true,
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 1000000,
+			maxTokens: 128000,
+		},
+	];
+	allModels.push(...xiaomiModels);
 
 	const azureOpenAiModels: Model<Api>[] = allModels
 		.filter((model) => model.provider === "openai" && model.api === "openai-responses")

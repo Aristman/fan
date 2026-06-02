@@ -135,31 +135,43 @@ Complexity = N (функциональные блоки) + I (точки инт�
 - `stage-4-ui-components`
 - `stage-5-e2e-polish`
 
-## Git-бранчи
+## Git-бранчи и Worktree
 
 **Основная фичевая ветка:** `feature/<feature>`
 
-Создаётся перед началом разработки от `develop`. Все подветки этапов мерджатся в неё.
-После завершения всех этапов основная ветка мерджится в `develop`.
+Создаётся обычным образом от `develop`. Документация и общий код — в этой ветке. Каждая подветка этапа — отдельный worktree.
 
 **Подветки этапов:** `feature/<feature>/stage-N-<name>`
 
-Создаются от основной фичевой ветки. После завершения этапа мерджатся обратно в основную.
+Создаются как worktree от основной фичевой ветки. После завершения этапа мерджатся обратно в основную ветку, worktree этапа удаляется.
 
-Примеры:
+Структура worktree на диске:
 ```
-feature/notification-system                          ← основная ветка
-  ├── feature/notification-system/stage-1-data-model     ← подветка этапа 1
-  ├── feature/notification-system/stage-2-core-service   ← подветка этапа 2
-  ├── feature/notification-system/stage-3-api-endpoints  ← подветка этапа 3
-  └── feature/notification-system/stage-4-ui-components  ← подветка этапа 4
+<project-root>/
+├── (обычная рабочая копия, ветка feature/<feature>)
+│   ├── docs/features/<feature>/        ← документы пакета
+│   └── ...
+└── .wt/<feature>/
+    ├── stage-1-<name>/                    ← worktree этапа 1
+    ├── stage-2-<name>/                    ← worktree этапа 2
+    ├── stage-3-<name>/                    ← worktree этапа 3
+    └── stage-4-<name>/                    ← worktree этапа 4
 ```
 
 **Порядок работы:**
-1. `git checkout develop && git checkout -b feature/<feature>`
-2. Для каждого этапа: `git checkout feature/<feature> && git checkout -b feature/<feature>/stage-N-<name>`
-3. После этапа: `git checkout feature/<feature> && git merge --no-ff feature/<feature>/stage-N-<name>`
-4. После всех этапов: `git checkout develop && git merge --no-ff feature/<feature>`
+1. Создать основную ветку: `git checkout develop && git checkout -b feature/<feature>`
+2. Для каждого этапа:
+   - Создать worktree: `git worktree add .wt/<feature>/stage-N-<name> -b feature/<feature>/stage-N-<name>`
+   - Реализация в worktree этапа (TDD-цикл)
+   - Merge: `git merge --no-ff feature/<feature>/stage-N-<name>` (из основной ветки)
+   - Удалить worktree этапа: `git worktree remove .wt/<feature>/stage-N-<name>`
+3. После завершения **всех** этапов: пользователь самостоятельно решает, когда и куда мерджить `feature/<feature>`
+
+**Преимущества worktree:**
+- Каждый этап — отдельная рабочая копия, можно переключаться без stash
+- Основная ветка всегда доступна без checkout
+- Изоляция зависимостей (node_modules) между этапами
+- Быстрый переключение контекста между этапами
 
 ---
 
