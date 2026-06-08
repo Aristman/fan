@@ -1,242 +1,155 @@
 export const providersRegistryData = {
-	"version": 1,
-	"providers": {
-		"openai": {
-			"displayName": "OpenAI",
-			"envVars": [
-				"OPENAI_API_KEY"
-			],
-			"primaryEnvVar": "OPENAI_API_KEY",
-			"wizardModels": [
-				"gpt-4o",
-				"gpt-4o-mini",
-				"o1",
-				"o3-mini"
-			],
-			"authType": "apiKey"
+	version: 1,
+	providers: {
+		openai: {
+			displayName: "OpenAI",
+			envVars: ["OPENAI_API_KEY"],
+			primaryEnvVar: "OPENAI_API_KEY",
+			wizardModels: ["gpt-4o", "gpt-4o-mini", "o1", "o3-mini"],
+			authType: "apiKey",
 		},
-		"anthropic": {
-			"displayName": "Anthropic",
-			"envVars": [
-				"ANTHROPIC_API_KEY",
-				"ANTHROPIC_OAUTH_TOKEN"
-			],
-			"primaryEnvVar": "ANTHROPIC_API_KEY",
-			"wizardModels": [
-				"claude-sonnet-4-20250514",
-				"claude-opus-4-20250514",
-				"claude-haiku-4-20250414"
-			],
-			"authType": "apiKey"
+		anthropic: {
+			displayName: "Anthropic",
+			envVars: ["ANTHROPIC_API_KEY", "ANTHROPIC_OAUTH_TOKEN"],
+			primaryEnvVar: "ANTHROPIC_API_KEY",
+			wizardModels: ["claude-sonnet-4-20250514", "claude-opus-4-20250514", "claude-haiku-4-20250414"],
+			authType: "apiKey",
 		},
-		"google": {
-			"displayName": "Google",
-			"envVars": [
-				"GOOGLE_API_KEY",
-				"GEMINI_API_KEY",
-				"GOOGLE_GENERATIVE_AI_API_KEY"
-			],
-			"primaryEnvVar": "GOOGLE_API_KEY",
-			"wizardModels": [
-				"gemini-2.5-pro",
-				"gemini-2.5-flash",
-				"gemini-2.0-flash"
-			],
-			"authType": "apiKey"
+		google: {
+			displayName: "Google",
+			envVars: ["GOOGLE_API_KEY", "GEMINI_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY"],
+			primaryEnvVar: "GOOGLE_API_KEY",
+			wizardModels: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"],
+			authType: "apiKey",
 		},
-		"groq": {
-			"displayName": "Groq",
-			"envVars": [
-				"GROQ_API_KEY"
-			],
-			"primaryEnvVar": "GROQ_API_KEY",
-			"wizardModels": [
-				"llama-3.3-70b-versatile",
-				"llama-3.1-8b-instant"
-			],
-			"authType": "apiKey"
+		groq: {
+			displayName: "Groq",
+			envVars: ["GROQ_API_KEY"],
+			primaryEnvVar: "GROQ_API_KEY",
+			wizardModels: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"],
+			authType: "apiKey",
 		},
-		"xai": {
-			"displayName": "xAI",
-			"envVars": [
-				"XAI_API_KEY"
-			],
-			"primaryEnvVar": "XAI_API_KEY",
-			"wizardModels": [
-				"grok-3",
-				"grok-3-mini"
-			],
-			"authType": "apiKey"
+		xai: {
+			displayName: "xAI",
+			envVars: ["XAI_API_KEY"],
+			primaryEnvVar: "XAI_API_KEY",
+			wizardModels: ["grok-3", "grok-3-mini"],
+			authType: "apiKey",
 		},
-		"xiaomi": {
-			"displayName": "Xiaomi MiMo",
-			"envVars": [
-				"MIMO_API_KEY",
-				"XIAOMI_API_KEY"
-			],
-			"primaryEnvVar": "MIMO_API_KEY",
-			"wizardModels": [
-				"xiaomi/mimo-v2-flash",
-				"xiaomi/mimo-v2-pro"
-			],
-			"authType": "apiKey"
+		xiaomi: {
+			displayName: "Xiaomi MiMo",
+			envVars: ["MIMO_API_KEY", "XIAOMI_API_KEY"],
+			primaryEnvVar: "MIMO_API_KEY",
+			wizardModels: ["xiaomi/mimo-v2-flash", "xiaomi/mimo-v2-pro"],
+			authType: "apiKey",
 		},
-		"mistral": {
-			"displayName": "Mistral",
-			"envVars": [
-				"MISTRAL_API_KEY"
-			],
-			"primaryEnvVar": "MISTRAL_API_KEY",
-			"wizardModels": [
-				"mistral-large-latest",
-				"mistral-medium-latest"
-			],
-			"authType": "apiKey"
+		mistral: {
+			displayName: "Mistral",
+			envVars: ["MISTRAL_API_KEY"],
+			primaryEnvVar: "MISTRAL_API_KEY",
+			wizardModels: ["mistral-large-latest", "mistral-medium-latest"],
+			authType: "apiKey",
 		},
-		"openrouter": {
-			"displayName": "OpenRouter",
-			"envVars": [
-				"OPENROUTER_API_KEY"
-			],
-			"primaryEnvVar": "OPENROUTER_API_KEY",
-			"wizardModels": [
-				"openrouter/auto"
-			],
-			"authType": "apiKey"
+		openrouter: {
+			displayName: "OpenRouter",
+			envVars: ["OPENROUTER_API_KEY"],
+			primaryEnvVar: "OPENROUTER_API_KEY",
+			wizardModels: ["openrouter/auto"],
+			authType: "apiKey",
 		},
-		"cerebras": {
-			"displayName": "Cerebras",
-			"envVars": [
-				"CEREBRAS_API_KEY"
-			],
-			"primaryEnvVar": "CEREBRAS_API_KEY",
-			"wizardModels": [],
-			"authType": "apiKey"
+		cerebras: {
+			displayName: "Cerebras",
+			envVars: ["CEREBRAS_API_KEY"],
+			primaryEnvVar: "CEREBRAS_API_KEY",
+			wizardModels: [],
+			authType: "apiKey",
 		},
-		"deepseek": {
-			"displayName": "DeepSeek",
-			"envVars": [
-				"DEEPSEEK_API_KEY"
-			],
-			"primaryEnvVar": "DEEPSEEK_API_KEY",
-			"wizardModels": [
-				"deepseek-chat",
-				"deepseek-reasoner"
-			],
-			"authType": "apiKey"
+		deepseek: {
+			displayName: "DeepSeek",
+			envVars: ["DEEPSEEK_API_KEY"],
+			primaryEnvVar: "DEEPSEEK_API_KEY",
+			wizardModels: ["deepseek-chat", "deepseek-reasoner"],
+			authType: "apiKey",
 		},
-		"zai": {
-			"displayName": "z.ai",
-			"envVars": [
-				"ZAI_API_KEY"
-			],
-			"primaryEnvVar": "ZAI_API_KEY",
-			"wizardModels": [
-				"glm-5-turbo",
-				"glm-5",
-				"glm-4.7",
-				"glm-4.7-flash",
-				"glm-4.5",
-				"glm-4.6v",
-				"glm-5v-turbo"
-			],
-			"authType": "apiKey"
+		zai: {
+			displayName: "z.ai",
+			envVars: ["ZAI_API_KEY"],
+			primaryEnvVar: "ZAI_API_KEY",
+			wizardModels: ["glm-5-turbo", "glm-5", "glm-4.7", "glm-4.7-flash", "glm-4.5", "glm-4.6v", "glm-5v-turbo"],
+			authType: "apiKey",
 		},
 		"github-copilot": {
-			"displayName": "GitHub Copilot",
-			"envVars": [
-				"COPILOT_GITHUB_TOKEN"
-			],
-			"primaryEnvVar": "COPILOT_GITHUB_TOKEN",
-			"wizardModels": [
-				"gpt-4o",
-				"claude-sonnet-4"
-			],
-			"authType": "token"
+			displayName: "GitHub Copilot",
+			envVars: ["COPILOT_GITHUB_TOKEN"],
+			primaryEnvVar: "COPILOT_GITHUB_TOKEN",
+			wizardModels: ["gpt-4o", "claude-sonnet-4"],
+			authType: "token",
 		},
-		"minimax": {
-			"displayName": "MiniMax",
-			"envVars": [
-				"MINIMAX_API_KEY"
-			],
-			"primaryEnvVar": "MINIMAX_API_KEY",
-			"wizardModels": [
-				"MiniMax-M3"
-			],
-			"authType": "apiKey"
+		minimax: {
+			displayName: "MiniMax",
+			envVars: ["MINIMAX_API_KEY"],
+			primaryEnvVar: "MINIMAX_API_KEY",
+			wizardModels: ["MiniMax-M3"],
+			authType: "apiKey",
 		},
 		"minimax-cn": {
-			"displayName": "MiniMax CN",
-			"envVars": [
-				"MINIMAX_CN_API_KEY"
-			],
-			"primaryEnvVar": "MINIMAX_CN_API_KEY",
-			"wizardModels": [],
-			"authType": "apiKey"
+			displayName: "MiniMax CN",
+			envVars: ["MINIMAX_CN_API_KEY"],
+			primaryEnvVar: "MINIMAX_CN_API_KEY",
+			wizardModels: [],
+			authType: "apiKey",
 		},
-		"opencode": {
-			"displayName": "OpenCode",
-			"envVars": [
-				"OPENCODE_API_KEY"
-			],
-			"primaryEnvVar": "OPENCODE_API_KEY",
-			"wizardModels": [],
-			"authType": "apiKey"
+		opencode: {
+			displayName: "OpenCode",
+			envVars: ["OPENCODE_API_KEY"],
+			primaryEnvVar: "OPENCODE_API_KEY",
+			wizardModels: [],
+			authType: "apiKey",
 		},
 		"kimi-coding": {
-			"displayName": "Kimi",
-			"envVars": [
-				"KIMI_API_KEY"
-			],
-			"primaryEnvVar": "KIMI_API_KEY",
-			"wizardModels": [],
-			"authType": "apiKey"
+			displayName: "Kimi",
+			envVars: ["KIMI_API_KEY"],
+			primaryEnvVar: "KIMI_API_KEY",
+			wizardModels: [],
+			authType: "apiKey",
 		},
 		"vercel-ai-gateway": {
-			"displayName": "Vercel AI Gateway",
-			"envVars": [
-				"AI_GATEWAY_API_KEY"
-			],
-			"primaryEnvVar": "AI_GATEWAY_API_KEY",
-			"wizardModels": [],
-			"authType": "apiKey"
+			displayName: "Vercel AI Gateway",
+			envVars: ["AI_GATEWAY_API_KEY"],
+			primaryEnvVar: "AI_GATEWAY_API_KEY",
+			wizardModels: [],
+			authType: "apiKey",
 		},
 		"azure-openai-responses": {
-			"displayName": "Azure OpenAI",
-			"envVars": [
-				"AZURE_OPENAI_API_KEY"
-			],
-			"primaryEnvVar": "AZURE_OPENAI_API_KEY",
-			"wizardModels": [],
-			"authType": "apiKey"
+			displayName: "Azure OpenAI",
+			envVars: ["AZURE_OPENAI_API_KEY"],
+			primaryEnvVar: "AZURE_OPENAI_API_KEY",
+			wizardModels: [],
+			authType: "apiKey",
 		},
 		"google-vertex": {
-			"displayName": "Google Vertex AI",
-			"envVars": [
-				"GOOGLE_CLOUD_API_KEY"
-			],
-			"primaryEnvVar": "GOOGLE_CLOUD_API_KEY",
-			"wizardModels": [],
-			"authType": "adc"
+			displayName: "Google Vertex AI",
+			envVars: ["GOOGLE_CLOUD_API_KEY"],
+			primaryEnvVar: "GOOGLE_CLOUD_API_KEY",
+			wizardModels: [],
+			authType: "adc",
 		},
 		"amazon-bedrock": {
-			"displayName": "Amazon Bedrock",
-			"envVars": [],
-			"primaryEnvVar": "",
-			"wizardModels": [],
-			"authType": "aws"
+			displayName: "Amazon Bedrock",
+			envVars: [],
+			primaryEnvVar: "",
+			wizardModels: [],
+			authType: "aws",
 		},
-		"huggingface": {
-			"displayName": "HuggingFace",
-			"envVars": [
-				"HF_TOKEN"
-			],
-			"primaryEnvVar": "HF_TOKEN",
-			"wizardModels": [],
-			"authType": "token"
-		}
+		huggingface: {
+			displayName: "HuggingFace",
+			envVars: ["HF_TOKEN"],
+			primaryEnvVar: "HF_TOKEN",
+			wizardModels: [],
+			authType: "token",
+		},
 	},
-	"wizardOrder": [
+	wizardOrder: [
 		"openai",
 		"anthropic",
 		"google",
@@ -247,6 +160,6 @@ export const providersRegistryData = {
 		"github-copilot",
 		"zai",
 		"deepseek",
-		"xiaomi"
-	]
+		"xiaomi",
+	],
 } as const;

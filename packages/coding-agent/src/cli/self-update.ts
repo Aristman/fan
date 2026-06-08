@@ -5,11 +5,21 @@
  * from the FAN distribution server.
  */
 
-import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, readdirSync, renameSync, realpathSync, rmSync, statSync, unlinkSync } from "node:fs";
-import { join, dirname, basename } from "node:path";
-import { tmpdir } from "node:os";
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
+import {
+	copyFileSync,
+	existsSync,
+	mkdirSync,
+	readdirSync,
+	realpathSync,
+	renameSync,
+	rmSync,
+	statSync,
+	unlinkSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { basename, dirname, join } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import chalk from "chalk";
@@ -154,10 +164,7 @@ function compareVersions(a: string, b: string): number {
 // =============================================================================
 
 /** Check if update is available */
-export async function checkForUpdate(
-	currentVersion: string,
-	signal?: AbortSignal,
-): Promise<UpdateCheckResult | null> {
+export async function checkForUpdate(currentVersion: string, signal?: AbortSignal): Promise<UpdateCheckResult | null> {
 	const manifest = await fetchManifest(signal);
 	if (!manifest) return null;
 
@@ -224,9 +231,7 @@ function verifySha256(filePath: string, expectedHash: string): void {
 	const actual = createHash("sha256").update(require("node:fs").readFileSync(filePath)).digest("hex");
 
 	if (actual !== expected) {
-		throw new Error(
-			`SHA-256 checksum mismatch!\n  Expected: ${expected}\n  Actual:   ${actual}`,
-		);
+		throw new Error(`SHA-256 checksum mismatch!\n  Expected: ${expected}\n  Actual:   ${actual}`);
 	}
 }
 
@@ -271,7 +276,13 @@ function extractZipArchive(archivePath: string, destDir: string): Promise<void> 
 			// Windows: use PowerShell Expand-Archive
 			child = spawn(
 				"powershell.exe",
-				["-NoProfile", "-WindowStyle", "Hidden", "-Command", `Expand-Archive -Path '${archivePath}' -DestinationPath '${destDir}' -Force`],
+				[
+					"-NoProfile",
+					"-WindowStyle",
+					"Hidden",
+					"-Command",
+					`Expand-Archive -Path '${archivePath}' -DestinationPath '${destDir}' -Force`,
+				],
 				{ stdio: "pipe", windowsHide: true },
 			);
 		} else {
@@ -412,7 +423,11 @@ export async function performUpdate(options?: {
 		const oldBinary = currentBinary + ".old";
 
 		// Remove any previous .old file
-		try { unlinkSync(oldBinary); } catch { /* ignore */ }
+		try {
+			unlinkSync(oldBinary);
+		} catch {
+			/* ignore */
+		}
 
 		// Rename current (running) binary to .old
 		try {
@@ -426,7 +441,11 @@ export async function performUpdate(options?: {
 				console.log(chalk.red(`Failed to replace binary: ${(err2 as Error).message}`));
 				console.log(chalk.yellow("Try running this command as Administrator."));
 				// Restore from backup
-				try { copyFileSync(join(backupDir, binaryName), currentBinary); } catch { /* ignore */ }
+				try {
+					copyFileSync(join(backupDir, binaryName), currentBinary);
+				} catch {
+					/* ignore */
+				}
 				return;
 			}
 		}
@@ -437,7 +456,11 @@ export async function performUpdate(options?: {
 		} catch (err) {
 			console.log(chalk.red(`Failed to install new binary: ${(err as Error).message}`));
 			// Restore from backup
-			try { copyFileSync(oldBinary, currentBinary); } catch { /* ignore */ }
+			try {
+				copyFileSync(oldBinary, currentBinary);
+			} catch {
+				/* ignore */
+			}
 			return;
 		}
 	} else {

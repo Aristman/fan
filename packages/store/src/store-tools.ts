@@ -4,11 +4,11 @@
 
 import type { ExtensionAPI } from "@itone/fan-coding-agent";
 import { Type } from "@sinclair/typebox";
-import type { ResourceType } from "./types.js";
-import { StoreDatabase } from "./storage.js";
-import { RepoClient } from "./repo-client.js";
-import { ArchiveInstaller } from "./installer.js";
 import type { StoreConfig } from "./config.js";
+import type { ArchiveInstaller } from "./installer.js";
+import type { RepoClient } from "./repo-client.js";
+import type { StoreDatabase } from "./storage.js";
+import type { ResourceType } from "./types.js";
 
 // ──────────────────────────────────────────────
 // Tool Registration
@@ -50,11 +50,7 @@ export function registerStoreTools(
 					details: undefined,
 				};
 			}
-			const results = await getRepoClient().searchPackages(
-				params.query,
-				config.repositories,
-				params.type,
-			);
+			const results = await getRepoClient().searchPackages(params.query, config.repositories, params.type);
 			if (results.length === 0) {
 				return {
 					content: [{ type: "text" as const, text: `No packages found matching "${params.query}"` }],
@@ -62,13 +58,10 @@ export function registerStoreTools(
 				};
 			}
 			const lines = results.map(
-				(p) =>
-					`• **${p.name}** v${p.version} [${p.type}] — ${p.description}${p.author ? ` (by ${p.author})` : ""}`,
+				(p) => `• **${p.name}** v${p.version} [${p.type}] — ${p.description}${p.author ? ` (by ${p.author})` : ""}`,
 			);
 			return {
-				content: [
-					{ type: "text" as const, text: `Found ${results.length} package(s):\n${lines.join("\n")}` },
-				],
+				content: [{ type: "text" as const, text: `Found ${results.length} package(s):\n${lines.join("\n")}` }],
 				details: undefined,
 			};
 		},
@@ -79,8 +72,7 @@ export function registerStoreTools(
 	pi.registerTool({
 		name: "store_install",
 		label: "Store Install",
-		description:
-			"Install a package from FAN Store repositories or a local archive file (.tar.gz, .zip)",
+		description: "Install a package from FAN Store repositories or a local archive file (.tar.gz, .zip)",
 		promptSnippet: "Install a package from FAN Store repos or local archive",
 		parameters: Type.Object({
 			source: Type.String({
@@ -93,9 +85,7 @@ export function registerStoreTools(
 					enum: ["extension", "skill", "theme"],
 				}),
 			),
-			scope: Type.Optional(
-				Type.String({ description: "Install scope", enum: ["user", "project"] }),
-			),
+			scope: Type.Optional(Type.String({ description: "Install scope", enum: ["user", "project"] })),
 		}),
 		async execute(_toolCallId, params, signal, onUpdate, _ctx) {
 			const config = getConfig();
@@ -210,8 +200,7 @@ export function registerStoreTools(
 		parameters: Type.Object({
 			name: Type.Optional(
 				Type.String({
-					description:
-						"Specific package to update. If omitted, checks all repo packages for available updates.",
+					description: "Specific package to update. If omitted, checks all repo packages for available updates.",
 				}),
 			),
 		}),
@@ -237,9 +226,7 @@ export function registerStoreTools(
 				const pkg = db.getPackage(params.name);
 				if (!pkg) {
 					return {
-						content: [
-							{ type: "text" as const, text: `❌ Package "${params.name}" not found.` },
-						],
+						content: [{ type: "text" as const, text: `❌ Package "${params.name}" not found.` }],
 						details: undefined,
 					};
 				}
@@ -279,13 +266,7 @@ export function registerStoreTools(
 					};
 				}
 
-				const updated = await getInstaller().updateFromRepo(
-					pkg,
-					repoPkg,
-					config.repositories,
-					signal,
-					onProgress,
-				);
+				const updated = await getInstaller().updateFromRepo(pkg, repoPkg, config.repositories, signal, onProgress);
 				return {
 					content: [
 						{
@@ -341,9 +322,7 @@ export function registerStoreTools(
 					enum: ["extension", "skill", "theme", "bundle"],
 				}),
 			),
-			updatesOnly: Type.Optional(
-				Type.Boolean({ description: "Show only packages with available updates" }),
-			),
+			updatesOnly: Type.Optional(Type.Boolean({ description: "Show only packages with available updates" })),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
 			const packages = getDB().getPackages();

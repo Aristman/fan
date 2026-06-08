@@ -1,6 +1,6 @@
 import { providersRegistryData } from "./providers-registry-data.js";
 
-	export interface ProviderMeta {
+export interface ProviderMeta {
 	displayName: string;
 	envVars: readonly string[];
 	primaryEnvVar: string;

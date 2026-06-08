@@ -6,11 +6,11 @@
  * Info file:  ~/.fan/agent/server.json
  */
 
-import { writeFileSync, readFileSync, unlinkSync, existsSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
-import { getAgentDir } from "../config.js";
 import { spawn } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import process from "node:process";
+import { getAgentDir } from "../config.js";
 
 const SERVER_PID_FILE = () => join(getAgentDir(), "server.pid");
 const SERVER_INFO_FILE = () => join(getAgentDir(), "server.json");
@@ -44,8 +44,12 @@ export function writeServerInfo(info: ServerInfo): void {
 
 /** Remove server PID and info files. Ignores errors if files don't exist. */
 export function removeServerFiles(): void {
-	try { unlinkSync(SERVER_PID_FILE()); } catch {}
-	try { unlinkSync(SERVER_INFO_FILE()); } catch {}
+	try {
+		unlinkSync(SERVER_PID_FILE());
+	} catch {}
+	try {
+		unlinkSync(SERVER_INFO_FILE());
+	} catch {}
 }
 
 /** Check if a process with the given PID is currently alive. */
@@ -156,10 +160,7 @@ export async function serverStart(port?: number, host?: string): Promise<void> {
 		env: {
 			...process.env,
 			FAN_SERVER_DAEMON: "1",
-			NODE_OPTIONS: [
-				process.env.NODE_OPTIONS,
-				"--use-system-ca",
-			].filter(Boolean).join(" "),
+			NODE_OPTIONS: [process.env.NODE_OPTIONS, "--use-system-ca"].filter(Boolean).join(" "),
 		},
 	});
 

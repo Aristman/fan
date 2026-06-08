@@ -9,13 +9,12 @@
 
 import { execFile } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { cp, mkdir, readdir, rm, stat } from "node:fs/promises";
-import { readFile, writeFile } from "node:fs/promises";
-import { basename, dirname, join, resolve } from "node:path";
+import { cp, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
+import { basename, dirname, join, resolve } from "node:path";
+import type { RepoClient } from "./repo-client.js";
+import type { StoreDatabase } from "./storage.js";
 import type { InstalledPackage, RepoEntry, RepoPackage, ResourceType } from "./types.js";
-import { StoreDatabase } from "./storage.js";
-import { RepoClient } from "./repo-client.js";
 
 // ──────────────────────────────────────────────
 // Progress callback
@@ -85,11 +84,7 @@ export class ArchiveInstaller {
 		// Single resource detection
 		if (entries.includes("SKILL.md")) return "skill";
 		if (entries.includes("theme.json")) return "theme";
-		if (
-			entries.includes("index.ts") ||
-			entries.includes("index.js") ||
-			entries.includes("package.json")
-		) {
+		if (entries.includes("index.ts") || entries.includes("index.js") || entries.includes("package.json")) {
 			return "extension";
 		}
 
@@ -111,9 +106,7 @@ export class ArchiveInstaller {
 			}
 		}
 		// Ignore hidden files for wrapper detection
-		const visibleFiles = entries.filter(
-			(e) => !dirs.includes(e) && !e.startsWith("."),
-		);
+		const visibleFiles = entries.filter((e) => !dirs.includes(e) && !e.startsWith("."));
 
 		if (dirs.length === 1 && visibleFiles.length === 0) {
 			return { dir: join(extractedDir, dirs[0]!), name: dirs[0] };
@@ -151,7 +144,9 @@ export class ArchiveInstaller {
 		if (backupPath === undefined) return;
 		try {
 			await rm(backupPath, { recursive: true, force: true });
-		} catch { /* ignore */ }
+		} catch {
+			/* ignore */
+		}
 	}
 
 	/** Restore backup to target location on failure. */
@@ -215,7 +210,9 @@ export class ArchiveInstaller {
 	async cleanupStaging(): Promise<void> {
 		try {
 			await rm(this.stagingDir, { recursive: true, force: true });
-		} catch { /* ignore */ }
+		} catch {
+			/* ignore */
+		}
 	}
 
 	// ──────────────────────────────────────────────
@@ -268,7 +265,9 @@ export class ArchiveInstaller {
 				const found = (bunObj.which as (cmd: string) => string | null)("bun");
 				if (found) return found;
 			}
-		} catch { /* ignore */ }
+		} catch {
+			/* ignore */
+		}
 
 		const home = homedir();
 		const exe = process.platform === "win32" ? "bun.exe" : "bun";
@@ -298,7 +297,9 @@ export class ArchiveInstaller {
 				const found = (bunObj.which as (cmd: string) => string | null)("bun");
 				if (found) return found;
 			}
-		} catch { /* ignore */ }
+		} catch {
+			/* ignore */
+		}
 
 		throw new Error("Failed to install bun CLI automatically. Install it manually: https://bun.sh");
 	}
@@ -419,9 +420,7 @@ export class ArchiveInstaller {
 				onProgress?.("extracting", `Extracting ${basename(archivePath)}...`);
 				await this.extractZip(archivePath, tempDir);
 			} else {
-				throw new Error(
-					`Unsupported archive format: ${archivePath}. Use .tar.gz, .tgz, or .zip`,
-				);
+				throw new Error(`Unsupported archive format: ${archivePath}. Use .tar.gz, .tgz, or .zip`);
 			}
 
 			onProgress?.("detecting", "Detecting package type...");
@@ -476,9 +475,9 @@ export class ArchiveInstaller {
 
 			// Try to read version from package.json
 			try {
-				const pkgJson = JSON.parse(
-					await readFile(join(targetDir, "package.json"), "utf-8"),
-				) as { version?: string };
+				const pkgJson = JSON.parse(await readFile(join(targetDir, "package.json"), "utf-8")) as {
+					version?: string;
+				};
 				if (pkgJson.version) installedPkg.version = pkgJson.version;
 			} catch {
 				// No package.json or no version — keep "unknown"
@@ -676,7 +675,7 @@ export class ArchiveInstaller {
 				{
 					version: pkg.version,
 					stagedArchive: stagedPath,
-				downloadedAt: Date.now(),
+					downloadedAt: Date.now(),
 				},
 				null,
 				2,
@@ -695,9 +694,7 @@ export class ArchiveInstaller {
 		const markerPath = join(extensionDir, "data", "pending-update.json");
 		if (!existsSync(markerPath)) return null;
 		try {
-			return JSON.parse(
-				readFileSync(markerPath, "utf-8"),
-			) as { version: string; stagedArchive: string };
+			return JSON.parse(readFileSync(markerPath, "utf-8")) as { version: string; stagedArchive: string };
 		} catch {
 			return null;
 		}

@@ -1,7 +1,7 @@
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import type { SoulFileKey, UserSectionName, UserSection, MergeAction } from "./types.js";
+import type { MergeAction, SoulFileKey, UserSection, UserSectionName } from "./types.js";
 
 // --- Paths ---
 
@@ -172,9 +172,7 @@ export function parseSections(content: string): UserSection[] {
 			sections.push({
 				name: markerMatch[1] as UserSectionName,
 				marker: markerMatch[1],
-				content: content
-					.slice(markerMatch.index + markerMatch[0].length, closingMatch.index)
-					.trim(),
+				content: content.slice(markerMatch.index + markerMatch[0].length, closingMatch.index).trim(),
 			});
 		}
 	}
@@ -190,7 +188,7 @@ export function mergeSection(
 	fullContent: string,
 	sectionName: UserSectionName,
 	newContent: string,
-	action: MergeAction
+	action: MergeAction,
 ): string {
 	const openMarker = `<!-- section:${sectionName} -->`;
 	const closeMarker = `<!-- /section:${sectionName} -->`;
@@ -225,18 +223,12 @@ export function mergeSection(
 	}
 
 	// append
-	const existingContent = fullContent
-		.slice(openIdx + openMarker.length, closeIdx)
-		.trim();
+	const existingContent = fullContent.slice(openIdx + openMarker.length, closeIdx).trim();
 	const merged = existingContent ? existingContent + "\n" + newContent : newContent;
 	return before + heading + "\n" + merged + "\n" + after;
 }
 
-export function sectionContains(
-	fullContent: string,
-	sectionName: UserSectionName,
-	content: string
-): boolean {
+export function sectionContains(fullContent: string, sectionName: UserSectionName, content: string): boolean {
 	const openMarker = `<!-- section:${sectionName} -->`;
 	const closeMarker = `<!-- /section:${sectionName} -->`;
 
@@ -263,9 +255,7 @@ export async function writeSoulFile(key: SoulFileKey, content: string): Promise<
 	}
 
 	try {
-		const { withFileMutationQueue } = await import(
-			"@itone/fan-coding-agent"
-		);
+		const { withFileMutationQueue } = await import("@itone/fan-coding-agent");
 		await withFileMutationQueue(path, async () => {
 			writeFileSync(path, content, "utf-8");
 		});
@@ -299,11 +289,7 @@ export function migrateUserFile(): string | null {
 		else if (callMatch) callName = callMatch[1].trim();
 		else if (tzMatch) timezone = tzMatch[1].trim();
 		else if (langMatch) language = langMatch[1].trim();
-		else if (
-			line.trim() &&
-			!line.startsWith("#") &&
-			!line.startsWith("<!--")
-		) {
+		else if (line.trim() && !line.startsWith("#") && !line.startsWith("<!--")) {
 			contextLines.push(line);
 		}
 	}
@@ -358,11 +344,9 @@ export function compactUserFile(maxChars: number = SOUL_FILES.user.maxChars): st
 		let result = content;
 		result = result.replace(
 			new RegExp(
-				escapeRegex(`<!-- section:preferences -->`) +
-					"[\\s\\S]*?" +
-					escapeRegex(`<!-- /section:preferences -->`)
+				escapeRegex(`<!-- section:preferences -->`) + "[\\s\\S]*?" + escapeRegex(`<!-- /section:preferences -->`),
 			),
-			`<!-- section:preferences -->\n## Preferences\n${newPrefs}\n<!-- /section:preferences -->`
+			`<!-- section:preferences -->\n## Preferences\n${newPrefs}\n<!-- /section:preferences -->`,
 		);
 
 		if (result.length <= maxChars) return result;

@@ -9,6 +9,7 @@ import { createRequire } from "node:module";
 import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import * as _bundledStore from "@fan/store";
 import * as _bundledPiAgentCore from "@itone/fan-agent-core";
 import * as _bundledPiAi from "@itone/fan-ai";
 import * as _bundledPiAiOauth from "@itone/fan-ai/oauth";
@@ -23,7 +24,6 @@ import { getAgentDir, isBunBinary } from "../../config.js";
 // NOTE: This import works because loader.ts exports are NOT re-exported from index.ts,
 // avoiding a circular dependency. Extensions can import from @itone/fan-coding-agent.
 import * as _bundledPiCodingAgent from "../../index.js";
-import * as _bundledStore from "@fan/store";
 import { createEventBus, type EventBus } from "../event-bus.js";
 import type { ExecOptions } from "../exec.js";
 import { execCommand } from "../exec.js";
@@ -440,7 +440,7 @@ function resolveExtensionEntries(dir: string): string[] | null {
 			const entries: string[] = [];
 			for (const extPath of manifest.extensions) {
 				const resolvedExtPath = path.resolve(dir, extPath);
-			if (fs.existsSync(resolvedExtPath)) {
+				if (fs.existsSync(resolvedExtPath)) {
 					entries.push(resolvedExtPath);
 				}
 			}

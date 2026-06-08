@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { PrismaClient } from "@prisma/client";
 
 let _client: PrismaClient | null = null;
@@ -140,8 +140,7 @@ export function getPrismaClient(): PrismaClient {
 
 		// Set default DATABASE_URL if not set by .env or environment
 		if (!process.env.DATABASE_URL) {
-			const agentDir = process.env.FAN_AGENT_DIR
-				?? join(homedir(), ".fan", "agent");
+			const agentDir = process.env.FAN_AGENT_DIR ?? join(homedir(), ".fan", "agent");
 			const dbPath = resolve(agentDir, "filin.db");
 			// Ensure the database directory exists (needed for first-run)
 			mkdirSync(dirname(dbPath), { recursive: true });

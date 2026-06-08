@@ -64,9 +64,7 @@ export class DraftQueue {
 	}
 
 	get pendingCount(): number {
-		return Array.from(this.drafts.values()).filter(
-			(d) => d.status === "pending"
-		).length;
+		return Array.from(this.drafts.values()).filter((d) => d.status === "pending").length;
 	}
 
 	get totalCount(): number {

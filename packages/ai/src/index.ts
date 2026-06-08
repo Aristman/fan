@@ -16,6 +16,8 @@ export type { OpenAICodexResponsesOptions } from "./providers/openai-codex-respo
 export type { OpenAICompletionsOptions } from "./providers/openai-completions.js";
 export type { OpenAIResponsesOptions } from "./providers/openai-responses.js";
 export * from "./providers/register-builtins.js";
+export type { ProviderMeta, ProvidersRegistry } from "./providers-registry.js";
+export * from "./providers-registry.js";
 export * from "./stream.js";
 export * from "./types.js";
 export * from "./utils/event-stream.js";
@@ -32,6 +34,4 @@ export type {
 } from "./utils/oauth/types.js";
 export * from "./utils/overflow.js";
 export * from "./utils/typebox-helpers.js";
-export * from "./providers-registry.js";
-export type { ProviderMeta, ProvidersRegistry } from "./providers-registry.js";
 export * from "./utils/validation.js";

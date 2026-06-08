@@ -7,7 +7,7 @@
 
 import type { AgentMessage } from "@itone/fan-agent-core";
 import type { ImageContent, Message, TextContent } from "@itone/fan-ai";
-import {ArtifactMessage, UserMessageWithAttachments} from "@itone/fan-web-ui";
+import type { ArtifactMessage, UserMessageWithAttachments } from "@itone/fan-web-ui";
 
 export const COMPACTION_SUMMARY_PREFIX = `The conversation history before this point was compacted into the following summary:
 

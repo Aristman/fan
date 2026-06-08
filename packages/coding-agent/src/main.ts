@@ -9,14 +9,15 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { type SessionAdapter, startServer } from "@fan/api-gateway";
-import { type ImageContent, modelsAreEqual, supportsXhigh } from "@itone/fan-ai";
 import { storeExtension } from "@fan/store";
+import { type ImageContent, modelsAreEqual, supportsXhigh } from "@itone/fan-ai";
 import { ProcessTerminal, setKeybindings, TUI } from "@itone/fan-tui";
 import chalk from "chalk";
 import { type Args, type Mode, parseArgs, printHelp } from "./cli/args.js";
 import { processFileArguments } from "./cli/file-processor.js";
 import { buildInitialMessage } from "./cli/initial-message.js";
 import { listModels } from "./cli/list-models.js";
+import { cleanupOldBinaries, handleUpdateCommand } from "./cli/self-update.js";
 import { selectSession } from "./cli/session-picker.js";
 import { getAgentDir, getModelsPath, isBunBinary, VERSION } from "./config.js";
 import {
@@ -51,7 +52,6 @@ import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { ExtensionSelectorComponent } from "./modes/interactive/components/extension-selector.js";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.js";
 import { handleConfigCommand, handlePackageCommand } from "./package-manager-cli.js";
-import { cleanupOldBinaries, handleUpdateCommand } from "./cli/self-update.js";
 import { isLocalPath } from "./utils/paths.js";
 
 async function handleInitCommand(args: string[]): Promise<boolean> {
@@ -780,7 +780,11 @@ async function promptForMissingSessionCwd(
 
 export async function main(args: string[]) {
 	resetTimings();
-	try { cleanupOldBinaries(); } catch { /* non-critical */ }
+	try {
+		cleanupOldBinaries();
+	} catch {
+		/* non-critical */
+	}
 	const offlineMode = args.includes("--offline") || isTruthyEnvFlag(process.env.FAN_OFFLINE);
 	if (offlineMode) {
 		process.env.FAN_OFFLINE = "1";
@@ -929,9 +933,7 @@ export async function main(args: string[]) {
 				noThemes: parsed.noThemes,
 				systemPrompt: parsed.systemPrompt,
 				appendSystemPrompt: parsed.appendSystemPrompt,
-				extensionFactories: [
-					...(parsed.noStore ? [] : [storeExtension]),
-				],
+				extensionFactories: [...(parsed.noStore ? [] : [storeExtension])],
 			},
 		});
 		const { settingsManager, modelRegistry, resourceLoader } = services;
@@ -1091,9 +1093,7 @@ export async function main(args: string[]) {
 		console.error("  3. Or create models.json manually:");
 		console.error(chalk.dim(`     ${getModelsPath()}`));
 		console.error(
-			chalk.yellow(
-				"\nAvailable env vars: ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, GROQ_API_KEY, etc.",
-			),
+			chalk.yellow("\nAvailable env vars: ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, GROQ_API_KEY, etc."),
 		);
 		console.error(chalk.dim("See .env.example in the project root for the full list."));
 		process.exit(1);

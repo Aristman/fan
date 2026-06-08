@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ModelManager, RoutingRuleData } from "@fan/model-manager";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
@@ -30,12 +33,9 @@ import type {
 } from "./types.js";
 import { attachWebSocketHandler } from "./ws-handler.js";
 
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { join, dirname } from 'node:path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const pkgVersion = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf-8')).version;
+const pkgVersion = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8")).version;
 
 // ============================================================================
 // Session Adapter Interface

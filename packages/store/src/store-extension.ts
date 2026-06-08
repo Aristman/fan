@@ -11,17 +11,17 @@
  * Database: ~/.fan/agent/store-packages.json
  */
 
-import type { ExtensionFactory } from "@itone/fan-coding-agent";
-import { join } from "node:path";
-import { homedir } from "node:os";
 import { readFile } from "node:fs/promises";
-import { loadConfig } from "./config.js";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import type { ExtensionFactory } from "@itone/fan-coding-agent";
 import { showExtensionBrowser } from "./browse-component.js";
-import { StoreDatabase } from "./storage.js";
-import { RepoClient } from "./repo-client.js";
+import { loadConfig } from "./config.js";
 import { ArchiveInstaller } from "./installer.js";
-import { registerStoreTools } from "./store-tools.js";
+import { RepoClient } from "./repo-client.js";
+import { StoreDatabase } from "./storage.js";
 import { registerStoreCommand } from "./store-command.js";
+import { registerStoreTools } from "./store-tools.js";
 
 export const storeExtension: ExtensionFactory = (pi) => {
 	let config = loadConfig();
@@ -108,11 +108,13 @@ export const storeExtension: ExtensionFactory = (pi) => {
 					// Track fan-store in DB even if installed manually
 					let selfVersion = "unknown";
 					try {
-						const pkgJson = JSON.parse(
-							await readFile(join(SELF_EXTENSION_DIR, "package.json"), "utf-8"),
-						) as { version?: string };
+						const pkgJson = JSON.parse(await readFile(join(SELF_EXTENSION_DIR, "package.json"), "utf-8")) as {
+							version?: string;
+						};
 						if (pkgJson.version) selfVersion = pkgJson.version;
-					} catch { /* not found */ }
+					} catch {
+						/* not found */
+					}
 
 					db.savePackage({
 						name: "fan-store",
@@ -130,7 +132,10 @@ export const storeExtension: ExtensionFactory = (pi) => {
 					db.updatePackage("fan-store", { updateAvailable: true, updateVersion: selfPkg.version });
 					const allPkgs = db.getPackages();
 					const updateCount = allPkgs.filter((p) => p.updateAvailable).length;
-					ctx.ui.setStatus("store", `📦 Store: ${allPkgs.length} packages (${updateCount} update${updateCount > 1 ? "s" : ""})`);
+					ctx.ui.setStatus(
+						"store",
+						`📦 Store: ${allPkgs.length} packages (${updateCount} update${updateCount > 1 ? "s" : ""})`,
+					);
 					ctx.ui.notify(`📦 fan-store update available: v${currentSelf.version} → v${selfPkg.version}`, "info");
 				}
 			}

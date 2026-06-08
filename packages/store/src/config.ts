@@ -5,9 +5,9 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { getAgentDir } from "@itone/fan-coding-agent";
-import { tmpdir } from "node:os";
 import type { RepoEntry } from "./types.js";
 
 // ──────────────────────────────────────────────

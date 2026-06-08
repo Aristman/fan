@@ -1,9 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "fs";
 import { join } from "path";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FanApiClient, FanApiError } from "../api/client.js";
 
-const apiGatewayPkg = JSON.parse(readFileSync(join(__dirname, "../../../../packages/api-gateway/package.json"), "utf8"));
+const apiGatewayPkg = JSON.parse(
+	readFileSync(join(__dirname, "../../../../packages/api-gateway/package.json"), "utf8"),
+);
 
 // Mock fetch globally
 const mockFetch = vi.fn();

@@ -94,9 +94,7 @@ export class RepoClient {
 			});
 
 			if (!response.ok) {
-				throw new Error(
-					`Failed to fetch repo index from ${indexUrl}: ${response.status} ${response.statusText}`,
-				);
+				throw new Error(`Failed to fetch repo index from ${indexUrl}: ${response.status} ${response.statusText}`);
 			}
 
 			data = (await response.json()) as RepoIndex;
@@ -104,9 +102,7 @@ export class RepoClient {
 
 		// Validate minimal structure
 		if (!data.repository || !Array.isArray(data.packages)) {
-			throw new Error(
-				`Invalid repo index format from ${indexUrl}: missing 'repository' or 'packages'`,
-			);
+			throw new Error(`Invalid repo index format from ${indexUrl}: missing 'repository' or 'packages'`);
 		}
 
 		this.indexCache.set(repoUrl, { data, fetchedAt: Date.now() });
@@ -163,9 +159,7 @@ export class RepoClient {
 	 * Priority: repos with lower priority number first (first seen wins).
 	 */
 	async getAllPackages(repos: RepoEntry[], typeFilter?: string): Promise<RepoPackage[]> {
-		const enabledRepos = repos
-			.filter(r => r.enabled)
-			.sort((a, b) => a.priority - b.priority);
+		const enabledRepos = repos.filter((r) => r.enabled).sort((a, b) => a.priority - b.priority);
 
 		const allPackages: RepoPackage[] = [];
 		const seen = new Set<string>();
@@ -173,9 +167,7 @@ export class RepoClient {
 		for (const repo of enabledRepos) {
 			try {
 				const index = await this.fetchIndex(repo.url);
-				const packages = typeFilter
-					? index.packages.filter(p => p.type === typeFilter)
-					: index.packages;
+				const packages = typeFilter ? index.packages.filter((p) => p.type === typeFilter) : index.packages;
 
 				for (const pkg of packages) {
 					if (!seen.has(pkg.name)) {
@@ -240,9 +232,7 @@ export class RepoClient {
 				const expectedHash = (pkg.hash.startsWith("sha256:") ? pkg.hash.slice(7) : pkg.hash).toLowerCase();
 				const actualHash = createHash("sha256").update(buffer).digest("hex");
 				if (actualHash !== expectedHash) {
-					throw new Error(
-						`Hash verification failed for ${pkg.name}: expected ${expectedHash}, got ${actualHash}`,
-					);
+					throw new Error(`Hash verification failed for ${pkg.name}: expected ${expectedHash}, got ${actualHash}`);
 				}
 			}
 
@@ -270,9 +260,7 @@ export class RepoClient {
 			if (actualHash !== expectedHash) {
 				// Clean up partial download
 				if (existsSync(destPath)) unlinkSync(destPath);
-				throw new Error(
-					`Hash verification failed for ${pkg.name}: expected ${expectedHash}, got ${actualHash}`,
-				);
+				throw new Error(`Hash verification failed for ${pkg.name}: expected ${expectedHash}, got ${actualHash}`);
 			}
 		}
 
@@ -286,13 +274,8 @@ export class RepoClient {
 	async checkUpdates(
 		installedPackages: InstalledPackage[],
 		repos: RepoEntry[],
-	): Promise<
-		Map<string, { current: string; latest: string; downloadUrl: string; hash: string }>
-	> {
-		const updates = new Map<
-			string,
-			{ current: string; latest: string; downloadUrl: string; hash: string }
-		>();
+	): Promise<Map<string, { current: string; latest: string; downloadUrl: string; hash: string }>> {
+		const updates = new Map<string, { current: string; latest: string; downloadUrl: string; hash: string }>();
 		const repoPackages = installedPackages.filter((p) => p.source === "repo");
 
 		for (const installed of repoPackages) {

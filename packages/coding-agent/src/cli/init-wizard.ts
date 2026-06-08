@@ -2,8 +2,8 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
-import { APP_NAME, getAgentDir, getEnvPath, getModelsPath, getSettingsPath, VERSION } from "../config.js";
 import { getWizardProviders, isProviderConfigured } from "@itone/fan-ai";
+import { APP_NAME, getAgentDir, getEnvPath, getModelsPath, getSettingsPath, VERSION } from "../config.js";
 
 const WIZARD_PROVIDERS = getWizardProviders();
 
@@ -88,7 +88,10 @@ export async function runInitWizard(): Promise<void> {
 	}
 	const modelInput = await question(rl, "\n   Model [1]: ");
 	const modelIdx = parseInt(modelInput.trim() || "1", 10) - 1;
-	const selectedModel = firstProvider.meta.wizardModels[modelIdx >= 0 && modelIdx < firstProvider.meta.wizardModels.length ? modelIdx : 0];
+	const selectedModel =
+		firstProvider.meta.wizardModels[
+			modelIdx >= 0 && modelIdx < firstProvider.meta.wizardModels.length ? modelIdx : 0
+		];
 
 	// Step 5: Generate .env file (global location)
 	const envPath = getEnvPath();

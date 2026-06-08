@@ -37,15 +37,8 @@ import {
 	visibleWidth,
 } from "@itone/fan-tui";
 import { spawn, spawnSync } from "child_process";
-import {
-	APP_NAME,
-	getAgentDir,
-	getAuthPath,
-	getDebugLogPath,
-	getShareViewerUrl,
-	VERSION,
-} from "../../config.js";
 import { fetchManifest, UPDATE_SERVER_URL } from "../../cli/self-update.js";
+import { APP_NAME, getAgentDir, getAuthPath, getDebugLogPath, getShareViewerUrl, VERSION } from "../../config.js";
 import { type AgentSession, type AgentSessionEvent, parseSkillBlock } from "../../core/agent-session.js";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.js";
 import type {
@@ -3102,7 +3095,8 @@ export class InteractiveMode {
 	}
 
 	showNewVersionNotification(newVersion: string): void {
-		const updateLine = theme.fg("muted", "New version ") + theme.fg("accent", newVersion) + theme.fg("muted", " is available.");
+		const updateLine =
+			theme.fg("muted", "New version ") + theme.fg("accent", newVersion) + theme.fg("muted", " is available.");
 		const action = theme.fg("accent", "Run: fan update");
 		const changelogUrl = theme.fg("accent", `${UPDATE_SERVER_URL}/CHANGELOG.md`);
 

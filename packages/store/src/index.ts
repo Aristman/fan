@@ -4,11 +4,11 @@
  * @packageDocumentation
  */
 
-export { default, storeExtension } from "./store-extension.js";
-export type { StoreConfig, saveConfig, loadConfig } from "./config.js";
-export { StoreDatabase } from "./storage.js";
-export { RepoClient } from "./repo-client.js";
-export { ArchiveInstaller } from "./installer.js";
+export type { loadConfig, StoreConfig, saveConfig } from "./config.js";
 export type { ProgressCallback } from "./installer.js";
+export { ArchiveInstaller } from "./installer.js";
 export { ProgressOverlay } from "./progress-overlay.js";
-export type { RepoEntry, RepoPackage, RepoIndex, InstalledPackage, ResourceType } from "./types.js";
+export { RepoClient } from "./repo-client.js";
+export { StoreDatabase } from "./storage.js";
+export { default, storeExtension } from "./store-extension.js";
+export type { InstalledPackage, RepoEntry, RepoIndex, RepoPackage, ResourceType } from "./types.js";

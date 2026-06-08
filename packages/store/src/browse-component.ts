@@ -6,21 +6,15 @@
  * re-open after each action.
  */
 
-import type { ExtensionContext } from "@itone/fan-coding-agent";
-import type { StoreDatabase } from "./storage.js";
-import type { RepoClient } from "./repo-client.js";
-import type { ArchiveInstaller } from "./installer.js";
-import type { StoreConfig } from "./config.js";
-import type { RepoPackage, InstalledPackage } from "./types.js";
-import {
-	fuzzyFilter,
-	matchesKey,
-	Key,
-	Input,
-	truncateToWidth,
-} from "@itone/fan-tui";
 import { existsSync, readFileSync } from "node:fs";
+import type { ExtensionContext } from "@itone/fan-coding-agent";
+import { fuzzyFilter, Input, Key, matchesKey, truncateToWidth } from "@itone/fan-tui";
+import type { StoreConfig } from "./config.js";
+import type { ArchiveInstaller } from "./installer.js";
 import { ProgressOverlay } from "./progress-overlay.js";
+import type { RepoClient } from "./repo-client.js";
+import type { StoreDatabase } from "./storage.js";
+import type { InstalledPackage, RepoPackage } from "./types.js";
 
 // ─── Types ────────────────────────────────────
 
@@ -69,11 +63,16 @@ const VISIBLE_COUNT = 12;
 
 function getTypeBadge(type: string): string {
 	switch (type) {
-		case "extension": return "[ext]";
-		case "skill": return "[skill]";
-		case "theme": return "[theme]";
-		case "bundle": return "[bundle]";
-		default: return `[${type}]`;
+		case "extension":
+			return "[ext]";
+		case "skill":
+			return "[skill]";
+		case "theme":
+			return "[theme]";
+		case "bundle":
+			return "[bundle]";
+		default:
+			return `[${type}]`;
 	}
 }
 
@@ -94,8 +93,7 @@ function parseSimpleFrontmatter(yaml: string): SkillFrontmatter | null {
 			let value: unknown = trimmed.slice(colonIdx + 1).trim();
 			if (
 				typeof value === "string" &&
-				((value.startsWith('"') && value.endsWith('"')) ||
-					(value.startsWith("'") && value.endsWith("'")))
+				((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'")))
 			) {
 				value = value.slice(1, -1);
 			}
@@ -205,7 +203,6 @@ async function withProgressOverlay(
 	});
 }
 
-
 // ─── Merge helper ────────────────────────────
 
 function buildMergedPackages(allPackages: RepoPackage[], installedPackages: InstalledPackage[]): MergedPackage[] {
@@ -249,9 +246,7 @@ export async function showExtensionBrowser(
 				const installedPackages = db.getPackages();
 				const repoInstalled = installedPackages.filter((p) => p.source === "repo");
 
-				const [updatesMap] = await Promise.all([
-					repoClient.checkUpdates(repoInstalled, config.repositories),
-				]);
+				const [updatesMap] = await Promise.all([repoClient.checkUpdates(repoInstalled, config.repositories)]);
 
 				// Fetch packages via repoClient (deduplication built-in)
 				const allPackages = await repoClient.getAllPackages(config.repositories);
@@ -273,10 +268,7 @@ export async function showExtensionBrowser(
 
 				done({ allPackages, installedPackages, updates: updatesMap, mergedPackages, typeCounts });
 			} catch (err) {
-				ctx.ui.notify(
-					`Failed to load packages: ${err instanceof Error ? err.message : String(err)}`,
-					"error",
-				);
+				ctx.ui.notify(`Failed to load packages: ${err instanceof Error ? err.message : String(err)}`, "error");
 				done(null);
 			}
 		})();
@@ -349,9 +341,7 @@ export async function showExtensionBrowser(
 				const parts = TYPE_FILTERS.map((tf, i) => {
 					const count = data.typeCounts[tf];
 					const label = `${getTypeLabel(tf)}(${count})`;
-					return typeFilterIndex === i
-						? theme.bg("selectedBg", ` ${label} `)
-						: ` ${label} `;
+					return typeFilterIndex === i ? theme.bg("selectedBg", ` ${label} `) : ` ${label} `;
 				});
 				return truncateToWidth(parts.join(" "), width);
 			}
@@ -389,9 +379,7 @@ export async function showExtensionBrowser(
 					// Status icon
 					let statusIcon = theme.fg("dim", "○");
 					if (installed) {
-						statusIcon = installed.updateAvailable
-							? theme.fg("warning", "↑")
-							: theme.fg("success", "✓");
+						statusIcon = installed.updateAvailable ? theme.fg("warning", "↑") : theme.fg("success", "✓");
 					}
 
 					// Name
@@ -439,7 +427,9 @@ export async function showExtensionBrowser(
 
 				// Header
 				const typeBadge = `[${detailType}]`;
-				lines.push(truncateToWidth(` ${theme.bold(detailName)} ${theme.fg("dim", `v${detailVersion}`)} ${typeBadge}`, w));
+				lines.push(
+					truncateToWidth(` ${theme.bold(detailName)} ${theme.fg("dim", `v${detailVersion}`)} ${typeBadge}`, w),
+				);
 				lines.push("");
 
 				// Description
@@ -503,9 +493,7 @@ export async function showExtensionBrowser(
 					lines.push(renderSearchRow());
 
 					// ── Package count ──
-					lines.push(
-						theme.fg("dim", ` ${visibleItems.length} package${visibleItems.length !== 1 ? "s" : ""}`),
-					);
+					lines.push(theme.fg("dim", ` ${visibleItems.length} package${visibleItems.length !== 1 ? "s" : ""}`));
 					lines.push("");
 
 					// ── Package list ──
@@ -739,22 +727,20 @@ export async function showExtensionBrowser(
 				data.mergedPackages = buildMergedPackages(data.allPackages, data.installedPackages);
 				data.typeCounts = computeTypeCounts(data.mergedPackages);
 			}
-
 		} else if (action.type === "update") {
-			const result = await withProgressOverlay(
-				ctx,
-				`Updating ${action.pkg.name}...`,
-				async (signal, setMessage) => {
-					await installer.updateFromRepo(
-						action.installed,
-						action.pkg,
-						config.repositories,
-						signal,
-						(_stage, detail) => setMessage(detail ?? _stage),
-					);
-					return { success: true, message: `✅ Updated ${action.pkg.name}: v${action.installed.version} → v${action.pkg.version}` };
-				},
-			);
+			const result = await withProgressOverlay(ctx, `Updating ${action.pkg.name}...`, async (signal, setMessage) => {
+				await installer.updateFromRepo(
+					action.installed,
+					action.pkg,
+					config.repositories,
+					signal,
+					(_stage, detail) => setMessage(detail ?? _stage),
+				);
+				return {
+					success: true,
+					message: `✅ Updated ${action.pkg.name}: v${action.installed.version} → v${action.pkg.version}`,
+				};
+			});
 
 			if (result.cancelled) continue;
 			ctx.ui.notify(result.message, result.success ? "info" : "error");
@@ -780,20 +766,15 @@ export async function showExtensionBrowser(
 				data.mergedPackages = buildMergedPackages(data.allPackages, data.installedPackages);
 				data.typeCounts = computeTypeCounts(data.mergedPackages);
 			}
-
 		} else if (action.type === "remove") {
 			const removeName = action.pkg?.name ?? action.installed.name;
 			const confirmed = await ctx.ui.select(`Remove ${removeName}?`, ["Yes", "No"]);
 			if (confirmed !== "Yes") continue;
 
-			const result = await withProgressOverlay(
-				ctx,
-				`Removing ${removeName}...`,
-				async (_signal, setMessage) => {
-					await installer.uninstall(action.installed, (_stage, detail) => setMessage(detail ?? _stage));
-					return { success: true, message: `✅ Removed ${removeName}` };
-				},
-			);
+			const result = await withProgressOverlay(ctx, `Removing ${removeName}...`, async (_signal, setMessage) => {
+				await installer.uninstall(action.installed, (_stage, detail) => setMessage(detail ?? _stage));
+				return { success: true, message: `✅ Removed ${removeName}` };
+			});
 
 			if (result.cancelled) continue;
 			ctx.ui.notify(result.message, result.success ? "info" : "error");

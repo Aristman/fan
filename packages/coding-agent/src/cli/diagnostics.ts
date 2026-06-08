@@ -4,8 +4,8 @@
 import { accessSync, constants, existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
-import { APP_NAME, getAgentDir, getModelsPath, getSessionsDir, getSettingsPath, VERSION } from "../config.js";
 import { getProvidersRegistry } from "@itone/fan-ai";
+import { APP_NAME, getAgentDir, getModelsPath, getSessionsDir, getSettingsPath, VERSION } from "../config.js";
 
 interface DiagnosticResult {
 	name: string;

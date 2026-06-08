@@ -29,12 +29,7 @@ export class ProgressOverlay extends Container {
 	private loader: CancellableLoader;
 	private statusLine: Text;
 
-	constructor(
-		tui: TUI,
-		theme: ThemeLike,
-		initialMessage: string,
-		onAbort?: () => void,
-	) {
+	constructor(tui: TUI, theme: ThemeLike, initialMessage: string, onAbort?: () => void) {
 		super();
 
 		// Top border
