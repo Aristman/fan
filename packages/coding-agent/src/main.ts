@@ -1137,6 +1137,7 @@ export async function main(args: string[]) {
 			port: parsed.port || 3456,
 			host: parsed.host || "localhost",
 			dashboardDir: getDashboardDir(),
+			version: VERSION,
 		});
 
 		// Write server info for background management (daemon mode)

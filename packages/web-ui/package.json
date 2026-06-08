@@ -1,6 +1,6 @@
 {
 	"name": "@itone/fan-web-ui",
-	"version": "0.13.0",
+	"version": "0.13.1",
 	"description": "Reusable web UI components for AI chat interfaces powered by @itone/fan-ai",
 	"type": "module",
 	"main": "dist/index.js",

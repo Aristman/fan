@@ -1,6 +1,3 @@
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { ModelManager, RoutingRuleData } from "@fan/model-manager";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
@@ -33,9 +30,9 @@ import type {
 } from "./types.js";
 import { attachWebSocketHandler } from "./ws-handler.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-const pkgVersion = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8")).version;
+// Version is passed via ServerOptions to avoid __dirname resolution issues
+// in compiled Bun binaries where __dirname points inside the runtime.
+let _version = "unknown";
 
 // ============================================================================
 // Session Adapter Interface
@@ -69,6 +66,7 @@ export interface ServerOptions {
 	port?: number;
 	host?: string;
 	dashboardDir?: string; // Path to dashboard dist directory. If provided, serves the dashboard.
+	version?: string; // Application version (passed from caller to avoid __dirname issues in compiled binaries)
 }
 
 // ============================================================================
@@ -124,6 +122,7 @@ async function createApp(
 	sessionAdapter: SessionAdapter,
 	options: ServerOptions = {},
 ): Promise<Hono> {
+	if (options.version) _version = options.version;
 	const app = new Hono();
 
 	// Middleware
@@ -134,7 +133,7 @@ async function createApp(
 	app.get("/api/health", (c) => {
 		const resp: HealthResponse = {
 			status: "ok",
-			version: pkgVersion,
+			version: _version,
 			uptime: Math.floor((Date.now() - startTime) / 1000),
 		};
 		return c.json(resp);

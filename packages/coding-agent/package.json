@@ -1,6 +1,6 @@
 {
 	"name": "@itone/fan-coding-agent",
-	"version": "0.13.0",
+	"version": "0.13.1",
 	"description": "Fan coding agent CLI with read, write, edit, bash tools and session management",
 	"type": "module",
 	"fanConfig": {
