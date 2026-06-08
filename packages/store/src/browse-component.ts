@@ -336,16 +336,16 @@ export async function showExtensionBrowser(
 
 			// ── Render helpers ──
 
-			function renderRepoTabs(): string {
+			function renderRepoTabs(width: number): string {
 				const tabParts = REPO_TABS.map((repo, i) => {
 					const active = i === selectedRepoIndex;
 					const label = ` ${repo} `;
 					return active ? `►${label}◄` : label;
 				});
-				return tabParts.join(theme.fg("dim", " │ "));
+				return truncateToWidth(tabParts.join(theme.fg("dim", " │ ")), width, "…");
 			}
 
-			function renderTypeTabs(): string {
+			function renderTypeTabs(width: number): string {
 				const parts = TYPE_FILTERS.map((tf, i) => {
 					const count = data.typeCounts[tf];
 					const label = `${getTypeLabel(tf)}(${count})`;
@@ -353,7 +353,7 @@ export async function showExtensionBrowser(
 						? theme.bg("selectedBg", ` ${label} `)
 						: ` ${label} `;
 				});
-				return parts.join(" ");
+				return truncateToWidth(parts.join(" "), width);
 			}
 
 			function renderSearchRow(): string {
@@ -410,12 +410,9 @@ export async function showExtensionBrowser(
 						versionStr = theme.fg("muted", `v${displayVersion}`);
 					}
 
-					// Description (truncated)
-					const descMaxLen = Math.max(10, width - 4 - 2 - displayName.length - 2 - 7 - 2 - versionStr.length - 2);
-					const desc = displayDesc;
-					const truncated = desc.length > descMaxLen ? desc.slice(0, descMaxLen - 1) + "…" : desc;
-
-					lines.push(`${cursor}${statusIcon} ${nameStr}  ${typeStr} ${versionStr}  ${theme.fg("dim", truncated)}`);
+					// Description (truncated via truncateToWidth on the full line)
+					const line = `${cursor}${statusIcon} ${nameStr}  ${typeStr} ${versionStr}  ${theme.fg("dim", displayDesc)}`;
+					lines.push(truncateToWidth(line, width, "…"));
 				}
 
 				return lines;
@@ -450,16 +447,16 @@ export async function showExtensionBrowser(
 				lines.push("");
 
 				// Info section
-				lines.push(` ${theme.fg("accent", "── Info ──")}`);
+				lines.push(truncateToWidth(` ${theme.fg("accent", "── Info ──")}`, w));
 				lines.push(truncateToWidth(`  Repo:     ${detailRepoName}`, w));
 				if (repo?.updatedAt) {
-					lines.push(`  Updated:  ${new Date(repo.updatedAt).toISOString().split("T")[0]}`);
+					lines.push(truncateToWidth(`  Updated:  ${new Date(repo.updatedAt).toISOString().split("T")[0]}`, w));
 				}
 				if (installed) {
 					lines.push(truncateToWidth(`  Path:     ${installed.installedPath}`, w));
-					lines.push(`  Status:   ${theme.fg("success", "installed")} v${installed.version}`);
+					lines.push(truncateToWidth(`  Status:   ${theme.fg("success", "installed")} v${installed.version}`, w));
 				} else {
-					lines.push(`  Status:   ${theme.fg("muted", "not installed")}`);
+					lines.push(truncateToWidth(`  Status:   ${theme.fg("muted", "not installed")}`, w));
 				}
 
 				// Skill-specific section
@@ -497,10 +494,10 @@ export async function showExtensionBrowser(
 					const lines: string[] = [];
 
 					// ── Repo tabs ──
-					lines.push(renderRepoTabs());
+					lines.push(renderRepoTabs(width));
 
 					// ── Type filter tabs ──
-					lines.push(renderTypeTabs());
+					lines.push(renderTypeTabs(width));
 
 					// ── Search row ──
 					lines.push(renderSearchRow());
@@ -519,9 +516,12 @@ export async function showExtensionBrowser(
 					if (visibleItems.length > VISIBLE_COUNT) {
 						lines.push("");
 						lines.push(
-							theme.fg(
-								"dim",
-								`[${scrollOffset + 1}–${Math.min(scrollOffset + VISIBLE_COUNT, visibleItems.length)} of ${visibleItems.length}]`,
+							truncateToWidth(
+								theme.fg(
+									"dim",
+									`[${scrollOffset + 1}–${Math.min(scrollOffset + VISIBLE_COUNT, visibleItems.length)} of ${visibleItems.length}]`,
+								),
+								width,
 							),
 						);
 					}
@@ -536,14 +536,17 @@ export async function showExtensionBrowser(
 					// ── Footer ──
 					lines.push("");
 					if (focusTarget === "search") {
-						lines.push(theme.fg("dim", " ESC/↓ unfocus │ Type to fuzzy search"));
+						lines.push(truncateToWidth(theme.fg("dim", " ESC/↓ unfocus │ Type to fuzzy search"), width));
 					} else if (showDetails) {
-						lines.push(theme.fg("dim", " ENTER action │ R remove │ ESC back"));
+						lines.push(truncateToWidth(theme.fg("dim", " ENTER action │ R remove │ ESC back"), width));
 					} else {
 						lines.push(
-							theme.fg(
-								"dim",
-								"↑↓ navigate │ ←→ repos │ TAB type filter │ / search │ ENTER action │ BSPC remove │ ESC exit",
+							truncateToWidth(
+								theme.fg(
+									"dim",
+									"↑↓ navigate │ ←→ repos │ TAB type filter │ / search │ ENTER action │ BSPC remove │ ESC exit",
+								),
+								width,
 							),
 						);
 					}
