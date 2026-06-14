@@ -1523,30 +1523,56 @@ async function generateModels() {
 	];
 	allModels.push(...vertexModels);
 
-	// Kimi For Coding models (Moonshot AI's Anthropic-compatible coding API)
+	// Kimi Code API models (Moonshot AI's Anthropic-compatible coding API)
 	// Static fallback in case models.dev doesn't have them yet
-	const KIMI_CODING_BASE_URL = "https://api.kimi.com/coding";
+	// https://platform.kimi.ai/docs/models
+	// kimi-for-coding — стабильный ID, бекенд маппит на последнюю модель
+	const KIMI_CODING_BASE_URL = "https://api.kimi.com/coding/";
 	const kimiCodingModels: Model<"anthropic-messages">[] = [
 		{
-			id: "kimi-k2-thinking",
-			name: "Kimi K2 Thinking",
+			id: "kimi-for-coding",
+			name: "Kimi Code (latest)",
 			api: "anthropic-messages",
 			provider: "kimi-coding",
 			baseUrl: KIMI_CODING_BASE_URL,
 			reasoning: true,
-			input: ["text"],
+			input: ["text", "image"],
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 			contextWindow: 262144,
 			maxTokens: 32768,
 		},
 		{
-			id: "k2p5",
+			id: "kimi-k2.7-code",
+			name: "Kimi K2.7 Code",
+			api: "anthropic-messages",
+			provider: "kimi-coding",
+			baseUrl: KIMI_CODING_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 262144,
+			maxTokens: 32768,
+		},
+		{
+			id: "kimi-k2.6",
+			name: "Kimi K2.6",
+			api: "anthropic-messages",
+			provider: "kimi-coding",
+			baseUrl: KIMI_CODING_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 262144,
+			maxTokens: 32768,
+		},
+		{
+			id: "kimi-k2.5",
 			name: "Kimi K2.5",
 			api: "anthropic-messages",
 			provider: "kimi-coding",
 			baseUrl: KIMI_CODING_BASE_URL,
 			reasoning: true,
-			input: ["text"],
+			input: ["text", "image"],
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 			contextWindow: 262144,
 			maxTokens: 32768,
