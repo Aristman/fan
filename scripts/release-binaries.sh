@@ -5,7 +5,7 @@
 #
 # Unlike build-binaries.sh (legacy), this script:
 #   - Reads version from packages/coding-agent/package.json (not root package.json)
-#   - Does NOT synchronize versions across packages (scripts/sync-version.mjs was removed in v1.0.1)
+#   - Does NOT call sync-version.mjs — each package is independently versioned
 #   - Tags archives as RELEASE builds in all output messages
 #
 # Usage:
@@ -124,11 +124,7 @@ else
     echo "==> Skipping cross-platform native bindings (--skip-deps)"
 fi
 
-# Build all packages.
-# NOTE: root package.json has NO "prebuild" hook and scripts/sync-version.mjs
-# has been removed. `npm run build` only compiles packages; it does NOT modify
-# any package.json version fields. Each package keeps its independent version.
-echo "==> Building all packages (independent versions preserved)..."
+echo "==> Building all packages..."
 npm run build
 
 # Build dashboard
