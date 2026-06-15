@@ -1,6 +1,6 @@
 {
 	"name": "fan-web-ui-example",
-	"version": "0.13.2",
+	"version": "1.0.0",
 	"private": true,
 	"type": "module",
 	"scripts": {
