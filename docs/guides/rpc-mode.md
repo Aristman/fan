@@ -809,12 +809,9 @@ function readJsonl(stream: ReadableStream<string>) {
 
 Когда расширениям или инструментам нужен ввод от пользователя (например, `questionnaire`, диалог подтверждения), RPC-режим отправляет **Extension UI Request** в stdout. Клиент **обязан** ответить через stdin.
 
-> **Важно:** В TUI-режиме `questionnaire` и `question` используют `ctx.ui.custom()` для рендеринга UI.
-> В RPC-режиме они автоматически переключаются на последовательные вызовы `select`/`input`/`confirm`,
-> так что клиент получает стандартные Extension UI Request-ы для каждого диалога.
->
-> Реализовано в расширении **fan-ask-answer** (установлено по умолчанию, v1.0.1+) и в примере
-> `examples/extensions/questionnaire.ts`.
+> **Важно:** В TUI-режиме `questionnaire` использует `ctx.ui.custom()` для рендеринга таб-интерфейса.
+> В RPC-режиме он автоматически переключается на последовательные вызовы `select`/`input`/`confirm`,
+> так что клиент получает стандартные Extension UI Request-ы для каждого вопроса.
 
 ### Dialog-методы (требуют ответа)
 
