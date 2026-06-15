@@ -614,5 +614,5 @@ MIT
 ## See Also
 
 - [@itone/fan-ai](https://www.npmjs.com/package/@itone/fan-ai): Core LLM toolkit
-- [@mariozechner/pi-agent](https://www.npmjs.com/package/@mariozechner/pi-agent): Agent framework
+- [@itone/fan-agent-core](https://www.npmjs.com/package/@itone/fan-agent-core): Agent framework
 - [@itone/fan-tui](https://www.npmjs.com/package/@itone/fan-tui): Terminal UI components

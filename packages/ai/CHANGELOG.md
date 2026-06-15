@@ -2,10 +2,32 @@
 
 ## [Unreleased]
 
-### Fixed
+## [1.0.0] - 2026-06-14
 
-- Bumped default Antigravity User-Agent version to `1.21.9` ([#2901](https://github.com/itone/fan-mono/pull/2901) by [@aadishv](https://github.com/aadishv))
-- Fixed thinking levels for Gemma 4 models to use `thinkingLevel` and map Pi reasoning levels to the model's supported thinking levels ([#2903](https://github.com/itone/fan-mono/pull/2903) by [@aadishv](https://github.com/aadishv))
+FAN 1.0.0 — стабилизация LLM API.
+
+### Added
+- Провайдеры: MiniMax-M3, MiniMax-M1, MiMo, DeepSeek, Filin-LightLLM, Kimi
+- System CA certificate support
+- API key auto-migration с _AFAN_KEY → _API_KEY
+- Provider registration в coding-agent
+- 20+ провайдеров (Anthropic, OpenAI, Google, Groq, xAI, Mistral, Cerebras, и т.д.)
+
+### Changed
+- Model discovery — автоматическое обнаружение моделей через провайдеров
+- Token tracking — единый интерфейс для всех провайдеров
+- Thinking levels — gemma 4, поддержка Pi reasoning levels
+- Antigravity User-Agent обновлён до 1.21.9
+- Bare `readline` → `node:readline` для Deno совместимости
+
+### Fixed
+- Thinking levels для Gemma 4 (использует thinkingLevel)
+- Antigravity User-Agent version
+
+### Architecture
+- @itone/fan-ai — единое LLM API для всего FAN
+- Subpath exports: ./anthropic, ./azure-openai-responses, ./google, ./google-vertex, ./openai, etc.
+- Provider registration system
 
 ## [0.66.1] - 2026-04-08
 

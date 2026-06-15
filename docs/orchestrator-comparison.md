@@ -2,7 +2,7 @@
 
 **Дата:** 2026-04-11  
 **Образец:** `~\.pi\agent\extensions\orchestrator\` (7 модулей)  
-**Копия:** `packages/orchestrator/src/` (6 модулей)  
+**Копия:** `~/.fan/extensions/orchestrator/` (извлечено в Phase 7.1 как standalone extension)  
 
 ---
 
@@ -37,7 +37,7 @@
 | `AgentDefinition` | `label, prompt, tools, readOnly` | `AgentConfig` — `name, description, tools?, model?, systemPrompt, source, filePath` | ⚠️ разное |
 | `Waiter` | FIFO queue entry | есть (Slot Pool) | ✅ |
 | `ToolCallInfo` | `name, preview` | есть | ✅ |
-| `ExecutionMode` | нет (всегда single spawn) | `single\|parallel\|chain` | 🆕 только в FAN |
+| `ExecutionMode` | нет (всегда single spawn) | `single` (parallel/chain удалены в Phase 5.1) | ❌ удалено |
 | `UsageStats` | нет | `input, output, cacheRead, cacheWrite, cost, contextTokens, turns` | 🆕 только в FAN |
 | `AgentConfig` | нет | discoverable agents с frontmatter | 🆕 только в FAN |
 
@@ -117,8 +117,8 @@
 | Progress callback | ✅ (`WorkerProgress`) | ✅ (via `emitUpdate`) | ✅ |
 | Tool call preview | ✅ (`formatToolPreview`) | ✅ (`formatToolCall`) | ✅ оба |
 | Concurrency limit | ❌ (slot pool handles it) | ✅ `mapWithConcurrencyLimit()` | 🆕 только в FAN |
-| Parallel execution | ❌ (1 spawn per Agent call) | ✅ (parallel mode) | 🆕 только в FAN |
-| Chain execution | ❌ | ✅ (sequential with `{previous}`) | 🆕 только в FAN |
+| Parallel execution | ❌ (1 spawn per Agent call) | ❌ (удалено в Phase 5.1) | ⚠️ было |
+| Chain execution | ❌ | ❌ (удалено в Phase 5.1) | ⚠️ было |
 | Abort support | ✅ (AbortSignal) | ✅ (AbortSignal) | ✅ оба |
 | Usage tracking | ❌ (messageCount only) | ✅ (full UsageStats) | 🆕 только в FAN |
 
@@ -136,7 +136,7 @@
 | `TaskCreate` tool | ✅ | ✅ | ✅ |
 | `TaskUpdate` tool | ✅ | ✅ | ✅ |
 | `TaskList` tool | ✅ | ✅ (`list_tasks`) | ✅ есть |
-| `Agent` tool | ✅ (single spawn, coordinator-only) | ✅ (`delegate_task` single/parallel/chain) | ✅ |
+| `Agent` tool | ✅ (single spawn, coordinator-only) | ✅ (`delegate_task` single — parallel/chain удалены в Phase 5.1) | ✅ |
 | `SendMessage` tool | ✅ | ✅ | ✅ |
 | `StopAgent` tool | ✅ | ✅ (`cancel_task`) | ✅ |
 | `classify_task` tool | ❌ | ✅ | 🆕 только в FAN |
@@ -154,8 +154,8 @@
 
 | Элемент | Описание |
 |---------|----------|
-| **Parallel mode** | `tasks[]` — одновременный запуск нескольких агентов |
-| **Chain mode** | `chain[]` — последовательный запуск с `{previous}` placeholder |
+| **Parallel mode** | ❌ Удалён в Phase 5.1. Воркеры запускаются по одному. |
+| **Chain mode** | ❌ Удалён в Phase 5.1. Последовательность управляется coordinator. |
 | **Agent discovery** | `.md` файлы из builtin/user/project директорий |
 | **Project agent confirmation** | UI prompt перед запуском project-local агентов |
 | **Status transition validation** | `VALID_TRANSITIONS` в TaskManager |

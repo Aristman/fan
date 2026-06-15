@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-06-14
+
+FAN 1.0.0 — стабилизация веб-компонентов.
+
+### Added
+- Reusable web UI components для AI chat interfaces
+- Lit-based components
+- PDF.js integration (pdfjs-dist 5.4.394)
+- XLSX support (sheetjs)
+- DOCX preview
+- JSZip support
+- I18n support
+- Storage layer
+- Dialogs: PersistentStorageDialog (Known Issue — broken, см. README)
+- Ollama client (@itone/fan-ai integration)
+- LM Studio SDK integration
+- Tailwind CSS theme (FAN theme: oklch hue 260°)
+
+### Architecture
+- @itone/fan-web-ui — standalone web components library
+- Used by @fan/dashboard
+- Subpath exports: . (default), ./app.css
+- Peer dependency на Lit
+- MIT licensed
+
 ## [0.66.1] - 2026-04-08
 
 ## [0.66.0] - 2026-04-08

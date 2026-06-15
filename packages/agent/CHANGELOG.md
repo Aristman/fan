@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-06-14
+
+FAN 1.0.0 — стабилизация API агента.
+
+### Added
+- 8 worker types: explore, plan, implement, verify, bug-fix, code-research, docs-impl, tests-impl (Phase 5.1+7.1)
+- Single mode для всех воркеров (chain/parallel удалены в Phase 5.1)
+- Transport abstraction — единый интерфейс для разных транспортов
+- Stateful agent с tool execution
+
+### Changed
+- AgentState refactored: streamMessage → streamingMessage, error → errorMessage
+- Public API теперь readonly для isStreaming, streamingMessage, pendingToolCalls, errorMessage
+- Attachment support расширен
+
+### Fixed
+- Coroutine leaks в UI-слое (Phase 5.5 — IDEA plugin)
+- Disposal race conditions
+- sendMessage timeout
+
+### Architecture
+- @itone/fan-agent-core — core-библиотека для @itone/fan-coding-agent
+- Single dependency: @itone/fan-ai
+- Published as npm package
+
 ## [0.66.1] - 2026-04-08
 
 ## [0.66.0] - 2026-04-08

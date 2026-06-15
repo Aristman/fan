@@ -114,8 +114,8 @@ FAN adds new settings on top of the existing `settings.json` format:
 
 | Component       | Version |
 |-----------------|---------|
-| Core packages   | 0.66.1  |
-| FAN extensions | 0.1.0   |
+| Core packages   | 1.0.0   |
+| FAN extensions  | 0.8.2 (store) / 5.3.0 (orchestrator) |
 
 ## Getting Help
 

@@ -177,11 +177,11 @@ REPO_URL    = https://fan.sea-agents.ru/fan-store
     ├── manifest.json                   # Версии, платформы, хеши
     ├── install.sh                      # One-liner installer (Unix)
     ├── install.ps1                     # One-liner installer (Windows)
-    ├── fan-0.4.5-darwin-arm64.tar.gz
-    ├── fan-0.4.5-darwin-x64.tar.gz
-    ├── fan-0.4.5-linux-x64.tar.gz
-    ├── fan-0.4.5-linux-arm64.tar.gz
-    └── fan-0.4.5-windows-x64.zip
+    ├── fan-1.0.0-darwin-arm64.tar.gz
+    ├── fan-1.0.0-darwin-x64.tar.gz
+    ├── fan-1.0.0-linux-x64.tar.gz
+    ├── fan-1.0.0-linux-arm64.tar.gz
+    └── fan-1.0.0-windows-x64.zip
 ```
 
 ### Nginx конфигурация
@@ -244,23 +244,23 @@ server {
 ├── manifest.json                       # Метаданные версий и платформ
 ├── install.sh                          # Unix installer (curl | bash)
 ├── install.ps1                         # Windows installer (irm | iex)
-├── fan-0.4.5-darwin-arm64.tar.gz      # macOS Apple Silicon
-├── fan-0.4.5-darwin-x64.tar.gz        # macOS Intel
-├── fan-0.4.5-linux-x64.tar.gz         # Linux x86_64
-├── fan-0.4.5-linux-arm64.tar.gz       # Linux ARM (aarch64)
-└── fan-0.4.5-windows-x64.zip          # Windows x64
+├── fan-1.0.0-darwin-arm64.tar.gz      # macOS Apple Silicon
+├── fan-1.0.0-darwin-x64.tar.gz        # macOS Intel
+├── fan-1.0.0-linux-x64.tar.gz         # Linux x86_64
+├── fan-1.0.0-linux-arm64.tar.gz       # Linux ARM (aarch64)
+└── fan-1.0.0-windows-x64.zip          # Windows x64
 ```
 
 ### Формат manifest.json
 
 ```json
 {
-  "latest": "0.4.5",
-  "releasedAt": "2026-04-21T12:00:00Z",
-  "releaseNotes": "Bug fixes and improvements",
+  "latest": "1.0.0",
+  "releasedAt": "2026-06-15T12:00:00Z",
+  "releaseNotes": "FAN 1.0.0 stable release",
   "platforms": {
     "darwin-arm64": {
-      "url": "https://fan.sea-agents.ru/fan-store/dist/fan-0.4.5-darwin-arm64.tar.gz",
+      "url": "https://fan.sea-agents.ru/fan-store/dist/fan-1.0.0-darwin-arm64.tar.gz",
       "hash": "sha256:abcdef...",
       "size": 12345678
     },

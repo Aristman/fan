@@ -6,7 +6,7 @@
 
 - **Multi-provider AI** — OpenAI, Anthropic, Google, Groq, xAI, Mistral, Amazon Bedrock, Azure, Vertex AI, and 40+ more
 - **Interactive TUI** — streaming, markdown rendering, thinking blocks, tool execution widgets
-- **Multi-agent orchestrator** — coordinator mode, 4 worker types (explore/plan/implement/verify), 3 workflows (single/chain/parallel), live tool call display
+- **Multi-agent orchestrator** — coordinator mode, 8 worker types (explore, plan, implement, verify, bug-fix, code-research, docs-impl, tests-impl), single mode, live tool call display
 - **Model management** — routing rules, fallback chains, budget tracking, per-session settings
 - **REST API + WebSocket server** — 14 endpoints, token auth, background daemon mode
 - **Web dashboard** — Lit-based, real-time streaming, model settings, budget visualization
@@ -56,31 +56,25 @@ fan server stop           # Stop background daemon
 
 FAN includes a built-in multi-agent orchestrator with specialized workers:
 
-| Worker | Role |
-|--------|------|
-| 🔍 **explore** | Fast codebase recon, file search, structure analysis |
-| 📋 **plan** | Create implementation plans from gathered context |
-| 🔧 **implement** | Write code, make changes, run commands |
-| 🛡️ **verify** | Code review, quality checks, security audit |
+| Worker | Role | Permissions |
+|--------|------|-------------|
+| 🔍 **explore** | Fast codebase recon, file search, structure analysis | Read-only |
+| 📋 **plan** | Create implementation plans from gathered context | Read-only |
+| 🔧 **implement** | Write code, make changes, run commands | Full |
+| 🛡️ **verify** | Code review, quality checks, security audit | Read-only |
+| 🐛 **bug-fix** | Targeted bug reproduction, diagnosis, and fix | Full |
+| 🔬 **code-research** | Deep code analysis, dependency tracing | Read-only |
+| 📝 **docs-impl** | Write and update documentation | Full |
+| 🧪 **tests-impl** | Write unit/integration tests for existing code | Full |
 
-### Workflows
+### Coordination Mode
+
+The orchestrator runs in **coordinator mode**: an AI agent decomposes your request into tasks and delegates each to the right worker type. All workers execute in **single mode** — one task per worker. The coordinator manages the task board, tracks progress, and resolves blocked or failed tasks.
 
 ```
 # Single — one worker, one task
-delegate_task(agent="implement", task="fix the login bug")
-
-# Chain — sequential steps, each receives previous output
-delegate_task(chain=[
-  { agent: "explore", task: "find auth code" },
-  { agent: "plan", task: "create fix plan using {previous}" },
-  { agent: "implement", task: "apply the plan" }
-])
-
-# Parallel — multiple workers, concurrent execution
-delegate_task(tasks=[
-  { agent: "explore", task: "analyze frontend" },
-  { agent: "explore", task: "analyze backend" }
-])
+Agent(agentType="explore", task="Find authentication code")
+Agent(agentType="implement", task="Fix the login bug")
 ```
 
 Workers display live tool calls during execution, timing, and usage stats on completion. See [docs/guides/orchestrator.md](docs/guides/orchestrator.md) for details.
@@ -141,9 +135,9 @@ Client (TUI / Dashboard / IDE / SDK)
     ┌────┼────────────┐
     │    │            │
 Model   │       Orchestrator
-Manager │       (delegate_task,
-(routing,│       4 workers,
-fallback,│       3 workflows)
+Manager │       (coordinator mode,
+(routing,│       8 worker types,
+fallback,│       single mode)
 budget)  │
     │    │
     ┌────┴────┐
@@ -233,4 +227,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
 ## License
 
-Fork of fan-mono. See upstream for license details.
+FNA

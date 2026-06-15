@@ -2,9 +2,38 @@
 
 ## [Unreleased]
 
-### Fixed
+## [1.0.0] - 2026-06-14
 
-- Fixed `Container.render()` stack overflow on long sessions by replacing `Array.push(...spread)` with a loop-based push, preventing `RangeError: Maximum call stack size exceeded` when child output exceeds the V8 call stack argument limit ([#2651](https://github.com/itone/fan-mono/issues/2651))
+FAN 1.0.0 — стабилизация TUI-библиотеки.
+
+### Added
+- Differential rendering для эффективного text-based UI
+- Built-in components: ExtensionSelectorComponent, TUI, ProcessTerminal
+- Subagent integration — отображение прогресса воркеров в TUI
+- Real-time tool call display (max 9 tool calls)
+- Running state со спиннером + последними tool calls
+- Completed state (collapsed/expanded)
+- Wall-clock timing для воркеров
+- Auto-hide + auto-clear для task list widget
+- Compact collapse format: `📋 N/M tasks [Alt+T to expand]`
+- Mode labels: 🔗 CHAIN, ⚡ PARALLEL (исторические)
+
+### Changed
+- ANSI escape codes → theme.fg() для theme consistency
+- SubagentDetails shape refactored
+- Render scheduling под heavy streaming — coalescing 16ms frame budget
+
+### Fixed
+- Container.render() stack overflow на long sessions (Array.push → loop)
+- Worker progress tracking
+- parseVerdict() utility
+- slot pool для concurrency control
+
+### Architecture
+- @itone/fan-tui — standalone TUI-библиотека
+- Differential rendering (не full re-render)
+- Used by @itone/fan-coding-agent
+- MIT licensed
 
 ## [0.66.1] - 2026-04-08
 
