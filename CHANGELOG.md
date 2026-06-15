@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.2] - 2026-06-15
+
+### Исправления
+
+- **fan-ask-answer extension (store)** — добавлена поддержка RPC mode для question и questionnaire.
+  - Расширение `fan-ask-answer@1.0.1` опубликовано в FAN Store.
+  - В RPC mode (`fan --mode rpc`) теперь использует `ctx.ui.select/input/confirm` вместо `ctx.ui.custom()`.
+  - В TUI-режиме поведение не изменилось.
+
+---
+
 ## [1.0.1] - 2026-06-15
 
 ### Исправления

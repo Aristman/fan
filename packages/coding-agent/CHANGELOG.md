@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.0.2] - 2026-06-15
+
+### Исправления
+
+- **fan-ask-answer extension** — добавлена RPC поддержка. Расширение перепубликовано в FAN Store как v1.0.1.
+  - **question** tool: probe-детект + RPC fallback с select/input.
+  - **questionnaire** tool: probe-детект + RPC fallback с select/input/confirm.
+
+---
+
 ## [1.0.1] - 2026-06-15
 
 ### Исправления
