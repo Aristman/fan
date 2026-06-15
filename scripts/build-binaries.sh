@@ -72,7 +72,10 @@ if ! command -v bun &>/dev/null; then
 fi
 echo "==> Using bun $(bun --version)"
 
-# Display version being built
+# Display version being built.
+# NOTE: this legacy script reads the root package.json version for display only.
+# scripts/sync-version.mjs has been removed; npm run build no longer touches
+# package.json version fields.
 echo "==> FAN (fan) version: $(node -e "console.log(require('./package.json').version)")"
 
 # ─── Install dependencies ──────────────────────────────────────
@@ -115,7 +118,11 @@ else
     echo "==> Skipping cross-platform native bindings (--skip-deps)"
 fi
 
-echo "==> Building all packages..."
+# Build all packages.
+# NOTE: root package.json has NO "prebuild" hook and scripts/sync-version.mjs
+# has been removed. `npm run build` only compiles packages; it does NOT modify
+# any package.json version fields.
+echo "==> Building all packages (versions are independent)..."
 npm run build
 
 # Build dashboard

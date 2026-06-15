@@ -20,8 +20,6 @@
 		"check": "biome check --write --error-on-warnings . && tsgo --noEmit && npm run check:browser-smoke && cd packages/web-ui && npm run check",
 		"check:browser-smoke": "node scripts/check-browser-smoke.mjs",
 		"test": "npm run test --workspaces --if-present",
-		"version:set": "node scripts/sync-version.mjs",
-		"prebuild": "node scripts/sync-version.mjs",
 		"prepare": "husky",
 		"build:dashboard": "cd packages/dashboard && npx vite build",
 		"dev:dashboard": "cd packages/dashboard && npx vite"
