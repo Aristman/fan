@@ -17,6 +17,7 @@
 | `CLAUDE.md` | ✅ | Quick context for LLM sessions |
 | `ARCHITECTURE.md` | ✅ | Architecture, packages, data flow |
 | `MIGRATION.md` | ✅ | Migration from upstream fan/pi |
+| `RELEASE.md` | ✅ | Release process FAN 1.0.0+ (independent versioning) |
 | `docs/specs/spec_runtime-agent_2026-04-10.md` | ✅ | Runtime-agent specification (current) |
 | `docs/specs/spec_idea-plugin-integration_2026-04-24.md` | ✅ | IntelliJ Platform Plugin integration spec |
 | `docs/specs/spec_idea-plugin-tui-styling_2026-04-24.md` | ✅ | IDEA Plugin JCEF chat rendering spec — TUI-style colors, layout, components |

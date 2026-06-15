@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
 #
-# Build FAN (fan) binaries for all platforms locally.
-# Mirrors .github/workflows/build-binaries.yml
+# Build FAN (fan) RELEASE binaries for all platforms.
+# For FAN v1.0.0+ with INDEPENDENT versioning (each package manages its own version).
+#
+# Unlike build-binaries.sh (legacy), this script:
+#   - Reads version from packages/coding-agent/package.json (not root package.json)
+#   - Does NOT call sync-version.mjs — each package is independently versioned
+#   - Tags archives as RELEASE builds in all output messages
 #
 # Usage:
-#   ./scripts/build-binaries.sh [--skip-deps] [--platform <platform>]
+#   ./scripts/release-binaries.sh [--skip-deps] [--platform <platform>]
 #
 # Options:
 #   --skip-deps         Skip installing cross-platform dependencies
@@ -17,7 +22,9 @@
 #     fan-<VERSION>-linux-x64.tar.gz
 #     fan-<VERSION>-linux-arm64.tar.gz
 #     fan-<VERSION>-windows-x64.zip
-# Version is read dynamically from root package.json during build.
+#
+# Version is read dynamically from packages/coding-agent/package.json during build.
+# The version in api-gateway dist is inlined via sed at build time.
 
 set -euo pipefail
 
@@ -72,8 +79,10 @@ if ! command -v bun &>/dev/null; then
 fi
 echo "==> Using bun $(bun --version)"
 
-# Display version being built
-echo "==> FAN (fan) version: $(node -e "console.log(require('./package.json').version)")"
+# Read FAN_VERSION from coding-agent package.json (single source for binary version)
+FAN_VERSION=$(node -e "console.log(require('./packages/coding-agent/package.json').version)")
+echo "==> Building release binaries for FAN v1.0.0+ with independent versioning..."
+echo "==> FAN (fan) version: ${FAN_VERSION}"
 
 # ─── Install dependencies ──────────────────────────────────────
 # bun install understands workspace:* protocol used by the monorepo.
@@ -123,8 +132,7 @@ echo "Building dashboard..."
 npm run build:dashboard
 
 # Inline version into api-gateway dist (bun compile cannot resolve __dirname-relative
-# package.json reads at runtime — use the monorepo root version as single source of truth).
-FAN_VERSION=$(node -e "console.log(require('./package.json').version)")
+# package.json reads at runtime — use coding-agent version as single source of truth).
 echo "==> Inlining version v${FAN_VERSION} into api-gateway dist..."
 sed -i "s|JSON\.parse(readFileSync(join(__dirname, '\.\.', 'package\.json'), 'utf-8'))\.version|'${FAN_VERSION}'|g" packages/api-gateway/dist/http-server.js
 
@@ -156,7 +164,6 @@ for platform in "${PLATFORMS[@]}"; do
 done
 
 echo "==> Bundling FAN-specific assets..."
-
 
 echo "==> Creating release archives..."
 
@@ -209,19 +216,17 @@ for platform in "${PLATFORMS[@]}"; do
 done
 
 # Create archives
-VERSION=$(node -e "console.log(require('./package.json').version)")
-export VERSION
 cd binaries
 
 for platform in "${PLATFORMS[@]}"; do
     if [[ "$platform" == "windows-x64" ]]; then
         # Windows (zip) - use wrapper directory for consistency with Unix
-        echo "Creating fan-$VERSION-$platform.zip..."
-        mv $platform fan && zip -rq fan-$VERSION-$platform.zip fan && mv fan $platform
+        echo "Creating fan-$FAN_VERSION-$platform.zip..."
+        mv $platform fan && zip -rq fan-$FAN_VERSION-$platform.zip fan && mv fan $platform
     else
         # Unix platforms (tar.gz) - use wrapper directory for mise compatibility
-        echo "Creating fan-$VERSION-$platform.tar.gz..."
-        mv $platform fan && tar -czf fan-$VERSION-$platform.tar.gz fan && mv fan $platform
+        echo "Creating fan-$FAN_VERSION-$platform.tar.gz..."
+        mv $platform fan && tar -czf fan-$FAN_VERSION-$platform.tar.gz fan && mv fan $platform
     fi
 done
 
@@ -230,14 +235,14 @@ echo "==> Extracting archives for testing..."
 for platform in "${PLATFORMS[@]}"; do
     rm -rf $platform
     if [[ "$platform" == "windows-x64" ]]; then
-        unzip -q fan-$VERSION-$platform.zip && mv fan $platform
+        unzip -q fan-$FAN_VERSION-$platform.zip && mv fan $platform
     else
-        tar -xzf fan-$VERSION-$platform.tar.gz && mv fan $platform
+        tar -xzf fan-$FAN_VERSION-$platform.tar.gz && mv fan $platform
     fi
 done
 
 echo ""
-echo "==> FAN build complete!"
+echo "==> FAN RELEASE build complete!"
 echo "Archives available in packages/coding-agent/binaries/"
 ls -lh *.tar.gz *.zip 2>/dev/null || true
 echo ""
@@ -248,9 +253,10 @@ done
 
 # Generate manifest.json
 echo "==> Generating manifest.json..."
+export FAN_VERSION
 python3 << 'PYEOF'
 import json, hashlib, os, glob
-version = os.environ['VERSION']
+version = os.environ['FAN_VERSION']
 released_at = os.popen("date -u +%Y-%m-%dT%H:%M:%SZ").read().strip()
 platforms = {}
 for f in sorted(glob.glob(f"fan-{version}-*.tar.gz") + glob.glob(f"fan-{version}-*.zip")):
@@ -272,7 +278,7 @@ DIST_REPO="$HOME/fan-store/dist"
 mkdir -p "$DIST_REPO"
 echo "==> Copying artifacts to $DIST_REPO/"
 cp -v manifest.json "$DIST_REPO/"
-cp -v fan-$VERSION-*.{tar.gz,zip} "$DIST_REPO/" 2>/dev/null
+cp -v fan-$FAN_VERSION-*.{tar.gz,zip} "$DIST_REPO/" 2>/dev/null
 cp -v "$SCRIPT_DIR/install.sh" "$DIST_REPO/"
 cp -v "$SCRIPT_DIR/install.ps1" "$DIST_REPO/"
 echo "==> Dist repo ready. Run: fan-store publish"
