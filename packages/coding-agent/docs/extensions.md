@@ -2192,7 +2192,7 @@ All examples in [examples/extensions/](../examples/extensions/).
 | **Tools** |||
 | `hello.ts` | Minimal tool registration | `registerTool` |
 | `question.ts` | Tool with user interaction | `registerTool`, `ui.select` |
-| `questionnaire.ts` | Multi-step wizard tool | `registerTool`, `ui.custom` |
+| `questionnaire.ts` | Multi-step wizard tool (TUI + RPC) | `registerTool`, `ui.custom`, `ui.select`, `ui.input`, `ui.confirm` |
 | `todo.ts` | Stateful tool with persistence | `registerTool`, `appendEntry`, `renderResult`, session events |
 | `dynamic-tools.ts` | Register tools after startup and during commands | `registerTool`, `session_start`, `registerCommand` |
 | `truncated-tool.ts` | Output truncation example | `registerTool`, `truncateHead` |

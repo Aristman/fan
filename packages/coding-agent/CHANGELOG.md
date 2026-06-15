@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.1] - 2026-06-15
+
+### Исправления
+
+- **questionnaire** — поддержка RPC mode.
+  - `examples/extensions/questionnaire.ts` переписан: probe-детект режима через `ctx.ui.custom()`,
+    в RPC mode последовательные вызовы `select/input/confirm`, отмена на любом шаге.
+  - TUI-режим (табы, редактор для "Type something", навигация) полностью сохранён.
+
+---
+
 ## [1.0.0] - 2026-06-14
 
 FAN 1.0.0 — стабилизация API и CLI-интерфейса. Все основные компоненты

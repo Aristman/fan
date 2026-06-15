@@ -31,7 +31,7 @@ cp permission-gate.ts ~/.fan/agent/extensions/
 | `todo.ts` | Todo list tool + `/todos` command with custom rendering and state persistence |
 | `hello.ts` | Minimal custom tool example |
 | `question.ts` | Demonstrates `ctx.ui.select()` for asking the user questions with custom UI |
-| `questionnaire.ts` | Multi-question input with tab bar navigation between questions |
+| `questionnaire.ts` | Multi-question input with tab bar navigation (TUI) and sequential select/input/confirm (RPC) |
 | `tool-override.ts` | Override built-in tools (e.g., add logging/access control to `read`) |
 | `dynamic-tools.ts` | Register tools after startup (`session_start`) and at runtime via command, with prompt snippets and tool-specific prompt guidelines |
 | `built-in-tool-renderer.ts` | Custom compact rendering for built-in tools (read, bash, edit, write) while keeping original behavior |
