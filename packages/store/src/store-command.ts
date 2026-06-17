@@ -29,13 +29,13 @@ interface OperationResult {
 }
 
 export function registerStoreCommand(
-	pi: ExtensionAPI,
+	fan: ExtensionAPI,
 	getDB: () => StoreDatabase,
 	getRepoClient: () => RepoClient,
 	getInstaller: () => ArchiveInstaller,
 	getConfig: () => StoreConfig,
 ): void {
-	pi.registerCommand("store", {
+	fan.registerCommand("store", {
 		description: "Package manager — search, install, update, remove extensions/skills/themes",
 		handler: async (args, ctx) => {
 			const parts = args.trim().split(/\s+/);

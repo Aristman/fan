@@ -23,7 +23,7 @@ import { StoreDatabase } from "./storage.js";
 import { registerStoreCommand } from "./store-command.js";
 import { registerStoreTools } from "./store-tools.js";
 
-export const storeExtension: ExtensionFactory = (pi) => {
+export const storeExtension: ExtensionFactory = (fan) => {
 	let config = loadConfig();
 	const db = new StoreDatabase();
 	const repoClient = new RepoClient();
@@ -35,13 +35,13 @@ export const storeExtension: ExtensionFactory = (pi) => {
 	const getInstaller = () => installer;
 
 	// Register tools
-	registerStoreTools(pi, getDB, getRepoClient, getInstaller, getConfig);
+	registerStoreTools(fan, getDB, getRepoClient, getInstaller, getConfig);
 
 	// Register command
-	registerStoreCommand(pi, getDB, getRepoClient, getInstaller, getConfig);
+	registerStoreCommand(fan, getDB, getRepoClient, getInstaller, getConfig);
 
 	// Register ALT+S shortcut for extension browser
-	pi.registerShortcut("alt+s", {
+	fan.registerShortcut("alt+s", {
 		description: "Browse extension repositories",
 		handler: (ctx) => {
 			showExtensionBrowser(ctx, db, repoClient, installer, config);
@@ -49,7 +49,7 @@ export const storeExtension: ExtensionFactory = (pi) => {
 	});
 
 	// Session lifecycle
-	pi.on("session_start", async (_event, ctx) => {
+	fan.on("session_start", async (_event, ctx) => {
 		// Reload config on each session (user may have modified it)
 		config = loadConfig();
 

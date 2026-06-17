@@ -18,11 +18,11 @@
 node -e "console.log(require('./packages/coding-agent/package.json').version)"
 ```
 
-**Когда вызывать `sync-version.mjs`:**
+**Автоматическая синхронизация версий удалена:**
 
-В релизном процессе 1.0.0+ `sync-version.mjs` **НЕ используется**. Он оставлен
-для обратной совместимости и dev-сборок, где удобно синхронизировать все пакеты
-с корневой версией. В релизе каждый пакет обновляется вручную.
+Скрипт `scripts/sync-version.mjs` и корневой `prebuild` хук были удалены в
+v1.0.1. `npm run build` больше не меняет поля `version` в `package.json`
+пакетов. Каждый пакет обновляется вручную.
 
 ---
 
@@ -140,7 +140,8 @@ npm version minor -w @itone/fan-tui --no-git-tag-version
 1. Устанавливает зависимости (`bun install`)
 2. Генерирует Prisma-клиент
 3. Устанавливает платформенные native-биндинги (clipboard, sharp)
-4. Собирает все пакеты (`npm run build`)
+4. Собирает все пакеты (`npm run build`) — **без синхронизации версий**
+   (prebuild hook удалён, sync-version.mjs удалён)
 5. Собирает dashboard (`npm run build:dashboard`)
 6. Встраивает версию в api-gateway dist (через `sed`)
 7. Компилирует бинарник для 5 платформ (`bun build --compile`)
@@ -280,14 +281,14 @@ npm publish -w @itone/fan-web-ui
 
 | Скрипт | Назначение | Версионирование | Когда использовать |
 |--------|-----------|----------------|-------------------|
-| `scripts/build-binaries.sh` | LEGACY: dev-сборки и CI до 1.0.0 | Использует `sync-version.mjs` | Локальные dev-сборки, CI до миграции |
+| `scripts/build-binaries.sh` | LEGACY: dev-сборки | Читает версию из корневого `package.json` (только для информации) | Локальные dev-сборки |
 | `scripts/release-binaries.sh` | Релизы 1.0.0+ | Независимое (читает версию из `packages/coding-agent/package.json`) | **Только для релизов** |
 
-**`sync-version.mjs`** (`scripts/sync-version.mjs`) — оставлен для обратной
-совместимости. Читает версию из корневого `package.json` и синхронизирует со
-всеми пакетами. Команда `npm run prebuild` в корневом `package.json`
-по-прежнему вызывает `sync-version.mjs`, но в релизном процессе 1.0.0+
-этот скрипт **не используется**.
+**`sync-version.mjs` удалён.** Автоматическая синхронизация версий больше
+недоступна. Корневой `prebuild` хук также удалён, поэтому `npm run build`
+только компилирует пакеты и не изменяет `package.json`. Для dev-сборок, где
+раньше использовался `sync-version.mjs`, теперь нужно обновлять версии
+пакетов вручную.
 
 ---
 

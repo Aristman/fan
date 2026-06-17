@@ -335,7 +335,7 @@ const renderApp = () => {
 								>
 									${currentTitle}
 								</button>`
-							: html`<span class="text-base font-semibold text-foreground">Pi Web UI Example</span>`
+							: html`<span class="text-base font-semibold text-foreground">Fan Web UI Example</span>`
 					}
 				</div>
 				<div class="flex items-center gap-1 px-2">

@@ -15,7 +15,7 @@ import type { ResourceType } from "./types.js";
 // ──────────────────────────────────────────────
 
 export function registerStoreTools(
-	pi: ExtensionAPI,
+	fan: ExtensionAPI,
 	getDB: () => StoreDatabase,
 	getRepoClient: () => RepoClient,
 	getInstaller: () => ArchiveInstaller,
@@ -23,7 +23,7 @@ export function registerStoreTools(
 ): void {
 	// ─── store_search ────────────────────────
 
-	pi.registerTool({
+	fan.registerTool({
 		name: "store_search",
 		label: "Store Search",
 		description: "Search available packages in configured FAN Store repositories",
@@ -69,7 +69,7 @@ export function registerStoreTools(
 
 	// ─── store_install ───────────────────────
 
-	pi.registerTool({
+	fan.registerTool({
 		name: "store_install",
 		label: "Store Install",
 		description: "Install a package from FAN Store repositories or a local archive file (.tar.gz, .zip)",
@@ -148,7 +148,7 @@ export function registerStoreTools(
 
 	// ─── store_remove ────────────────────────
 
-	pi.registerTool({
+	fan.registerTool({
 		name: "store_remove",
 		label: "Store Remove",
 		description: "Uninstall a FAN Store managed package",
@@ -192,7 +192,7 @@ export function registerStoreTools(
 
 	// ─── store_update ────────────────────────
 
-	pi.registerTool({
+	fan.registerTool({
 		name: "store_update",
 		label: "Store Update",
 		description: "Check for available updates or update a specific package",
@@ -310,7 +310,7 @@ export function registerStoreTools(
 
 	// ─── store_list ──────────────────────────
 
-	pi.registerTool({
+	fan.registerTool({
 		name: "store_list",
 		label: "Store List",
 		description: "List packages installed via FAN Store",
