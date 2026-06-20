@@ -2,13 +2,7 @@ import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@i
 import type { KeyId } from "@itone/fan-tui";
 import { loadConfig } from "./config.js";
 import { checkDependencies, resetDependencyCache } from "./dependencies.js";
-import { recordAudio } from "./audio-recorder.js";
-import { showRecordingOverlay, showProcessingOverlay } from "./ui-overlay.js";
-import { transcribe } from "./whisper-service.js";
-import { ensureWhisperModel } from "./model-downloader.js";
-import { insertTranscript } from "./editor-utils.js";
-import { improveText } from "./ollama-service.js";
-import type { ImproveTextResult } from "./ollama-service.js";
+import { runVoicePipeline } from "./pipeline.js";
 
 export default function (pi: ExtensionAPI) {
   const config = loadConfig();
@@ -30,87 +24,7 @@ export default function (pi: ExtensionAPI) {
   };
 
   const handler = async (ctx: ExtensionContext) => {
-    if (!ensureDependencies(ctx)) {
-      return;
-    }
-
-    try {
-      // Step 1: Show recording overlay with Enter/Esc handling
-      const { accepted } = await showRecordingOverlay(ctx, {
-        duration: config.recordDurationMax,
-      });
-
-      if (!accepted) {
-        // User cancelled — nothing more to do
-        return;
-      }
-
-      // Step 2: Record audio (user pressed Enter or timer expired)
-      const audioPath = await recordAudio({
-        duration: config.recordDurationMax,
-        audioDevice: config.audioDevice,
-      });
-
-      // Step 3: Ensure the whisper model is downloaded
-      const modelOverlay = showProcessingOverlay(ctx, "transcribing");
-      try {
-        await ensureWhisperModel({
-          modelPath: config.whisperModelPath,
-          onProgress: (downloaded, total) => {
-            const pct = total > 0 ? Math.round((downloaded / total) * 100) : 0;
-            modelOverlay.update("transcribing");
-            ctx.ui.setStatus("voice-ollama-tui", `🎙 Downloading model ${pct}%`);
-          },
-        });
-        modelOverlay.close();
-        ctx.ui.setStatus("voice-ollama-tui", "🎙 Ready");
-      } catch (modelErr) {
-        modelOverlay.close();
-        ctx.ui.setStatus("voice-ollama-tui", "🎙 Model download failed");
-        const msg = modelErr instanceof Error ? modelErr.message : String(modelErr);
-        ctx.ui.notify(`Model download failed: ${msg}`, "error");
-        return;
-      }
-
-      // Step 4: Transcribe the recorded audio
-      const processingOverlay = showProcessingOverlay(ctx, "transcribing");
-
-      let text: string;
-      try {
-        text = await transcribe(audioPath, {
-          modelPath: config.whisperModelPath,
-          language: config.whisperLanguage,
-          binPath: config.whisperBinPath,
-        });
-
-        // Step 5 (F-4.2): If Ollama is enabled, improve the recognised text
-        if (config.ollamaEnabled) {
-          processingOverlay.update("ollama");
-
-          const result: ImproveTextResult = await improveText(config, text);
-          if (result.usedOllama) {
-            text = result.text;
-          } else {
-            // Fallback case - text remains unchanged, no need to notify (already done silently)
-          }
-        }
-
-        // Show done and insert result
-        processingOverlay.update("done");
-        processingOverlay.close();
-
-        insertTranscript(ctx, text);
-      } catch (transcribeErr) {
-        processingOverlay.update("done");
-        processingOverlay.close();
-
-        const msg = transcribeErr instanceof Error ? transcribeErr.message : String(transcribeErr);
-        ctx.ui.notify(`Transcription failed: ${msg}`, "error");
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      ctx.ui.notify(`Voice input failed: ${msg}`, "error");
-    }
+    await runVoicePipeline(ctx, config);
   };
 
   pi.registerCommand("voice", {
