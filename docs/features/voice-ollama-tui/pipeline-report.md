@@ -10,7 +10,10 @@
 | Всего функций | 10 |
 | Реализовано | 11 |
 | Провалено | 0 |
-| Коммитов | 11 |
+| Коммитов | 12 |
+| Тестов всего | 119 |
+| Тестов пройдено | 119 |
+| Тестов не пройдено | 0 |
 
 ## Функции
 
@@ -108,14 +111,33 @@
 - **Тесты:** TC-F-1.2-1 ✅, TC-F-1.2-2 ✅, TC-F-1.2-3 ✅
 - **Критерии приёмки:** Все выполнены
 
+## Финальная верификация
+
+- **Вердикт:** PASS
+- **Build:** OK (npm run build в корне проекта)
+- **TypeScript:** 0 errors (npx tsc --noEmit)
+- **Smoke-тесты:** 6/6 ✅
+- **Юнит-тесты:** 113/113 ✅
+- **E2E-тесты:** N/A (расширение TUI, интеграционное тестирование требует запущенного FAN)
+
 ## Проблемы
 
-_(пусто)_
+_(не осталось)_
 
 ## Изменённые файлы
 
-_(пусто)_
+- extensions/voice-ollama-tui/*.ts — исходный код расширения
+- extensions/voice-ollama-tui/*.test.ts — тесты
+- extensions/voice-ollama-tui/package.json — манифест
+- extensions/voice-ollama-tui/tsconfig.json — конфигурация TypeScript
+- extensions/voice-ollama-tui/.env.example — шаблон конфигурации
+- extensions/voice-ollama-tui/README.md — документация
+- docs/features/voice-ollama-tui/roadmap.md — обновлённые статусы
+- docs/features/voice-ollama-tui/pipeline-report.md — этот отчёт
 
 ## Документация
 
-_(пусто)_
+- README.md — ✅ обновлён
+- .env.example — ✅ добавлен
+- roadmap.md — ✅ синхронизирован
+- pipeline-report.md — ✅ обновлён
