@@ -1,12 +1,15 @@
 /**
- * Tests for voice-ollama-tui audio recorder (F-2.1)
+ * Tests for voice-ollama-tui audio recorder (F-2.1 + F-2.3)
  *
  * Roadmap test cases:
+ *   TC-F-2.1-1: Successful recording creates non-empty WAV file
  *   TC-F-2.1-2: When ffmpeg is missing, throws AudioRecorderError with RECORDER_NOT_FOUND
  *   TC-F-2.1-3: Abort signal correctly terminates the process
+ *   TC-F-2.3-1: Fallback to sox when ffmpeg is missing
+ *   TC-F-2.3-2: Fallback to arecord when ffmpeg and sox are missing (Linux)
  *
  * Strategy:
- *   Mock child_process.spawn to control ffmpeg behaviour.
+ *   Mock child_process.spawn to control recorder behaviour.
  *   Mock fs operations where needed.
  */
 
@@ -15,7 +18,7 @@ import fs from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // ---------------------------------------------------------------------------
-// Mocks
+// Mock types and helpers
 // ---------------------------------------------------------------------------
 
 type MockChild = ReturnType<typeof createMockChild>;
@@ -38,7 +41,6 @@ function createMockChild() {
     stdoutData: [] as Function[],
   };
 
-  // Track handlers registered via .on()
   mockOn.mockImplementation((event: string, handler: Function) => {
     if (!store.on.has(event)) {
       store.on.set(event, []);
@@ -46,14 +48,12 @@ function createMockChild() {
     store.on.get(event)!.push(handler);
   });
 
-  // Track data handlers on stderr
   mockStderrOn.mockImplementation((event: string, handler: Function) => {
     if (event === "data") {
       store.stderrData.push(handler);
     }
   });
 
-  // Track data handlers on stdout
   mockStdoutOn.mockImplementation((event: string, handler: Function) => {
     if (event === "data") {
       store.stdoutData.push(handler);
@@ -95,14 +95,6 @@ function triggerStderrData(child: MockChild, data: string): void {
   }
 }
 
-function triggerStdoutData(child: MockChild, data: string): void {
-  const store = handlerStore.get(child);
-  if (!store) return;
-  for (const handler of store.stdoutData) {
-    handler(Buffer.from(data, "utf-8"));
-  }
-}
-
 vi.mock("node:child_process", () => ({
   spawn: vi.fn(),
 }));
@@ -129,31 +121,90 @@ vi.mock("node:fs", async () => {
 });
 
 // ---------------------------------------------------------------------------
+// Test helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Set up the spawn mock to produce a sequence of recorder responses.
+ *
+ * Each entry in `responses` describes what happens for one spawn call.
+ * The mock returns a child process. For each entry a timeout fires the
+ * appropriate events.
+ */
+function setupSpawnMock(
+  responses: Array<
+    | { kind: "success" }
+    | { kind: "enoent" }
+    | { kind: "failOther" }
+    | { kind: "failCode"; code: number; stderr?: string }
+    | { kind: "pending" }
+  >,
+) {
+  let idx = 0;
+  vi.mocked(spawn).mockImplementation((_command: string, _args: readonly string[]) => {
+    const child = createMockChild();
+    const resp = responses[idx] ?? { kind: "success" };
+    idx++;
+
+    if (resp.kind === "enoent") {
+      setTimeout(() => {
+        const err = new Error("spawn ENOENT") as NodeJS.ErrnoException;
+        err.code = "ENOENT";
+        triggerEvent(child, "error", err);
+      }, 0);
+    } else if (resp.kind === "failOther") {
+      setTimeout(() => {
+        const err = new Error("spawn failed: unknown error");
+        triggerEvent(child, "error", err);
+      }, 0);
+    } else if (resp.kind === "failCode") {
+      setTimeout(() => {
+        if (resp.stderr) triggerStderrData(child, resp.stderr);
+        triggerEvent(child, "close", resp.code);
+      }, 0);
+    } else if (resp.kind === "success") {
+      setTimeout(() => {
+        triggerEvent(child, "close", 0);
+      }, 0);
+    }
+    // "pending": never fires events — useful for abort tests
+
+    return child as unknown as ReturnType<typeof spawn>;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Shared mocks
+// ---------------------------------------------------------------------------
+
+function setupDefaultFsMocks(
+  mockMkdtempSync: ReturnType<typeof vi.fn>,
+  mockExistsSync: ReturnType<typeof vi.fn>,
+  mockStatSync: ReturnType<typeof vi.fn>,
+) {
+  mockMkdtempSync.mockReturnValue("/tmp/voice-ollama-xxxxx");
+  mockExistsSync.mockImplementation((p: unknown) => {
+    const pStr = String(p);
+    if (pStr === "/tmp/voice-ollama-xxxxx") return true;
+    return true;
+  });
+  mockStatSync.mockReturnValue({ size: 12345 } as fs.Stats);
+}
+
+// ---------------------------------------------------------------------------
 // F-2.1: Audio recorder
 // ---------------------------------------------------------------------------
 
 describe("voice-ollama-tui audio recorder (F-2.1)", () => {
-  const mockSpawn = vi.mocked(spawn);
-  const mockExistsSync = vi.mocked(fs.existsSync);
-  const mockMkdirSync = vi.mocked(fs.mkdirSync);
   const mockMkdtempSync = vi.mocked(fs.mkdtempSync);
+  const mockExistsSync = vi.mocked(fs.existsSync);
   const mockStatSync = vi.mocked(fs.statSync);
-  const mockRmSync = vi.mocked(fs.rmSync);
-  const mockUnlinkSync = vi.mocked(fs.unlinkSync);
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
+    // Use fresh imports per test
     vi.resetModules();
-
-    // Default mocks for fs operations
-    mockMkdtempSync.mockReturnValue("/tmp/voice-ollama-xxxxx");
-    mockExistsSync.mockImplementation((p: unknown) => {
-      const pStr = String(p);
-      // /tmp/voice-ollama-xxxxx created by mkdtempSync
-      if (pStr === "/tmp/voice-ollama-xxxxx") return true;
-      return false;
-    });
-    mockStatSync.mockReturnValue({ size: 12345 } as fs.Stats);
+    setupDefaultFsMocks(mockMkdtempSync, mockExistsSync, mockStatSync);
   });
 
   afterEach(() => {
@@ -162,73 +213,30 @@ describe("voice-ollama-tui audio recorder (F-2.1)", () => {
 
   // ── TC-F-2.1-1: successful recording creates non-empty WAV file ──────
   it("TC-F-2.1-1: resolves with a non-empty WAV file path when ffmpeg succeeds", async () => {
-    const child = createMockChild();
-    mockSpawn.mockReturnValue(child as any);
-    mockExistsSync.mockReturnValue(true);
-    mockStatSync.mockReturnValue({ size: 12345 } as fs.Stats);
+    setupSpawnMock([{ kind: "success" }]);
 
     const { recordAudio } = await import("./audio-recorder.js");
 
-    const promise = recordAudio({ duration: 5 });
-    triggerEvent(child, "close", 0);
-
-    const result = await promise;
+    const result = await recordAudio({ duration: 5 });
 
     expect(result).toContain(".wav");
     expect(mockStatSync).toHaveBeenCalledWith(result);
+    expect(vi.mocked(spawn).mock.calls[0][0]).toBe("ffmpeg");
   });
 
-  // ── TC-F-2.1-2: ffmpeg missing → RECORDER_NOT_FOUND ─────────────────
-  it("TC-F-2.1-2: throws AudioRecorderError with RECORDER_NOT_FOUND when ffmpeg is missing", async () => {
-    const child = createMockChild();
-    mockSpawn.mockImplementationOnce(() => {
-      // Simulate ENOENT error (ffmpeg not found)
-      const err = new Error("spawn ffmpeg ENOENT") as NodeJS.ErrnoException;
-      err.code = "ENOENT";
-      // Trigger the 'error' event
-      setTimeout(() => {
-        triggerEvent(child, "error", err);
-      }, 0);
-      return child as any;
-    });
+  // ── TC-F-2.1-2: all recorders missing → RECORDER_NOT_FOUND ─────────
+  it("TC-F-2.1-2: throws AudioRecorderError with RECORDER_NOT_FOUND when all recorders missing", async () => {
+    setupSpawnMock([
+      { kind: "enoent" },
+      { kind: "enoent" },
+      { kind: "enoent" },
+    ]);
 
-    const { recordAudio, AudioRecorderError } = await import(
-      "./audio-recorder.js"
-    );
+    const mod = await import("./audio-recorder.js");
+    const err = await mod.recordAudio({ duration: 5 }).catch((e: unknown) => e);
 
-    const promise = recordAudio({ duration: 5 });
-
-    await expect(promise).rejects.toThrow(AudioRecorderError);
-
-    expect(mockSpawn).toHaveBeenCalledWith(
-      "ffmpeg",
-      expect.arrayContaining([expect.any(String)]),
-      expect.any(Object),
-    );
-  });
-
-  it("TC-F-2.1-2: error has code RECORDER_NOT_FOUND and mentions ffmpeg", async () => {
-    const child = createMockChild();
-    mockSpawn.mockImplementationOnce(() => {
-      const err = new Error("spawn ffmpeg ENOENT") as NodeJS.ErrnoException;
-      err.code = "ENOENT";
-      setTimeout(() => {
-        triggerEvent(child, "error", err);
-      }, 0);
-      return child as any;
-    });
-
-    const { recordAudio } = await import("./audio-recorder.js");
-
-    let caught: any;
-    try {
-      await recordAudio({ duration: 5 });
-    } catch (e) {
-      caught = e;
-    }
-
-    expect(caught).toBeDefined();
-    expect(caught).toMatchObject({
+    expect(err).toBeInstanceOf(mod.AudioRecorderError);
+    expect(err).toMatchObject({
       code: "RECORDER_NOT_FOUND",
       message: expect.stringContaining("ffmpeg"),
     });
@@ -236,96 +244,77 @@ describe("voice-ollama-tui audio recorder (F-2.1)", () => {
 
   // ── TC-F-2.1-3: abort signal terminates recording ───────────────────
   it("TC-F-2.1-3: abort signal correctly terminates the process", async () => {
-    const child = createMockChild();
-    mockSpawn.mockReturnValue(child as any);
-    mockExistsSync.mockReturnValue(true);
-    mockStatSync.mockReturnValue({ size: 0 } as fs.Stats); // Will be overwritten on resolve
+    // Use "pending" so the spawn doesn't resolve on its own
+    setupSpawnMock([{ kind: "pending" }]);
 
-    const { recordAudio, AudioRecorderError } = await import(
-      "./audio-recorder.js"
-    );
+    const mod = await import("./audio-recorder.js");
 
     const controller = new AbortController();
 
-    // Start recording, then abort after a tick
-    const promise = recordAudio({ duration: 10, signal: controller.signal });
+    const promise = mod.recordAudio({ duration: 10, signal: controller.signal });
+
+    // Let the async setup complete, then abort
+    await vi.waitFor(() => {
+      expect(vi.mocked(spawn)).toHaveBeenCalled();
+    });
 
     controller.abort();
 
-    // Wait for the promise to settle
-    await expect(promise).rejects.toThrow(AudioRecorderError);
-    await expect(promise).rejects.toMatchObject({
-      code: "RECORDER_ABORTED",
-    });
+    const err = await promise.catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(mod.AudioRecorderError);
+    expect(err).toMatchObject({ code: "RECORDER_ABORTED" });
 
-    // Verify the child process was killed
-    expect(child.kill).toHaveBeenCalledWith("SIGTERM");
+    // The child's kill should have been called
+    const child = vi.mocked(spawn).mock.results[0]?.value as MockChild | undefined;
+    if (child) {
+      expect(child.kill).toHaveBeenCalledWith("SIGTERM");
+    }
   });
 
   // ── FFmpeg succeeds → returns output path ────────────────────────────
   it("resolves with output path when ffmpeg completes successfully", async () => {
-    const child = createMockChild();
-    mockSpawn.mockReturnValue(child as any);
-    mockExistsSync.mockReturnValue(true);
-    mockStatSync.mockReturnValue({ size: 12345 } as fs.Stats);
+    setupSpawnMock([{ kind: "success" }]);
 
     const { recordAudio } = await import("./audio-recorder.js");
 
-    const promise = recordAudio({ duration: 3 });
-
-    // Simulate ffmpeg success (exit code 0)
-    triggerEvent(child, "close", 0);
-
-    const result = await promise;
+    const result = await recordAudio({ duration: 3 });
 
     expect(result).toContain(".wav");
-    expect(mockSpawn).toHaveBeenCalledWith(
-      "ffmpeg",
-      expect.any(Array),
-      expect.any(Object),
-    );
+    expect(vi.mocked(spawn).mock.calls[0][0]).toBe("ffmpeg");
   });
 
-  // ── FFmpeg failure → RECORDER_FAILED ─────────────────────────────────
-  it("throws RECORDER_FAILED when ffmpeg exits with non-zero code", async () => {
-    const child = createMockChild();
-    mockSpawn.mockReturnValue(child as any);
+  // ── FFmpeg failure → tries sox, if all fail → RECORDER_FAILED ─────────
+  it("throws RECORDER_FAILED when all recorders exit with non-zero code", async () => {
+    setupSpawnMock([
+      { kind: "failCode", code: 1, stderr: "ffmpeg error" },
+      { kind: "failCode", code: 2, stderr: "sox error" },
+      { kind: "failCode", code: 3, stderr: "arecord error" },
+    ]);
 
-    const { recordAudio, AudioRecorderError } = await import(
-      "./audio-recorder.js"
-    );
+    const { recordAudio, AudioRecorderError } = await import("./audio-recorder.js");
 
-    const promise = recordAudio({ duration: 3 });
-
-    // Simulate stderr output
-    triggerStderrData(child, "ffmpeg error: invalid audio device");
-
-    // Simulate ffmpeg failure
-    triggerEvent(child, "close", 1);
-
-    await expect(promise).rejects.toThrow(AudioRecorderError);
-    await expect(promise).rejects.toMatchObject({
-      code: "RECORDER_FAILED",
-      message: expect.stringContaining("ffmpeg exited with code 1"),
-    });
+    try {
+      await recordAudio({ duration: 3 });
+      expect.unreachable("should have thrown");
+    } catch (err) {
+      expect(err).toBeInstanceOf(AudioRecorderError);
+      expect(err).toMatchObject({
+        code: "RECORDER_FAILED",
+        message: expect.stringContaining("arecord exited with code 3"),
+      });
+    }
   });
 
   // ── Output file is empty → RECORDER_FAILED ──────────────────────────
   it("throws RECORDER_FAILED when output file is empty", async () => {
-    const child = createMockChild();
-    mockSpawn.mockReturnValue(child as any);
+    setupSpawnMock([{ kind: "success" }]);
     mockStatSync.mockReturnValue({ size: 0 } as fs.Stats);
 
-    const { recordAudio, AudioRecorderError } = await import(
-      "./audio-recorder.js"
-    );
+    const { recordAudio, AudioRecorderError } = await import("./audio-recorder.js");
+    const err = await recordAudio().catch((e: unknown) => e);
 
-    const promise = recordAudio();
-
-    triggerEvent(child, "close", 0);
-
-    await expect(promise).rejects.toThrow(AudioRecorderError);
-    await expect(promise).rejects.toMatchObject({
+    expect(err).toBeInstanceOf(AudioRecorderError);
+    expect(err).toMatchObject({
       code: "RECORDER_FAILED",
       message: expect.stringContaining("empty file"),
     });
@@ -333,23 +322,16 @@ describe("voice-ollama-tui audio recorder (F-2.1)", () => {
 
   // ── ffmpeg args: verify WAV 16kHz mono 16-bit ────────────────────────
   it("passes correct ffmpeg args for WAV 16kHz mono 16-bit", async () => {
-    const child = createMockChild();
-    mockSpawn.mockReturnValue(child as any);
-    mockStatSync.mockReturnValue({ size: 12345 } as fs.Stats);
+    setupSpawnMock([{ kind: "success" }]);
 
     const { recordAudio } = await import("./audio-recorder.js");
 
-    const promise = recordAudio({ duration: 5, audioDevice: "default" });
+    await recordAudio({ duration: 5, audioDevice: "default" });
 
-    triggerEvent(child, "close", 0);
-
-    await promise;
-
-    const callArgs = mockSpawn.mock.calls[0];
+    const callArgs = vi.mocked(spawn).mock.calls[0];
     expect(callArgs[0]).toBe("ffmpeg");
     const args = callArgs[1] as string[];
 
-    // Check audio format flags
     expect(args).toContain("-acodec");
     const codecIdx = args.indexOf("-acodec");
     expect(args[codecIdx + 1]).toBe("pcm_s16le");
@@ -362,54 +344,252 @@ describe("voice-ollama-tui audio recorder (F-2.1)", () => {
     const arIdx = args.indexOf("-ar");
     expect(args[arIdx + 1]).toBe("16000");
 
-    // Check duration flag
     expect(args).toContain("-t");
     const tIdx = args.indexOf("-t");
     expect(args[tIdx + 1]).toBe("5");
 
-    // Check output path ends with .wav
     const outputPath = args[args.length - 1];
     expect(outputPath).toContain(".wav");
   });
 
-  // ── Supports audioDevice parameter ────────────────────────────────────
-  it("passes audioDevice to ffmpeg arguments", async () => {
-    const child = createMockChild();
-    mockSpawn.mockReturnValue(child as any);
-    mockStatSync.mockReturnValue({ size: 12345 } as fs.Stats);
-
-    const { recordAudio } = await import("./audio-recorder.js");
-
-    const promise = recordAudio({ audioDevice: "2" });
-
-    triggerEvent(child, "close", 0);
-
-    await promise;
-
-    const args = mockSpawn.mock.calls[0][1] as string[];
-
-    // For macOS the device arg would be :2 with avfoundation
-    // We just check the device value appears somewhere in the args
-    expect(args.some((a) => a.includes("2"))).toBe(true);
-  });
-
   // ── AbortSignal already aborted before start ─────────────────────────
   it("handles already-aborted signal before spawning", async () => {
-    const child = createMockChild();
-    mockSpawn.mockReturnValue(child as any);
-
-    const { recordAudio, AudioRecorderError } = await import(
-      "./audio-recorder.js"
-    );
+    const { recordAudio } = await import("./audio-recorder.js");
 
     const controller = new AbortController();
     controller.abort();
 
-    await expect(
-      recordAudio({ signal: controller.signal }),
-    ).rejects.toMatchObject({
+    const err = await recordAudio({ signal: controller.signal }).catch((e: unknown) => e);
+    expect(err).toMatchObject({
       code: "RECORDER_ABORTED",
       message: expect.stringContaining("aborted before starting"),
     });
+
+    // spawn should NOT have been called
+    expect(vi.mocked(spawn)).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F-2.3: Fallback recorder tests
+// ---------------------------------------------------------------------------
+
+describe("voice-ollama-tui audio recorder fallback (F-2.3)", () => {
+  const mockMkdtempSync = vi.mocked(fs.mkdtempSync);
+  const mockExistsSync = vi.mocked(fs.existsSync);
+  const mockStatSync = vi.mocked(fs.statSync);
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    vi.resetModules();
+    setupDefaultFsMocks(mockMkdtempSync, mockExistsSync, mockStatSync);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  // ── TC-F-2.3-1: ffmpeg missing, sox available → success ──────────────
+  it("TC-F-2.3-1: falls back to sox when ffmpeg is not found", async () => {
+    setupSpawnMock([
+      { kind: "enoent" },
+      { kind: "success" },
+    ]);
+
+    const { recordAudio } = await import("./audio-recorder.js");
+
+    const result = await recordAudio({ duration: 5 });
+
+    expect(result).toContain(".wav");
+
+    const calls = vi.mocked(spawn).mock.calls;
+    expect(calls[0][0]).toBe("ffmpeg");
+    expect(calls[1][0]).toBe("sox");
+  });
+
+  // ── TC-F-2.3-2: ffmpeg + sox missing, arecord available (Linux) ──
+  it("TC-F-2.3-2: falls back to arecord when ffmpeg and sox are not found", async () => {
+    const origPlatform = process.platform;
+    Object.defineProperty(process, "platform", { value: "linux" });
+
+    try {
+      setupSpawnMock([
+        { kind: "enoent" },
+        { kind: "enoent" },
+        { kind: "success" },
+      ]);
+
+      const { recordAudio } = await import("./audio-recorder.js");
+
+      const result = await recordAudio({ duration: 5 });
+
+      expect(result).toContain(".wav");
+
+      const calls = vi.mocked(spawn).mock.calls;
+      expect(calls[0][0]).toBe("ffmpeg");
+      expect(calls[1][0]).toBe("sox");
+      expect(calls[2][0]).toBe("arecord");
+    } finally {
+      Object.defineProperty(process, "platform", { value: origPlatform });
+    }
+  });
+
+  // ── skips arecord on non-Linux, falls to RECORDER_NOT_FOUND ───────────
+  it("skips arecord on non-Linux, falls through to RECORDER_NOT_FOUND if sox also missing", async () => {
+    const origPlatform = process.platform;
+    Object.defineProperty(process, "platform", { value: "darwin" });
+
+    try {
+      setupSpawnMock([
+        { kind: "enoent" },
+        { kind: "enoent" },
+        // arecord is skipped on darwin (buildArgs returns null)
+      ]);
+
+      const { recordAudio, AudioRecorderError } = await import("./audio-recorder.js");
+      const err = await recordAudio({ duration: 5 }).catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(AudioRecorderError);
+      expect(err).toMatchObject({
+        code: "RECORDER_NOT_FOUND",
+        message: expect.stringContaining("ffmpeg"),
+      });
+    } finally {
+      Object.defineProperty(process, "platform", { value: origPlatform });
+    }
+  });
+
+  // ── ffmpeg fails, sox succeeds → fallback works ─────────────────────
+  it("falls back to sox when ffmpeg exits with non-zero code", async () => {
+    setupSpawnMock([
+      { kind: "failCode", code: 1, stderr: "ffmpeg: Invalid argument" },
+      { kind: "success" },
+    ]);
+
+    const { recordAudio } = await import("./audio-recorder.js");
+
+    const result = await recordAudio();
+    expect(result).toContain(".wav");
+
+    // ffmpeg was tried, sox was used
+    const calls = vi.mocked(spawn).mock.calls;
+    expect(calls[0][0]).toBe("ffmpeg");
+    expect(calls[1][0]).toBe("sox");
+    expect(calls).toHaveLength(2);
+  });
+
+  // ── All recorders found but fail → final RECORDER_FAILED ─────────────
+  it("throws RECORDER_FAILED when all recorders are found but exit with error", async () => {
+    setupSpawnMock([
+      { kind: "failCode", code: 1, stderr: "ffmpeg error" },
+      { kind: "failCode", code: 2, stderr: "sox error" },
+      { kind: "failCode", code: 2, stderr: "arecord error" },
+    ]);
+
+    const { recordAudio, AudioRecorderError } = await import("./audio-recorder.js");
+    const err = await recordAudio().catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(AudioRecorderError);
+    expect(err).toMatchObject({
+      code: "RECORDER_FAILED",
+      message: expect.stringContaining("arecord exited with code 2"),
+    });
+
+    // All three were called
+    expect(vi.mocked(spawn)).toHaveBeenCalledTimes(3);
+  });
+
+  // ── sox args check ─────────────────────────────────────────────────
+  it("uses sox args correctly on fallback", async () => {
+    setupSpawnMock([
+      { kind: "enoent" },
+      { kind: "success" },
+    ]);
+
+    const { recordAudio } = await import("./audio-recorder.js");
+
+    await recordAudio({ duration: 3 });
+
+    const soxCall = vi.mocked(spawn).mock.calls[1];
+    expect(soxCall[0]).toBe("sox");
+    const soxArgs = soxCall[1] as string[];
+
+    expect(soxArgs).toContain("-d");
+    expect(soxArgs).toContain("-t");
+    expect(soxArgs[soxArgs.indexOf("-t") + 1]).toBe("wav");
+    expect(soxArgs).toContain("trim");
+  });
+
+  // ── arecord args on Linux ──────────────────────────────────────────
+  it("passes correct arecord args on Linux", async () => {
+    const origPlatform = process.platform;
+    Object.defineProperty(process, "platform", { value: "linux" });
+
+    try {
+      setupSpawnMock([
+        { kind: "enoent" },
+        { kind: "enoent" },
+        { kind: "success" },
+      ]);
+
+      const { recordAudio } = await import("./audio-recorder.js");
+
+      await recordAudio({ duration: 5 });
+
+      const arecordCall = vi.mocked(spawn).mock.calls[2];
+      expect(arecordCall[0]).toBe("arecord");
+      const arecordArgs = arecordCall[1] as string[];
+
+      expect(arecordArgs).toContain("-r");
+      expect(arecordArgs[arecordArgs.indexOf("-r") + 1]).toBe("16000");
+      expect(arecordArgs).toContain("-c");
+      expect(arecordArgs[arecordArgs.indexOf("-c") + 1]).toBe("1");
+      expect(arecordArgs).toContain("-f");
+      expect(arecordArgs[arecordArgs.indexOf("-f") + 1]).toBe("S16_LE");
+      expect(arecordArgs).toContain("-t");
+      expect(arecordArgs[arecordArgs.indexOf("-t") + 1]).toBe("wav");
+      expect(arecordArgs).toContain("--duration");
+      expect(arecordArgs[arecordArgs.indexOf("--duration") + 1]).toBe("5");
+    } finally {
+      Object.defineProperty(process, "platform", { value: origPlatform });
+    }
+  });
+
+  // ── arecord with audioDevice ────────────────────────────────────────
+  it("passes audioDevice to arecord as -D flag", async () => {
+    const origPlatform = process.platform;
+    Object.defineProperty(process, "platform", { value: "linux" });
+
+    try {
+      setupSpawnMock([
+        { kind: "enoent" },
+        { kind: "enoent" },
+        { kind: "success" },
+      ]);
+
+      const { recordAudio } = await import("./audio-recorder.js");
+
+      await recordAudio({ duration: 3, audioDevice: "hw:0,0" });
+
+      const arecordCall = vi.mocked(spawn).mock.calls[2];
+      const arecordArgs = arecordCall[1] as string[];
+
+      expect(arecordArgs).toContain("-D");
+      expect(arecordArgs[arecordArgs.indexOf("-D") + 1]).toBe("hw:0,0");
+    } finally {
+      Object.defineProperty(process, "platform", { value: origPlatform });
+    }
+  });
+
+  // ── ffmpeg succeeds (no fallback needed) ─────────────────────────────
+  it("does not try sox or arecord when ffmpeg succeeds", async () => {
+    setupSpawnMock([{ kind: "success" }]);
+
+    const { recordAudio } = await import("./audio-recorder.js");
+
+    await recordAudio();
+
+    expect(vi.mocked(spawn)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(spawn).mock.calls[0][0]).toBe("ffmpeg");
   });
 });

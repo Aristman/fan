@@ -42,14 +42,23 @@ function checkTool(command: string, versionFlag: string): boolean {
 }
 
 const FFMPEG_INSTRUCTIONS = [
-	"ffmpeg is required for audio recording.",
+	"ffmpeg, sox, or arecord is required for audio recording.",
 	"",
-	"Install via your package manager:",
+	"Install ffmpeg (recommended, cross-platform):",
 	"  • macOS: brew install ffmpeg",
 	"  • Ubuntu/Debian: sudo apt install ffmpeg",
 	"  • Fedora: sudo dnf install ffmpeg",
 	"  • Windows (winget): winget install ffmpeg",
 	"  • Windows (choco): choco install ffmpeg",
+	"",
+	"Or install sox (cross-platform):",
+	"  • macOS: brew install sox",
+	"  • Ubuntu/Debian: sudo apt install sox",
+	"  • Fedora: sudo dnf install sox",
+	"",
+	"Or install arecord (alsa-utils, Linux-only):",
+	"  • Ubuntu/Debian: sudo apt install alsa-utils",
+	"  • Fedora: sudo dnf install alsa-utils",
 ];
 
 const WHISPER_INSTRUCTIONS = [
@@ -68,6 +77,19 @@ function checkFfmpeg(): boolean {
 	return checkTool("ffmpeg", "-version");
 }
 
+function checkSox(): boolean {
+	return checkTool("sox", "--version");
+}
+
+function checkArecord(): boolean {
+	// Use --version instead of plain invocation
+	try {
+		return checkTool("arecord", "--version");
+	} catch {
+		return false;
+	}
+}
+
 function checkWhisperCli(): boolean {
 	// whisper-cli supports both -h and --help
 	return checkTool("whisper-cli", "-h");
@@ -78,8 +100,9 @@ function checkWhisperCli(): boolean {
 // ---------------------------------------------------------------------------
 
 /**
- * Check whether all external tools (ffmpeg, whisper-cli) are available.
+ * Check whether all external tools (ffmpeg/sox/arecord, whisper-cli) are available.
  *
+ * For audio recording, at least one of ffmpeg, sox, or arecord (Linux) must be present.
  * Results are cached for the duration of the session and reset on session_shutdown.
  * Call {@link resetDependencyCache} to clear the cache in tests.
  *
@@ -93,7 +116,12 @@ export function checkDependencies(_config?: VoiceOllamaConfig): DependencyStatus
 	const missing: string[] = [];
 	const instructions: string[] = [];
 
-	if (!checkFfmpeg()) {
+	// Audio recorder: at least one of ffmpeg / sox / arecord must be present
+	const hasFfmpeg = checkFfmpeg();
+	const hasSox = checkSox();
+	const hasArecord = checkArecord();
+
+	if (!hasFfmpeg && !hasSox && !hasArecord) {
 		missing.push("ffmpeg");
 		instructions.push(...FFMPEG_INSTRUCTIONS);
 	}

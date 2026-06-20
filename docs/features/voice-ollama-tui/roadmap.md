@@ -176,7 +176,7 @@
 - **Ожидаемый результат:** Модуль `ui-overlay.ts` с функциями `showRecordingOverlay()` и `showProcessingOverlay()`.
 - **Оценка объёма:** M (≤ 1 день)
 
-#### ☐ F-2.3 [INTEG]: Fallback на sox/arecord при отсутствии ffmpeg
+#### ✅ F-2.3 [INTEG]: Fallback на sox/arecord при отсутствии ffmpeg
 
 - **Приоритет:** P1
 - **Слой:** [INTEG]

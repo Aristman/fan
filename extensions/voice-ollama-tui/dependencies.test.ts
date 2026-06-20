@@ -1,9 +1,10 @@
 /**
- * Tests for voice-ollama-tui dependency checker (F-1.3)
+ * Tests for voice-ollama-tui dependency checker (F-1.3 + F-2.3)
  *
  * Roadmap test cases:
- *   TC-F-1.3-1: When ffmpeg and whisper-cli are present, status is ok
- *   TC-F-1.3-2: When ffmpeg is missing, missing includes ffmpeg
+ *   TC-F-1.3-1: When at least one audio tool (ffmpeg/sox/arecord) and
+ *                whisper-cli are present, status is ok
+ *   TC-F-1.3-2: When no audio tool is available, missing includes ffmpeg
  *
  * Strategy:
  *   We mock child_process.execSync so no real tools are invoked.
@@ -35,7 +36,7 @@ describe("voice-ollama-tui dependencies (F-1.3)", () => {
 		vi.restoreAllMocks();
 	});
 
-	// ── TC-F-1.3-1: both tools present → ok ─────────────────────────────
+	// ── TC-F-1.3-1: all tools present → ok ───────────────────────────────
 	it("TC-F-1.3-1: returns ok when ffmpeg and whisper-cli are available", async () => {
 		vi.mocked(execSync).mockReturnValue(Buffer.from(""));
 
@@ -48,20 +49,28 @@ describe("voice-ollama-tui dependencies (F-1.3)", () => {
 		expect(result.missing).toEqual([]);
 		expect(result.instructions).toEqual([]);
 
-		// ffmpeg -version and whisper-cli -h were each called once
+		// ffmpeg -version, sox --version, arecord --version, and whisper-cli -h were called
 		const calls = vi.mocked(execSync).mock.calls.map((c) => c[0]);
 		expect(calls).toContain("ffmpeg -version");
+		expect(calls).toContain("sox --version");
+		expect(calls).toContain("arecord --version");
 		expect(calls).toContain("whisper-cli -h");
 	});
 
-	// ── TC-F-1.3-2: ffmpeg missing ───────────────────────────────────────
-	it("TC-F-1.3-2: returns missing with ffmpeg when ffmpeg is not available", async () => {
-		// First call (ffmpeg) throws, second call (whisper-cli) succeeds
+	// ── TC-F-1.3-2: all audio tools missing ──────────────────────────────
+	it("TC-F-1.3-2: returns missing ffmpeg when no audio tool is available", async () => {
+		// All audio tools fail, whisper-cli succeeds
 		vi.mocked(execSync)
 			.mockImplementationOnce(() => {
 				throw new Error("ffmpeg not found");
 			})
-			.mockImplementationOnce(() => Buffer.from(""));
+			.mockImplementationOnce(() => {
+				throw new Error("sox not found");
+			})
+			.mockImplementationOnce(() => {
+				throw new Error("arecord not found");
+			})
+			.mockImplementationOnce(() => Buffer.from("")); // whisper-cli ok
 
 		const { checkDependencies, resetDependencyCache } = await import("./dependencies.js");
 		resetDependencyCache();
@@ -75,8 +84,48 @@ describe("voice-ollama-tui dependencies (F-1.3)", () => {
 		expect(result.instructions.join(" ").toLowerCase()).toContain("ffmpeg");
 	});
 
-	// ── Both missing ─────────────────────────────────────────────────────
-	it("returns missing with both tools when neither is available", async () => {
+	// ── At least one audio tool present → ok (for audio) ────────────────
+	it("returns ok when at least sox is available (ffmpeg + arecord missing)", async () => {
+		vi.mocked(execSync)
+			.mockImplementationOnce(() => {
+				throw new Error("ffmpeg not found");
+			})
+			.mockImplementationOnce(() => Buffer.from("")) // sox ok
+			.mockImplementationOnce(() => {
+				throw new Error("arecord not found");
+			})
+			.mockImplementationOnce(() => Buffer.from("")); // whisper-cli ok
+
+		const { checkDependencies, resetDependencyCache } = await import("./dependencies.js");
+		resetDependencyCache();
+
+		const result = checkDependencies();
+
+		expect(result.ok).toBe(true);
+		expect(result.missing).toEqual([]);
+	});
+
+	it("returns ok when only arecord is available", async () => {
+		vi.mocked(execSync)
+			.mockImplementationOnce(() => {
+				throw new Error("ffmpeg not found");
+			})
+			.mockImplementationOnce(() => {
+				throw new Error("sox not found");
+			})
+			.mockImplementationOnce(() => Buffer.from("")) // arecord ok
+			.mockImplementationOnce(() => Buffer.from("")); // whisper-cli ok
+
+		const { checkDependencies, resetDependencyCache } = await import("./dependencies.js");
+		resetDependencyCache();
+
+		const result = checkDependencies();
+
+		expect(result.ok).toBe(true);
+		expect(result.missing).toEqual([]);
+	});
+
+	it("returns missing ffmpeg + whisper-cli when no audio tool and no whisper-cli", async () => {
 		vi.mocked(execSync).mockImplementation(() => {
 			throw new Error("command not found");
 		});
@@ -87,7 +136,8 @@ describe("voice-ollama-tui dependencies (F-1.3)", () => {
 		const result = checkDependencies();
 
 		expect(result.ok).toBe(false);
-		expect(result.missing).toEqual(["ffmpeg", "whisper-cli"]);
+		expect(result.missing).toContain("ffmpeg");
+		expect(result.missing).toContain("whisper-cli");
 		expect(result.instructions.length).toBeGreaterThan(0);
 	});
 
@@ -95,6 +145,8 @@ describe("voice-ollama-tui dependencies (F-1.3)", () => {
 	it("returns missing with whisper-cli when only whisper-cli is missing", async () => {
 		vi.mocked(execSync)
 			.mockImplementationOnce(() => Buffer.from("")) // ffmpeg ok
+			.mockImplementationOnce(() => Buffer.from("")) // sox ok
+			.mockImplementationOnce(() => Buffer.from("")) // arecord ok
 			.mockImplementationOnce(() => {
 				throw new Error("whisper-cli not found");
 			}); // whisper-cli fails
@@ -132,7 +184,7 @@ describe("voice-ollama-tui dependencies (F-1.3)", () => {
 
 	// ── Cache: resetDependencyCache forces re-check ──────────────────────
 	it("resetDependencyCache forces a fresh check", async () => {
-		// 1st check: both ok
+		// 1st check: all ok
 		vi.mocked(execSync).mockReturnValue(Buffer.from(""));
 
 		const { checkDependencies, resetDependencyCache } = await import("./dependencies.js");
@@ -141,18 +193,18 @@ describe("voice-ollama-tui dependencies (F-1.3)", () => {
 		const result1 = checkDependencies();
 		expect(result1.ok).toBe(true);
 
-		// Reset cache and change mock to fail for ffmpeg
+		// Reset cache and change mock to fail for all audio tools + whisper
 		resetDependencyCache();
 		vi.mocked(execSync)
 			.mockReset()
-			.mockImplementationOnce(() => {
-				throw new Error("ffmpeg not found");
-			})
-			.mockImplementationOnce(() => Buffer.from(""));
+			.mockImplementation(() => {
+				throw new Error("command not found");
+			});
 
 		const result2 = checkDependencies();
 		expect(result2.ok).toBe(false);
 		expect(result2.missing).toContain("ffmpeg");
+		expect(result2.missing).toContain("whisper-cli");
 	});
 
 	// ── Instructions are human-readable ──────────────────────────────────
@@ -166,9 +218,11 @@ describe("voice-ollama-tui dependencies (F-1.3)", () => {
 
 		const result = checkDependencies();
 
-		// Expect instructions for both ffmpeg and whisper-cli
+		// Expect instructions for both audio tools and whisper-cli
 		const text = result.instructions.join("\n").toLowerCase();
 		expect(text).toContain("ffmpeg");
+		expect(text).toContain("sox");
+		expect(text).toContain("arecord");
 		expect(text).toContain("whisper");
 	});
 
