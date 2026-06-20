@@ -6,6 +6,7 @@ import { recordAudio } from "./audio-recorder.js";
 import { showRecordingOverlay, showProcessingOverlay } from "./ui-overlay.js";
 import { transcribe } from "./whisper-service.js";
 import { ensureWhisperModel } from "./model-downloader.js";
+import { insertTranscript } from "./editor-utils.js";
 
 export default function (pi: ExtensionAPI) {
   const config = loadConfig();
@@ -84,7 +85,7 @@ export default function (pi: ExtensionAPI) {
         processingOverlay.update("done");
         processingOverlay.close();
 
-        ctx.ui.notify(`Recognised: ${text}`, "info");
+        insertTranscript(ctx, text);
       } catch (transcribeErr) {
         processingOverlay.update("done");
         processingOverlay.close();

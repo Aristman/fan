@@ -427,6 +427,8 @@ describe("voice-ollama-tui extension entry (F-1.1)", () => {
     const on = vi.fn();
     const notify = vi.fn();
     const setStatus = vi.fn();
+    const setEditorText = vi.fn();
+    const getEditorText = vi.fn().mockReturnValue("");
     // custom must return a promise resolving with { accepted: true } for the new pipeline
     const custom = vi.fn().mockResolvedValue({ accepted: true });
 
@@ -434,7 +436,7 @@ describe("voice-ollama-tui extension entry (F-1.1)", () => {
       registerCommand,
       registerShortcut,
       on,
-      ui: { notify, setStatus, custom },
+      ui: { notify, setStatus, custom, setEditorText, getEditorText },
     };
 
     vi.doMock("./config.js", () => ({
@@ -500,14 +502,13 @@ describe("voice-ollama-tui extension entry (F-1.1)", () => {
 
     // Invoke the shortcut handler
     const shortcutHandler = registerShortcut.mock.calls[0][1].handler;
-    await shortcutHandler({ ui: { notify, setStatus, custom } });
+    await shortcutHandler({ ui: { notify, setStatus, custom, setEditorText, getEditorText } });
 
     // The pipeline: showRecordingOverlay → recordAudio → showProcessingOverlay(model) →
-    // ensureWhisperModel → showProcessingOverlay(transcribing) → transcribe → notify
+    // ensureWhisperModel → showProcessingOverlay(transcribing) → transcribe → insertTranscript
     expect(custom).toHaveBeenCalledTimes(3);
-    expect(notify).toHaveBeenCalledWith(
-      expect.stringContaining("привет мир"),
-      "info",
-    );
+    expect(setEditorText).toHaveBeenCalledWith("привет мир");
+    expect(getEditorText).toHaveBeenCalledTimes(1);
+    expect(notify).not.toHaveBeenCalled();
   });
 });
