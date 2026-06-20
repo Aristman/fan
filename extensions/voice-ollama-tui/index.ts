@@ -5,6 +5,7 @@ import { checkDependencies, resetDependencyCache } from "./dependencies.js";
 import { recordAudio } from "./audio-recorder.js";
 import { showRecordingOverlay, showProcessingOverlay } from "./ui-overlay.js";
 import { transcribe } from "./whisper-service.js";
+import { ensureWhisperModel } from "./model-downloader.js";
 
 export default function (pi: ExtensionAPI) {
   const config = loadConfig();
@@ -47,7 +48,28 @@ export default function (pi: ExtensionAPI) {
         audioDevice: config.audioDevice,
       });
 
-      // Step 3: Transcribe the recorded audio
+      // Step 3: Ensure the whisper model is downloaded
+      const modelOverlay = showProcessingOverlay(ctx, "transcribing");
+      try {
+        await ensureWhisperModel({
+          modelPath: config.whisperModelPath,
+          onProgress: (downloaded, total) => {
+            const pct = total > 0 ? Math.round((downloaded / total) * 100) : 0;
+            modelOverlay.update("transcribing");
+            ctx.ui.setStatus("voice-ollama-tui", `🎙 Downloading model ${pct}%`);
+          },
+        });
+        modelOverlay.close();
+        ctx.ui.setStatus("voice-ollama-tui", "🎙 Ready");
+      } catch (modelErr) {
+        modelOverlay.close();
+        ctx.ui.setStatus("voice-ollama-tui", "🎙 Model download failed");
+        const msg = modelErr instanceof Error ? modelErr.message : String(modelErr);
+        ctx.ui.notify(`Model download failed: ${msg}`, "error");
+        return;
+      }
+
+      // Step 4: Transcribe the recorded audio
       const processingOverlay = showProcessingOverlay(ctx, "transcribing");
 
       let text: string;

@@ -490,6 +490,11 @@ describe("voice-ollama-tui extension entry (F-1.1)", () => {
       transcribe: vi.fn().mockResolvedValue("привет мир"),
     }));
 
+    // Mock model-downloader to skip actual download
+    vi.doMock("./model-downloader.js", () => ({
+      ensureWhisperModel: vi.fn().mockResolvedValue("/home/user/.fan/models/speech/ggml-base.bin"),
+    }));
+
     const mod = await import("./index.js");
     await mod.default(mockPi as any);
 
@@ -497,8 +502,9 @@ describe("voice-ollama-tui extension entry (F-1.1)", () => {
     const shortcutHandler = registerShortcut.mock.calls[0][1].handler;
     await shortcutHandler({ ui: { notify, setStatus, custom } });
 
-    // The pipeline: showRecordingOverlay → recordAudio → showProcessingOverlay → transcribe → notify
-    expect(custom).toHaveBeenCalledTimes(2);
+    // The pipeline: showRecordingOverlay → recordAudio → showProcessingOverlay(model) →
+    // ensureWhisperModel → showProcessingOverlay(transcribing) → transcribe → notify
+    expect(custom).toHaveBeenCalledTimes(3);
     expect(notify).toHaveBeenCalledWith(
       expect.stringContaining("привет мир"),
       "info",
