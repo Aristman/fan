@@ -7,6 +7,8 @@ import { showRecordingOverlay, showProcessingOverlay } from "./ui-overlay.js";
 import { transcribe } from "./whisper-service.js";
 import { ensureWhisperModel } from "./model-downloader.js";
 import { insertTranscript } from "./editor-utils.js";
+import { improveText } from "./ollama-service.js";
+import type { ImproveTextResult } from "./ollama-service.js";
 
 export default function (pi: ExtensionAPI) {
   const config = loadConfig();
@@ -81,7 +83,19 @@ export default function (pi: ExtensionAPI) {
           binPath: config.whisperBinPath,
         });
 
-        // Step 4: Show done and insert result
+        // Step 5 (F-4.2): If Ollama is enabled, improve the recognised text
+        if (config.ollamaEnabled) {
+          processingOverlay.update("ollama");
+
+          const result: ImproveTextResult = await improveText(config, text);
+          if (result.usedOllama) {
+            text = result.text;
+          } else {
+            // Fallback case - text remains unchanged, no need to notify (already done silently)
+          }
+        }
+
+        // Show done and insert result
         processingOverlay.update("done");
         processingOverlay.close();
 

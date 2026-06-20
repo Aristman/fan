@@ -91,31 +91,122 @@ export async function isOllamaReachable(config: { ollamaBaseUrl: string }): Prom
 }
 
 // ---------------------------------------------------------------------------
-// F-4.2: improveText (stub — will be extended in F-4.2)
+// F-4.2: improveText
 // ---------------------------------------------------------------------------
+
+/**
+ * Options for {@link improveText}.
+ */
+export interface ImproveTextOptions {
+  /**
+   * Optional callback invoked when Ollama is unreachable or an error occurs
+   * and the original text is used as fallback.
+   */
+  onFallback?: () => void;
+  /**
+   * Optional AbortSignal to abort the fetch request.
+   */
+  signal?: AbortSignal;
+}
+
+/**
+ * Result of {@link improveText}.
+ */
+export interface ImproveTextResult {
+  /** The improved (or original) text. */
+  text: string;
+  /** Whether Ollama was actually used to improve the text. */
+  usedOllama: boolean;
+}
 
 /**
  * Send recognised text to Ollama for punctuation/typo correction.
  *
- * If `ollamaEnabled` is false or the server is unreachable, the original text
- * is returned unchanged. This is a stub for F-4.2 — it only checks reachability
- * and returns the original text.
+ * Behaviour:
+ * - If `ollamaEnabled !== true` → returns `{ text, usedOllama: false }` without any network call.
+ * - If Ollama is unreachable (`isOllamaReachable` returns false) → returns `{ text, usedOllama: false }`
+ *   and calls `onFallback()` if provided.
+ * - Otherwise sends a POST to `${ollamaBaseUrl}/api/chat` with `stream: false`,
+ *   the configured model, a system prompt, and the user text (temperature 0.3).
+ * - On any HTTP/parse error → falls back to original text.
  *
  * @param config - Ollama configuration
  * @param text - Recognised text to improve
- * @returns Improved text, or original text on failure
+ * @param options - Optional settings (e.g. onFallback callback)
+ * @returns Object with the (possibly improved) text and a flag indicating whether Ollama was used.
  */
-export async function improveText(config: OllamaConfig, text: string): Promise<string> {
-  if (config.ollamaEnabled === false) {
-    return text;
+export async function improveText(
+  config: OllamaConfig,
+  text: string,
+  options?: ImproveTextOptions,
+): Promise<ImproveTextResult> {
+  const { onFallback } = options ?? {};
+
+  // F-4.2 TC-3: if ollamaEnabled !== true, skip immediately
+  if (config.ollamaEnabled !== true) {
+    return { text, usedOllama: false };
   }
 
+  // Check reachability
   const reachable = await isOllamaReachable(config);
   if (!reachable) {
-    return text;
+    onFallback?.();
+    return { text, usedOllama: false };
   }
 
-  // F-4.2 full implementation will call /api/chat here.
-  // For now, just return the original text.
-  return text;
+  // Build the /api/chat request
+  const baseUrl = config.ollamaBaseUrl.replace(/\/+$/, "");
+  const model = config.ollamaModel?.trim() || "llama3.2";
+  const systemPrompt =
+    config.ollamaSystemPrompt ??
+    "You are a helpful assistant. Fix punctuation and obvious typos in the user's dictated text. Preserve the original meaning and language. Return ONLY the corrected text, nothing else.";
+
+  const body = {
+    model,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: text },
+    ],
+    stream: false,
+    options: { temperature: 0.3 },
+  };
+
+  try {
+    const response = await fetch(`${baseUrl}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: options?.signal ?? AbortSignal.timeout(30000)
+    });
+
+    if (!response.ok) {
+      console.warn(
+        `[voice-ollama-tui] Ollama /api/chat returned ${response.status}`,
+      );
+      onFallback?.();
+      return { text, usedOllama: false };
+    }
+
+    const data = (await response.json()) as {
+      message?: { content?: string };
+    };
+
+    const improved = data?.message?.content?.trim();
+    if (!improved) {
+      console.warn(
+        "[voice-ollama-tui] Ollama returned empty content, using original text",
+      );
+      onFallback?.();
+      return { text, usedOllama: false };
+    }
+
+    return { text: improved, usedOllama: true };
+  } catch (err) {
+    console.warn(
+      "[voice-ollama-tui] Ollama request failed:",
+      (err as Error).message,
+    );
+    onFallback?.();
+    return { text, usedOllama: false };
+  }
 }
