@@ -421,13 +421,14 @@ describe("voice-ollama-tui extension entry (F-1.1)", () => {
     expect(on).toHaveBeenCalledWith("session_shutdown", expect.any(Function));
   });
 
-  it("shortcut handler calls ui.notify", async () => {
+  it("shortcut handler runs voice pipeline", async () => {
     const registerCommand = vi.fn();
     const registerShortcut = vi.fn();
     const on = vi.fn();
     const notify = vi.fn();
     const setStatus = vi.fn();
-    const custom = vi.fn();
+    // custom must return a promise resolving with { accepted: true } for the new pipeline
+    const custom = vi.fn().mockResolvedValue({ accepted: true });
 
     const mockPi = {
       registerCommand,
@@ -491,8 +492,10 @@ describe("voice-ollama-tui extension entry (F-1.1)", () => {
     const shortcutHandler = registerShortcut.mock.calls[0][1].handler;
     await shortcutHandler({ ui: { notify, setStatus, custom } });
 
+    // The pipeline: showRecordingOverlay → recordAudio → showProcessingOverlay → notify
+    expect(custom).toHaveBeenCalledTimes(2);
     expect(notify).toHaveBeenCalledWith(
-      "Recording audio…",
+      expect.stringContaining("Audio recorded"),
       "info",
     );
   });

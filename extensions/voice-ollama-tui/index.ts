@@ -3,6 +3,7 @@ import type { KeyId } from "@itone/fan-tui";
 import { loadConfig } from "./config.js";
 import { checkDependencies, resetDependencyCache } from "./dependencies.js";
 import { recordAudio } from "./audio-recorder.js";
+import { showRecordingOverlay, showProcessingOverlay } from "./ui-overlay.js";
 
 export default function (pi: ExtensionAPI) {
   const config = loadConfig();
@@ -27,12 +28,30 @@ export default function (pi: ExtensionAPI) {
     if (!ensureDependencies(ctx)) {
       return;
     }
-    ctx.ui.notify("Recording audio…", "info");
+
     try {
+      // Step 1: Show recording overlay with Enter/Esc handling
+      const { accepted } = await showRecordingOverlay(ctx, {
+        duration: config.recordDurationMax,
+      });
+
+      if (!accepted) {
+        // User cancelled — nothing more to do
+        return;
+      }
+
+      // Step 2: Record audio (user pressed Enter or timer expired)
       const audioPath = await recordAudio({
         duration: config.recordDurationMax,
         audioDevice: config.audioDevice,
       });
+
+      // Step 3: Show processing overlay while transcribing (placeholder)
+      // Full transcribing integration (F-3.1) will go here
+      const processingOverlay = showProcessingOverlay(ctx, "transcribing");
+      // Simulate work; close overlay when done
+      processingOverlay.close();
+
       ctx.ui.notify(`Audio recorded: ${audioPath}`, "info");
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

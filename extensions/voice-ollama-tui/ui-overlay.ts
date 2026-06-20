@@ -1,0 +1,315 @@
+/**
+ * UI overlay for voice recording and processing (F-2.2)
+ *
+ * Provides two overlay functions:
+ *   - showRecordingOverlay(ctx, opts) — recording info with Enter/Esc, timer, auto-stop
+ *   - showProcessingOverlay(ctx, status) — processing status updates, controllable via returned controller
+ *
+ * Roadmap TDD:
+ *   TC-F-2.2-1: Overlay displays "Recording..." after /voice
+ *   TC-F-2.2-2: Enter finishes recording → accepted=true
+ *   TC-F-2.2-3: Escape cancels recording → accepted=false
+ */
+
+import type { ExtensionContext, Theme } from "@itone/fan-coding-agent";
+import { matchesKey, type TUI, type KeybindingsManager } from "@itone/fan-tui";
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export interface RecordingOverlayResult {
+  /** true if user pressed Enter (or auto-stopped), false if Escape */
+  accepted: boolean;
+}
+
+export interface RecordingOverlayOptions {
+  /** Maximum recording duration in seconds (auto-stop after this) */
+  duration?: number;
+}
+
+export type ProcessingStatus = "transcribing" | "ollama" | "done";
+
+export interface ProcessingOverlayController {
+  /** Update the displayed status (e.g. transcribing → ollama → done) */
+  update(status: ProcessingStatus): void;
+  /** Close the overlay */
+  close(): void;
+}
+
+// ---------------------------------------------------------------------------
+// Recording overlay
+// ---------------------------------------------------------------------------
+
+/**
+ * Show a recording overlay with timer and Enter/Esc handling.
+ *
+ * The overlay displays "🎙 Запись... Нажмите Enter для завершения, Esc для отмены"
+ * along with a countdown timer.  When the timer reaches zero the overlay
+ * auto-completes with `accepted: true`.
+ *
+ * @param ctx - Extension context with UI access
+ * @param opts - Duration etc.
+ * @returns Promise with `{ accepted }` — true on Enter or timeout, false on Escape
+ */
+export async function showRecordingOverlay(
+  ctx: ExtensionContext,
+  opts: RecordingOverlayOptions = {},
+): Promise<RecordingOverlayResult> {
+  const maxDuration = opts.duration ?? 60;
+
+  return ctx.ui.custom<RecordingOverlayResult>(
+    (tui: TUI, theme: Theme, _kb: KeybindingsManager, done: (result: RecordingOverlayResult) => void) => {
+      const component = new RecordingOverlayComponent(theme, tui, maxDuration, done);
+      return component;
+    },
+    { overlay: true },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Processing overlay
+// ---------------------------------------------------------------------------
+
+/**
+ * Show a processing overlay with a status message.
+ *
+ * The overlay remains open until {@link ProcessingOverlayController.close} is called.
+ * Use the returned controller to update the status text in-place:
+ *
+ *   const overlay = showProcessingOverlay(ctx, "transcribing");
+ *   // ... do work ...
+ *   overlay.update("ollama");
+ *   // ... do work ...
+ *   overlay.close();
+ *
+ * @param ctx - Extension context with UI access
+ * @param status - Initial processing step
+ * @returns Controller to update or close the overlay
+ */
+export function showProcessingOverlay(
+  ctx: ExtensionContext,
+  status: ProcessingStatus,
+): ProcessingOverlayController {
+  let component: ProcessingOverlayComponent | undefined;
+
+  const promise = ctx.ui.custom<void>(
+    (_tui: TUI, theme: Theme, _kb: KeybindingsManager, done: (result: void) => void) => {
+      component = new ProcessingOverlayComponent(theme, status, done);
+      return component;
+    },
+    { overlay: true },
+  );
+
+  // Prevent unhandled rejection if the overlay is closed normally.
+  promise.catch(() => undefined);
+
+  return {
+    update(nextStatus: ProcessingStatus) {
+      component?.update(nextStatus);
+    },
+    close() {
+      component?.close();
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Component: RecordingOverlayComponent
+// ---------------------------------------------------------------------------
+
+class RecordingOverlayComponent {
+  private remaining: number;
+  private timerId: ReturnType<typeof setInterval> | null = null;
+  private finished = false;
+
+  constructor(
+    private theme: Theme,
+    private tui: TUI,
+    private maxDuration: number,
+    private done: (result: RecordingOverlayResult) => void,
+  ) {
+    this.remaining = maxDuration;
+    this.startTimer();
+  }
+
+  private startTimer(): void {
+    this.timerId = setInterval(() => {
+      this.remaining--;
+      if (this.remaining <= 0) {
+        this.stopTimer();
+        this.finish({ accepted: true });
+      } else {
+        this.tui.requestRender();
+      }
+    }, 1000);
+  }
+
+  private stopTimer(): void {
+    if (this.timerId !== null) {
+      clearInterval(this.timerId);
+      this.timerId = null;
+    }
+  }
+
+  private finish(result: RecordingOverlayResult): void {
+    if (this.finished) return;
+    this.finished = true;
+    this.stopTimer();
+    this.done(result);
+  }
+
+  handleInput(data: string): void {
+    if (this.finished) return;
+
+    if (matchesKey(data, "enter") || matchesKey(data, "return")) {
+      this.finish({ accepted: true });
+    } else if (matchesKey(data, "escape")) {
+      this.finish({ accepted: false });
+    }
+  }
+
+  render(width: number): string[] {
+    const th = this.theme;
+    const innerW = Math.max(1, width - 4);
+    const padLine = (s: string) => {
+      const visible = s.replace(/\x1b\[[0-9;]*m/g, "");
+      const pad = innerW - visible.length;
+      if (pad <= 0) return s.slice(0, s.length + pad);
+      return s + " ".repeat(pad);
+    };
+
+    const mins = Math.floor(this.remaining / 60);
+    const secs = this.remaining % 60;
+    const timerStr = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+
+    const lines: string[] = [];
+
+    // Top border
+    lines.push(th.fg("border", `╭${"─".repeat(innerW)}╮`));
+
+    // Title row
+    lines.push(
+      th.fg("border", "│") +
+        padLine(` ${th.fg("error", "🎙")} ${th.fg("accent", "Recording...")}    ${th.fg("dim", timerStr)} `) +
+        th.fg("border", "│"),
+    );
+
+    // Empty separator
+    lines.push(th.fg("border", "│") + padLine("") + th.fg("border", "│"));
+
+    // Instructions
+    lines.push(
+      th.fg("border", "│") +
+        padLine(` ${th.fg("dim", "Press Enter to finish, Esc to cancel")} `) +
+        th.fg("border", "│"),
+    );
+
+    // Bottom border
+    lines.push(th.fg("border", `╰${"─".repeat(innerW)}╯`));
+
+    return lines;
+  }
+
+  invalidate(): void {
+    // No caching to clear
+  }
+
+  dispose(): void {
+    this.stopTimer();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Component: ProcessingOverlayComponent
+// ---------------------------------------------------------------------------
+
+class ProcessingOverlayComponent {
+  private closed = false;
+
+  constructor(
+    private theme: Theme,
+    private status: ProcessingStatus,
+    private done: (result: void) => void,
+  ) {}
+
+  update(status: ProcessingStatus): void {
+    this.status = status;
+  }
+
+  close(): void {
+    if (this.closed) return;
+    this.closed = true;
+    this.done(undefined);
+  }
+
+  handleInput(_data: string): void {
+    // Processing overlay is non-interactive.
+  }
+
+  render(width: number): string[] {
+    const th = this.theme;
+    const innerW = Math.max(1, width - 4);
+    const padLine = (s: string) => {
+      const visible = s.replace(/\x1b\[[0-9;]*m/g, "");
+      const pad = innerW - visible.length;
+      if (pad <= 0) return s.slice(0, s.length + pad);
+      return s + " ".repeat(pad);
+    };
+
+    const statusInfo = this.getStatusInfo();
+
+    const lines: string[] = [];
+
+    // Top border
+    lines.push(th.fg("border", `╭${"─".repeat(innerW)}╮`));
+
+    // Status row
+    lines.push(
+      th.fg("border", "│") +
+        padLine(` ${statusInfo.icon}  ${th.fg("accent", statusInfo.text)} `) +
+        th.fg("border", "│"),
+    );
+
+    // Spinner / progress indication
+    lines.push(
+      th.fg("border", "│") + padLine(` ${th.fg("dim", statusInfo.subtext)} `) + th.fg("border", "│"),
+    );
+
+    // Bottom border
+    lines.push(th.fg("border", `╰${"─".repeat(innerW)}╯`));
+
+    return lines;
+  }
+
+  private getStatusInfo(): { icon: string; text: string; subtext: string } {
+    switch (this.status) {
+      case "transcribing":
+        return {
+          icon: "🔊",
+          text: "Transcribing...",
+          subtext: "Processing audio via whisper.cpp",
+        };
+      case "ollama":
+        return {
+          icon: "🤖",
+          text: "Improving text via Ollama...",
+          subtext: "Post-processing with language model",
+        };
+      case "done":
+        return {
+          icon: "✅",
+          text: "Done!",
+          subtext: "Text inserted into editor",
+        };
+    }
+  }
+
+  invalidate(): void {
+    // No caching to clear
+  }
+
+  dispose(): void {
+    // Nothing to clean up
+  }
+}
