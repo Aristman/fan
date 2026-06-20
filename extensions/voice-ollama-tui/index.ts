@@ -2,6 +2,7 @@ import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@i
 import type { KeyId } from "@itone/fan-tui";
 import { loadConfig } from "./config.js";
 import { checkDependencies, resetDependencyCache } from "./dependencies.js";
+import { recordAudio } from "./audio-recorder.js";
 
 export default function (pi: ExtensionAPI) {
   const config = loadConfig();
@@ -26,7 +27,17 @@ export default function (pi: ExtensionAPI) {
     if (!ensureDependencies(ctx)) {
       return;
     }
-    ctx.ui.notify("Voice input triggered — not yet implemented", "info");
+    ctx.ui.notify("Recording audio…", "info");
+    try {
+      const audioPath = await recordAudio({
+        duration: config.recordDurationMax,
+        audioDevice: config.audioDevice,
+      });
+      ctx.ui.notify(`Audio recorded: ${audioPath}`, "info");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      ctx.ui.notify(`Recording failed: ${msg}`, "error");
+    }
   };
 
   pi.registerCommand("voice", {

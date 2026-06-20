@@ -461,6 +461,29 @@ describe("voice-ollama-tui extension entry (F-1.1)", () => {
       }),
     }));
 
+    // Mock audio-recorder to avoid actual ffmpeg calls
+    vi.doMock("./audio-recorder.js", () => ({
+      recordAudio: vi.fn().mockResolvedValue("/tmp/test-recording.wav"),
+      AudioRecorderError: class AudioRecorderError extends Error {
+        constructor(msg: string, public code: string) {
+          super(msg);
+          this.name = "AudioRecorderError";
+        }
+      },
+      VoiceError: class VoiceError extends Error {
+        constructor(msg: string) {
+          super(msg);
+          this.name = "VoiceError";
+        }
+      },
+      WhisperError: class WhisperError extends Error {
+        constructor(msg: string, public code: string) {
+          super(msg);
+          this.name = "WhisperError";
+        }
+      },
+    }));
+
     const mod = await import("./index.js");
     await mod.default(mockPi as any);
 
@@ -469,7 +492,7 @@ describe("voice-ollama-tui extension entry (F-1.1)", () => {
     await shortcutHandler({ ui: { notify, setStatus, custom } });
 
     expect(notify).toHaveBeenCalledWith(
-      "Voice input triggered — not yet implemented",
+      "Recording audio…",
       "info",
     );
   });
