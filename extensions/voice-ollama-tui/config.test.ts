@@ -485,6 +485,11 @@ describe("voice-ollama-tui extension entry (F-1.1)", () => {
       },
     }));
 
+    // Mock whisper-service to return a recognised text
+    vi.doMock("./whisper-service.js", () => ({
+      transcribe: vi.fn().mockResolvedValue("привет мир"),
+    }));
+
     const mod = await import("./index.js");
     await mod.default(mockPi as any);
 
@@ -492,10 +497,10 @@ describe("voice-ollama-tui extension entry (F-1.1)", () => {
     const shortcutHandler = registerShortcut.mock.calls[0][1].handler;
     await shortcutHandler({ ui: { notify, setStatus, custom } });
 
-    // The pipeline: showRecordingOverlay → recordAudio → showProcessingOverlay → notify
+    // The pipeline: showRecordingOverlay → recordAudio → showProcessingOverlay → transcribe → notify
     expect(custom).toHaveBeenCalledTimes(2);
     expect(notify).toHaveBeenCalledWith(
-      expect.stringContaining("Audio recorded"),
+      expect.stringContaining("привет мир"),
       "info",
     );
   });

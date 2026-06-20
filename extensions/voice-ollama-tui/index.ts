@@ -4,6 +4,7 @@ import { loadConfig } from "./config.js";
 import { checkDependencies, resetDependencyCache } from "./dependencies.js";
 import { recordAudio } from "./audio-recorder.js";
 import { showRecordingOverlay, showProcessingOverlay } from "./ui-overlay.js";
+import { transcribe } from "./whisper-service.js";
 
 export default function (pi: ExtensionAPI) {
   const config = loadConfig();
@@ -46,16 +47,32 @@ export default function (pi: ExtensionAPI) {
         audioDevice: config.audioDevice,
       });
 
-      // Step 3: Show processing overlay while transcribing (placeholder)
-      // Full transcribing integration (F-3.1) will go here
+      // Step 3: Transcribe the recorded audio
       const processingOverlay = showProcessingOverlay(ctx, "transcribing");
-      // Simulate work; close overlay when done
-      processingOverlay.close();
 
-      ctx.ui.notify(`Audio recorded: ${audioPath}`, "info");
+      let text: string;
+      try {
+        text = await transcribe(audioPath, {
+          modelPath: config.whisperModelPath,
+          language: config.whisperLanguage,
+          binPath: config.whisperBinPath,
+        });
+
+        // Step 4: Show done and insert result
+        processingOverlay.update("done");
+        processingOverlay.close();
+
+        ctx.ui.notify(`Recognised: ${text}`, "info");
+      } catch (transcribeErr) {
+        processingOverlay.update("done");
+        processingOverlay.close();
+
+        const msg = transcribeErr instanceof Error ? transcribeErr.message : String(transcribeErr);
+        ctx.ui.notify(`Transcription failed: ${msg}`, "error");
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      ctx.ui.notify(`Recording failed: ${msg}`, "error");
+      ctx.ui.notify(`Voice input failed: ${msg}`, "error");
     }
   };
 

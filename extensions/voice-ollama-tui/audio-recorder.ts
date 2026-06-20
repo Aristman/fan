@@ -3,38 +3,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-// ---------------------------------------------------------------------------
-// Error types
-// ---------------------------------------------------------------------------
+import { VoiceError, AudioRecorderError, WhisperError } from "./errors.js";
 
-export class VoiceError extends Error {
-  constructor(message: string, options?: ErrorOptions) {
-    super(message, options);
-    this.name = "VoiceError";
-  }
-}
-
-export class AudioRecorderError extends VoiceError {
-  constructor(
-    message: string,
-    public readonly code: "RECORDER_NOT_FOUND" | "RECORDER_FAILED" | "RECORDER_ABORTED",
-    options?: ErrorOptions,
-  ) {
-    super(message, options);
-    this.name = "AudioRecorderError";
-  }
-}
-
-export class WhisperError extends VoiceError {
-  constructor(
-    message: string,
-    public readonly code: "WHISPER_NOT_FOUND" | "WHISPER_MODEL_NOT_FOUND" | "WHISPER_FAILED",
-    options?: ErrorOptions,
-  ) {
-    super(message, options);
-    this.name = "WhisperError";
-  }
-}
+// Re-export for backward compatibility
+export { VoiceError, AudioRecorderError, WhisperError };
 
 // ---------------------------------------------------------------------------
 // Options
