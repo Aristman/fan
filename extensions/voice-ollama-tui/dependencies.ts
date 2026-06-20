@@ -1,0 +1,110 @@
+import { execSync } from "node:child_process";
+import type { VoiceOllamaConfig } from "./config.js";
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export interface DependencyStatus {
+	/** true when all required tools are available */
+	ok: boolean;
+	/** Names of missing tools */
+	missing: string[];
+	/** Human-readable installation instructions */
+	instructions: string[];
+}
+
+// ---------------------------------------------------------------------------
+// Per-session cache (cleared on session_shutdown)
+// ---------------------------------------------------------------------------
+
+let cachedResult: DependencyStatus | null = null;
+
+/** Reset the cache — called on session_shutdown to ensure a fresh check per session. */
+export function resetDependencyCache(): void {
+	cachedResult = null;
+}
+
+// ---------------------------------------------------------------------------
+// Individual tool checkers
+// ---------------------------------------------------------------------------
+
+function checkTool(command: string, versionFlag: string): boolean {
+	try {
+		execSync(`${command} ${versionFlag}`, {
+			stdio: "ignore",
+			timeout: 10_000,
+		});
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+const FFMPEG_INSTRUCTIONS = [
+	"ffmpeg is required for audio recording.",
+	"",
+	"Install via your package manager:",
+	"  • macOS: brew install ffmpeg",
+	"  • Ubuntu/Debian: sudo apt install ffmpeg",
+	"  • Fedora: sudo dnf install ffmpeg",
+	"  • Windows (winget): winget install ffmpeg",
+	"  • Windows (choco): choco install ffmpeg",
+];
+
+const WHISPER_INSTRUCTIONS = [
+	"whisper-cli (whisper.cpp) is required for speech recognition.",
+	"",
+	"Install whisper.cpp:",
+	"  1. Clone: git clone https://github.com/ggerganov/whisper.cpp.git",
+	"  2. Build: cd whisper.cpp && make",
+	"  3. Copy the binary: cp whisper-cli /usr/local/bin/ (or add to PATH)",
+	"",
+	"Or download a pre-built release from:",
+	"  https://github.com/ggerganov/whisper.cpp/releases",
+];
+
+function checkFfmpeg(): boolean {
+	return checkTool("ffmpeg", "-version");
+}
+
+function checkWhisperCli(): boolean {
+	// whisper-cli supports both -h and --help
+	return checkTool("whisper-cli", "-h");
+}
+
+// ---------------------------------------------------------------------------
+// Main API
+// ---------------------------------------------------------------------------
+
+/**
+ * Check whether all external tools (ffmpeg, whisper-cli) are available.
+ *
+ * Results are cached for the duration of the session and reset on session_shutdown.
+ * Call {@link resetDependencyCache} to clear the cache in tests.
+ *
+ * @param _config — currently unused, reserved for future per-config checks
+ */
+export function checkDependencies(_config?: VoiceOllamaConfig): DependencyStatus {
+	if (cachedResult) {
+		return cachedResult;
+	}
+
+	const missing: string[] = [];
+	const instructions: string[] = [];
+
+	if (!checkFfmpeg()) {
+		missing.push("ffmpeg");
+		instructions.push(...FFMPEG_INSTRUCTIONS);
+	}
+
+	if (!checkWhisperCli()) {
+		missing.push("whisper-cli");
+		instructions.push(...WHISPER_INSTRUCTIONS);
+	}
+
+	const ok = missing.length === 0;
+
+	cachedResult = { ok, missing, instructions };
+	return cachedResult;
+}

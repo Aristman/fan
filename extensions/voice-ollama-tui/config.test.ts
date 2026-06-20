@@ -452,6 +452,15 @@ describe("voice-ollama-tui extension entry (F-1.1)", () => {
       }),
     }));
 
+    // Mock dependencies so the handler proceeds past the check
+    vi.doMock("./dependencies.js", () => ({
+      checkDependencies: () => ({
+        ok: true,
+        missing: [],
+        instructions: [],
+      }),
+    }));
+
     const mod = await import("./index.js");
     await mod.default(mockPi as any);
 
