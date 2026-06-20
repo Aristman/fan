@@ -44,3 +44,18 @@ export class WhisperError extends VoiceError {
     this.name = "WhisperError";
   }
 }
+
+// ---------------------------------------------------------------------------
+// OllamaError — errors during Ollama communication
+// ---------------------------------------------------------------------------
+
+export class OllamaError extends VoiceError {
+  constructor(
+    message: string,
+    public readonly code: "OLLAMA_UNREACHABLE" | "OLLAMA_FAILED",
+    options?: ErrorOptions,
+  ) {
+    super(message, options);
+    this.name = "OllamaError";
+  }
+}
