@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@itone/fan-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@itone/fan-coding-agent";
 import type { KeyId } from "@itone/fan-tui";
 import { loadConfig } from "./config.js";
 import { checkDependencies, resetDependencyCache } from "./dependencies.js";
@@ -7,23 +7,7 @@ import { runVoicePipeline } from "./pipeline.js";
 export default function (pi: ExtensionAPI) {
   const config = loadConfig();
 
-  /**
-   * Check dependencies — returns true if all good, false if missing tools.
-   * Shows a warning notification if tools are missing.
-   */
-  const ensureDependencies = (ctx: ExtensionContext): boolean => {
-    const status = checkDependencies(config);
-    if (!status.ok) {
-      const missingList = status.missing.join(", ");
-      ctx.ui.notify(
-        `Missing tools: ${missingList}. /voice will not work until installed. See instructions.`,
-        "warning",
-      );
-    }
-    return status.ok;
-  };
-
-  const handler = async (ctx: ExtensionContext) => {
+  const handler = async (ctx: any) => {
     await runVoicePipeline(ctx, config);
   };
 

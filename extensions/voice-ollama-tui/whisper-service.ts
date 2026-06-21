@@ -27,6 +27,8 @@ export interface TranscribeOptions {
   language?: string;
   /** Path to the whisper-cli binary. Default: "whisper-cli" (resolved from PATH) */
   binPath?: string;
+  /** Optional custom whisper.cpp CLI flags. Overrides defaults when set. */
+  whisperFlags?: string[];
 }
 
 export interface WhisperService {
@@ -90,7 +92,7 @@ export async function transcribe(
   audioPath: string,
   options: TranscribeOptions,
 ): Promise<string> {
-  const { modelPath, language = "auto", binPath = "whisper-cli" } = options;
+  const { modelPath, language = "auto", binPath = "whisper-cli", whisperFlags } = options;
 
   // Validate input audio file exists
   if (!fs.existsSync(audioPath)) {
@@ -104,12 +106,15 @@ export async function transcribe(
   ensureModelExists(modelPath);
 
   // Build whisper-cli arguments
-  const args = [
-    "-m", modelPath,
-    "-l", language,
-    "-f", audioPath,
-    "-nt", // no timestamps output
-  ];
+  // Use custom flags if provided (LOW-02), otherwise use defaults
+  const args: string[] = whisperFlags && whisperFlags.length > 0
+    ? whisperFlags
+    : [
+        "-m", modelPath,
+        "-l", language,
+        "-f", audioPath,
+        "-nt", // no timestamps output
+      ];
 
   return new Promise<string>((resolve, reject) => {
     const child = spawn(binPath, args, {

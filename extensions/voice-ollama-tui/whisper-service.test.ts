@@ -230,6 +230,32 @@ describe("voice-ollama-tui whisper service (F-3.1)", () => {
     expect(args[lIdx + 1]).toBe("auto");
   });
 
+  // ── LOW-02: custom whisperFlags override defaults ────────────────────
+  it("uses custom whisperFlags when provided", async () => {
+    const child = createMockChild();
+    mockSpawn.mockReturnValue(child as any);
+
+    const { transcribe } = await import("./whisper-service.js");
+
+    const customFlags = ["--model", "/custom/model.bin", "--file", "/tmp/audio.wav", "--no-timestamps"];
+
+    const promise = transcribe("/tmp/test-recording.wav", {
+      modelPath: "/home/user/.fan/models/speech/ggml-base.bin",
+      whisperFlags: customFlags,
+    });
+
+    triggerStdoutData(child, "hello\n");
+    triggerEvent(child, "close", 0);
+
+    await promise;
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      "whisper-cli",
+      customFlags,
+      expect.any(Object),
+    );
+  });
+
   // ── Custom binPath is passed to spawn ────────────────────────────────
   it("uses custom binPath when provided", async () => {
     const child = createMockChild();

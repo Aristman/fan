@@ -346,6 +346,78 @@ describe("voice-ollama-tui config (F-1.2)", () => {
 
     expect(cfg.recordDurationMax).toBe(60);
   });
+
+  // ── LOW-01: handles inline comments ─────────────────────────────────
+  it("strips inline comments from .env values", async () => {
+    writeFileSync(
+      ORIG_ENV,
+      [
+        "WHISPER_LANGUAGE=de # German language",
+        'OLLAMA_MODEL="llama3.2" # latest version',
+        "OLLAMA_ENABLED=true",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const { loadConfig } = await import("./config.js");
+    const cfg = loadConfig();
+
+    expect(cfg.whisperLanguage).toBe("de");
+    expect(cfg.ollamaModel).toBe("llama3.2");
+    expect(cfg.ollamaEnabled).toBe(true);
+  });
+
+  // ── LOW-01: handles export prefix ───────────────────────────────────
+  it("strips export prefix from .env lines", async () => {
+    writeFileSync(
+      ORIG_ENV,
+      [
+        "export WHISPER_LANGUAGE=fr",
+        "export OLLAMA_ENABLED=true",
+        "export RECORD_DURATION_MAX=45",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const { loadConfig } = await import("./config.js");
+    const cfg = loadConfig();
+
+    expect(cfg.whisperLanguage).toBe("fr");
+    expect(cfg.ollamaEnabled).toBe(true);
+    expect(cfg.recordDurationMax).toBe(45);
+  });
+
+  // ── LOW-01: handles values with = sign inside ───────────────────────
+  it("preserves values containing = sign", async () => {
+    writeFileSync(
+      ORIG_ENV,
+      [
+        'OLLAMA_SYSTEM_PROMPT="Fix punctuation. Always check: a=b and c=d"',
+        'WHISPER_MODEL_PATH="/path/to/model=base.bin"',
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const { loadConfig } = await import("./config.js");
+    const cfg = loadConfig();
+
+    expect(cfg.ollamaSystemPrompt).toBe("Fix punctuation. Always check: a=b and c=d");
+    expect(cfg.whisperModelPath).toBe("/path/to/model=base.bin");
+  });
+
+  // ── LOW-01: comment character inside quoted value ───────────────────
+  it("does not treat # inside quoted value as comment", async () => {
+    writeFileSync(
+      ORIG_ENV,
+      'OLLAMA_SYSTEM_PROMPT="Fix #1: check punctuation"\n',
+      "utf-8",
+    );
+
+    const { loadConfig } = await import("./config.js");
+    const cfg = loadConfig();
+
+    expect(cfg.ollamaSystemPrompt).toBe("Fix #1: check punctuation");
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
