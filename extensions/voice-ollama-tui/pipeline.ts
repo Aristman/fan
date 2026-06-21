@@ -119,6 +119,7 @@ export async function runVoicePipeline(
     return;
   }
 
+  const abortController = new AbortController();
   let audioPath: string | undefined;
   let processingOverlay: ProcessingOverlayController | undefined;
   let modelOverlay: ProcessingOverlayController | undefined;
@@ -127,6 +128,7 @@ export async function runVoicePipeline(
     // ── Step 1: Recording overlay ───────────────────────────────────
     const { accepted } = await showRecordingOverlay(ctx, {
       duration: config.recordDurationMax,
+      signal: abortController.signal,
     });
 
     if (!accepted) {
@@ -138,11 +140,12 @@ export async function runVoicePipeline(
     audioPath = await recordAudio({
       duration: config.recordDurationMax,
       audioDevice: config.audioDevice,
+      signal: abortController.signal,
     });
 
     // ── Step 3: Ensure whisper model ─────────────────────────────────
     try {
-      modelOverlay = showProcessingOverlay(ctx, "transcribing");
+      modelOverlay = showProcessingOverlay(ctx, "transcribing", { signal: abortController.signal });
 
       await ensureWhisperModel({
         modelPath: config.whisperModelPath,
@@ -163,7 +166,7 @@ export async function runVoicePipeline(
     }
 
     // ── Step 4: Transcribe ──────────────────────────────────────────
-    processingOverlay = showProcessingOverlay(ctx, "transcribing");
+    processingOverlay = showProcessingOverlay(ctx, "transcribing", { signal: abortController.signal });
 
     let text: string;
     try {
@@ -188,7 +191,7 @@ export async function runVoicePipeline(
 
       let result: ImproveTextResult;
       try {
-        result = await improveText(config, text);
+        result = await improveText(config, text, { signal: abortController.signal });
       } catch (ollamaErr) {
         // improveText already has internal try/catch fallback, but
         // wrap just in case of unexpected synchronous errors
@@ -207,6 +210,12 @@ export async function runVoicePipeline(
     processingOverlay = undefined;
 
     insertTranscript(ctx, text);
+
+    // Check if user or external signal aborted during processing
+    if (abortController.signal.aborted) {
+      ctx.ui.notify("Voice input was cancelled.", "warning");
+      return;
+    }
   } catch (err) {
     // Global catch — any unexpected error in the entire pipeline
     safeCloseOverlay(modelOverlay);

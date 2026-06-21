@@ -26,6 +26,8 @@ export interface RecordingOverlayResult {
 export interface RecordingOverlayOptions {
   /** Maximum recording duration in seconds (auto-stop after this) */
   duration?: number;
+  /** Optional AbortSignal to cancel recording in progress */
+  signal?: AbortSignal;
 }
 
 export type ProcessingStatus = "transcribing" | "ollama" | "done";
@@ -35,6 +37,8 @@ export interface ProcessingOverlayController {
   update(status: ProcessingStatus): void;
   /** Close the overlay */
   close(): void;
+  /** Whether the user aborted via Escape */
+  wasAborted: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -60,7 +64,7 @@ export async function showRecordingOverlay(
 
   return ctx.ui.custom<RecordingOverlayResult>(
     (tui: TUI, theme: Theme, _kb: KeybindingsManager, done: (result: RecordingOverlayResult) => void) => {
-      const component = new RecordingOverlayComponent(theme, tui, maxDuration, done);
+      const component = new RecordingOverlayComponent(theme, tui, maxDuration, done, opts.signal);
       return component;
     },
     { overlay: true },
@@ -90,12 +94,34 @@ export async function showRecordingOverlay(
 export function showProcessingOverlay(
   ctx: ExtensionContext,
   status: ProcessingStatus,
+  options?: { signal?: AbortSignal },
 ): ProcessingOverlayController {
   let component: ProcessingOverlayComponent | undefined;
 
+  const abortSignal = options?.signal;
+  const abortController = new AbortController();
+
+  // If an external signal is provided, forward aborts to our local controller
+  if (abortSignal) {
+    if (abortSignal.aborted) {
+      abortController.abort();
+    } else {
+      const onExternalAbort = () => {
+        if (!abortController.signal.aborted) {
+          abortController.abort();
+        }
+      };
+      abortSignal.addEventListener("abort", onExternalAbort, { once: true });
+    }
+  }
+
   const promise = ctx.ui.custom<void>(
     (_tui: TUI, theme: Theme, _kb: KeybindingsManager, done: (result: void) => void) => {
-      component = new ProcessingOverlayComponent(theme, status, done);
+      component = new ProcessingOverlayComponent(theme, status, done, () => {
+        if (!abortController.signal.aborted) {
+          abortController.abort();
+        }
+      });
       return component;
     },
     { overlay: true },
@@ -111,6 +137,9 @@ export function showProcessingOverlay(
     close() {
       component?.close();
     },
+    get wasAborted(): boolean {
+      return component?.wasAborted ?? false;
+    },
   };
 }
 
@@ -122,15 +151,45 @@ class RecordingOverlayComponent {
   private remaining: number;
   private timerId: ReturnType<typeof setInterval> | null = null;
   private finished = false;
+  private pulseTick = 0;
 
   constructor(
     private theme: Theme,
     private tui: TUI,
     private maxDuration: number,
     private done: (result: RecordingOverlayResult) => void,
+    signal?: AbortSignal,
   ) {
     this.remaining = maxDuration;
     this.startTimer();
+
+    // Listen for external abort signal (e.g. from pipeline's AbortController)
+    if (signal) {
+      if (signal.aborted) {
+        this.finish({ accepted: false });
+      } else {
+        const onAbort = () => {
+          this.finish({ accepted: false });
+        };
+        signal.addEventListener("abort", onAbort, { once: true });
+        const origDispose = this.dispose.bind(this);
+        this.dispose = () => {
+          signal.removeEventListener("abort", onAbort);
+          origDispose();
+        };
+      }
+    }
+  }
+
+  /**
+   * Pulsing visual indicator to show recording activity (MEDIUM-02).
+   * Cycles through ▁▂▃▄▅▆▇██▇▆▅▄▃▂▁ on each render call.
+   */
+  private activityIndicator(): string {
+    const bars = ["▁","▂","▃","▄","▅","▆","▇","█","▇","▆","▅","▄","▃","▂"];
+    const idx = this.pulseTick % bars.length;
+    this.pulseTick = (this.pulseTick + 1) % bars.length;
+    return this.theme.fg("accent", bars[idx]);
   }
 
   private startTimer(): void {
@@ -195,8 +254,11 @@ class RecordingOverlayComponent {
         th.fg("border", "│"),
     );
 
-    // Empty separator
-    lines.push(th.fg("border", "│") + padLine("") + th.fg("border", "│"));
+    // Activity indicator (pulsing bar — MEDIUM-02)
+    const bar = this.activityIndicator();
+    lines.push(
+      th.fg("border", "│") + padLine(` ${bar}  Recording `) + th.fg("border", "│"),
+    );
 
     // Instructions
     lines.push(
@@ -226,11 +288,13 @@ class RecordingOverlayComponent {
 
 class ProcessingOverlayComponent {
   private closed = false;
+  private externalAborted = false;
 
   constructor(
     private theme: Theme,
     private status: ProcessingStatus,
     private done: (result: void) => void,
+    private onAbort?: () => void,
   ) {}
 
   update(status: ProcessingStatus): void {
@@ -243,8 +307,17 @@ class ProcessingOverlayComponent {
     this.done(undefined);
   }
 
-  handleInput(_data: string): void {
-    // Processing overlay is non-interactive.
+  handleInput(data: string): void {
+    // Allow Escape to abort processing (HIGH-01)
+    if (matchesKey(data, "escape")) {
+      this.externalAborted = true;
+      this.onAbort?.();
+      this.close();
+    }
+  }
+
+  get wasAborted(): boolean {
+    return this.externalAborted;
   }
 
   render(width: number): string[] {

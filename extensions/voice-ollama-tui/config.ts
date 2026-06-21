@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { fileURLToPath } from "node:url";
 
 export interface VoiceOllamaConfig {
   // Audio
@@ -32,8 +33,24 @@ function parseEnvFile(filePath: string): Record<string, string | undefined> | un
     const content = fs.readFileSync(filePath, "utf-8");
     const result: Record<string, string | undefined> = {};
     for (const line of content.split(/\r?\n/)) {
-      const trimmed = line.trim();
+      let trimmed = line.trim();
       if (!trimmed || trimmed.startsWith("#")) continue;
+      // Strip `export ` prefix (used in some .env conventions)
+      trimmed = trimmed.replace(/^export\s+/, "");
+      // Strip inline comments (respecting quoted values)
+      let commentStart = -1;
+      let inSingle = false;
+      let inDouble = false;
+      for (let i = 0; i < trimmed.length; i++) {
+        const ch = trimmed[i];
+        if (ch === "'" && !inDouble) inSingle = !inSingle;
+        else if (ch === '"' && !inSingle) inDouble = !inDouble;
+        else if (ch === "#" && !inSingle && !inDouble) { commentStart = i; break; }
+      }
+      if (commentStart >= 0) {
+        trimmed = trimmed.slice(0, commentStart).trimEnd();
+      }
+      if (!trimmed) continue;
       const eqIndex = trimmed.indexOf("=");
       if (eqIndex === -1) continue;
       const key = trimmed.slice(0, eqIndex).trim();
@@ -63,7 +80,7 @@ const DEFAULT_CONFIG: VoiceOllamaConfig = {
 };
 
 function getExtensionDir(): string {
-  return path.dirname(new URL(import.meta.url).pathname);
+  return path.dirname(fileURLToPath(import.meta.url));
 }
 
 function toBoolean(value: string | undefined, defaultValue: boolean): boolean {
