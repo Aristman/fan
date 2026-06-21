@@ -210,6 +210,6 @@ async function downloadFile(
     writeStream.destroy();
     throw err;
   } finally {
-    reader.releaseLock();
+    try { reader.releaseLock(); } catch { /* best-effort — MEDIUM-05 */ }
   }
 }

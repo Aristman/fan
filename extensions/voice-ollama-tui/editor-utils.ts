@@ -34,7 +34,13 @@ export function insertTranscript(ctx: ExtensionContext, text: string): void {
     return;
   }
 
-  const currentText = ctx.ui.getEditorText().trim();
+  // Safely read current editor content (MEDIUM-04: guard against TUI state errors)
+  let currentText = "";
+  try {
+    currentText = ctx.ui.getEditorText().trim();
+  } catch {
+    // Ignore — fall back to empty string
+  }
 
   if (currentText.length > 0) {
     ctx.ui.setEditorText(`${currentText} ${cleaned}`);

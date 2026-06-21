@@ -82,17 +82,56 @@ function checkSox(): boolean {
 }
 
 function checkArecord(): boolean {
-	// Use --version instead of plain invocation
-	try {
-		return checkTool("arecord", "--version");
-	} catch {
-		return false;
-	}
+	return checkTool("arecord", "--version");
 }
 
 function checkWhisperCli(): boolean {
 	// whisper-cli supports both -h and --help
 	return checkTool("whisper-cli", "-h");
+}
+
+// ---------------------------------------------------------------------------
+// Audio device accessibility check (LOW-03)
+// ---------------------------------------------------------------------------
+
+/**
+ * Perform a basic check that the system has an accessible audio input device.
+ * Uses platform-specific commands. Returns true if a device was found,
+ * false on error or if the command is unavailable.
+ * Results are NOT cached since device state can change.
+ */
+export function checkAudioDevice(): boolean {
+	const platform = process.platform;
+	try {
+		if (platform === "darwin") {
+			// macOS: list avfoundation devices
+			const out = execSync(
+				"ffmpeg -f avfoundation -list_devices true -i \"\" 2>&1",
+				{ encoding: "utf-8", timeout: 10_000 },
+			);
+			// If output contains an audio device entry, it's likely working
+			return out.includes("Audio") || out.includes("microphone");
+		}
+		if (platform === "linux") {
+			// Linux: list alsa capture devices
+			const out = execSync("arecord -l", {
+				encoding: "utf-8",
+				timeout: 10_000,
+			});
+			return out.includes("card");
+		}
+		if (platform === "win32") {
+			// Windows: try to list dshow devices
+			const out = execSync(
+				"ffmpeg -f dshow -list_devices true -i dummy 2>&1",
+				{ encoding: "utf-8", timeout: 10_000 },
+			);
+			return out.includes("Audio");
+		}
+		return false;
+	} catch {
+		return false;
+	}
 }
 
 // ---------------------------------------------------------------------------
