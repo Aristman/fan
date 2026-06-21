@@ -260,10 +260,9 @@ describe("voice-ollama-tui ollama-service (F-4.2)", () => {
 
   // ── TC-F-4.2-1: Ollama returns improved text with punctuation ──────
   it("TC-F-4.2-1: returns improved text with punctuation from Ollama", async () => {
-    // First call for isOllamaReachable (GET /api/tags)
+    // Single fetch call now — POST /api/chat directly (MEDIUM-01, removed isOllamaReachable)
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(makeOllamaTagsResponse([{ name: "llama3.2" }]))
       .mockResolvedValueOnce(
         makeOllamaChatResponse("Привет, мир! Как дела?"),
       );
@@ -275,23 +274,19 @@ describe("voice-ollama-tui ollama-service (F-4.2)", () => {
     expect(result.text).toBe("Привет, мир! Как дела?");
     expect(result.usedOllama).toBe(true);
 
-    // Verify the POST request to /api/chat with correct body
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // Verify only the POST request to /api/chat (no reachability check)
+    expect(fetchMock).toHaveBeenCalledTimes(1);
 
-    // First call: isOllamaReachable → GET /api/tags
-    expect(fetchMock.mock.calls[0][0]).toBe("http://localhost:11434/api/tags");
-
-    // Second call: improveText → POST /api/chat
-    const secondCallUrl = fetchMock.mock.calls[1][0];
-    const secondCallOpts = fetchMock.mock.calls[1][1];
-    expect(secondCallUrl).toBe("http://localhost:11434/api/chat");
-    expect(secondCallOpts).toMatchObject({
+    const callUrl = fetchMock.mock.calls[0][0];
+    const callOpts = fetchMock.mock.calls[0][1];
+    expect(callUrl).toBe("http://localhost:11434/api/chat");
+    expect(callOpts).toMatchObject({
       method: "POST",
       headers: { "Content-Type": "application/json" },
     });
 
     // Verify the POST body
-    const body = JSON.parse(secondCallOpts!.body as string);
+    const body = JSON.parse(callOpts!.body as string);
     expect(body).toMatchObject({
       model: "llama3.2",
       stream: false,
@@ -321,10 +316,10 @@ describe("voice-ollama-tui ollama-service (F-4.2)", () => {
     expect(result.text).toBe("привет мир");
     expect(result.usedOllama).toBe(false);
 
-    // Should only have called once (isOllamaReachable), no /api/chat call
+    // Now directly calls /api/chat (MEDIUM-01: removed isOllamaReachable)
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:11434/api/tags",
+      "http://localhost:11434/api/chat",
       expect.anything(),
     );
 
@@ -398,7 +393,6 @@ describe("voice-ollama-tui ollama-service (F-4.2)", () => {
   it("falls back to original text when Ollama returns non-200", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(makeOllamaTagsResponse([{ name: "llama3.2" }]))
       .mockResolvedValueOnce(makeErrorResponse(500));
 
     const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -417,6 +411,9 @@ describe("voice-ollama-tui ollama-service (F-4.2)", () => {
       expect.stringContaining("/api/chat returned 500"),
     );
 
+    // Only one fetch call now (no isOllamaReachable)
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
     consoleWarn.mockRestore();
     fetchMock.mockRestore();
   });
@@ -425,7 +422,6 @@ describe("voice-ollama-tui ollama-service (F-4.2)", () => {
   it("falls back to original text when Ollama returns empty content", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(makeOllamaTagsResponse([{ name: "llama3.2" }]))
       .mockResolvedValueOnce(
         new Response(
           JSON.stringify({ message: { role: "assistant", content: "   " } }),
@@ -448,6 +444,9 @@ describe("voice-ollama-tui ollama-service (F-4.2)", () => {
       expect.stringContaining("empty content"),
     );
 
+    // Only one fetch call now
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
     consoleWarn.mockRestore();
     fetchMock.mockRestore();
   });
@@ -456,7 +455,6 @@ describe("voice-ollama-tui ollama-service (F-4.2)", () => {
   it("falls back to original text when /api/chat request fails", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(makeOllamaTagsResponse([{ name: "llama3.2" }]))
       .mockRejectedValueOnce(new TypeError("network error"));
 
     const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -476,6 +474,9 @@ describe("voice-ollama-tui ollama-service (F-4.2)", () => {
       expect.any(String),
     );
 
+    // Only one fetch call now (MEDIUM-01)
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
     consoleWarn.mockRestore();
     fetchMock.mockRestore();
   });
@@ -484,7 +485,6 @@ describe("voice-ollama-tui ollama-service (F-4.2)", () => {
   it("uses default model 'llama3.2' when no model specified in config", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(makeOllamaTagsResponse([{ name: "llama3.2" }]))
       .mockResolvedValueOnce(makeOllamaChatResponse("Hello!"));
 
     const { improveText } = await import("./ollama-service.js");
@@ -501,8 +501,8 @@ describe("voice-ollama-tui ollama-service (F-4.2)", () => {
     expect(result.text).toBe("Hello!");
     expect(result.usedOllama).toBe(true);
 
-    // Verify default model was used
-    const callBody = JSON.parse(fetchMock.mock.calls[1][1]!.body as string);
+    // Verify default model was used (first call = only call)
+    const callBody = JSON.parse(fetchMock.mock.calls[0][1]!.body as string);
     expect(callBody.model).toBe("llama3.2");
 
     fetchMock.mockRestore();
@@ -512,7 +512,6 @@ describe("voice-ollama-tui ollama-service (F-4.2)", () => {
   it("uses default system prompt when ollamaSystemPrompt is not set", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(makeOllamaTagsResponse([{ name: "llama3.2" }]))
       .mockResolvedValueOnce(makeOllamaChatResponse("Improved!"));
 
     const { improveText } = await import("./ollama-service.js");
@@ -531,7 +530,7 @@ describe("voice-ollama-tui ollama-service (F-4.2)", () => {
     expect(result.usedOllama).toBe(true);
 
     // Verify default system prompt was used
-    const callBody = JSON.parse(fetchMock.mock.calls[1][1]!.body as string);
+    const callBody = JSON.parse(fetchMock.mock.calls[0][1]!.body as string);
     expect(callBody.messages[0].role).toBe("system");
     expect(callBody.messages[0].content).toContain("Fix punctuation");
 
@@ -542,7 +541,6 @@ describe("voice-ollama-tui ollama-service (F-4.2)", () => {
   it("normalises trailing slash in ollamaBaseUrl for /api/chat", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(makeOllamaTagsResponse([{ name: "llama3.2" }]))
       .mockResolvedValueOnce(makeOllamaChatResponse("Fixed!"));
 
     const { improveText } = await import("./ollama-service.js");
@@ -558,10 +556,9 @@ describe("voice-ollama-tui ollama-service (F-4.2)", () => {
 
     expect(result.usedOllama).toBe(true);
 
-    // isOllamaReachable URL should be normalised
-    expect(fetchMock.mock.calls[0][0]).toBe("http://localhost:11434/api/tags");
-    // /api/chat URL should be normalised
-    expect(fetchMock.mock.calls[1][0]).toBe("http://localhost:11434/api/chat");
+    // Only one call now — POST /api/chat directly (MEDIUM-01)
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe("http://localhost:11434/api/chat");
 
     fetchMock.mockRestore();
   });
@@ -572,7 +569,6 @@ describe("voice-ollama-tui ollama-service (F-4.2)", () => {
 
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(makeOllamaTagsResponse([{ name: "llama3.2" }]))
       .mockResolvedValueOnce(makeOllamaChatResponse("Fixed!"));
 
     const { improveText } = await import("./ollama-service.js");
@@ -589,9 +585,9 @@ describe("voice-ollama-tui ollama-service (F-4.2)", () => {
 
     expect(result.usedOllama).toBe(true);
 
-    // The second fetch call (/api/chat) should include the signal
-    const secondCallOpts = fetchMock.mock.calls[1][1] as RequestInit;
-    expect(secondCallOpts.signal).toBe(abortController.signal);
+    // The single fetch call should include the signal
+    const callOpts = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(callOpts.signal).toBe(abortController.signal);
 
     fetchMock.mockRestore();
   });

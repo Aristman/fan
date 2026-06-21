@@ -147,14 +147,8 @@ export async function improveText(
     return { text, usedOllama: false };
   }
 
-  // Check reachability
-  const reachable = await isOllamaReachable(config);
-  if (!reachable) {
-    onFallback?.();
-    return { text, usedOllama: false };
-  }
-
-  // Build the /api/chat request
+  // Build the /api/chat request directly (no separate reachability check)
+  // MEDIUM-01: removed isOllamaReachable() call to eliminate double network hop
   const baseUrl = config.ollamaBaseUrl.replace(/\/+$/, "");
   const model = config.ollamaModel?.trim() || "llama3.2";
   const systemPrompt =
@@ -176,7 +170,7 @@ export async function improveText(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
-      signal: options?.signal ?? AbortSignal.timeout(30000)
+      signal: options?.signal ?? AbortSignal.timeout(30000),
     });
 
     if (!response.ok) {
