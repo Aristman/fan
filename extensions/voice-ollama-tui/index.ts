@@ -3,6 +3,7 @@ import type { KeyId } from "@itone/fan-tui";
 import { loadConfig } from "./config.js";
 import { checkDependencies, resetDependencyCache } from "./dependencies.js";
 import { runVoicePipeline } from "./pipeline.js";
+import { runVoiceInitWizard } from "./init-wizard.js";
 
 export default function (pi: ExtensionAPI) {
   const config = loadConfig();
@@ -15,6 +16,13 @@ export default function (pi: ExtensionAPI) {
     description: "Start voice input: record audio, transcribe with whisper.cpp, insert text into editor.",
     handler: async (_args: string, ctx: ExtensionCommandContext) => {
       await handler(ctx);
+    },
+  });
+
+  pi.registerCommand("voice-init", {
+    description: "Full setup wizard: dependencies, language, duration, Ollama, shortcut, whisper model, .env.",
+    handler: async (_args: string, ctx: ExtensionCommandContext) => {
+      await runVoiceInitWizard(ctx);
     },
   });
 

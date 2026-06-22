@@ -1,0 +1,370 @@
+/**
+ * /voice-init wizard — полный цикл настройки расширения voice-ollama-tui.
+ *
+ * Пошаговый wizard:
+ *   0. Приветствие + проверка зависимостей
+ *   1. Проверка аудиоустройства
+ *   2. Выбор языка распознавания
+ *   3. Настройка максимальной длительности записи
+ *   4. Включение Ollama (опционально)
+ *   5. Настройка шортката
+ *   6. Проверка/скачивание whisper модели
+ *   7. Сохранение .env
+ *   8. Предложение /reload
+ */
+
+import fs from "node:fs";
+import path from "node:path";
+import type { ExtensionCommandContext } from "@itone/fan-coding-agent";
+import { getExtensionDir, type VoiceOllamaConfig } from "./config.js";
+import { checkDependencies, checkAudioDevice } from "./dependencies.js";
+import { listOllamaModels } from "./ollama-service.js";
+import { ensureWhisperModel } from "./model-downloader.js";
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+interface WizardState {
+	/** Язык распознавания (код или "auto") */
+	language: string;
+	/** Максимальная длительность записи (сек) */
+	recordDurationMax: number;
+	/** Включить Ollama */
+	ollamaEnabled: boolean;
+	/** Базовый URL Ollama */
+	ollamaBaseUrl: string;
+	/** Модель Ollama */
+	ollamaModel: string;
+	/** System prompt Ollama */
+	ollamaSystemPrompt: string;
+	/** Шорткат */
+	shortcut: string;
+	/** Имя аудиоустройства (опционально) */
+	audioDevice: string;
+}
+
+// ---------------------------------------------------------------------------
+// Defaults (mirrors config.ts)
+// ---------------------------------------------------------------------------
+
+const LANGUAGE_OPTIONS = [
+	{ label: "Автоопределение (auto)", value: "auto" },
+	{ label: "Русский (ru)", value: "ru" },
+	{ label: "Английский (en)", value: "en" },
+	{ label: "Немецкий (de)", value: "de" },
+	{ label: "Французский (fr)", value: "fr" },
+	{ label: "Испанский (es)", value: "es" },
+	{ label: "Китайский (zh)", value: "zh" },
+	{ label: "Японский (ja)", value: "ja" },
+	{ label: "Другой", value: "other" },
+];
+
+const DURATION_OPTIONS = [
+	{ label: "5 секунд", value: "5" },
+	{ label: "15 секунд", value: "15" },
+	{ label: "30 секунд", value: "30" },
+	{ label: "60 секунд (по умолчанию)", value: "60" },
+	{ label: "120 секунд", value: "120" },
+	{ label: "300 секунд", value: "300" },
+	{ label: "Свой вариант", value: "custom" },
+];
+
+// ---------------------------------------------------------------------------
+// Main entry
+// ---------------------------------------------------------------------------
+
+export async function runVoiceInitWizard(ctx: ExtensionCommandContext): Promise<void> {
+	ctx.ui.setStatus("voice-ollama-tui", "🎙 Настройка...");
+
+	// ── Шаг 0: Приветствие + проверка зависимостей ─────────────────────
+	const depStatus = checkDependencies();
+	if (!depStatus.ok) {
+		const missingList = depStatus.missing.join(", ");
+		const msg = [
+			"📋 **Мастер настройки voice-ollama-tui**",
+			"",
+			"Этот wizard поможет настроить голосовой ввод. Проверяю зависимости...",
+			"",
+			`❌ Отсутствуют: ${missingList}`,
+			"",
+			...depStatus.instructions,
+		].join("\n");
+
+		ctx.ui.notify(`Отсутствуют зависимости: ${missingList}. Смотри инструкции.`, "warning");
+		const proceed = await ctx.ui.confirm(
+			"Настройка voice-ollama-tui",
+			`Не все зависимости установлены: ${missingList}.\n\n${depStatus.instructions.slice(0, 4).join("\n")}\n\nПродолжить настройку?`,
+		);
+		if (!proceed) {
+			ctx.ui.setStatus("voice-ollama-tui", "🎙 Настройка отменена");
+			return;
+		}
+	} else {
+		const proceed = await ctx.ui.confirm(
+			"Настройка voice-ollama-tui",
+			"📋 **Мастер настройки голосового ввода**\n\nЗависимости в порядке. Начать настройку?",
+		);
+		if (!proceed) {
+			ctx.ui.setStatus("voice-ollama-tui", "🎙 Настройка отменена");
+			return;
+		}
+	}
+
+	// ── Шаг 1: Проверка аудиоустройства ────────────────────────────────
+	const deviceOk = checkAudioDevice();
+	if (!deviceOk) {
+		ctx.ui.notify(
+			"Аудиоустройство не найдено. Проверьте подключение микрофона.",
+			"warning",
+		);
+		const proceed = await ctx.ui.confirm(
+			"Аудиоустройство",
+			"⚠️ Не удалось найти аудиоустройство ввода.\n\nПроверьте, что микрофон подключён и настроен.\n\nПродолжить настройку?",
+		);
+		if (!proceed) {
+			ctx.ui.setStatus("voice-ollama-tui", "🎙 Настройка отменена");
+			return;
+		}
+	} else {
+		ctx.ui.notify("✅ Аудиоустройство найдено.", "info");
+	}
+
+	// ── Шаг 2: Выбор языка распознавания ───────────────────────────────
+	const state = await stepLanguage(ctx);
+
+	// ── Шаг 3: Длительность записи ─────────────────────────────────────
+	await stepDuration(ctx, state);
+
+	// ── Шаг 4: Настройка Ollama ────────────────────────────────────────
+	await stepOllama(ctx, state);
+
+	// ── Шаг 5: Настройка шортката ──────────────────────────────────────
+	await stepShortcut(ctx, state);
+
+	// ── Шаг 6: Проверка/скачивание whisper модели ──────────────────────
+	await stepWhisperModel(ctx, state);
+
+	// ── Шаг 7: Сохранение .env ─────────────────────────────────────────
+	await stepSaveConfig(ctx, state);
+
+	// ── Шаг 8: Предложение /reload ─────────────────────────────────────
+	ctx.ui.notify(
+		"✅ Настройка завершена! Выполните /reload для применения шортката.",
+		"info",
+	);
+	ctx.ui.setStatus("voice-ollama-tui", "🎙 Настроено");
+}
+
+// ---------------------------------------------------------------------------
+// Step 2: Language
+// ---------------------------------------------------------------------------
+
+async function stepLanguage(ctx: ExtensionCommandContext): Promise<WizardState> {
+	const langLabels = LANGUAGE_OPTIONS.map((o) => o.label);
+	const chosen = await ctx.ui.select("Выберите язык распознавания", langLabels);
+	const selected = LANGUAGE_OPTIONS.find((o) => o.label === chosen) ?? LANGUAGE_OPTIONS[0];
+
+	let language = selected.value;
+	if (language === "other") {
+		const custom = await ctx.ui.input("Введите код языка", "например: pt, ko, ar");
+		language = custom?.trim() || "auto";
+	}
+
+	return {
+		language,
+		recordDurationMax: 60,
+		ollamaEnabled: false,
+		ollamaBaseUrl: "http://localhost:11434",
+		ollamaModel: "llama3.2",
+		ollamaSystemPrompt:
+			"You are a helpful assistant. Fix punctuation and obvious typos in the user's dictated text. Preserve the original meaning and language. Return ONLY the corrected text, nothing else.",
+		shortcut: "ctrl+shift+v",
+		audioDevice: "",
+	};
+}
+
+// ---------------------------------------------------------------------------
+// Step 3: Duration
+// ---------------------------------------------------------------------------
+
+async function stepDuration(ctx: ExtensionCommandContext, state: WizardState): Promise<void> {
+	const durLabels = DURATION_OPTIONS.map((o) => o.label);
+	const chosen = await ctx.ui.select("Максимальная длительность записи (сек)", durLabels);
+	const selected = DURATION_OPTIONS.find((o) => o.label === chosen);
+
+	if (selected?.value === "custom") {
+		const custom = await ctx.ui.input("Длительность (5–300 секунд)", "60");
+		const parsed = Number.parseInt(custom?.trim() || "60", 10);
+		state.recordDurationMax = Number.isNaN(parsed) ? 60 : Math.max(5, Math.min(300, parsed));
+	} else if (selected) {
+		state.recordDurationMax = Number.parseInt(selected.value, 10);
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Step 4: Ollama
+// ---------------------------------------------------------------------------
+
+async function stepOllama(ctx: ExtensionCommandContext, state: WizardState): Promise<void> {
+	const enableOllama = await ctx.ui.confirm(
+		"Подключить Ollama?",
+		"Ollama может улучшать распознанный текст: исправлять пунктуацию и очевидные опечатки.\n\nВключить постобработку через Ollama?",
+	);
+	if (!enableOllama) {
+		state.ollamaEnabled = false;
+		return;
+	}
+
+	state.ollamaEnabled = true;
+
+	// Ввод baseUrl
+	let baseUrl = await ctx.ui.input(
+		"Адрес Ollama сервера",
+		"http://localhost:11434",
+	);
+	if (!baseUrl?.trim()) {
+		baseUrl = "http://localhost:11434";
+	}
+	state.ollamaBaseUrl = baseUrl.replace(/\/+$/, "");
+
+	// Проверка доступности
+	ctx.ui.setStatus("voice-ollama-tui", "🎙 Проверка Ollama...");
+	const modelsResult = await listOllamaModels({ ollamaBaseUrl: state.ollamaBaseUrl });
+
+	if (!modelsResult.reachable) {
+		ctx.ui.notify(
+			"⚠️ Ollama недоступна. Вы сможете настроить её позже в .env.",
+			"warning",
+		);
+		state.ollamaEnabled = false;
+		return;
+	}
+
+	ctx.ui.setStatus("voice-ollama-tui", "🎙 Ollama доступна");
+
+	// Выбор модели
+	if (modelsResult.models.length > 0) {
+		const chosen = await ctx.ui.select("Выберите модель Ollama", modelsResult.models);
+		state.ollamaModel = chosen || modelsResult.models[0];
+	} else {
+		const modelName = await ctx.ui.input(
+			"Название модели Ollama",
+			"llama3.2",
+		);
+		state.ollamaModel = modelName?.trim() || "llama3.2";
+	}
+
+	// System prompt
+	const prompt = await ctx.ui.input(
+		"System prompt для Ollama (оставьте пустым для умолчания)",
+		"",
+	);
+	if (prompt?.trim()) {
+		state.ollamaSystemPrompt = prompt.trim();
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Step 5: Shortcut
+// ---------------------------------------------------------------------------
+
+async function stepShortcut(ctx: ExtensionCommandContext, state: WizardState): Promise<void> {
+	const shortcut = await ctx.ui.input(
+		"Горячая клавиша для голосового ввода",
+		"ctrl+shift+v",
+	);
+	state.shortcut = shortcut?.trim() || "ctrl+shift+v";
+}
+
+// ---------------------------------------------------------------------------
+// Step 6: Whisper model
+// ---------------------------------------------------------------------------
+
+async function stepWhisperModel(ctx: ExtensionCommandContext, state: WizardState): Promise<void> {
+	const download = await ctx.ui.confirm(
+		"Модель Whisper",
+		"Скачать модель ggml-base.bin для распознавания речи (~142 МБ)?\n\nЕсли модель уже есть — она не будет скачана повторно.",
+	);
+
+	if (!download) {
+		ctx.ui.notify(
+			"Модель не скачана. Вы можете скачать её позже вручную или через повторный /voice-init.",
+			"info",
+		);
+		return;
+	}
+
+	ctx.ui.setStatus("voice-ollama-tui", "🎙 Скачивание модели...");
+	ctx.ui.notify("Скачиваю модель ggml-base.bin...", "info");
+
+	try {
+		await ensureWhisperModel({
+			onProgress: (downloaded: number, total: number) => {
+				const pct = total > 0 ? Math.round((downloaded / total) * 100) : 0;
+				ctx.ui.setStatus(
+					"voice-ollama-tui",
+					`🎙 Загрузка модели: ${pct}% (${formatBytes(downloaded)} / ${total > 0 ? formatBytes(total) : "?"})`,
+				);
+			},
+		});
+		ctx.ui.notify("✅ Модель ggml-base.bin успешно скачана.", "info");
+		ctx.ui.setStatus("voice-ollama-tui", "🎙 Модель готова");
+	} catch (err) {
+		ctx.ui.notify(
+			`❌ Ошибка скачивания модели: ${err instanceof Error ? err.message : String(err)}`,
+			"error",
+		);
+		ctx.ui.setStatus("voice-ollama-tui", "🎙 Ошибка модели");
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Step 7: Save .env
+// ---------------------------------------------------------------------------
+
+async function stepSaveConfig(ctx: ExtensionCommandContext, state: WizardState): Promise<void> {
+	const extDir = getExtensionDir();
+	const envPath = path.join(extDir, ".env");
+
+	// Определяем путь к модели по умолчанию (как в config.ts)
+	const home = (process.platform === "win32" ? process.env.USERPROFILE : process.env.HOME) ?? "/tmp";
+	const defaultModelPath = path.join(home, ".fan", "models", "speech", "ggml-base.bin");
+
+	const lines: string[] = [
+		"# Voice Input for TUI (Ollama) — configuration",
+		"# Generated by /voice-init wizard",
+		"",
+		"# Audio",
+		`AUDIO_DEVICE=${state.audioDevice || "default"}`,
+		`RECORD_DURATION_MAX=${state.recordDurationMax}`,
+		"",
+		"# Whisper",
+		"WHISPER_BIN_PATH=whisper-cli",
+		`WHISPER_MODEL_PATH=${defaultModelPath}`,
+		`WHISPER_LANGUAGE=${state.language}`,
+		"",
+		"# Ollama",
+		`OLLAMA_ENABLED=${state.ollamaEnabled}`,
+		`OLLAMA_BASE_URL=${state.ollamaBaseUrl}`,
+		`OLLAMA_MODEL=${state.ollamaModel}`,
+		`OLLAMA_SYSTEM_PROMPT=${state.ollamaSystemPrompt}`,
+		"",
+		"# UI",
+		`SHORTCUT=${state.shortcut}`,
+		"",
+	];
+
+	fs.writeFileSync(envPath, lines.join("\n"), "utf-8");
+	ctx.ui.notify(`✅ Конфигурация сохранена в ${envPath}`, "info");
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function formatBytes(bytes: number): string {
+	if (bytes < 1024) return `${bytes} Б`;
+	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`;
+	return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
+}

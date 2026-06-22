@@ -79,7 +79,7 @@ const DEFAULT_CONFIG: VoiceOllamaConfig = {
   shortcut: "ctrl+shift+v",
 };
 
-function getExtensionDir(): string {
+export function getExtensionDir(): string {
   return path.dirname(fileURLToPath(import.meta.url));
 }
 
