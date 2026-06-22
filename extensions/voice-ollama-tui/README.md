@@ -1,74 +1,94 @@
-# Voice Input for TUI (Ollama)
+# Голосовой ввод для TUI (Ollama)
 
-FAN extension that adds voice input to the TUI: record audio from the microphone, transcribe it locally with `whisper.cpp`, optionally improve the text via Ollama, and insert the result into the editor.
+Расширение FAN, добавляющее голосовой ввод в TUI: запись аудио с микрофона, локальное распознавание речи через `whisper.cpp`, опциональное улучшение текста через Ollama и вставка результата в строку ввода.
 
-## Features
+## Возможности
 
-- `/voice` slash command + `Ctrl+Shift+V` shortcut (configurable)
-- Local audio recording via `ffmpeg` (with `sox`/`arecord` fallback)
-- Local speech-to-text via `whisper.cpp`
-- Automatic download of the `ggml-base.bin` whisper model
-- Optional text post-processing through Ollama `/api/chat`
-- Auto-detection of available Ollama models
-- Configurable through `.env` or `config.json`
+- Команда `/voice` и шорткат `Ctrl+Shift+V` (настраивается)
+- Локальная запись аудио через `ffmpeg` (с fallback на `sox`/`arecord`)
+- Локальное распознавание речи через `whisper.cpp`
+- Автоматическая загрузка модели `ggml-base.bin`
+- Опциональная постобработка текста через Ollama `/api/chat`
+- Автообнаружение доступных моделей Ollama
+- Настройка через `.env` или `config.json`
+- Поддержка отмены длительных операций по `Escape`
 
-## Installation
+## Установка
 
-1. Copy or symlink this directory into your FAN extensions folder:
+1. Скопируйте или прилинкуйте директорию расширения в папку FAN extensions:
    ```bash
    mkdir -p ~/.fan/agent/extensions
    ln -s /path/to/extensions/voice-ollama-tui ~/.fan/agent/extensions/voice-ollama-tui
    ```
-2. Install dependencies:
+2. Установите зависимости:
    ```bash
    cd ~/.fan/agent/extensions/voice-ollama-tui
    npm install
    ```
-3. Copy `.env.example` to `.env` and adjust values.
-4. Make sure `ffmpeg` (or `sox` / `arecord`), `whisper-cli`, and (optionally) Ollama are available in your PATH.
-5. Restart FAN or run `/reload` in the TUI.
+3. Скопируйте `.env.example` в `.env` и настройте параметры:
+   ```bash
+   cp .env.example .env
+   ```
+4. Убедитесь, что в PATH доступны `ffmpeg` (или `sox` / `arecord`), `whisper-cli`, и опционально Ollama.
+5. Перезапустите FAN или выполните `/reload` в TUI.
 
-## Configuration
+## Использование
 
-Copy `.env.example` to `.env` and edit:
+В TUI нажмите `Ctrl+Shift+V` или введите команду `/voice`:
+
+1. Появится overlay записи с таймером и индикатором активности.
+2. Говорите в микрофон.
+3. Нажмите `Enter`, чтобы завершить запись.
+4. Нажмите `Escape` в любой момент, чтобы отменить запись или обработку.
+5. Распознанный текст появится в строке ввода.
+
+## Конфигурация
+
+Основные параметры (в `.env`):
+
+| Переменная | Значение по умолчанию | Описание |
+|------------|----------------------|----------|
+| `WHISPER_MODEL_PATH` | `~/.fan/models/speech/ggml-base.bin` | Путь к модели whisper |
+| `WHISPER_LANGUAGE` | `auto` | Код языка: `ru`, `en`, `auto` |
+| `WHISPER_FLAGS` | — | Дополнительные флаги для `whisper-cli` |
+| `OLLAMA_ENABLED` | `false` | Включить постобработку через Ollama |
+| `OLLAMA_MODEL` | `llama3.2` | Модель для улучшения текста |
+| `OLLAMA_SYSTEM_PROMPT` | см. `.env.example` | Промпт для исправления пунктуации и опечаток |
+| `SHORTCUT` | `ctrl+shift+v` | Горячая клавиша |
+| `RECORD_DURATION_MAX` | `60` | Максимальная длительность записи в секундах |
+| `AUDIO_DEVICE` | — | Имя аудиоустройства (опционально) |
+
+Пример `.env`:
 
 ```bash
-cp .env.example .env
+WHISPER_MODEL_PATH=/home/user/.fan/models/speech/ggml-base.bin
+WHISPER_LANGUAGE=ru
+OLLAMA_ENABLED=true
+OLLAMA_MODEL=llama3.2
+SHORTCUT=ctrl+shift+v
 ```
 
-Key options:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `WHISPER_MODEL_PATH` | `~/.fan/models/speech/ggml-base.bin` | Path to the whisper model |
-| `WHISPER_LANGUAGE` | `auto` | Language code, e.g. `ru`, `en` |
-| `OLLAMA_ENABLED` | `false` | Enable Ollama post-processing |
-| `OLLAMA_MODEL` | `llama3.2` | Model name for text improvement |
-| `OLLAMA_SYSTEM_PROMPT` | *(see `.env.example`)* | Prompt for punctuation/typo fixing |
-| `SHORTCUT` | `ctrl+shift+v` | Keyboard shortcut |
-| `RECORD_DURATION_MAX` | `60` | Maximum recording duration in seconds |
-
-## Dependencies
-
-- `ffmpeg` (preferred), or `sox`, or `arecord`
-- `whisper.cpp` CLI (`whisper-cli`)
-- Ollama (optional, for text post-processing)
-
-## Architecture
+## Архитектура
 
 ```
 index.ts
   └── runVoicePipeline(ctx, config)
-        ├── checkDependencies()
-        ├── showRecordingOverlay()
-        ├── recordAudio()          # ffmpeg → sox → arecord fallback
-        ├── ensureWhisperModel()   # auto-download ggml-base.bin
-        ├── transcribe()           # whisper.cpp CLI
-        ├── improveText()          # Ollama /api/chat (optional)
-        └── insertTranscript()     # ctx.ui.setEditorText()
+        ├── checkDependencies()      # проверка ffmpeg/whisper-cli
+        ├── showRecordingOverlay()   # overlay записи
+        ├── recordAudio()            # ffmpeg → sox → arecord fallback
+        ├── ensureWhisperModel()     # авто-загрузка ggml-base.bin
+        ├── transcribe()             # whisper.cpp CLI
+        ├── improveText()            # Ollama /api/chat (опционально)
+        └── insertTranscript()       # ctx.ui.setEditorText()
 ```
 
-## Development
+## Зависимости
+
+- `ffmpeg` (предпочтительно), или `sox`, или `arecord`
+- `whisper.cpp` CLI (`whisper-cli`)
+- Ollama (опционально, для постобработки текста)
+
+## Разработка
 
 ```bash
 cd extensions/voice-ollama-tui
@@ -76,6 +96,24 @@ npx tsc --noEmit
 npx vitest run
 ```
 
-## Future Enhancements
+## Безопасность и приватность
 
-- Voice Activity Detection (VAD) for automatic recording stop.
+- Все данные обрабатываются локально.
+- Аудиофайл временно сохраняется в системной временной директории и удаляется сразу после обработки.
+- Ollama вызывается только если явно включён в конфигурации.
+- Не используется `shell: true`, внешние команды запускаются через `spawn` с массивом аргументов.
+
+## Возможные проблемы
+
+**whisper-cli не найден**
+- Убедитесь, что `whisper-cli` доступен в PATH.
+
+**ffmpeg не может записать аудио**
+- Проверьте список устройств: `ffmpeg -f avfoundation -list_devices true -i ""` (macOS) или `arecord -l` (Linux).
+
+**Ollama недоступна**
+- Расширение вставит сырой распознанный текст без постобработки.
+
+## Планы на будущее
+
+- Voice Activity Detection (VAD) для автоматической остановки записи по тишине.
