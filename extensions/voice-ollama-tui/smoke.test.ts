@@ -103,18 +103,12 @@ describe("voice-ollama-tui smoke test", () => {
     await mod.default(api as any);
 
     // ── Command registration ───────────────────────────────────────────
-    expect(api.registerCommand).toHaveBeenCalledTimes(2);
+    // /voice command handles both voice input and /voice init subcommand
+    expect(api.registerCommand).toHaveBeenCalledTimes(1);
     expect(api.registerCommand).toHaveBeenCalledWith(
       "voice",
       expect.objectContaining({
         description: expect.stringContaining("voice input"),
-        handler: expect.any(Function),
-      }),
-    );
-    expect(api.registerCommand).toHaveBeenCalledWith(
-      "voice-init",
-      expect.objectContaining({
-        description: expect.stringContaining("setup wizard"),
         handler: expect.any(Function),
       }),
     );

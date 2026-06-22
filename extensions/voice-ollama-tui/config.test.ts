@@ -464,18 +464,12 @@ describe("voice-ollama-tui extension entry (F-1.1)", () => {
     const mod = await import("./index.js");
     await mod.default(mockPi as any);
 
-    // Command registration: /voice and /voice-init
-    expect(registerCommand).toHaveBeenCalledTimes(2);
+    // Command registration: /voice handles both voice input and /voice init subcommand
+    expect(registerCommand).toHaveBeenCalledTimes(1);
     expect(registerCommand).toHaveBeenCalledWith(
       "voice",
       expect.objectContaining({
         description: expect.stringContaining("voice input"),
-      }),
-    );
-    expect(registerCommand).toHaveBeenCalledWith(
-      "voice-init",
-      expect.objectContaining({
-        description: expect.stringContaining("setup wizard"),
       }),
     );
 

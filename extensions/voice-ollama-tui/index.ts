@@ -13,16 +13,14 @@ export default function (pi: ExtensionAPI) {
   };
 
   pi.registerCommand("voice", {
-    description: "Start voice input: record audio, transcribe with whisper.cpp, insert text into editor.",
-    handler: async (_args: string, ctx: ExtensionCommandContext) => {
-      await handler(ctx);
-    },
-  });
-
-  pi.registerCommand("voice-init", {
-    description: "Full setup wizard: dependencies, language, duration, Ollama, shortcut, whisper model, .env.",
-    handler: async (_args: string, ctx: ExtensionCommandContext) => {
-      await runVoiceInitWizard(ctx);
+    description: "Start voice input (/voice) or setup wizard (/voice init).",
+    handler: async (args: string, ctx: ExtensionCommandContext) => {
+      const subcommand = args.trim().toLowerCase();
+      if (subcommand === "init") {
+        await runVoiceInitWizard(ctx);
+      } else {
+        await handler(ctx);
+      }
     },
   });
 
