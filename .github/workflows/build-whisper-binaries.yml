@@ -1,0 +1,88 @@
+name: Build whisper.cpp binaries for voice-ollama-tui
+
+on:
+  workflow_dispatch:
+    inputs:
+      whisper_version:
+        description: 'whisper.cpp version tag (e.g. v1.9.1)'
+        required: true
+        default: 'v1.9.1'
+      extension_version:
+        description: 'voice-ollama-tui extension version to bundle for'
+        required: true
+        default: '1.1.0'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x64
+            os: ubuntu-latest
+            cmake_args: "-DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DWHISPER_BUILD_EXAMPLES=ON"
+            output_name: whisper-cli
+          - platform: linux-arm64
+            os: ubuntu-latest
+            cmake_args: "-DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DWHISPER_BUILD_EXAMPLES=ON -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ -DCMAKE_SYSTEM_PROCESSOR=arm64 -DCMAKE_CROSSCOMPILING=ON"
+            output_name: whisper-cli
+            install_deps: "sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu"
+          - platform: darwin-arm64
+            os: macos-latest
+            cmake_args: "-DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DWHISPER_BUILD_EXAMPLES=ON -DCMAKE_OSX_ARCHITECTURES=arm64"
+            output_name: whisper-cli
+          - platform: darwin-x64
+            os: macos-latest
+            cmake_args: "-DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DWHISPER_BUILD_EXAMPLES=ON -DCMAKE_OSX_ARCHITECTURES=x86_64"
+            output_name: whisper-cli
+          - platform: windows-x64
+            os: windows-latest
+            cmake_args: "-DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DWHISPER_BUILD_EXAMPLES=ON"
+            output_name: whisper-cli.exe
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Install cross-compiler (linux-arm64)
+        if: matrix.platform == 'linux-arm64'
+        run: ${{ matrix.install_deps }}
+
+      - name: Checkout whisper.cpp
+        uses: actions/checkout@v4
+        with:
+          repository: ggml-org/whisper.cpp
+          ref: ${{ github.event.inputs.whisper_version }}
+          path: whisper.cpp
+
+      - name: Configure and build
+        shell: bash
+        run: |
+          cd whisper.cpp
+          cmake -B build ${{ matrix.cmake_args }}
+          cmake --build build --config Release --target whisper-cli -j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+
+      - name: Test binary
+        shell: bash
+        run: |
+          cd whisper.cpp
+          ./build/bin/${{ matrix.output_name }} -h | head -3
+
+      - name: Package binary
+        shell: bash
+        run: |
+          mkdir -p voice-ollama-tui-whisper-bin-${{ matrix.platform }}
+          cp whisper.cpp/build/bin/${{ matrix.output_name }} voice-ollama-tui-whisper-bin-${{ matrix.platform }}/
+          if [[ "${{ matrix.platform }}" == windows* ]]; then
+            7z a voice-ollama-tui-whisper-bin-${{ matrix.platform }}-${{ github.event.inputs.extension_version }}.zip voice-ollama-tui-whisper-bin-${{ matrix.platform }}
+          else
+            tar -czf voice-ollama-tui-whisper-bin-${{ matrix.platform }}-${{ github.event.inputs.extension_version }}.tar.gz voice-ollama-tui-whisper-bin-${{ matrix.platform }}
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: voice-ollama-tui-whisper-bin-${{ matrix.platform }}
+          path: voice-ollama-tui-whisper-bin-${{ matrix.platform }}-*.*

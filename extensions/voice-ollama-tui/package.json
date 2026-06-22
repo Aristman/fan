@@ -1,14 +1,14 @@
 {
   "name": "voice-ollama-tui",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "type": "module",
   "main": "index.ts",
   "fan": {
     "name": "voice-ollama-tui",
     "type": "extension",
     "displayName": "Voice Input for TUI (Ollama)",
-    "description": "Record voice, transcribe with whisper.cpp, optionally improve via Ollama, insert text into TUI editor. Includes /voice init setup wizard.",
-    "version": "1.1.0",
+    "description": "Record voice, transcribe with whisper.cpp, optionally improve via Ollama, insert text into TUI editor. Includes /voice init setup wizard and automatic whisper-cli binary download.",
+    "version": "1.2.0",
     "entry": "index.ts",
     "author": "FAN Research & Spec Generator",
     "tags": ["tui", "voice", "ollama", "whisper", "input"]
