@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FAN // Filin Agent Next // VAULT-TEC PERSONNEL INTERFACE</title>
+    <title>FAN //FAN-TEC PERSONNEL INTERFACE</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=VT323&family=Share+Tech+Mono&display=swap" rel="stylesheet">
@@ -19,12 +19,12 @@
     <header class="terminal-header">
         <div class="header-line">
             <span class="prompt">&gt;</span>
-            <span class="typing" data-text="ROBCO INDUSTRIES (TM) TERMLINK PROTOCOL"></span>
+            <span class="typing" data-text="SEA-AGENTS INDUSTRIES (TM) TERMLINK PROTOCOL"></span>
             <span class="cursor"></span>
         </div>
         <div class="header-line sub">
             <span class="prompt">&gt;</span>
-            <span>FAN PERSONNEL DATABASE // VERSION 1.0.0</span>
+            <span>FAN PERSONNEL DATABASE // VERSION 1.0.1</span>
         </div>
     </header>
 
@@ -49,17 +49,18 @@
                 ╚═╝     ╚═╝  ╚═╝╚═╝  ╚═══╝
             </div>
             <div class="boot-sequence">
-                <div class="boot-line"><span class="ok">[OK]</span> Initializing FAN runtime kernel...</div>
-                <div class="boot-line"><span class="ok">[OK]</span> Loading AI provider modules (40+)...</div>
-                <div class="boot-line"><span class="ok">[OK]</span> Mounting orchestrator worker pool...</div>
-                <div class="boot-line"><span class="ok">[OK]</span> Establishing TUI framebuffer...</div>
-                <div class="boot-line"><span class="ok">[OK]</span> Connecting to FAN Store repository...</div>
-                <div class="boot-line"><span class="ok">[OK]</span> Vault-Tec Personnel Interface loaded.</div>
+                <div class="boot-line"><span class="ok">[OK]</span> Инициализация FAN runtime ядра...</div>
+                <div class="boot-line"><span class="ok">[OK]</span> Загрузка модулей ИИ провайдеров (40+)...</div>
+                <div class="boot-line"><span class="ok">[OK]</span> Монтирование пула воркеров оркестратора...</div>
+                <div class="boot-line"><span class="ok">[OK]</span> Настройка TUI интерфейсного буфера...</div>
+                <div class="boot-line"><span class="ok">[OK]</span> Подключение к репозиторию FAN Store ...</div>
+                <div class="boot-line"><span class="ok">[OK]</span><b>FAN-Tec персональный интерфейс загружен.</b></div>
             </div>
             <div class="welcome-msg">
                 <p>&gt; ДОБРО ПОЖАЛОВАТЬ, ПУТНИК.</p>
-                <p>&gt; FAN (Filin Agent Next) — локальный AI runtime-agent для разработчиков.</p>
+                <p>&gt; FAN — локальный AI runtime агент для разработчиков.</p>
                 <p>&gt; Мульти-провайдер, мульти-агент, веб-дашборд, расширения.</p>
+                <p>&gt; Для начала работы потребуется только доступ к любой LLM. Подойдет даже локальная </p>
                 <p>&gt; Всё работает прямо на вашей машине. Без облачных посредников.</p>
             </div>
         </section>
@@ -67,7 +68,7 @@
         <section id="about" class="section">
             <h2 class="section-title"><span class="prompt">&gt;</span> О ФАНЕ / ABOUT FAN</h2>
             <div class="content-block">
-                <p>FAN — это форк и эволюция экосистемы fan/pi, локальный AI-агент для разработчиков, который запускается на вашей машине и помогает кодить.</p>
+                <p>FAN — это локальный AI-агент для разработчиков, который запускается на вашей машине и помогает кодить.</p>
                 <p>В отличие от облачных помощников, FAN хранит сессии локально (JSONL + SQLite), управляет моделями через собственный Model Manager и умеет запускать мультиагентные воркеры.</p>
             </div>
             <div class="stats-grid">
@@ -100,32 +101,32 @@
                 <div class="feature-card">
                     <div class="feature-icon">[AI]</div>
                     <h3>Multi-provider AI</h3>
-                    <p>OpenAI, Anthropic, Google, Groq, xAI, Mistral, Azure, Vertex, Bedrock и 40+ других провайдеров через единое API. Fallback-цепочки и budget tracking.</p>
+                    <p>OpenAI, Anthropic, Google, Groq, xAI, Mistral, Azure, Vertex, Bedrock и 40+ других провайдеров через единое API. Fallback-цепочки и трекер бюджета использования.</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">[ORC]</div>
                     <h3>Orchestrator</h3>
-                    <p>8 специализированных воркеров с loop prevention, permission system, agent discovery (builtin/user/project), RPC-изоляцией и task pipeline.</p>
+                    <p>8 специализированных воркеров с защитой от зацикливания (loop prevention), системой разрешений, обнаружением агентов (встроенных, пользовательских, проектных), изоляцией RPC и конвейером задач.</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">[TUI]</div>
                     <h3>Interactive TUI</h3>
-                    <p>Потоковый вывод, markdown, thinking blocks, execution widgets, горячие клавиши Vim/Emacs-style.</p>
+                    <p>Потоковый вывод, поддержка markdown, блоки размышлений (thinking blocks), виджеты выполнения, горячие клавиши в стиле Vim/Emacs.</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">[SVR]</div>
                     <h3>Server + Dashboard</h3>
-                    <p>Hono REST + WebSocket, 14 endpoints, токен-авторизация, веб-дашборд на Lit + Vite.</p>
+                    <p>Hono REST + WebSocket, 14 endpoints, авторизация по токенам, веб-дашборд на Lit + Vite.</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">[EXT]</div>
                     <h3>Extensions & Skills</h3>
-                    <p>Система расширений с lifecycle hooks, FAN Store для скиллов/тем, 8 установленных расширений, 12 встроенных скиллов.</p>
+                    <p>Система расширений с хуками жизненного цикла, репозиторий FAN Store для скиллов и тем.</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">[MM]</div>
                     <h3>Model Management</h3>
-                    <p>Routing rules, fallback chains, budget tracking, per-session настройки температуры и токенов.</p>
+                    <p>Правила маршрутизации, цепочки fallback, трекинг бюджета, настройки температуры и токенов для каждой сессии.</p>
                 </div>
             </div>
         </section>
@@ -157,7 +158,7 @@
             <div class="commands-grid">
                 <div class="command-item">
                     <code>fan</code>
-                    <span>Интерактивный TUI-режим</span>
+                    <span>Запуск в интерактивном TUI-режиме</span>
                 </div>
                 <div class="command-item">
                     <code>fan init</code>
@@ -194,10 +195,10 @@
             </div>
 
             <h3 class="section-title sub" style="margin-top:40px;font-size:1.3rem">
-                <span class="prompt">&gt;</span> ВСТРОЕННЫЕ РАСШИРЕНИЯ / BUILT-IN
+                <span class="prompt">&gt;</span> ВСТРОЕННЫЕ РАСШИРЕНИЯ
             </h3>
             <div class="content-block">
-                <p>FAN поставляется с одним встроенным расширением — <strong>FAN Store</strong>. Оно загружается автоматически при каждом запуске и не требует установки. Остальные расширения и скиллы устанавливаются из репозитория командой <code>fan store install</code>.</p>
+                <p>FAN поставляется с одним встроенным расширением — <strong>FAN Store</strong>. Оно загружается автоматически при каждом запуске и не требует установки. Остальные расширения и скиллы устанавливаются из репозитория. Просмотр репозитория <b>ALT+S</b>.</p>
             </div>
 
             <div class="builtin-card">
@@ -238,7 +239,7 @@
 
                     <h4>▸ Горячие клавиши</h4>
                     <p>
-                        <span class="hotkey">Alt+S</span> — открыть браузер расширений (Browse extension repositories)
+                        <span class="hotkey">Alt+S</span> — открыть браузер репозиториев (установка/удаление расширений, скиллов, тем)
                     </p>
 
                     <h4>▸ CLI-команды</h4>
@@ -253,7 +254,7 @@
                     <p>При старте сессии Store автоматически:</p>
                     <ul class="builtin-list">
                         <li>Загружает конфигурацию из <code>~/.fan/agent/store.json</code></li>
-                        <li>Проверяет наличие staged-обновлений для самого себя (self-update)</li>
+                        <li>Проверяет наличие обновлений для самого себя (self-update)</li>
                         <li>Показывает статус: количество установленных пакетов</li>
                         <li>Выполняет автоматическую проверку обновлений по таймеру (настраивается в конфиге)</li>
                     </ul>
@@ -366,16 +367,10 @@
         <section id="project" class="section">
             <h2 class="section-title"><span class="prompt">&gt;</span> О ПРОЕКТЕ / PROJECT</h2>
             <div class="content-block">
-                <p>FAN — open-source проект, развиваемый сообществом. Это монорепозиторий на npm workspaces + TypeScript strict + Bun.</p>
-                <p>Архитектура состоит из 10 пакетов: ai, agent, tui, coding-agent, web-ui (open-source @itone/*) и api-gateway, db, model-manager, store, dashboard (интегрированные @fan/*).</p>
+                <p>FAN — это монорепозиторий на npm workspaces + TypeScript strict + Bun.</p>
+                <p>Архитектура состоит из 10 пакетов: ai, agent, tui, coding-agent, web-ui (@itone/*) и api-gateway, db, model-manager, store, dashboard (интегрированные @fan/*).</p>
             </div>
             <div class="project-links">
-                <a href="https://github.com/itone/fan" class="terminal-btn" target="_blank" rel="noopener">
-                    <span class="btn-icon">[GIT]</span> GitHub Repository
-                </a>
-                <a href="https://fan.sea-agents.ru/fan-store/" class="terminal-btn" target="_blank" rel="noopener">
-                    <span class="btn-icon">[STR]</span> FAN Store
-                </a>
                 <a href="../README.md" class="terminal-btn">
                     <span class="btn-icon">[DOC]</span> Full README
                 </a>
@@ -384,10 +379,10 @@
                 </a>
             </div>
             <div class="ascii-divider">
-                ╔══════════════════════════════════════════════════════════════╗
-                ║  FAN // Filin Agent Next // VAULT-TEC PERSONNEL INTERFACE    ║
-                ║  LICENSE: MIT  //  STATUS: OPERATIONAL  //  VERSION: 1.0.0   ║
-                ╚══════════════════════════════════════════════════════════════╝
+                ╔════════════════════════════════════════════════════════╗
+                ║  FAN //  FAN-TEC PERSONNEL INTERFACE                         ║
+                ║  STATUS: OPERATIONAL  //  VERSION: 1.0.1                     ║
+                ╚════════════════════════════════════════════════════════╝
             </div>
         </section>
     </main>
