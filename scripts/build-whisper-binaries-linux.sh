@@ -91,7 +91,7 @@ build_platform() {
                 echo "Missing cross compiler: ${compiler}-gcc/g++. Install gcc-aarch64-linux-gnu g++-aarch64-linux-gnu."
                 exit 1
             fi
-            cmake_args="$cmake_args -DCMAKE_C_COMPILER=${compiler}-gcc -DCMAKE_CXX_COMPILER=${compiler}-g++ -DCMAKE_SYSTEM_PROCESSOR=arm64 -DCMAKE_CROSSCOMPILING=ON"
+            cmake_args="$cmake_args -DCMAKE_C_COMPILER=${compiler}-gcc -DCMAKE_CXX_COMPILER=${compiler}-g++ -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=aarch64 -DCMAKE_CROSSCOMPILING=ON -DGGML_CPU_ARM_ARCH=armv8-a -DGGML_AVX=OFF -DGGML_AVX2=OFF -DGGML_FMA=OFF -DGGML_F16C=OFF -DGGML_BMI2=OFF -DGGML_SSE42=OFF -DGGML_USE_CPU_REPACK=OFF"
             ;;
         windows-x64)
             compiler="x86_64-w64-mingw32"
@@ -100,6 +100,8 @@ build_platform() {
                 exit 1
             fi
             output_name="whisper-cli.exe"
+            # The toolchain file sets -D_WIN32_WINNT and a header patch for
+            # THREAD_POWER_THROTTLING_STATE compatibility.
             cmake_args="$cmake_args -DCMAKE_TOOLCHAIN_FILE=$SCRIPT_DIR/cmake/mingw-w64-x86_64.cmake -DCMAKE_CROSSCOMPILING=ON"
             ;;
     esac

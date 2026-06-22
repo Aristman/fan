@@ -143,6 +143,112 @@ npx vitest run
 **Ollama недоступна**
 - Расширение вставит сырой распознанный текст без постобработки.
 
+## Сборка бинарников whisper-cli
+
+Расширение может автоматически скачивать готовые бинарники `whisper-cli` из FAN Store. Исходные бинарники собираются из [whisper.cpp](https://github.com/ggml-org/whisper.cpp) и публикуются как отдельные asset-пакеты.
+
+### Поддерживаемые платформы
+
+| Платформа | Скрипт сборки | Хост |
+|-----------|---------------|------|
+| `linux-x64` | `scripts/build-whisper-binaries-linux.sh` | Linux |
+| `linux-arm64` | `scripts/build-whisper-binaries-linux.sh` | Linux |
+| `windows-x64` | `scripts/build-whisper-binaries-linux.sh` | Linux (MinGW) |
+| `darwin-arm64` | `scripts/build-whisper-binaries-macos.sh` | macOS |
+| `darwin-x64` | `scripts/build-whisper-binaries-macos.sh` | macOS |
+
+### Сборка на Linux
+
+Установите зависимости:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y cmake build-essential gcc-aarch64-linux-gnu g++-aarch64-linux-gnu mingw-w64 zip
+```
+
+Собрать все доступные с Linux платформы:
+
+```bash
+./scripts/build-whisper-binaries-linux.sh
+```
+
+Собрать только одну платформу:
+
+```bash
+./scripts/build-whisper-binaries-linux.sh --platform linux-x64
+./scripts/build-whisper-binaries-linux.sh --platform linux-arm64
+./scripts/build-whisper-binaries-linux.sh --platform windows-x64
+```
+
+Артефакты появятся в `/tmp/`:
+
+```
+/tmp/voice-ollama-tui-whisper-bin-linux-x64-1.9.1.tar.gz
+/tmp/voice-ollama-tui-whisper-bin-linux-arm64-1.9.1.tar.gz
+/tmp/voice-ollama-tui-whisper-bin-windows-x64-1.9.1.zip
+```
+
+### Сборка на macOS
+
+Установите зависимости:
+
+```bash
+xcode-select --install
+brew install cmake
+```
+
+Собрать обе macOS-платформы:
+
+```bash
+./scripts/build-whisper-binaries-macos.sh
+```
+
+Собрать только одну:
+
+```bash
+./scripts/build-whisper-binaries-macos.sh --platform darwin-arm64
+./scripts/build-whisper-binaries-macos.sh --platform darwin-x64
+```
+
+Артефакты появятся в `/tmp/`:
+
+```
+/tmp/voice-ollama-tui-whisper-bin-darwin-arm64-1.9.1.tar.gz
+/tmp/voice-ollama-tui-whisper-bin-darwin-x64-1.9.1.tar.gz
+```
+
+### Публикация в FAN Store
+
+Для Windows-архива нужно конвертировать `.zip` в `.tar.gz`, потому что `fan-store add` принимает только tar.gz:
+
+```bash
+cd /tmp
+unzip -q voice-ollama-tui-whisper-bin-windows-x64-1.9.1.zip
+tar -czf voice-ollama-tui-whisper-bin-windows-x64-1.9.1.tar.gz voice-ollama-tui-whisper-bin-windows-x64
+```
+
+Добавить пакеты в локальный репозиторий FAN Store:
+
+```bash
+export FAN_REPO_DIR=~/fan-store
+
+./tools/fan-store-server/fan-store add /tmp/voice-ollama-tui-whisper-bin-linux-x64-1.9.1.tar.gz
+./tools/fan-store-server/fan-store add /tmp/voice-ollama-tui-whisper-bin-linux-arm64-1.9.1.tar.gz
+./tools/fan-store-server/fan-store add /tmp/voice-ollama-tui-whisper-bin-windows-x64-1.9.1.tar.gz
+./tools/fan-store-server/fan-store add /tmp/voice-ollama-tui-whisper-bin-darwin-arm64-1.9.1.tar.gz
+./tools/fan-store-server/fan-store add /tmp/voice-ollama-tui-whisper-bin-darwin-x64-1.9.1.tar.gz
+```
+
+Опубликовать на сервер:
+
+```bash
+./tools/fan-store-server/fan-store publish
+```
+
+### Версионирование
+
+Версия asset-пакетов соответствует версии whisper.cpp (например, `1.9.1`). Если нужно обновить whisper.cpp — измените `WHISPER_BIN_VERSION` в скриптах или передайте `--version`.
+
 ## Планы на будущее
 
 - Voice Activity Detection (VAD) для автоматической остановки записи по тишине.
