@@ -9,6 +9,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { execSync } from "node:child_process";
+import { parseTarGzip } from "nanotar";
 import { getExtensionDir } from "./config.js";
 import { VoiceError } from "./errors.js";
 
@@ -475,10 +476,25 @@ async function downloadFile(
 async function extractArchive(
   archivePath: string,
   extractDir: string,
-  platform: Platform,
+  _platform: Platform,
 ): Promise<void> {
   fs.mkdirSync(extractDir, { recursive: true });
 
-  const { execFileSync } = await import("node:child_process");
-  execFileSync("tar", ["-xzf", archivePath, "-C", extractDir], { stdio: "ignore" });
+  // Use nanotar for cross-platform tar.gz extraction. The system tar command
+  // is unreliable on Windows (cmd.exe tar may fail on -xzf), so a pure-JS
+  // parser avoids external CLI dependencies.
+  const archiveData = fs.readFileSync(archivePath);
+  const files = await parseTarGzip(archiveData);
+
+  for (const file of files) {
+    if (file.type !== "file" || !file.data) continue;
+
+    // nanotar names include the top-level directory prefix from the archive,
+    // e.g. "voice-ollama-tui-ffmpeg-bin-windows-x64/ffmpeg.exe".
+    const relativeName = file.name.replace(/^[^/]+\//, "");
+    const outPath = path.join(extractDir, relativeName);
+
+    fs.mkdirSync(path.dirname(outPath), { recursive: true });
+    fs.writeFileSync(outPath, file.data);
+  }
 }
