@@ -13,7 +13,7 @@
 
 import type { ExtensionContext, Theme } from "@itone/fan-coding-agent";
 import { matchesKey, type TUI, type KeybindingsManager, type Focusable } from "@itone/fan-tui";
-import { recordAudio, type RecordAudioOptions } from "./audio-recorder.js";
+import { recordAudio, setRecorderNotify, type RecordAudioOptions } from "./audio-recorder.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -71,6 +71,7 @@ export async function showRecordingOverlay(
 
   return ctx.ui.custom<RecordingOverlayResult>(
     (tui: TUI, theme: Theme, _kb: KeybindingsManager, done: (result: RecordingOverlayResult) => void) => {
+      setRecorderNotify(ctx.ui.notify);
       const component = new RecordingOverlayComponent(
         theme,
         tui,

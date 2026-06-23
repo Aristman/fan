@@ -194,6 +194,21 @@ function isAbortedWithFile(outputPath: string): boolean {
 }
 
 /** Best-effort debug log to a temp file. */
+let _notifyFn: ((message: string, type?: "info" | "warning" | "error") => void) | undefined;
+
+/** Set a notify callback so the recorder can surface diagnostics in the TUI. */
+export function setRecorderNotify(notify: (message: string, type?: "info" | "warning" | "error") => void): void {
+  _notifyFn = notify;
+}
+
+function notifyUser(message: string, type?: "info" | "warning" | "error"): void {
+  try {
+    _notifyFn?.(message, type);
+  } catch {
+    // ignore
+  }
+}
+
 function debugLog(message: string): void {
   try {
     const logPath = path.join(os.tmpdir(), "voice-ollama-debug.log");
@@ -341,6 +356,7 @@ function spawnRecorder(
       stderr += chunk.toString("utf-8");
     });
 
+    notifyUser(`🎙 Recorder: starting ${command} ${args.join(" ")}`, "info");
     debugLog(`spawnRecorder started command=${command} args=${args.join(" ")} outputPath=${ctx.outputPath}`);
 
     let removeAbortListener: (() => void) | undefined;
@@ -379,12 +395,15 @@ function spawnRecorder(
       // Treat this as success only when we know the abort came from our signal.
       if (abortedBySignal) {
         if (outputSize > 0 || await waitForOutputFile(ctx.outputPath)) {
+          notifyUser(`🎙 Recorder: abort produced file size=${outputSize}`, "info");
           debugLog(`spawnRecorder treating non-zero exit as success due to abort + existing file`);
           resolve({ child, stderr });
           return;
         }
       }
 
+      const detail = stderr.trim() ? stderr.slice(0, 500) : "(no stderr)";
+      notifyUser(`🎙 Recorder failed: code=${code} ${detail}`, "error");
       const msg = stderr.trim()
         ? `${command} exited with code ${code}: ${stderr.slice(0, 500)}`
         : `${command} exited with code ${code}`;
@@ -566,6 +585,7 @@ export async function recordAudio(options: RecordAudioOptions = {}): Promise<str
     options.binPath && fs.existsSync(options.binPath)
       ? options.binPath
       : "ffmpeg";
+  notifyUser(`🎙 recordAudio resolved binPath=${binPath} exists=${fs.existsSync(binPath)}`, "info");
   debugLog(`recordAudio binPath=${binPath}`);
 
   // On Windows, dshow requires an actual device name. Auto-discover one now.

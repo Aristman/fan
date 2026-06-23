@@ -184,6 +184,7 @@ describe("voice-ollama-tui ui-overlay (F-2.2)", () => {
     // Mock recordAudio so the overlay does not try to spawn real ffmpeg.
     vi.doMock("./audio-recorder.js", () => ({
       recordAudio: vi.fn().mockResolvedValue("/tmp/voice-test/recording.wav"),
+      setRecorderNotify: vi.fn(),
     }));
 
     const mockCtx = {
@@ -382,6 +383,7 @@ describe("voice-ollama-tui ui-overlay (F-2.2)", () => {
 
     vi.doMock("./audio-recorder.js", () => ({
       recordAudio: vi.fn().mockResolvedValue("/tmp/voice-test/recording.wav"),
+      setRecorderNotify: vi.fn(),
     }));
 
     const mockCtx = {
