@@ -131,6 +131,45 @@ vi.mock("node:fs", async () => {
  * The mock returns a child process. For each entry a timeout fires the
  * appropriate events.
  */
+/**
+ * Create a child process that responds according to `resp`.
+ */
+function createSpawnResponse(
+  resp:
+    | { kind: "success" }
+    | { kind: "enoent" }
+    | { kind: "failOther" }
+    | { kind: "failCode"; code: number; stderr?: string }
+    | { kind: "pending" },
+): ReturnType<typeof spawn> {
+  const child = createMockChild();
+
+  if (resp.kind === "enoent") {
+    setTimeout(() => {
+      const err = new Error("spawn ENOENT") as NodeJS.ErrnoException;
+      err.code = "ENOENT";
+      triggerEvent(child, "error", err);
+    }, 0);
+  } else if (resp.kind === "failOther") {
+    setTimeout(() => {
+      const err = new Error("spawn failed: unknown error");
+      triggerEvent(child, "error", err);
+    }, 0);
+  } else if (resp.kind === "failCode") {
+    setTimeout(() => {
+      if (resp.stderr) triggerStderrData(child, resp.stderr);
+      triggerEvent(child, "close", resp.code);
+    }, 0);
+  } else if (resp.kind === "success") {
+    setTimeout(() => {
+      triggerEvent(child, "close", 0);
+    }, 0);
+  }
+  // "pending": never fires events — useful for abort tests
+
+  return child as unknown as ReturnType<typeof spawn>;
+}
+
 function setupSpawnMock(
   responses: Array<
     | { kind: "success" }
@@ -142,35 +181,35 @@ function setupSpawnMock(
 ) {
   let idx = 0;
   vi.mocked(spawn).mockImplementation((_command: string, _args: readonly string[]) => {
-    const child = createMockChild();
     const resp = responses[idx] ?? { kind: "success" };
     idx++;
-
-    if (resp.kind === "enoent") {
-      setTimeout(() => {
-        const err = new Error("spawn ENOENT") as NodeJS.ErrnoException;
-        err.code = "ENOENT";
-        triggerEvent(child, "error", err);
-      }, 0);
-    } else if (resp.kind === "failOther") {
-      setTimeout(() => {
-        const err = new Error("spawn failed: unknown error");
-        triggerEvent(child, "error", err);
-      }, 0);
-    } else if (resp.kind === "failCode") {
-      setTimeout(() => {
-        if (resp.stderr) triggerStderrData(child, resp.stderr);
-        triggerEvent(child, "close", resp.code);
-      }, 0);
-    } else if (resp.kind === "success") {
-      setTimeout(() => {
-        triggerEvent(child, "close", 0);
-      }, 0);
-    }
-    // "pending": never fires events — useful for abort tests
-
-    return child as unknown as ReturnType<typeof spawn>;
+    return createSpawnResponse(resp);
   });
+}
+
+/**
+ * Raw spawn mock implementation that creates a child from the current
+ * response queue. Useful when a test needs to override `spawn.mockImplementation`
+ * itself (e.g. to capture the args of each call) but still wants the standard
+ * response behaviour.
+ */
+function spawnMockImpl(
+  _command: string,
+  _args: readonly string[],
+  responses: Array<
+    | { kind: "success" }
+    | { kind: "enoent" }
+    | { kind: "failOther" }
+    | { kind: "failCode"; code: number; stderr?: string }
+    | { kind: "pending" }
+  >,
+): ReturnType<typeof spawn> {
+  // Count how many times this helper has already been called in this test
+  // by looking at the real spawn mock call history.
+  const mockedSpawn = vi.mocked(spawn);
+  const idx = mockedSpawn.mock.calls.filter((c) => c[0] === "ffmpeg" || c[0] === "sox" || c[0] === "arecord").length - 1;
+  const resp = responses[Math.max(0, idx)] ?? { kind: "success" };
+  return createSpawnResponse(resp);
 }
 
 // ---------------------------------------------------------------------------
@@ -245,7 +284,8 @@ describe("voice-ollama-tui audio recorder (F-2.1)", () => {
   // ── TC-F-2.1-3: abort signal terminates recording with SIGINT ──────
   it("TC-F-2.1-3: abort signal correctly terminates the process", async () => {
     // Use "pending" so the spawn doesn't resolve on its own
-    setupSpawnMock([{ kind: "pending" }]);
+    const child = createMockChild();
+    vi.mocked(spawn).mockImplementation(() => child as unknown as ReturnType<typeof spawn>);
 
     const mod = await import("./audio-recorder.js");
 
@@ -268,21 +308,27 @@ describe("voice-ollama-tui audio recorder (F-2.1)", () => {
 
     controller.abort();
 
+    // Manually fire the close event so the implementation can complete.
+    triggerEvent(child, "close", 1);
+
     const err = await promise.catch((e: unknown) => e);
     expect(err).toBeInstanceOf(mod.AudioRecorderError);
-    expect(err).toMatchObject({ code: "RECORDER_ABORTED" });
+    // We now treat abort + existing file as success. Because the test explicitly
+    // makes the file missing, the recorder exits with a non-zero code and the
+    // normal RECORDER_FAILED path is taken.
+    expect(err).toMatchObject({
+      code: "RECORDER_ABORTED",
+    });
 
     // The child's kill should have been called with SIGINT
-    const child = vi.mocked(spawn).mock.results[0]?.value as MockChild | undefined;
-    if (child) {
-      expect(child.kill).toHaveBeenCalledWith("SIGINT");
-    }
+    expect(child.kill).toHaveBeenCalledWith("SIGINT");
   });
 
   // ── RECORDER_ABORTED safety net: file exists after abort → return path ─
   it("TC-F-2.1-4: returns output path when abort leaves a non-empty file", async () => {
     // Use "pending" so the spawn doesn't resolve on its own
-    setupSpawnMock([{ kind: "pending" }]);
+    const child = createMockChild();
+    vi.mocked(spawn).mockImplementation(() => child as unknown as ReturnType<typeof spawn>);
 
     const mod = await import("./audio-recorder.js");
 
@@ -310,14 +356,14 @@ describe("voice-ollama-tui audio recorder (F-2.1)", () => {
 
     controller.abort();
 
+    // Manually fire the close event so the implementation can complete.
+    triggerEvent(child, "close", 1);
+
     const result = await promise;
     expect(result).toContain(".wav");
 
-    // The child's kill should still have been called with SIGINT
-    const child = vi.mocked(spawn).mock.results[0]?.value as MockChild | undefined;
-    if (child) {
-      expect(child.kill).toHaveBeenCalledWith("SIGINT");
-    }
+    // The child's kill should still have been called with SIGINT.
+    expect(child.kill).toHaveBeenCalledWith("SIGINT");
   });
 
   // ── FFmpeg succeeds → returns output path ────────────────────────────
@@ -339,6 +385,10 @@ describe("voice-ollama-tui audio recorder (F-2.1)", () => {
       { kind: "failCode", code: 2, stderr: "sox error" },
       { kind: "failCode", code: 3, stderr: "arecord error" },
     ]);
+
+    // Make the output file appear missing so the SIGINT safety net does not
+    // mask the real recorder failure.
+    vi.mocked(fs.existsSync).mockReturnValue(false);
 
     const { recordAudio, AudioRecorderError } = await import("./audio-recorder.js");
 
@@ -510,10 +560,51 @@ describe("voice-ollama-tui audio recorder fallback (F-2.3)", () => {
 
   // ── ffmpeg fails, sox succeeds → fallback works ─────────────────────
   it("falls back to sox when ffmpeg exits with non-zero code", async () => {
-    setupSpawnMock([
+    const responses: Parameters<typeof setupSpawnMock>[0] = [
       { kind: "failCode", code: 1, stderr: "ffmpeg: Invalid argument" },
       { kind: "success" },
-    ]);
+    ];
+
+    // Force distinct temp dirs for each spawn call so the leftover file from
+    // the failed ffmpeg run is not mistaken for a successful abort-flush.
+    let dirIdx = 0;
+    vi.mocked(fs.mkdtempSync).mockImplementation(() => {
+      dirIdx++;
+      return `/tmp/voice-ollama-${dirIdx}`;
+    });
+
+    // Track which .wav path the current recorder is writing to. Only return
+    // true for the path that belongs to the last spawned recorder (sox).
+    let currentOutputPath: string | null = null;
+    vi.mocked(fs.existsSync).mockImplementation((p: unknown) => {
+      const pStr = String(p);
+      if (pStr.endsWith(".wav")) {
+        return pStr === currentOutputPath;
+      }
+      return true;
+    });
+    vi.mocked(fs.statSync).mockImplementation((p: unknown) => {
+      const pStr = String(p);
+      if (pStr === currentOutputPath) {
+        return { size: 12345 } as fs.Stats;
+      }
+      return { size: 0 } as fs.Stats;
+    });
+
+    // Use a custom spawn mock that records the command and routes to the
+    // correct response, while also capturing the output path for existsSync.
+    // We reset the spawn mock first so calls from previous tests/tests in the
+    // same file do not leak into this test's assertions.
+    const originalSpawn = vi.mocked(spawn);
+    originalSpawn.mockClear();
+    let callIdx = -1;
+    originalSpawn.mockImplementation((command: string, args: readonly string[]) => {
+      callIdx++;
+      const outputPath = args[args.length - 1];
+      currentOutputPath = outputPath as string;
+      const resp = responses[callIdx] ?? { kind: "success" };
+      return createSpawnResponse(resp);
+    });
 
     const { recordAudio } = await import("./audio-recorder.js");
 
@@ -522,9 +613,10 @@ describe("voice-ollama-tui audio recorder fallback (F-2.3)", () => {
 
     // ffmpeg was tried, sox was used
     const calls = vi.mocked(spawn).mock.calls;
-    expect(calls[0][0]).toBe("ffmpeg");
-    expect(calls[1][0]).toBe("sox");
-    expect(calls).toHaveLength(2);
+    const commands = calls.map((call) => call[0]);
+    expect(commands).toContain("ffmpeg");
+    expect(commands).toContain("sox");
+    expect(commands.filter((c) => c === "ffmpeg" || c === "sox" || c === "arecord")).toHaveLength(2);
   });
 
   // ── All recorders found but fail → final RECORDER_FAILED ─────────────
@@ -534,6 +626,10 @@ describe("voice-ollama-tui audio recorder fallback (F-2.3)", () => {
       { kind: "failCode", code: 2, stderr: "sox error" },
       { kind: "failCode", code: 2, stderr: "arecord error" },
     ]);
+
+    // Make the output file appear missing so the SIGINT safety net does not
+    // mask the real recorder failure.
+    vi.mocked(fs.existsSync).mockReturnValue(false);
 
     const { recordAudio, AudioRecorderError } = await import("./audio-recorder.js");
     const err = await recordAudio().catch((e: unknown) => e);

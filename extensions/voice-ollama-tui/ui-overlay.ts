@@ -311,6 +311,7 @@ class RecordingOverlayComponent implements Focusable {
       // Stop the recorder so it finalizes the file, then wait for the path.
       this.abortRecording();
       audioFile = (await this.recordingPromise) ?? undefined;
+      this.notify?.(`🎙 overlay: recordingPromise resolved to ${audioFile ?? "undefined"}`);
       if (!audioFile) {
         this.notify?.("🎙 Запись не удалась — файл не создан");
         // Recording did not produce a file — treat as cancelled.

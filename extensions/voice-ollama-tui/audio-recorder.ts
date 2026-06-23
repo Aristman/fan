@@ -159,6 +159,34 @@ const recorders: Recorder[] = [ffmpegRecorder, soxRecorder, arecordRecorder];
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Check whether a recording was aborted but still produced a non-empty file.
+ * This happens when SIGINT lets ffmpeg/sox/arecord flush and close the WAV
+ * file before exiting with a non-zero code.
+ */
+/**
+ * Check whether a recording was aborted but still produced a non-empty file.
+ * This happens when SIGINT lets ffmpeg/sox/arecord flush and close the WAV
+ * file before exiting with a non-zero code.
+ */
+function isAbortedWithFile(outputPath: string): boolean {
+  try {
+    return fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0;
+  } catch {
+    return false;
+  }
+}
+
+/** Best-effort debug log to a temp file. */
+function debugLog(message: string): void {
+  try {
+    const logPath = "/tmp/voice-ollama-debug.log";
+    fs.appendFileSync(logPath, `${new Date().toISOString()} ${message}\n`);
+  } catch {
+    // ignore
+  }
+}
+
 function generateTempPath(): { filePath: string; dirPath: string } {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "voice-ollama-"));
   const timestamp = Date.now();
@@ -231,33 +259,47 @@ function spawnRecorder(
       reject(err);
     });
 
-    child.on("close", (code) => {
+    let abortedBySignal = false;
+
+    child.on("close", async (code) => {
       if (finished) return;
       finished = true;
       finalize();
+
+      const outputSize = fs.existsSync(ctx.outputPath) ? fs.statSync(ctx.outputPath).size : -1;
+      debugLog(`spawnRecorder close command=${command} code=${code} abortedBySignal=${abortedBySignal} outputPath=${ctx.outputPath} size=${outputSize}`);
+
       if (code === 0) {
         resolve({ child, stderr });
-      } else {
-        const msg = stderr.trim()
-          ? `${command} exited with code ${code}: ${stderr.slice(0, 500)}`
-          : `${command} exited with code ${code}`;
-        const error = new AudioRecorderError(msg, "RECORDER_FAILED");
-        reject(error);
+        return;
       }
+
+      // After a user-initiated abort (SIGINT) the recorder may exit with a
+      // non-zero code even though it successfully flushed the WAV file.
+      // Treat this as success only when we know the abort came from our signal.
+      if (abortedBySignal) {
+        if (outputSize > 0 || await waitForOutputFile(ctx.outputPath)) {
+          debugLog(`spawnRecorder treating non-zero exit as success due to abort + existing file`);
+          resolve({ child, stderr });
+          return;
+        }
+      }
+
+      const msg = stderr.trim()
+        ? `${command} exited with code ${code}: ${stderr.slice(0, 500)}`
+        : `${command} exited with code ${code}`;
+      const error = new AudioRecorderError(msg, "RECORDER_FAILED");
+      reject(error);
     });
 
     // Support abort signal
     if (signal) {
       const onAbort = () => {
         if (finished) return;
-        finished = true;
+        abortedBySignal = true;
+        debugLog(`spawnRecorder abort received for ${command}, sending SIGINT`);
         // Use SIGINT so ffmpeg/sox/arecord flush and close the WAV file properly.
         child.kill("SIGINT");
-        const error = new AudioRecorderError(
-          "Recording was aborted.",
-          "RECORDER_ABORTED",
-        );
-        reject(error);
       };
 
       signal.addEventListener("abort", onAbort, { once: true });
@@ -266,6 +308,28 @@ function spawnRecorder(
       };
     }
   });
+}
+
+/**
+ * Wait up to `timeoutMs` for the output file to become non-empty.
+ *
+ * After sending SIGINT the recorder process exits asynchronously; on a loaded
+ * system the WAV file may not be fully flushed by the time our `close` handler
+ * runs. This helper gives us a short, bounded window to observe the file.
+ */
+async function waitForOutputFile(outputPath: string, timeoutMs = 500): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0) {
+        return true;
+      }
+    } catch {
+      // ignore
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -315,12 +379,15 @@ async function tryRecorder(
     if (err instanceof AudioRecorderError) {
       // If the error is abort-related but the output file already exists with content,
       // the SIGINT likely let the recorder flush before exiting. Return the file.
+      // The spawn-level handler now resolves on abort+file, so this path is
+      // mainly defensive. Keep it in case the race is lost there.
       if (
         err.code === "RECORDER_ABORTED" &&
         ctx.outputPath &&
         fs.existsSync(ctx.outputPath) &&
         fs.statSync(ctx.outputPath).size > 0
       ) {
+        debugLog(`tryRecorder safety net returning ${ctx.outputPath}`);
         return ctx.outputPath;
       }
       throw err;
