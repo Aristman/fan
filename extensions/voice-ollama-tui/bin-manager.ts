@@ -16,7 +16,7 @@ import { VoiceError } from "./errors.js";
 // Constants
 // ---------------------------------------------------------------------------
 
-const STORE_BASE_URL = "https://fan.sea-agents.ru/fan-store/packages";
+const STORE_BASE_URL = "https://fan.sea-agents.ru/fan-store/assets";
 
 const SUPPORTED_PLATFORMS = [
   "linux-x64",
