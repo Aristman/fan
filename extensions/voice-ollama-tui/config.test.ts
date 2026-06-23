@@ -599,7 +599,8 @@ describe("voice-ollama-tui extension entry (F-1.1)", () => {
     // immediately, ctx.ui.custom is not invoked by the pipeline itself.
     expect(setEditorText).toHaveBeenCalledWith("привет мир");
     expect(getEditorText).toHaveBeenCalledTimes(1);
-    expect(notify).not.toHaveBeenCalled();
+    // notify is called with debug info message when shortcut triggered
+    expect(notify).toHaveBeenCalledWith("🎙 Voice shortcut triggered", "info");
 
     // resetModules before the next test so doMock is not reused
     vi.resetModules();

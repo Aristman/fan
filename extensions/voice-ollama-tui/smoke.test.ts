@@ -66,7 +66,7 @@ function mockConfig(overrides?: Record<string, unknown>) {
     ollamaBaseUrl: "http://localhost:11434",
     ollamaModel: undefined,
     ollamaSystemPrompt: "Fix punctuation.",
-    shortcut: "ctrl+shift+v",
+    shortcut: "ctrl+space",
     ...overrides,
   };
 }
@@ -116,7 +116,7 @@ describe("voice-ollama-tui smoke test", () => {
     // ── Shortcut registration ──────────────────────────────────────────
     expect(api.registerShortcut).toHaveBeenCalledTimes(1);
     expect(api.registerShortcut).toHaveBeenCalledWith(
-      "ctrl+shift+v",
+      "ctrl+space",
       expect.objectContaining({
         description: expect.stringContaining("voice input"),
         handler: expect.any(Function),
@@ -221,7 +221,10 @@ describe("voice-ollama-tui smoke test", () => {
     await sessionStartHandler!({}, ctx);
 
     expect(ctx.ui.setStatus).toHaveBeenCalledWith("voice-ollama-tui", "🎙 Ready");
-    expect(ctx.ui.notify).not.toHaveBeenCalled();
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("Voice shortcut registered"),
+      "info",
+    );
   });
 
   it("session_start handler: warns when dependencies are missing", async () => {

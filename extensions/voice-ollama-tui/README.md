@@ -83,7 +83,7 @@ Wizard последовательно проведёт через все эта�
 | `OLLAMA_ENABLED` | `false` | Включить постобработку через Ollama |
 | `OLLAMA_MODEL` | `llama3.2` | Модель для улучшения текста |
 | `OLLAMA_SYSTEM_PROMPT` | см. `.env.example` | Промпт для исправления пунктуации и опечаток |
-| `SHORTCUT` | `ctrl+shift+v` | Горячая клавиша |
+| `SHORTCUT` | `ctrl+space` | Горячая клавиша |
 | `RECORD_DURATION_MAX` | `60` | Максимальная длительность записи в секундах |
 | `AUDIO_DEVICE` | — | Имя аудиоустройства (опционально) |
 
@@ -94,7 +94,7 @@ WHISPER_MODEL_PATH=/home/user/.fan/models/speech/ggml-base.bin
 WHISPER_LANGUAGE=ru
 OLLAMA_ENABLED=true
 OLLAMA_MODEL=llama3.2
-SHORTCUT=ctrl+shift+v
+SHORTCUT=ctrl+space
 ```
 
 ## Архитектура
