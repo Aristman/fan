@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, execSync, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -31,6 +31,8 @@ interface RecorderContext {
   outputPath: string;
   tempDir?: string;
   options: RecordAudioOptions;
+  /** Resolved device name (Windows auto-discovery may populate this). */
+  effectiveAudioDevice?: string;
 }
 
 interface Recorder {
@@ -76,6 +78,8 @@ function getDefaultDeviceArgs(): string[] | null {
     return ["-f", "alsa", "-i", "default"];
   }
   if (platform === "win32") {
+    // "audio=default" is not a valid dshow device name. Auto-discovery runs in
+    // recordAudio() and stores the result in ctx.effectiveAudioDevice.
     return ["-f", "dshow", "-i", "audio=default"];
   }
   return null;
@@ -84,8 +88,9 @@ function getDefaultDeviceArgs(): string[] | null {
 const ffmpegRecorder: Recorder = {
   name: "ffmpeg",
   buildArgs(ctx: RecorderContext): string[] | null {
-    const deviceArgs = ctx.options.audioDevice
-      ? getDeviceArgs(ctx.options.audioDevice)
+    const deviceArg = ctx.effectiveAudioDevice ?? ctx.options.audioDevice;
+    const deviceArgs = deviceArg
+      ? getDeviceArgs(deviceArg)
       : getDefaultDeviceArgs();
 
     if (!deviceArgs) return null;
@@ -180,11 +185,86 @@ function isAbortedWithFile(outputPath: string): boolean {
 /** Best-effort debug log to a temp file. */
 function debugLog(message: string): void {
   try {
-    const logPath = "/tmp/voice-ollama-debug.log";
+    const logPath = path.join(os.tmpdir(), "voice-ollama-debug.log");
     fs.appendFileSync(logPath, `${new Date().toISOString()} ${message}\n`);
   } catch {
     // ignore
   }
+}
+
+/**
+ * Enumerate DirectShow audio capture devices on Windows using ffmpeg.
+ * Returns the first audio device name suitable for ffmpeg's -i argument,
+ * e.g. "audio=Microphone". Returns null if enumeration fails or no device found.
+ *
+ * Uses spawn instead of execSync to avoid shell redirection issues on Windows
+ * and to capture stderr (where ffmpeg prints the device list) reliably.
+ */
+function findWindowsAudioDevice(): Promise<string | null> {
+  if (process.platform !== "win32") return Promise.resolve(null);
+
+  return new Promise<string | null>((resolve) => {
+    let output = "";
+    let finished = false;
+
+    const child = spawn("ffmpeg", ["-f", "dshow", "-list_devices", "true", "-i", "dummy"], {
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+    });
+
+    const onDone = (device: string | null) => {
+      if (finished) return;
+      finished = true;
+      resolve(device);
+    };
+
+    child.stdout?.on("data", (chunk: Buffer) => {
+      output += chunk.toString("utf-8");
+    });
+    child.stderr?.on("data", (chunk: Buffer) => {
+      output += chunk.toString("utf-8");
+    });
+
+    child.on("error", (err) => {
+      debugLog(`findWindowsAudioDevice spawn error: ${err.message}`);
+      onDone(null);
+    });
+
+    child.on("close", () => {
+      debugLog(`findWindowsAudioDevice raw output:\n${output}`);
+
+      const lines = output.split(/\r?\n/);
+      let inAudioSection = false;
+      for (const line of lines) {
+        if (/DirectShow audio devices/i.test(line)) {
+          inAudioSection = true;
+          continue;
+        }
+        if (inAudioSection) {
+          if (/DirectShow video devices/i.test(line)) {
+            break;
+          }
+          // ffmpeg prints device names in double quotes with two leading spaces:
+          //   "Microphone (Realtek(R) Audio)"
+          const match = line.match(/^\s{2}"?([^"]+)"?\s*$/);
+          if (match && !line.includes("Alternative name") && match[1].trim().length > 0) {
+            const deviceName = match[1].trim();
+            debugLog(`findWindowsAudioDevice selected: ${deviceName}`);
+            onDone(`audio=${deviceName}`);
+            return;
+          }
+        }
+      }
+      onDone(null);
+    });
+
+    // Hard timeout: kill ffmpeg if it hangs during device enumeration.
+    setTimeout(() => {
+      debugLog("findWindowsAudioDevice enumeration timed out");
+      try { child.kill(); } catch { /* ignore */ }
+      onDone(null);
+    }, 8_000).unref?.();
+  });
 }
 
 function generateTempPath(): { filePath: string; dirPath: string } {
@@ -272,6 +352,9 @@ function spawnRecorder(
 
       const outputSize = fs.existsSync(ctx.outputPath) ? fs.statSync(ctx.outputPath).size : -1;
       debugLog(`spawnRecorder close command=${command} code=${code} abortedBySignal=${abortedBySignal} outputPath=${ctx.outputPath} size=${outputSize}`);
+      if (stderr.trim()) {
+        debugLog(`spawnRecorder stderr: ${stderr.slice(0, 1000)}`);
+      }
 
       if (code === 0) {
         resolve({ child, stderr });
@@ -313,15 +396,14 @@ function spawnRecorder(
             child.stdin?.end();
           } catch (err) {
             debugLog(`spawnRecorder stdin write failed: ${(err as Error).message}`);
-            // If stdin is closed/unavailable, fall back to SIGTERM.
-            child.kill();
+            // If stdin is closed/unavailable, fall back to terminate.
+            try { child.kill(); } catch { /* ignore */ }
           }
 
           // Safety net: if the process does not exit within 1.5s, force-kill it.
           setTimeout(() => {
             if (!finished) {
               debugLog(`spawnRecorder force-killing ${command} after timeout`);
-              try { child.kill("SIGKILL"); } catch { /* ignore */ }
               try { child.kill(); } catch { /* ignore */ }
             }
           }, 1500).unref?.();
@@ -461,10 +543,18 @@ export async function recordAudio(options: RecordAudioOptions = {}): Promise<str
     fs.mkdirSync(outDir, { recursive: true });
   }
 
+  // On Windows, dshow requires an actual device name. Auto-discover one now.
+  let effectiveAudioDevice: string | undefined;
+  if (process.platform === "win32" && !options.audioDevice) {
+    effectiveAudioDevice = (await findWindowsAudioDevice()) ?? undefined;
+    debugLog(`recordAudio effectiveAudioDevice=${effectiveAudioDevice ?? "(none)"}`);
+  }
+
   const ctx: RecorderContext = {
     outputPath,
     tempDir,
     options,
+    effectiveAudioDevice,
   };
 
   // Handle abort before any recorder starts
