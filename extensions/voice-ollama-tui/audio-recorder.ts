@@ -91,7 +91,9 @@ function getDefaultDeviceArgs(): string[] | null {
   if (platform === "win32") {
     // "audio=default" is not a valid dshow device name. Auto-discovery runs in
     // recordAudio() and stores the result in ctx.effectiveAudioDevice.
-    return ["-f", "dshow", "-i", "audio=default"];
+    // Returning null here prevents building an invalid command when discovery
+    // fails; recordAudio will surface the failure clearly.
+    return null;
   }
   return null;
 }
