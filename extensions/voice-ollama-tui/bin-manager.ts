@@ -48,6 +48,18 @@ const BINARY_NAMES: Record<Platform, string> = {
 // versions published to FAN Store.
 const ASSET_VERSION = "1.9.1";
 
+const FFMPEG_BINARY_NAMES: Record<Platform, string> = {
+  "linux-x64": "ffmpeg",
+  "linux-arm64": "ffmpeg",
+  "darwin-arm64": "ffmpeg",
+  "darwin-x64": "ffmpeg",
+  "windows-x64": "ffmpeg.exe",
+};
+
+// Version of the ffmpeg binary asset packages. Should match the package
+// versions published to FAN Store.
+const FFMPEG_ASSET_VERSION = "7.0.2";
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -173,6 +185,162 @@ export function isWhisperCliInPath(): boolean {
     return true;
   } catch {
     return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// FFmpeg binary helpers (mirror whisper functions above)
+// ---------------------------------------------------------------------------
+
+/**
+ * Return the asset package name for a platform's ffmpeg binary.
+ */
+export function getFfmpegAssetName(platform: Platform): string {
+  return `voice-ollama-tui-ffmpeg-bin-${platform}`;
+}
+
+/**
+ * Return download URL for a platform's ffmpeg asset package.
+ */
+export function getFfmpegBinaryUrl(platform: Platform): string {
+  const archiveName = `${getFfmpegAssetName(platform)}-${FFMPEG_ASSET_VERSION}.tar.gz`;
+  return `${STORE_BASE_URL}/${archiveName}`;
+}
+
+/**
+ * Try to determine the ffmpeg asset package size via HEAD request.
+ * Returns undefined if the server does not report Content-Length.
+ */
+export async function getFfmpegBinarySize(platform: Platform): Promise<number | undefined> {
+  const url = getFfmpegBinaryUrl(platform);
+  try {
+    const response = await fetch(url, { method: "HEAD" });
+    if (!response.ok) return undefined;
+    const cl = response.headers.get("content-length");
+    if (cl) return Number.parseInt(cl, 10);
+  } catch {
+    // Ignore network errors; the wizard will still offer the download.
+  }
+  return undefined;
+}
+
+/**
+ * Build a human-readable description of the ffmpeg download for the user.
+ */
+export async function getFfmpegDownloadInfo(platform?: Platform): Promise<BinaryInfo | undefined> {
+  const p = platform ?? getCurrentPlatform();
+  if (!p) return undefined;
+
+  const url = getFfmpegBinaryUrl(p);
+  const sizeBytes = await getFfmpegBinarySize(p);
+
+  return {
+    platform: p,
+    url,
+    archiveName: `${getFfmpegAssetName(p)}-${FFMPEG_ASSET_VERSION}.tar.gz`,
+    binaryName: FFMPEG_BINARY_NAMES[p],
+    sizeBytes,
+  };
+}
+
+/**
+ * Return the local path where the ffmpeg binary should be cached.
+ */
+export function getLocalFfmpegPath(platform?: Platform): string {
+  const p = platform ?? getCurrentPlatform();
+  if (!p) {
+    throw new VoiceError(
+      `Unsupported platform: ${process.platform} ${process.arch}. No prebuilt ffmpeg binary is available.`,
+    );
+  }
+  const extDir = getExtensionDir();
+  return path.join(extDir, "bin", p, FFMPEG_BINARY_NAMES[p]);
+}
+
+/**
+ * Check whether the local ffmpeg binary exists and is executable.
+ */
+export function hasLocalFfmpegBinary(platform?: Platform): boolean {
+  try {
+    const binPath = getLocalFfmpegPath(platform);
+    const stat = fs.statSync(binPath);
+    return stat.isFile() && stat.size > 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Download and extract the ffmpeg binary for the given platform from
+ * FAN Store asset packages.
+ *
+ * @param platform - Target platform. Defaults to current platform.
+ * @param options.onProgress - Optional progress callback.
+ * @returns Absolute path to the extracted ffmpeg binary.
+ * @throws {VoiceError} On unsupported platform or download failure.
+ */
+export async function downloadFfmpegBinary(
+  platform?: Platform,
+  options?: {
+    onProgress?: (progress: DownloadProgress) => void;
+  },
+): Promise<string> {
+  const p = platform ?? getCurrentPlatform();
+  if (!p) {
+    throw new VoiceError(
+      `Unsupported platform: ${process.platform} ${process.arch}. ` +
+        `Supported platforms: ${SUPPORTED_PLATFORMS.join(", ")}.`,
+    );
+  }
+
+  const info = await getFfmpegDownloadInfo(p);
+  if (!info) {
+    throw new VoiceError(`Could not resolve download info for platform ${p}.`);
+  }
+
+  const pkgName = getFfmpegAssetName(p);
+  const url = info.url;
+
+  const extDir = getExtensionDir();
+  const tempDir = path.join(extDir, ".tmp-bin-download");
+  const archivePath = path.join(tempDir, info.archiveName);
+  const extractDir = path.join(tempDir, pkgName);
+  const binDir = path.join(extDir, "bin", p);
+  const binPath = path.join(binDir, FFMPEG_BINARY_NAMES[p]);
+
+  fs.mkdirSync(tempDir, { recursive: true });
+  fs.mkdirSync(binDir, { recursive: true });
+
+  try {
+    await downloadFile(url, archivePath, options?.onProgress);
+    await extractArchive(archivePath, extractDir, p);
+
+    const extractedBinPath = path.join(extractDir, pkgName, FFMPEG_BINARY_NAMES[p]);
+    if (!fs.existsSync(extractedBinPath)) {
+      throw new VoiceError(
+        `Binary not found inside downloaded archive: ${extractedBinPath}`,
+      );
+    }
+
+    fs.copyFileSync(extractedBinPath, binPath);
+    if (process.platform !== "win32") {
+      fs.chmodSync(binPath, 0o755);
+    }
+
+    return binPath;
+  } catch (err) {
+    if (err instanceof VoiceError) {
+      throw err;
+    }
+    throw new VoiceError(
+      `Failed to download ffmpeg binary from ${url}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  } finally {
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      // Best-effort cleanup.
+    }
   }
 }
 

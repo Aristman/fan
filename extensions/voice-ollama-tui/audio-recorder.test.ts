@@ -737,4 +737,48 @@ describe("voice-ollama-tui audio recorder fallback (F-2.3)", () => {
     expect(vi.mocked(spawn)).toHaveBeenCalledTimes(1);
     expect(vi.mocked(spawn).mock.calls[0][0]).toBe("ffmpeg");
   });
+
+  // ── binPath is used as command when provided ─────────────────────────
+  it("uses binPath as the ffmpeg command when provided and file exists", async () => {
+    setupSpawnMock([{ kind: "success" }]);
+
+    // Make existsSync return true for our custom binPath
+    vi.mocked(fs.existsSync).mockImplementation((p: unknown) => {
+      const pStr = String(p);
+      if (pStr === "/custom/path/to/ffmpeg") return true;
+      if (pStr.endsWith(".wav")) {
+        // Make the temp dir path exist (it's checked as part of mkdtempSync)
+        return true;
+      }
+      return true;
+    });
+
+    const { recordAudio } = await import("./audio-recorder.js");
+
+    await recordAudio({ duration: 3, binPath: "/custom/path/to/ffmpeg" });
+
+    const calls = vi.mocked(spawn).mock.calls;
+    expect(calls[0][0]).toBe("/custom/path/to/ffmpeg");
+  });
+
+  // ── binPath that does not exist falls back to "ffmpeg" ───────────────
+  it("falls back to 'ffmpeg' when binPath does not exist on disk", async () => {
+    setupSpawnMock([{ kind: "success" }]);
+
+    // Make existsSync return false for the custom binPath, true for others
+    vi.mocked(fs.existsSync).mockImplementation((p: unknown) => {
+      const pStr = String(p);
+      if (pStr === "/nonexistent/ffmpeg") return false;
+      if (pStr.endsWith(".wav")) return true;
+      return true;
+    });
+
+    const { recordAudio } = await import("./audio-recorder.js");
+
+    await recordAudio({ duration: 3, binPath: "/nonexistent/ffmpeg" });
+
+    const calls = vi.mocked(spawn).mock.calls;
+    // Should fall back to "ffmpeg" (PATH lookup)
+    expect(calls[0][0]).toBe("ffmpeg");
+  });
 });

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { execSync } from "node:child_process";
-import { getCurrentPlatform, getLocalBinaryPath } from "./bin-manager.js";
+import { getCurrentPlatform, getLocalBinaryPath, hasLocalFfmpegBinary, getLocalFfmpegPath } from "./bin-manager.js";
 import type { VoiceOllamaConfig } from "./config.js";
 
 // ---------------------------------------------------------------------------
@@ -77,7 +77,7 @@ const WHISPER_INSTRUCTIONS = [
 ];
 
 function checkFfmpeg(): boolean {
-	return checkTool("ffmpeg", "-version");
+	return checkTool("ffmpeg", "-version") || hasLocalFfmpegBinary();
 }
 
 function checkSox(): boolean {
@@ -234,6 +234,29 @@ export function checkAudioDevice(): boolean {
 // ---------------------------------------------------------------------------
 // Main API
 // ---------------------------------------------------------------------------
+
+/**
+ * Return the path to a usable ffmpeg binary.
+ *
+ * Prefers a locally downloaded binary (via FAN Store asset), falling back to
+ * the system ffmpeg in PATH if available.
+ *
+ * @returns Absolute path to local ffmpeg, "ffmpeg" if it is in PATH, or
+ *          undefined if ffmpeg is not available at all.
+ */
+export function getFfmpegPath(): string | undefined {
+	if (hasLocalFfmpegBinary()) {
+		try {
+			return getLocalFfmpegPath();
+		} catch {
+			// If getLocalFfmpegPath throws (unsupported platform), fall through.
+		}
+	}
+	if (checkTool("ffmpeg", "-version")) {
+		return "ffmpeg";
+	}
+	return undefined;
+}
 
 /**
  * Check whether all external tools (ffmpeg/sox/arecord, whisper-cli) are available.

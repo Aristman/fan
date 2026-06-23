@@ -21,6 +21,12 @@ export interface RecordAudioOptions {
   outputPath?: string;
   /** AbortSignal to cancel recording */
   signal?: AbortSignal;
+  /**
+   * Path to a ffmpeg binary. When provided and the file exists, this path
+   * is used as the ffmpeg command instead of looking up "ffmpeg" in PATH.
+   * Useful when a local ffmpeg binary has been downloaded by `/voice init`.
+   */
+  binPath?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -33,6 +39,11 @@ interface RecorderContext {
   options: RecordAudioOptions;
   /** Resolved device name (Windows auto-discovery may populate this). */
   effectiveAudioDevice?: string;
+  /**
+   * Resolved path to the ffmpeg binary. Populated from options.binPath
+   * if provided and the file exists, otherwise defaults to "ffmpeg".
+   */
+  binPath?: string;
 }
 
 interface Recorder {
@@ -465,8 +476,12 @@ async function tryRecorder(
     return null;
   }
 
+  // For ffmpeg, use ctx.binPath (which may be a local binary) instead of
+  // the hardcoded "ffmpeg" name. sox/arecord always use their name.
+  const command = recorder.name === "ffmpeg" ? (ctx.binPath ?? "ffmpeg") : recorder.name;
+
   try {
-    const { child, stderr } = await spawnRecorder(recorder.name, args, ctx, signal);
+    const { child, stderr } = await spawnRecorder(command, args, ctx, signal);
 
     // Verify the output file exists and has content
     try {
@@ -543,6 +558,14 @@ export async function recordAudio(options: RecordAudioOptions = {}): Promise<str
     fs.mkdirSync(outDir, { recursive: true });
   }
 
+  // Resolve ffmpeg binary path: prefer options.binPath if it points to a
+  // real file, otherwise use "ffmpeg" (PATH lookup).
+  const binPath =
+    options.binPath && fs.existsSync(options.binPath)
+      ? options.binPath
+      : "ffmpeg";
+  debugLog(`recordAudio binPath=${binPath}`);
+
   // On Windows, dshow requires an actual device name. Auto-discover one now.
   let effectiveAudioDevice: string | undefined;
   if (process.platform === "win32" && !options.audioDevice) {
@@ -555,6 +578,7 @@ export async function recordAudio(options: RecordAudioOptions = {}): Promise<str
     tempDir,
     options,
     effectiveAudioDevice,
+    binPath,
   };
 
   // Handle abort before any recorder starts

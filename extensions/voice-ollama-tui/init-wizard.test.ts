@@ -229,6 +229,29 @@ describe("voice-ollama-tui init-wizard (TC-VI)", () => {
       },
     });
 
+    // Mock bin-manager to avoid real filesystem/network calls
+    vi.doMock("./bin-manager.js", () => ({
+      getCurrentPlatform: vi.fn().mockReturnValue("linux-x64"),
+      hasLocalBinary: vi.fn().mockReturnValue(false),
+      hasLocalFfmpegBinary: vi.fn().mockReturnValue(false),
+      getBinaryDownloadInfo: vi.fn().mockResolvedValue({
+        platform: "linux-x64",
+        url: "https://example.com/whisper.tar.gz",
+        archiveName: "whisper.tar.gz",
+        binaryName: "whisper-cli",
+      }),
+      getFfmpegDownloadInfo: vi.fn().mockResolvedValue({
+        platform: "linux-x64",
+        url: "https://example.com/ffmpeg.tar.gz",
+        archiveName: "ffmpeg.tar.gz",
+        binaryName: "ffmpeg",
+      }),
+      downloadWhisperBinary: vi.fn(),
+      downloadFfmpegBinary: vi.fn(),
+      getLocalBinaryPath: vi.fn().mockReturnValue("/fake/whisper-cli"),
+      getLocalFfmpegPath: vi.fn().mockReturnValue("/fake/ffmpeg"),
+    }));
+
     // Mock dependencies to fail
     vi.doMock("./dependencies.js", () => ({
       checkDependencies: () => ({
@@ -256,9 +279,10 @@ describe("voice-ollama-tui init-wizard (TC-VI)", () => {
       "warning",
     );
 
-    // confirm may be called once for the whisper-cli download offer (when missing),
-    // and once for step 0. Since we cancel step 0, at most 2 confirm calls are expected.
+    // confirm is called: whisper download (false), ffmpeg download (false), then proceed (false)
     expect(confirmMock).toHaveBeenCalled();
+    // Should have been called at least 3 times
+    expect(confirmMock.mock.calls.length).toBeGreaterThanOrEqual(3);
 
     // No further steps
     expect(selectMock).not.toHaveBeenCalled();
@@ -522,5 +546,214 @@ describe("voice-ollama-tui init-wizard (TC-VI)", () => {
       expect.stringContaining("Настройка завершена"),
       "info",
     );
+  });
+
+  // ── TC-VI-6: ffmpeg download step when ffmpeg is missing ─────────────
+  it("TC-VI-6: offers ffmpeg download when ffmpeg is missing and user confirms", async () => {
+    const notify = vi.fn();
+    const setStatus = vi.fn();
+    const downloadFfmpegBinaryMock = vi.fn().mockResolvedValue("/fake/ffmpeg/path/ffmpeg");
+
+    let confirmCall = 0;
+    let selectCall = 0;
+    let inputCall = 0;
+
+    const confirmMock = vi.fn().mockImplementation(() => {
+      confirmCall++;
+      // Step 0: whisper download offer → no, ffmpeg download offer → yes,
+      // then proceed yes, ollama no, model download yes
+      if (confirmCall === 1) return Promise.resolve(false);  // whisper: no
+      if (confirmCall === 2) return Promise.resolve(true);   // ffmpeg: yes
+      if (confirmCall === 3) return Promise.resolve(true);   // proceed
+      if (confirmCall === 4) return Promise.resolve(false);  // ollama no
+      if (confirmCall === 5) return Promise.resolve(true);   // model download yes
+      return Promise.resolve(false);
+    });
+
+    const selectMock = vi.fn().mockImplementation(() => {
+      selectCall++;
+      if (selectCall === 1) return Promise.resolve("Русский (ru)"); // step 2
+      if (selectCall === 2) return Promise.resolve("60 секунд (по умолчанию)"); // step 3
+      return Promise.resolve("auto");
+    });
+
+    const inputMock = vi.fn().mockImplementation(() => {
+      inputCall++;
+      return Promise.resolve("ctrl+shift+space"); // step 5
+    });
+
+    const ctx = mockCtx({
+      ui: {
+        notify,
+        setStatus,
+        confirm: confirmMock,
+        select: selectMock,
+        input: inputMock,
+      },
+    });
+
+    // Mock bin-manager for controlled ffmpeg download
+    vi.doMock("./bin-manager.js", () => ({
+      getCurrentPlatform: vi.fn().mockReturnValue("linux-x64"),
+      hasLocalBinary: vi.fn().mockReturnValue(false),
+      hasLocalFfmpegBinary: vi.fn().mockReturnValue(false),
+      getBinaryDownloadInfo: vi.fn().mockResolvedValue({
+        platform: "linux-x64",
+        url: "https://example.com/whisper.tar.gz",
+        archiveName: "whisper.tar.gz",
+        binaryName: "whisper-cli",
+        sizeBytes: 50_000_000,
+      }),
+      getFfmpegDownloadInfo: vi.fn().mockResolvedValue({
+        platform: "linux-x64",
+        url: "https://example.com/ffmpeg.tar.gz",
+        archiveName: "ffmpeg.tar.gz",
+        binaryName: "ffmpeg",
+        sizeBytes: 30_000_000,
+      }),
+      downloadWhisperBinary: vi.fn(),
+      downloadFfmpegBinary: downloadFfmpegBinaryMock,
+      getLocalBinaryPath: vi.fn().mockReturnValue("/fake/whisper-cli"),
+      getLocalFfmpegPath: vi.fn().mockReturnValue("/fake/ffmpeg"),
+    }));
+
+    // Mock dependencies: ffmpeg missing (1st + 2nd call), then ok after ffmpeg download (3rd call)
+    let depCallCount = 0;
+    vi.doMock("./dependencies.js", () => ({
+      checkDependencies: vi.fn().mockImplementation(() => {
+        depCallCount++;
+        if (depCallCount <= 2) {
+          // First two calls: both missing (whisper block re-checks after whisper offer)
+          return {
+            ok: false,
+            missing: ["ffmpeg", "whisper-cli"],
+            instructions: ["Install ffmpeg", "Install whisper.cpp"],
+          };
+        }
+        // After ffmpeg download, deps are ok
+        return {
+          ok: true,
+          missing: [],
+          instructions: [],
+        };
+      }),
+      checkAudioDevice: () => true,
+    }));
+
+    vi.doMock("./ollama-service.js", () => ({
+      listOllamaModels: vi.fn().mockResolvedValue({
+        models: [],
+        reachable: false,
+      }),
+    }));
+
+    vi.doMock("./model-downloader.js", () => ({
+      ensureWhisperModel: vi.fn().mockResolvedValue("/home/user/.fan/models/speech/ggml-base.bin"),
+    }));
+
+    const { runVoiceInitWizard } = await import("./init-wizard.js");
+    await runVoiceInitWizard(ctx);
+
+    // downloadFfmpegBinary should have been called when user confirmed
+    expect(downloadFfmpegBinaryMock).toHaveBeenCalledTimes(1);
+
+    // .env should exist
+    expect(fs.existsSync(ENV_PATH)).toBe(true);
+    const envContent = fs.readFileSync(ENV_PATH, "utf-8");
+
+    // Check key values
+    expect(envContent).toContain("WHISPER_LANGUAGE=ru");
+    expect(envContent).toContain("RECORD_DURATION_MAX=60");
+
+    // Should show success notification
+    expect(notify).toHaveBeenCalledWith(
+      expect.stringContaining("Настройка завершена"),
+      "info",
+    );
+  });
+
+  // ── TC-VI-7: ffmpeg download step when user declines ────────────────
+  it("TC-VI-7: skips ffmpeg download when user declines", async () => {
+    const notify = vi.fn();
+    const setStatus = vi.fn();
+    const downloadFfmpegBinaryMock = vi.fn();
+
+    let confirmCall = 0;
+
+    const confirmMock = vi.fn().mockImplementation(() => {
+      confirmCall++;
+      // All confirm calls return false → no downloads, no proceed
+      return Promise.resolve(false);
+    });
+    const selectMock = vi.fn();
+    const inputMock = vi.fn();
+
+    const ctx = mockCtx({
+      ui: {
+        notify,
+        setStatus,
+        confirm: confirmMock,
+        select: selectMock,
+        input: inputMock,
+      },
+    });
+
+    vi.doMock("./bin-manager.js", () => ({
+      getCurrentPlatform: vi.fn().mockReturnValue("linux-x64"),
+      hasLocalBinary: vi.fn().mockReturnValue(false),
+      hasLocalFfmpegBinary: vi.fn().mockReturnValue(false),
+      getBinaryDownloadInfo: vi.fn().mockResolvedValue({
+        platform: "linux-x64",
+        url: "https://example.com/whisper.tar.gz",
+        archiveName: "whisper.tar.gz",
+        binaryName: "whisper-cli",
+      }),
+      getFfmpegDownloadInfo: vi.fn().mockResolvedValue({
+        platform: "linux-x64",
+        url: "https://example.com/ffmpeg.tar.gz",
+        archiveName: "ffmpeg.tar.gz",
+        binaryName: "ffmpeg",
+      }),
+      downloadWhisperBinary: vi.fn(),
+      downloadFfmpegBinary: downloadFfmpegBinaryMock,
+      getLocalBinaryPath: vi.fn().mockReturnValue("/fake/whisper-cli"),
+      getLocalFfmpegPath: vi.fn().mockReturnValue("/fake/ffmpeg"),
+    }));
+
+    vi.doMock("./dependencies.js", () => ({
+      checkDependencies: () => ({
+        ok: false,
+        missing: ["ffmpeg", "whisper-cli"],
+        instructions: ["Install ffmpeg", "Install whisper.cpp"],
+      }),
+      checkAudioDevice: () => false,
+    }));
+
+    vi.doMock("./ollama-service.js", () => ({
+      listOllamaModels: vi.fn(),
+    }));
+
+    vi.doMock("./model-downloader.js", () => ({
+      ensureWhisperModel: vi.fn(),
+    }));
+
+    const { runVoiceInitWizard } = await import("./init-wizard.js");
+    await runVoiceInitWizard(ctx);
+
+    // downloadFfmpegBinary should NOT have been called
+    expect(downloadFfmpegBinaryMock).not.toHaveBeenCalled();
+
+    // Should see dependency warning
+    expect(notify).toHaveBeenCalledWith(
+      expect.stringContaining("Отсутствуют зависимости"),
+      "warning",
+    );
+
+    // No further steps
+    expect(selectMock).not.toHaveBeenCalled();
+    expect(inputMock).not.toHaveBeenCalled();
+
+    // .env should NOT exist
+    expect(fs.existsSync(ENV_PATH)).toBe(false);
   });
 });

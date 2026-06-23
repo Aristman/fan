@@ -21,11 +21,14 @@ import { checkDependencies, checkAudioDevice } from "./dependencies.js";
 import { listOllamaModels } from "./ollama-service.js";
 import { ensureWhisperModel } from "./model-downloader.js";
 import {
+  downloadFfmpegBinary,
   downloadWhisperBinary,
   getBinaryDownloadInfo,
   getCurrentPlatform,
+  getFfmpegDownloadInfo,
   getLocalBinaryPath,
   hasLocalBinary,
+  hasLocalFfmpegBinary,
   isWhisperCliInPath,
 } from "./bin-manager.js";
 
@@ -149,6 +152,64 @@ export async function runVoiceInitWizard(ctx: ExtensionCommandContext): Promise<
 		} else if (!platform) {
 			ctx.ui.notify(
 				`Для платформы ${process.platform} ${process.arch} нет готового бинарника. Установите whisper.cpp вручную.`,
+				"warning",
+			);
+		}
+		// Refresh dependency status after attempted download.
+		depStatus = checkDependencies();
+	}
+
+	// Если ffmpeg отсутствует, предлагаем скачать готовый бинарник.
+	if (!depStatus.ok && depStatus.missing.includes("ffmpeg")) {
+		const platform = getCurrentPlatform();
+		if (platform && !hasLocalFfmpegBinary()) {
+			const info = await getFfmpegDownloadInfo(platform);
+			const sizeText = info?.sizeBytes
+				? `размер ~${formatBytes(info.sizeBytes)}`
+				: "размер будет определён при скачивании";
+
+			ctx.ui.notify(
+				`ffmpeg не найден. Для ${platform} доступен готовый бинарник (${sizeText}).`,
+				"info",
+			);
+
+			const message = [
+				"ffmpeg не найден в PATH.",
+				"",
+				`Для вашей платформы — ${platform} — можно автоматически скачать готовый бинарник ffmpeg (${sizeText}).`,
+				"",
+				"Бинарник будет загружен из FAN Store и сохранён локально в директории расширения.",
+				"",
+				"Скачать и установить ffmpeg?",
+			].join("\n");
+
+			const download = await ctx.ui.confirm("Скачать ffmpeg?", message);
+			if (download) {
+				try {
+					ctx.ui.setStatus("voice-ollama-tui", "🎙 Скачивание ffmpeg...");
+					ctx.ui.notify("Скачиваю ffmpeg из FAN Store...", "info");
+					const binPath = await downloadFfmpegBinary(platform, {
+						onProgress: ({ downloaded, total }) => {
+							const pct = total > 0 ? Math.round((downloaded / total) * 100) : 0;
+							ctx.ui.setStatus(
+								"voice-ollama-tui",
+								`🎙 Загрузка ffmpeg: ${pct}% (${formatBytes(downloaded)} / ${total > 0 ? formatBytes(total) : "?"})`,
+							);
+						},
+					});
+					ctx.ui.notify(`✅ ffmpeg установлен: ${binPath}`, "info");
+					ctx.ui.setStatus("voice-ollama-tui", "🎙 ffmpeg готов");
+				} catch (err) {
+					ctx.ui.notify(
+						`❌ Не удалось скачать ffmpeg: ${err instanceof Error ? err.message : String(err)}`,
+						"error",
+					);
+					ctx.ui.setStatus("voice-ollama-tui", "🎙 Ошибка ffmpeg");
+				}
+			}
+		} else if (!platform) {
+			ctx.ui.notify(
+				`Для платформы ${process.platform} ${process.arch} нет готового бинарника ffmpeg. Установите ffmpeg вручную.`,
 				"warning",
 			);
 		}
