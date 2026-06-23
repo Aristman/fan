@@ -327,7 +327,7 @@ export async function downloadFfmpegBinary(
     await extractArchive(archivePath, extractDir, p, status);
     status("Архив распакован");
 
-    const extractedBinPath = path.join(extractDir, pkgName, FFMPEG_BINARY_NAMES[p]);
+    const extractedBinPath = path.join(extractDir, FFMPEG_BINARY_NAMES[p]);
     status(`Поиск бинарника: ${extractedBinPath}`);
     if (!fs.existsSync(extractedBinPath)) {
       throw new VoiceError(
@@ -413,7 +413,7 @@ export async function downloadWhisperBinary(
     await extractArchive(archivePath, extractDir, p, status);
     status("Архив распакован");
 
-    const extractedBinPath = path.join(extractDir, pkgName, BINARY_NAMES[p]);
+    const extractedBinPath = path.join(extractDir, BINARY_NAMES[p]);
     status(`Поиск бинарника: ${extractedBinPath}`);
     if (!fs.existsSync(extractedBinPath)) {
       throw new VoiceError(
