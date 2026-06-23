@@ -89,10 +89,11 @@ function getDefaultDeviceArgs(): string[] | null {
     return ["-f", "alsa", "-i", "default"];
   }
   if (platform === "win32") {
-    // "audio=default" is not a valid dshow device name. Auto-discovery runs in
-    // recordAudio() and stores the result in ctx.effectiveAudioDevice.
-    // Returning null here prevents building an invalid command when discovery
-    // fails; recordAudio will surface the failure clearly.
+    // "audio=default" is a legacy fallback that may or may not be accepted by
+    // the ffmpeg dshow input depending on the build. recordAudio() prefers a
+    // real device discovered via findWindowsAudioDevice(); only if discovery
+    // fails does it fall back to audio=default. Returning null here lets
+    // buildArgs() rely on ctx.effectiveAudioDevice.
     return null;
   }
   return null;
@@ -228,14 +229,18 @@ function debugLog(message: string): void {
  * Uses spawn instead of execSync to avoid shell redirection issues on Windows
  * and to capture stderr (where ffmpeg prints the device list) reliably.
  */
-function findWindowsAudioDevice(): Promise<string | null> {
+function findWindowsAudioDevice(ffmpegPath?: string): Promise<string | null> {
   if (process.platform !== "win32") return Promise.resolve(null);
+
+  const command = ffmpegPath && fs.existsSync(ffmpegPath) ? ffmpegPath : "ffmpeg";
 
   return new Promise<string | null>((resolve) => {
     let output = "";
     let finished = false;
 
-    const child = spawn("ffmpeg", ["-f", "dshow", "-list_devices", "true", "-i", "dummy"], {
+    notifyUser(`🎙 Поиск микрофона Windows: ${command}`, "info");
+
+    const child = spawn(command, ["-f", "dshow", "-list_devices", "true", "-i", "dummy"], {
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
     });
@@ -600,7 +605,11 @@ export async function recordAudio(options: RecordAudioOptions = {}): Promise<str
 
   let effectiveAudioDevice: string | undefined;
   if (process.platform === "win32" && !userDevice) {
-    effectiveAudioDevice = (await findWindowsAudioDevice()) ?? undefined;
+    effectiveAudioDevice = (await findWindowsAudioDevice(binPath)) ?? undefined;
+    if (!effectiveAudioDevice) {
+      notifyUser("🎙 Не удалось определить микрофон автоматически, пробую audio=default", "warning");
+      effectiveAudioDevice = "audio=default";
+    }
   }
   notifyUser(
     `🎙 recordAudio audioDevice=${options.audioDevice ?? "(unset)"} userDevice=${userDevice ?? "(auto)"} effective=${effectiveAudioDevice ?? getDefaultDeviceArgs()?.join(" ") ?? "(none)"}`,
