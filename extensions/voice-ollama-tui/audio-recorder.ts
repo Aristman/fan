@@ -148,8 +148,13 @@ const wasapiRecorder: Recorder = {
   buildArgs(ctx: RecorderContext): string[] | null {
     if (process.platform !== "win32") return null;
 
-    const deviceArg = ctx.effectiveAudioDevice ?? ctx.options.audioDevice;
-    const input = deviceArg ? deviceArg : "default";
+    // wasapi uses Windows endpoint names, not dshow "audio=..." names.
+    // Ignore any stale dshow device from ctx.effectiveAudioDevice; use the
+    // user-provided wasapi device name or the system default endpoint.
+    const input =
+      ctx.options.audioDevice && ctx.options.audioDevice !== "default" && ctx.options.audioDevice !== "audio=default"
+        ? ctx.options.audioDevice
+        : "default";
 
     return [
       "-f", "wasapi",
