@@ -77,6 +77,7 @@ function createMocks(overrides?: {
 
   vi.doMock("./dependencies.js", () => ({
     getFfmpegPath: vi.fn().mockReturnValue("ffmpeg"),
+    setDependencyNotify: vi.fn(),
     checkDependencies: merged.checkDependencies,
   }));
 
@@ -87,6 +88,7 @@ function createMocks(overrides?: {
 
   vi.doMock("./audio-recorder.js", () => ({
     recordAudio: merged.recordAudio,
+    setRecorderNotify: vi.fn(),
   }));
 
   vi.doMock("./model-downloader.js", () => ({

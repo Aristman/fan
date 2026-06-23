@@ -24,7 +24,22 @@ export interface DependencyStatus {
 
 let cachedResult: DependencyStatus | null = null;
 
-/** Reset the cache — called on session_shutdown to ensure a fresh check per session. */
+let _depNotifyFn: ((message: string, type?: "info" | "warning" | "error") => void) | undefined;
+
+/** Set a notify callback so dependency checks can surface diagnostics in the TUI. */
+export function setDependencyNotify(notify: (message: string, type?: "info" | "warning" | "error") => void): void {
+	_depNotifyFn = notify;
+}
+
+function depNotify(message: string, type?: "info" | "warning" | "error"): void {
+	try {
+		_depNotifyFn?.(message, type);
+	} catch {
+		// ignore
+	}
+}
+
+/** Reset the cache — — called on session_shutdown to ensure a fresh check per session. */
 export function resetDependencyCache(): void {
 	cachedResult = null;
 }
@@ -78,7 +93,16 @@ const WHISPER_INSTRUCTIONS = [
 ];
 
 function checkFfmpeg(): boolean {
-	return checkTool("ffmpeg", "-version") || hasLocalFfmpegBinary();
+	const inPath = checkTool("ffmpeg", "-version");
+	const localExists = hasLocalFfmpegBinary();
+	let localPath: string | undefined;
+	try {
+		localPath = getLocalFfmpegPath();
+	} catch {
+		localPath = undefined;
+	}
+	depNotify(`🎙 checkFfmpeg pathInPath=${inPath} localPath=${localPath ?? "(none)"} localExists=${localExists}`, "info");
+	return inPath || localExists;
 }
 
 function checkSox(): boolean {
@@ -281,14 +305,22 @@ export function checkAudioDevice(): boolean {
 export function getFfmpegPath(): string | undefined {
 	if (hasLocalFfmpegBinary()) {
 		try {
-			return getLocalFfmpegPath();
+			const localPath = getLocalFfmpegPath();
+			depNotify(`🎙 getFfmpegPath local=${localPath} exists=true`, "info");
+			return localPath;
 		} catch {
-			// If getLocalFfmpegPath throws (unsupported platform), fall through.
+			// fall through to PATH check
 		}
 	}
+	const localPath = (() => {
+		try { return getLocalFfmpegPath(); } catch { return undefined; }
+	})();
+	depNotify(`🎙 getFfmpegPath local=${localPath ?? "(none)"} exists=false`, "info");
 	if (checkTool("ffmpeg", "-version")) {
+		depNotify("🎙 getFfmpegPath falling back to ffmpeg in PATH", "warning");
 		return "ffmpeg";
 	}
+	depNotify("🎙 getFfmpegPath: no ffmpeg available", "error");
 	return undefined;
 }
 

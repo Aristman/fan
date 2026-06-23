@@ -21,8 +21,8 @@ import type { VoiceOllamaConfig } from "./config.js";
 import { checkDependencies } from "./dependencies.js";
 import { showRecordingOverlay, showProcessingOverlay } from "./ui-overlay.js";
 import type { ProcessingOverlayController } from "./ui-overlay.js";
-import { recordAudio } from "./audio-recorder.js";
-import { getFfmpegPath } from "./dependencies.js";
+import { recordAudio, setRecorderNotify } from "./audio-recorder.js";
+import { getFfmpegPath, setDependencyNotify } from "./dependencies.js";
 import { ensureWhisperModel } from "./model-downloader.js";
 import { transcribe } from "./whisper-service.js";
 import { improveText } from "./ollama-service.js";
@@ -116,6 +116,11 @@ export async function runVoicePipeline(
   ctx: ExtensionContext,
   config: VoiceOllamaConfig,
 ): Promise<void> {
+  // Wire diagnostic notifications first so dependency and recorder checks
+  // can surface their internal path-resolution diagnostics in the TUI.
+  setRecorderNotify(ctx.ui.notify);
+  setDependencyNotify(ctx.ui.notify);
+
   if (!ensureDependencies(ctx, config)) {
     return;
   }

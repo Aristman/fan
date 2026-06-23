@@ -589,16 +589,27 @@ export async function recordAudio(options: RecordAudioOptions = {}): Promise<str
   debugLog(`recordAudio binPath=${binPath}`);
 
   // On Windows, dshow requires an actual device name. Auto-discover one now.
+  // Treat the legacy "default" / "audio=default" values as unset because they
+  // are not valid dshow device names.
+  const userDevice =
+    options.audioDevice && options.audioDevice !== "default" && options.audioDevice !== "audio=default"
+      ? options.audioDevice
+      : undefined;
+
   let effectiveAudioDevice: string | undefined;
-  if (process.platform === "win32" && !options.audioDevice) {
+  if (process.platform === "win32" && !userDevice) {
     effectiveAudioDevice = (await findWindowsAudioDevice()) ?? undefined;
-    debugLog(`recordAudio effectiveAudioDevice=${effectiveAudioDevice ?? "(none)"}`);
   }
+  notifyUser(
+    `🎙 recordAudio audioDevice=${options.audioDevice ?? "(unset)"} userDevice=${userDevice ?? "(auto)"} effective=${effectiveAudioDevice ?? getDefaultDeviceArgs()?.join(" ") ?? "(none)"}`,
+    "info",
+  );
+  debugLog(`recordAudio audioDevice=${options.audioDevice ?? "(unset)"} userDevice=${userDevice ?? "(auto)"} effective=${effectiveAudioDevice ?? "(none)"}`);
 
   const ctx: RecorderContext = {
     outputPath,
     tempDir,
-    options,
+    options: { ...options, audioDevice: userDevice },
     effectiveAudioDevice,
     binPath,
   };

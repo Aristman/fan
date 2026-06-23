@@ -34,9 +34,9 @@ describe("voice-ollama-tui dependencies (F-1.3)", () => {
 		// Mock bin-manager to avoid real filesystem/network access.
 		// Individual tests can override via vi.doMock before importing.
 		vi.doMock("./bin-manager.js", () => ({
+      getCurrentPlatform: vi.fn().mockReturnValue("linux-x64"),
 			hasLocalFfmpegBinary: vi.fn().mockReturnValue(false),
 			getLocalFfmpegPath: vi.fn(),
-			getCurrentPlatform: vi.fn().mockReturnValue("linux-x64"),
 			getLocalBinaryPath: vi.fn().mockReturnValue("/fake/whisper-cli"),
 		}));
 	});
@@ -265,8 +265,10 @@ describe("dependencies getFfmpegPath (ffmpeg binary path resolution)", () => {
 	it("returns local ffmpeg path when local binary exists", async () => {
 		const localPath = "/home/user/.fan/extensions/voice-ollama-tui/bin/linux-x64/ffmpeg";
 		vi.doMock("./bin-manager.js", () => ({
+			getCurrentPlatform: vi.fn().mockReturnValue("linux-x64"),
 			hasLocalFfmpegBinary: vi.fn().mockReturnValue(true),
 			getLocalFfmpegPath: vi.fn().mockReturnValue(localPath),
+			getLocalBinaryPath: vi.fn().mockReturnValue("/fake/whisper-cli"),
 		}));
 
 		const { getFfmpegPath } = await import("./dependencies.js");
@@ -276,8 +278,10 @@ describe("dependencies getFfmpegPath (ffmpeg binary path resolution)", () => {
 
 	it("returns 'ffmpeg' when local binary missing but ffmpeg is in PATH", async () => {
 		vi.doMock("./bin-manager.js", () => ({
+      getCurrentPlatform: vi.fn().mockReturnValue("linux-x64"),
 			hasLocalFfmpegBinary: vi.fn().mockReturnValue(false),
 			getLocalFfmpegPath: vi.fn(),
+			getLocalBinaryPath: vi.fn().mockReturnValue("/fake/whisper-cli"),
 		}));
 
 		vi.mocked(execSync).mockReturnValue(Buffer.from(""));
@@ -289,8 +293,10 @@ describe("dependencies getFfmpegPath (ffmpeg binary path resolution)", () => {
 
 	it("returns undefined when ffmpeg is not available", async () => {
 		vi.doMock("./bin-manager.js", () => ({
+      getCurrentPlatform: vi.fn().mockReturnValue("linux-x64"),
 			hasLocalFfmpegBinary: vi.fn().mockReturnValue(false),
 			getLocalFfmpegPath: vi.fn(),
+			getLocalBinaryPath: vi.fn().mockReturnValue("/fake/whisper-cli"),
 		}));
 
 		vi.mocked(execSync).mockImplementation(() => {
@@ -304,6 +310,7 @@ describe("dependencies getFfmpegPath (ffmpeg binary path resolution)", () => {
 
 	it("falls through to PATH check when getLocalFfmpegPath throws", async () => {
 		vi.doMock("./bin-manager.js", () => ({
+      getCurrentPlatform: vi.fn().mockReturnValue("linux-x64"),
 			hasLocalFfmpegBinary: vi.fn().mockReturnValue(true),
 			getLocalFfmpegPath: vi.fn().mockImplementation(() => {
 				throw new Error("Unsupported platform");
@@ -334,9 +341,9 @@ describe("dependencies checkFfmpeg with local binary", () => {
 
 	it("returns true when local ffmpeg binary exists (even without PATH)", async () => {
 		vi.doMock("./bin-manager.js", () => ({
+      getCurrentPlatform: vi.fn().mockReturnValue("linux-x64"),
 			hasLocalFfmpegBinary: vi.fn().mockReturnValue(true),
 			getLocalFfmpegPath: vi.fn().mockReturnValue("/fake/bin/ffmpeg"),
-			getCurrentPlatform: vi.fn().mockReturnValue("linux-x64"),
 			getLocalBinaryPath: vi.fn().mockReturnValue("/fake/bin/whisper-cli"),
 		}));
 
@@ -357,10 +364,10 @@ describe("dependencies checkFfmpeg with local binary", () => {
 
 	it("reports ffmpeg missing when neither local binary nor PATH works", async () => {
 		vi.doMock("./bin-manager.js", () => ({
+      getCurrentPlatform: vi.fn().mockReturnValue("linux-x64"),
 			hasLocalFfmpegBinary: vi.fn().mockReturnValue(false),
 			getLocalFfmpegPath: vi.fn(),
-			getCurrentPlatform: vi.fn().mockReturnValue("linux-x64"),
-			getLocalBinaryPath: vi.fn().mockReturnValue("/fake/bin/whisper-cli"),
+			getLocalBinaryPath: vi.fn().mockReturnValue("/fake/whisper-cli"),
 		}));
 
 		// All execSync calls fail

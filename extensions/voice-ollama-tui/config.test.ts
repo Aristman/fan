@@ -538,6 +538,7 @@ describe("voice-ollama-tui extension entry (F-1.1)", () => {
     // Mock dependencies so the handler proceeds past the check
     vi.doMock("./dependencies.js", () => ({
       getFfmpegPath: vi.fn().mockReturnValue("ffmpeg"),
+      setDependencyNotify: vi.fn(),
       checkDependencies: () => ({
         ok: true,
         missing: [],
@@ -555,6 +556,7 @@ describe("voice-ollama-tui extension entry (F-1.1)", () => {
     // Mock audio-recorder to avoid actual ffmpeg calls
     vi.doMock("./audio-recorder.js", () => ({
       recordAudio: vi.fn().mockResolvedValue("/tmp/test-recording.wav"),
+      setRecorderNotify: vi.fn(),
       AudioRecorderError: class AudioRecorderError extends Error {
         constructor(msg: string, public code: string) {
           super(msg);
