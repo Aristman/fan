@@ -248,6 +248,27 @@ function debugLog(message: string): void {
 }
 
 /**
+ * Extract the most useful error line(s) from ffmpeg stderr.
+ *
+ * ffmpeg prints a version banner + build configuration at the start, which
+ * is noise. The actual error is usually on lines starting with "[dshow @",
+ * "[wasapi @", "Could not", "No such", "Unknown", or the last non-empty line.
+ */
+function extractFfmpegError(stderr: string): string {
+  const lines = stderr.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
+  // Prefer lines that look like actual ffmpeg errors.
+  const errorLines = lines.filter((l) =>
+    /^\[(dshow|wasapi|avfoundation|alsa|lavfi|openal) @/.test(l) ||
+    /^(Could not|No such|Unknown|Invalid|Error|Permission|Device|Cannot|Failed)/i.test(l),
+  );
+  if (errorLines.length > 0) {
+    return errorLines.slice(-3).join(" | ");
+  }
+  // Fall back to last 3 non-empty lines (skip the banner).
+  return lines.slice(-3).join(" | ");
+}
+
+/**
  * Enumerate DirectShow audio capture devices on Windows using ffmpeg.
  * Returns the first audio device name suitable for ffmpeg's -i argument,
  * e.g. "audio=Microphone". Returns null if enumeration fails or no device found.
@@ -450,7 +471,7 @@ function spawnRecorder(
         }
       }
 
-      const detail = stderr.trim() ? stderr.slice(0, 500) : "(no stderr)";
+      const detail = stderr.trim() ? extractFfmpegError(stderr) : "(no stderr)";
       notifyUser(`🎙 Recorder failed: code=${code} ${detail}`, "error");
       const msg = stderr.trim()
         ? `${command} exited with code ${code}: ${stderr.slice(0, 500)}`
