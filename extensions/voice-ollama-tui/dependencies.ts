@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { execSync } from "node:child_process";
 import { getCurrentPlatform, getLocalBinaryPath, hasLocalFfmpegBinary, getLocalFfmpegPath } from "./bin-manager.js";
@@ -124,11 +125,11 @@ function checkWhisperCli(): boolean {
 
 /**
  * Best-effort debug log to a temp file. Mirrors the helper in audio-recorder.ts
- * so dependency diagnostics are also observable in /tmp/voice-ollama-debug.log.
+ * so dependency diagnostics are also observable in the system temp directory.
  */
 function debugLog(message: string): void {
 	try {
-		const logPath = "/tmp/voice-ollama-debug.log";
+		const logPath = path.join(os.tmpdir(), "voice-ollama-debug.log");
 		fs.appendFileSync(logPath, `${new Date().toISOString()} ${message}\n`);
 	} catch {
 		// ignore
@@ -193,13 +194,19 @@ export function checkAudioDevice(): boolean {
 			return /\bcard\b/i.test(out);
 		}
 		if (platform === "win32") {
+			// Resolve the ffmpeg binary to use: prefer locally downloaded, then PATH.
+			// After a clean install ffmpeg is not in PATH yet, so the local binary
+			// is the only way to enumerate devices without requiring a manual install.
+			const ffmpegPath = getFfmpegPath() ?? "ffmpeg";
+			debugLog(`checkAudioDevice using ffmpeg path: ${ffmpegPath}`);
+
 			// Windows: list dshow audio capture devices. Do NOT prefix with
 			// LC_ALL=C — cmd.exe does not understand it and the spawn fails.
 			// The "dummy" input name is the documented placeholder for dshow
 			// device enumeration; some ffmpeg builds also accept "audio=dummy".
 			try {
 				const out = execWithFallback(
-					"ffmpeg -f dshow -list_devices true -i dummy 2>&1",
+					`${ffmpegPath} -f dshow -list_devices true -i dummy 2>&1`,
 					{ encoding: "utf-8", timeout: 10_000 },
 				);
 				debugLog(`checkAudioDevice dshow output length=${out.length}`);
