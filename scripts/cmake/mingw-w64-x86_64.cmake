@@ -19,4 +19,4 @@ set(WINNT_PATCH_H "${CMAKE_CURRENT_LIST_DIR}/mingw-w64-winnt-patch.h")
 set(CMAKE_C_FLAGS_INIT "-D_WIN32_WINNT=0x0A00 -include ${WINNT_PATCH_H}" CACHE STRING "" FORCE)
 set(CMAKE_CXX_FLAGS_INIT "-D_WIN32_WINNT=0x0A00 -include ${WINNT_PATCH_H}" CACHE STRING "" FORCE)
 
-set(CMAKE_EXE_LINKER_FLAGS "-static-libgcc -static-libstdc++" CACHE STRING "" FORCE)
+set(CMAKE_EXE_LINKER_FLAGS "-static-libgcc -static-libstdc++ -static" CACHE STRING "" FORCE)

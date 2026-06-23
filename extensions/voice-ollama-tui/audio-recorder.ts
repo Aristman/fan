@@ -595,6 +595,45 @@ export function checkFfmpegSupportsDshow(ffmpegPath?: string): Promise<boolean> 
   });
 }
 
+/**
+ * Check whether the locally downloaded whisper-cli binary actually runs on
+ * the current platform. Older Windows builds were dynamically linked against
+ * libgomp-1.dll / libwinpthread-1.dll and silently failed to start when those
+ * runtime DLLs were missing. We probe the binary with `-h`; if the process
+ * exits with a non-zero code or produces no output, the binary is considered
+ * broken.
+ */
+export function checkWhisperCliRuns(whisperPath?: string): Promise<boolean> {
+  const command = whisperPath && fs.existsSync(whisperPath) ? whisperPath : "whisper-cli";
+
+  return new Promise<boolean>((resolve) => {
+    let output = "";
+    const child = spawn(command, ["-h"], {
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+    });
+
+    child.stdout?.on("data", (chunk: Buffer) => {
+      output += chunk.toString("utf-8");
+    });
+    child.stderr?.on("data", (chunk: Buffer) => {
+      output += chunk.toString("utf-8");
+    });
+
+    child.on("error", () => resolve(false));
+    child.on("close", (code) => {
+      // whisper-cli -h prints help to stdout and exits 0 (or 1 on some builds);
+      // the key signal is that it produced output.
+      resolve(code !== null && output.trim().length > 0);
+    });
+
+    setTimeout(() => {
+      try { child.kill(); } catch { /* ignore */ }
+      resolve(false);
+    }, 5_000).unref?.();
+  });
+}
+
 function generateTempPath(): { filePath: string; dirPath: string } {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "voice-ollama-"));
   const timestamp = Date.now();

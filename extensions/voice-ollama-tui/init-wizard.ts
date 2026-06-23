@@ -32,7 +32,7 @@ import {
   getLocalFfmpegPath,
   isWhisperCliInPath,
 } from "./bin-manager.js";
-import { listWindowsAudioDevices, checkFfmpegSupportsDshow } from "./audio-recorder.js";
+import { listWindowsAudioDevices, checkFfmpegSupportsDshow, checkWhisperCliRuns } from "./audio-recorder.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -219,6 +219,31 @@ export async function runVoiceInitWizard(ctx: ExtensionCommandContext): Promise<
 		}
 		// Refresh dependency status after attempted download.
 		depStatus = checkDependencies();
+	}
+
+	// ── Проверка, что локальный whisper-cli реально запускается ───────
+	// Старые сборки для Windows были слинкованы динамически и требовали
+	// libgomp-1.dll / libwinpthread-1.dll, которых нет в чистой Windows;
+	// такие бинарники молча падают при запуске. Если локальный whisper-cli
+	// не запускается — удаляем и перекачиваем статически слинкованный.
+	if (hasLocalBinary()) {
+		try {
+			const localWhisper = getLocalBinaryPath();
+			ctx.ui.setStatus("voice-ollama-tui", "🎙 Проверка whisper-cli...");
+			const runs = await checkWhisperCliRuns(localWhisper);
+			if (!runs) {
+				ctx.ui.notify("Локальный whisper-cli не запускается — перекачиваю рабочий бинарник...", "warning");
+				try { fs.unlinkSync(localWhisper); } catch { /* ignore */ }
+				await downloadWhisperBinary(undefined, {
+					onStatus: (msg) => ctx.ui.notify(msg, "info"),
+				});
+				ctx.ui.notify("✅ whisper-cli обновлён до статически слинкованной сборки.", "info");
+			} else {
+				ctx.ui.notify("✅ Локальный whisper-cli работает.", "info");
+			}
+		} catch (err) {
+			ctx.ui.notify(`Не удалось проверить/обновить whisper-cli: ${err instanceof Error ? err.message : String(err)}`, "warning");
+		}
 	}
 
 	// ── Windows: убедимся, что локальный ffmpeg поддерживает dshow ────

@@ -102,7 +102,9 @@ build_platform() {
             output_name="whisper-cli.exe"
             # The toolchain file sets -D_WIN32_WINNT and a header patch for
             # THREAD_POWER_THROTTLING_STATE compatibility.
-            cmake_args="$cmake_args -DCMAKE_TOOLCHAIN_FILE=$SCRIPT_DIR/cmake/mingw-w64-x86_64.cmake -DCMAKE_CROSSCOMPILING=ON"
+            # Disable OpenMP so the binary doesn't depend on libgomp-1.dll;
+            # whisper.cpp falls back to std::thread which links statically.
+            cmake_args="$cmake_args -DCMAKE_TOOLCHAIN_FILE=$SCRIPT_DIR/cmake/mingw-w64-x86_64.cmake -DCMAKE_CROSSCOMPILING=ON -DGGML_OPENMP=OFF"
             ;;
     esac
 
