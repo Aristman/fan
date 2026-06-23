@@ -78,7 +78,13 @@ export async function showRecordingOverlay(
       );
       return component;
     },
-    { overlay: true },
+    {
+      overlay: true,
+      onHandle: (handle) => {
+        // Ensure the overlay has focus so it receives keyboard input.
+        handle.focus();
+      },
+    },
   );
 }
 
