@@ -143,6 +143,27 @@ const soxRecorder: Recorder = {
   },
 };
 
+const wasapiRecorder: Recorder = {
+  name: "ffmpeg",
+  buildArgs(ctx: RecorderContext): string[] | null {
+    if (process.platform !== "win32") return null;
+
+    const deviceArg = ctx.effectiveAudioDevice ?? ctx.options.audioDevice;
+    const input = deviceArg ? deviceArg : "default";
+
+    return [
+      "-f", "wasapi",
+      "-i", input,
+      "-acodec", "pcm_s16le",
+      "-ac", "1",
+      "-ar", "16000",
+      ...(ctx.options.duration !== undefined ? ["-t", String(ctx.options.duration)] : []),
+      "-y",
+      ctx.outputPath,
+    ];
+  },
+};
+
 const arecordRecorder: Recorder = {
   name: "arecord",
   buildArgs(ctx: RecorderContext): string[] | null {
@@ -171,8 +192,8 @@ const arecordRecorder: Recorder = {
   },
 };
 
-// Order of fallback: ffmpeg → sox → arecord
-const recorders: Recorder[] = [ffmpegRecorder, soxRecorder, arecordRecorder];
+// Order of fallback: dshow ffmpeg → wasapi ffmpeg → sox → arecord
+const recorders: Recorder[] = [ffmpegRecorder, wasapiRecorder, soxRecorder, arecordRecorder];
 
 // ---------------------------------------------------------------------------
 // Internal helpers
