@@ -264,10 +264,13 @@ function findWindowsAudioDevice(ffmpegPath?: string): Promise<string | null> {
     });
 
     child.on("close", () => {
+      const rawPreview = output.slice(0, 1500);
       debugLog(`findWindowsAudioDevice raw output:\n${output}`);
+      notifyUser(`🎙 Raw dshow devices:\n${rawPreview}`, "info");
 
       const lines = output.split(/\r?\n/);
       let inAudioSection = false;
+      const candidates: string[] = [];
       for (const line of lines) {
         if (/DirectShow audio devices/i.test(line)) {
           inAudioSection = true;
@@ -282,11 +285,20 @@ function findWindowsAudioDevice(ffmpegPath?: string): Promise<string | null> {
           const match = line.match(/^\s{2}"?([^"]+)"?\s*$/);
           if (match && !line.includes("Alternative name") && match[1].trim().length > 0) {
             const deviceName = match[1].trim();
-            debugLog(`findWindowsAudioDevice selected: ${deviceName}`);
-            onDone(`audio=${deviceName}`);
-            return;
+            candidates.push(deviceName);
           }
         }
+      }
+
+      notifyUser(`🎙 Parsed dshow audio candidates: ${candidates.join("; ") || "(none)"}`, "info");
+
+      // Prefer a device that looks like a microphone.
+      const mic = candidates.find((name) => /microphone|mic|микрофон/i.test(name));
+      const chosen = mic ?? candidates[0];
+      if (chosen) {
+        debugLog(`findWindowsAudioDevice selected: ${chosen}`);
+        onDone(`audio=${chosen}`);
+        return;
       }
       onDone(null);
     });
