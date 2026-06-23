@@ -142,11 +142,12 @@ export function checkAudioDevice(): boolean {
 		}
 		if (platform === "linux") {
 			// Linux: list alsa capture devices
+			// Output is localized; accept either English "card" or Russian "карта".
 			const out = execSync("arecord -l", {
 				encoding: "utf-8",
 				timeout: 10_000,
 			});
-			return out.includes("card");
+			return /\bcard\b/i.test(out) || out.includes("карта");
 		}
 		if (platform === "win32") {
 			// Windows: try to list dshow devices
