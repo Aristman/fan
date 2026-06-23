@@ -106,6 +106,21 @@ export async function ensureWhisperModel(
   // ── Download the model ─────────────────────────────────────────────
   try {
     await downloadFile(modelUrl, modelPath, onProgress);
+
+    // Verify the downloaded file size. ggml-base.bin is exactly 147949419
+    // bytes; a truncated download (e.g. interrupted) would fail to load in
+    // whisper-cli with a confusing error. Re-download once if the size is off.
+    const EXPECTED_BASE_SIZE = 147_949_419;
+    try {
+      const actualSize = fs.statSync(modelPath).size;
+      if (actualSize < EXPECTED_BASE_SIZE) {
+        // Size mismatch — likely a corrupt/partial download. Remove and retry.
+        try { fs.unlinkSync(modelPath); } catch { /* ignore */ }
+        await downloadFile(modelUrl, modelPath, onProgress);
+      }
+    } catch {
+      // Best-effort verification; proceed if we cannot stat.
+    }
   } catch (err: unknown) {
     // Clean up partial download on failure
     try {
@@ -183,7 +198,11 @@ async function downloadFile(
           reject(writeError);
           return;
         }
-        writeStream.write(Buffer.from(value.buffer), (err) => {
+        // Use Buffer.from(Uint8Array) to preserve byte offset/length.
+        // Buffer.from(value.buffer) would use the entire backing ArrayBuffer
+        // and corrupt binary files (model, archives) whose chunks are views
+        // into a larger buffer.
+        writeStream.write(Buffer.from(value), (err) => {
           if (err) reject(err);
           else resolve();
         });

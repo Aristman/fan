@@ -227,8 +227,10 @@ describe("voice-ollama-tui model-downloader (F-3.2)", () => {
     const result = await ensureWhisperModel();
 
     expect(result).toBe(DEFAULT_MODEL_PATH);
-    // Fetch should have been called because file was empty
-    expect(mockFetch).toHaveBeenCalledTimes(1);
+    // Fetch is called once for the initial download, and a second time because
+    // the downloaded size (512) is smaller than the expected ggml-base size,
+    // triggering the corrupt-model re-download check.
+    expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
   // ── TC-F-3.2-3: Network error → VoiceError with manual instructions ─

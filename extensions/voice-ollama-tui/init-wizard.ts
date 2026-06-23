@@ -530,6 +530,26 @@ async function stepShortcut(ctx: ExtensionCommandContext, state: WizardState): P
 // ---------------------------------------------------------------------------
 
 async function stepWhisperModel(ctx: ExtensionCommandContext, state: WizardState): Promise<void> {
+	// Detect a corrupt/truncated model and remove it so it gets re-downloaded.
+	// Older versions had a download bug that corrupted binary files.
+	try {
+		const home = (process.platform === "win32" ? process.env.USERPROFILE : process.env.HOME) ?? "/tmp";
+		const modelPath = path.join(home, ".fan", "models", "speech", "ggml-base.bin");
+		if (fs.existsSync(modelPath)) {
+			const EXPECTED_BASE_SIZE = 147_949_419;
+			const actualSize = fs.statSync(modelPath).size;
+			if (actualSize < EXPECTED_BASE_SIZE) {
+				ctx.ui.notify(
+					`Существующая модель повреждена (${formatBytes(actualSize)} < ${formatBytes(EXPECTED_BASE_SIZE)}). Удаляю и перекачиваю...`,
+					"warning",
+				);
+				try { fs.unlinkSync(modelPath); } catch { /* ignore */ }
+			}
+		}
+	} catch {
+		// Best-effort; proceed to normal download flow.
+	}
+
 	const download = await ctx.ui.confirm(
 		"Модель Whisper",
 		"Скачать модель ggml-base.bin для распознавания речи (~142 МБ)?\n\nЕсли модель уже есть — она не будет скачана повторно.",
