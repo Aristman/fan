@@ -46,6 +46,19 @@ interface RecorderContext {
    * if provided and the file exists, otherwise defaults to "ffmpeg".
    */
   binPath?: string;
+  /**
+   * Whether the resolved ffmpeg binary supports the dshow input device.
+   * Probed once via `ffmpeg -devices`. When false, the dshow recorder is
+   * skipped to avoid a noisy spawn that would just fail with
+   * "Unknown input format".
+   */
+  dshowSupported?: boolean;
+  /**
+   * Whether the resolved ffmpeg binary supports the wasapi input device.
+   * Probed once via `ffmpeg -devices`. When false, the wasapi recorder is
+   * skipped.
+   */
+  wasapiSupported?: boolean;
 }
 
 interface Recorder {
@@ -104,6 +117,12 @@ function getDefaultDeviceArgs(): string[] | null {
 const ffmpegRecorder: Recorder = {
   name: "ffmpeg",
   buildArgs(ctx: RecorderContext): string[] | null {
+    // On Windows we need dshow support; skip the recorder entirely if the
+    // binary is known to lack it (probed once via ffmpeg -devices).
+    if (process.platform === "win32" && ctx.dshowSupported === false) {
+      return null;
+    }
+
     const deviceArg = ctx.effectiveAudioDevice ?? ctx.options.audioDevice;
     const deviceArgs = deviceArg
       ? getDeviceArgs(deviceArg)
@@ -149,6 +168,8 @@ const wasapiRecorder: Recorder = {
   name: "ffmpeg",
   buildArgs(ctx: RecorderContext): string[] | null {
     if (process.platform !== "win32") return null;
+    // Skip if we already know the binary lacks wasapi support.
+    if (ctx.wasapiSupported === false) return null;
 
     // wasapi uses Windows endpoint names, not dshow "audio=..." names.
     // Use the discovered capture endpoint, or a user-provided wasapi device.
@@ -205,24 +226,6 @@ const recorders: Recorder[] = [ffmpegRecorder, wasapiRecorder, soxRecorder, arec
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
-
-/**
- * Check whether a recording was aborted but still produced a non-empty file.
- * This happens when SIGINT lets ffmpeg/sox/arecord flush and close the WAV
- * file before exiting with a non-zero code.
- */
-/**
- * Check whether a recording was aborted but still produced a non-empty file.
- * This happens when SIGINT lets ffmpeg/sox/arecord flush and close the WAV
- * file before exiting with a non-zero code.
- */
-function isAbortedWithFile(outputPath: string): boolean {
-  try {
-    return fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0;
-  } catch {
-    return false;
-  }
-}
 
 /** Best-effort debug log to a temp file. */
 let _notifyFn: ((message: string, type?: "info" | "warning" | "error") => void) | undefined;
@@ -512,13 +515,19 @@ function findWasapiAudioDevice(ffmpegPath?: string): Promise<string | null> {
 }
 
 /**
- * Log which input device formats this ffmpeg build supports (dshow, wasapi,
- * etc.). Runs `ffmpeg -devices` and notifies the user with the relevant lines.
+ * Probe which input device formats the resolved ffmpeg binary supports by
+ * running `ffmpeg -devices`. Returns flags for the Windows-relevant indevs
+ * (dshow, wasapi). Both flags default to `true` on non-Windows / when the
+ * probe fails, so that recorders are still attempted.
  */
-function logFfmpegDevices(ffmpegPath?: string): Promise<void> {
+function probeFfmpegIndevs(ffmpegPath?: string): Promise<{ dshow: boolean; wasapi: boolean }> {
+  if (process.platform !== "win32") {
+    return Promise.resolve({ dshow: true, wasapi: true });
+  }
+
   const command = ffmpegPath && fs.existsSync(ffmpegPath) ? ffmpegPath : "ffmpeg";
 
-  return new Promise<void>((resolve) => {
+  return new Promise<{ dshow: boolean; wasapi: boolean }>((resolve) => {
     let output = "";
     const child = spawn(command, ["-devices"], {
       stdio: ["ignore", "pipe", "pipe"],
@@ -532,20 +541,20 @@ function logFfmpegDevices(ffmpegPath?: string): Promise<void> {
       output += chunk.toString("utf-8");
     });
 
-    child.on("error", () => resolve());
+    child.on("error", () => resolve({ dshow: true, wasapi: true }));
     child.on("close", () => {
-      const lines = output.split(/\r?\n/).map((l) => l.trim());
-      const indevs = lines.filter((l) => /^D\s/i.test(l));
-      notifyUser(
-        `🎙 ffmpeg indevs: ${indevs.join(", ") || "(none)"} | has_dshow=${/dshow/i.test(output)} has_wasapi=${/wasapi/i.test(output)}`,
-        "info",
-      );
-      resolve();
+      // ffmpeg -devices prints lines like:
+      //   D  dshow           DirectShow capture
+      //   D  wasapi          WASAPI input
+      resolve({
+        dshow: /^D\s+dshow\b/im.test(output),
+        wasapi: /^D\s+wasapi\b/im.test(output),
+      });
     });
 
     setTimeout(() => {
       try { child.kill(); } catch { /* ignore */ }
-      resolve();
+      resolve({ dshow: true, wasapi: true });
     }, 5_000).unref?.();
   });
 }
@@ -873,11 +882,20 @@ export async function recordAudio(options: RecordAudioOptions = {}): Promise<str
   }
 
   // Resolve ffmpeg binary path: prefer options.binPath if it points to a
-  // real file, otherwise use "ffmpeg" (PATH lookup).
-  const binPath =
-    options.binPath && fs.existsSync(options.binPath)
-      ? options.binPath
-      : "ffmpeg";
+  // real file, then the dependency-aware getFfmpegPath() (locally downloaded
+  // binary or PATH), finally "ffmpeg".
+  let binPath: string;
+  if (options.binPath && fs.existsSync(options.binPath)) {
+    binPath = options.binPath;
+  } else {
+    try {
+      // Dynamic import to avoid a hard dependency cycle in unit tests.
+      const { getFfmpegPath } = await import("./dependencies.js");
+      binPath = getFfmpegPath() ?? "ffmpeg";
+    } catch {
+      binPath = "ffmpeg";
+    }
+  }
   notifyUser(`🎙 recordAudio resolved binPath=${binPath} exists=${fs.existsSync(binPath)}`, "info");
   debugLog(`recordAudio binPath=${binPath}`);
 
@@ -891,9 +909,19 @@ export async function recordAudio(options: RecordAudioOptions = {}): Promise<str
 
   let effectiveAudioDevice: string | undefined;
   let wasapiDevice: string | undefined;
+  let dshowSupported: boolean | undefined;
+  let wasapiSupported: boolean | undefined;
   if (process.platform === "win32" && !userDevice) {
-    // First, log which input devices this ffmpeg build supports.
-    await logFfmpegDevices(binPath);
+    // Probe which input devices this ffmpeg build supports, and log them for
+    // diagnostics. The returned flags let recorders skip themselves when the
+    // binary lacks dshow/wasapi support (e.g. cross-compiled MinGW builds).
+    const indevs = await probeFfmpegIndevs(binPath);
+    dshowSupported = indevs.dshow;
+    wasapiSupported = indevs.wasapi;
+    notifyUser(
+      `🎙 ffmpeg indevs: has_dshow=${dshowSupported} has_wasapi=${wasapiSupported}`,
+      "info",
+    );
     effectiveAudioDevice = (await findWindowsAudioDevice(binPath)) ?? undefined;
     if (!effectiveAudioDevice) {
       notifyUser("🎙 Не удалось определить микрофон через dshow, пробую wasapi", "warning");
@@ -917,6 +945,8 @@ export async function recordAudio(options: RecordAudioOptions = {}): Promise<str
     effectiveAudioDevice,
     wasapiDevice,
     binPath,
+    dshowSupported,
+    wasapiSupported,
   };
 
   // Handle abort before any recorder starts
