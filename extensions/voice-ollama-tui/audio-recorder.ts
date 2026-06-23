@@ -259,14 +259,16 @@ function findWindowsAudioDevice(ffmpegPath?: string): Promise<string | null> {
     });
 
     child.on("error", (err) => {
-      debugLog(`findWindowsAudioDevice spawn error: ${err.message}`);
+      const msg = `findWindowsAudioDevice spawn error: ${err.message}`;
+      debugLog(msg);
+      notifyUser(`🎙 ${msg}`, "error");
       onDone(null);
     });
 
-    child.on("close", () => {
-      const rawPreview = output.slice(0, 1500);
-      debugLog(`findWindowsAudioDevice raw output:\n${output}`);
-      notifyUser(`🎙 Raw dshow devices:\n${rawPreview}`, "info");
+    child.on("close", (code) => {
+      const rawPreview = output.slice(0, 2000).replace(/\r?\n/g, " | ");
+      debugLog(`findWindowsAudioDevice raw output (code=${code}):\n${output}`);
+      notifyUser(`🎙 dshow exit=${code} output=${rawPreview || "(empty)"}`, "info");
 
       const lines = output.split(/\r?\n/);
       let inAudioSection = false;
@@ -282,7 +284,8 @@ function findWindowsAudioDevice(ffmpegPath?: string): Promise<string | null> {
           }
           // ffmpeg prints device names in double quotes with two leading spaces:
           //   "Microphone (Realtek(R) Audio)"
-          const match = line.match(/^\s{2}"?([^"]+)"?\s*$/);
+          // Some builds use different indentation; be permissive.
+          const match = line.match(/^\s+"?([^"]+)"?\s*$/);
           if (match && !line.includes("Alternative name") && match[1].trim().length > 0) {
             const deviceName = match[1].trim();
             candidates.push(deviceName);
@@ -619,8 +622,8 @@ export async function recordAudio(options: RecordAudioOptions = {}): Promise<str
   if (process.platform === "win32" && !userDevice) {
     effectiveAudioDevice = (await findWindowsAudioDevice(binPath)) ?? undefined;
     if (!effectiveAudioDevice) {
-      notifyUser("🎙 Не удалось определить микрофон автоматически, пробую audio=default", "warning");
-      effectiveAudioDevice = "audio=default";
+      notifyUser("🎙 Не удалось определить микрофон автоматически, пробую audio=none", "warning");
+      effectiveAudioDevice = "audio=none";
     }
   }
   notifyUser(
