@@ -158,7 +158,8 @@ describe("voice-ollama-tui init-wizard (TC-VI)", () => {
 
     const inputMock = vi.fn().mockImplementation(() => {
       inputCall++;
-      return Promise.resolve("ctrl+shift+space"); // step 5
+      if (inputCall === 1) return Promise.resolve(""); // step 1: audio device (default)
+      return Promise.resolve("ctrl+shift+space"); // step 5: shortcut
     });
 
     const customCtx = mockCtx({
@@ -483,9 +484,10 @@ describe("voice-ollama-tui init-wizard (TC-VI)", () => {
 
     const inputMock = vi.fn().mockImplementation(() => {
       inputCall++;
-      if (inputCall === 1) return Promise.resolve(""); // step 4: baseUrl empty → default
-      if (inputCall === 2) return Promise.resolve(""); // step 4: system prompt empty
-      if (inputCall === 3) return Promise.resolve("ctrl+alt+v"); // step 5: custom shortcut
+      if (inputCall === 1) return Promise.resolve(""); // step 1: audio device (default)
+      if (inputCall === 2) return Promise.resolve(""); // step 4: baseUrl empty → default
+      if (inputCall === 3) return Promise.resolve(""); // step 4: system prompt empty
+      if (inputCall === 4) return Promise.resolve("ctrl+alt+v"); // step 5: custom shortcut
       return Promise.resolve("");
     });
 
@@ -579,7 +581,8 @@ describe("voice-ollama-tui init-wizard (TC-VI)", () => {
 
     const inputMock = vi.fn().mockImplementation(() => {
       inputCall++;
-      return Promise.resolve("ctrl+shift+space"); // step 5
+      if (inputCall === 1) return Promise.resolve(""); // step 1: audio device (default)
+      return Promise.resolve("ctrl+shift+space"); // step 5: shortcut
     });
 
     const ctx = mockCtx({

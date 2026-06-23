@@ -278,26 +278,74 @@ function extractFfmpegError(stderr: string): string {
  * Uses spawn instead of execSync to avoid shell redirection issues on Windows
  * and to capture stderr (where ffmpeg prints the device list) reliably.
  */
-function findWindowsAudioDevice(ffmpegPath?: string): Promise<string | null> {
-  if (process.platform !== "win32") return Promise.resolve(null);
+/**
+ * Parse ffmpeg `-f dshow -list_devices` output into a list of audio device
+ * names (without the `audio=` prefix). Supports both output formats:
+ *
+ *   New (gyan.dev full build):
+ *     [in#0 @ ...] "Microphone (GM303)" (audio)
+ *     [in#0 @ ...]   Alternative name "@device_cm_{...}"
+ *
+ *   Classic (older / other builds):
+ *     [dshow @ ...] DirectShow audio devices
+ *     [dshow @ ...]   "Microphone (Realtek Audio)"
+ *     [dshow @ ...]     Alternative name "..."
+ */
+function parseDshowDevices(output: string): string[] {
+  const lines = output.split(/\r?\n/);
+  const devices: string[] = [];
 
-  const command = ffmpegPath && fs.existsSync(ffmpegPath) ? ffmpegPath : "ffmpeg";
+  // New format: lines tagged with (audio).
+  for (const line of lines) {
+    const m = line.match(/\[in#\d+[^\]]*\]\s*"([^"]+)"\s+\((audio|video)\)/i);
+    if (m && m[2].toLowerCase() === "audio") {
+      devices.push(m[1].trim());
+    }
+  }
 
-  return new Promise<string | null>((resolve) => {
+  // Classic format: inside the "DirectShow audio devices" section.
+  let inAudioSection = false;
+  for (const line of lines) {
+    if (/DirectShow audio devices/i.test(line)) {
+      inAudioSection = true;
+      continue;
+    }
+    if (inAudioSection) {
+      if (/DirectShow video devices/i.test(line)) {
+        break;
+      }
+      if (line.includes("Alternative name")) continue;
+      // Device name in double quotes, optionally indented.
+      const m = line.match(/^\s+"([^"]+)"\s*$/);
+      if (m && m[1].trim().length > 0) {
+        devices.push(m[1].trim());
+      }
+    }
+  }
+
+  // Deduplicate while preserving order.
+  return [...new Set(devices)];
+}
+
+/**
+ * Run `ffmpeg -f dshow -list_devices true -i dummy` with a specific binary
+ * and parse the audio device names from the output. Returns an empty array
+ * on failure or if no audio devices are found.
+ */
+function enumerateDshowDevices(command: string): Promise<string[]> {
+  return new Promise<string[]>((resolve) => {
     let output = "";
     let finished = false;
-
-    notifyUser(`🎙 Поиск микрофона Windows: ${command}`, "info");
 
     const child = spawn(command, ["-f", "dshow", "-list_devices", "true", "-i", "dummy"], {
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
     });
 
-    const onDone = (device: string | null) => {
+    const onDone = (devices: string[]) => {
       if (finished) return;
       finished = true;
-      resolve(device);
+      resolve(devices);
     };
 
     child.stdout?.on("data", (chunk: Buffer) => {
@@ -307,60 +355,62 @@ function findWindowsAudioDevice(ffmpegPath?: string): Promise<string | null> {
       output += chunk.toString("utf-8");
     });
 
-    child.on("error", (err) => {
-      const msg = `findWindowsAudioDevice spawn error: ${err.message}`;
-      debugLog(msg);
-      notifyUser(`🎙 ${msg}`, "error");
-      onDone(null);
+    child.on("error", () => onDone([]));
+    child.on("close", () => {
+      onDone(parseDshowDevices(output));
     });
 
-    child.on("close", (code) => {
-      const rawPreview = output.slice(0, 2000).replace(/\r?\n/g, " | ");
-      debugLog(`findWindowsAudioDevice raw output (code=${code}):\n${output}`);
-      notifyUser(`🎙 dshow exit=${code} output=${rawPreview || "(empty)"}`, "info");
-
-      const lines = output.split(/\r?\n/);
-      let inAudioSection = false;
-      const candidates: string[] = [];
-      for (const line of lines) {
-        if (/DirectShow audio devices/i.test(line)) {
-          inAudioSection = true;
-          continue;
-        }
-        if (inAudioSection) {
-          if (/DirectShow video devices/i.test(line)) {
-            break;
-          }
-          // ffmpeg prints device names in double quotes with two leading spaces:
-          //   "Microphone (Realtek(R) Audio)"
-          // Some builds use different indentation; be permissive.
-          const match = line.match(/^\s+"?([^"]+)"?\s*$/);
-          if (match && !line.includes("Alternative name") && match[1].trim().length > 0) {
-            const deviceName = match[1].trim();
-            candidates.push(deviceName);
-          }
-        }
-      }
-
-      notifyUser(`🎙 Parsed dshow audio candidates: ${candidates.join("; ") || "(none)"}`, "info");
-
-      // Prefer a device that looks like a microphone.
-      const mic = candidates.find((name) => /microphone|mic|микрофон/i.test(name));
-      const chosen = mic ?? candidates[0];
-      if (chosen) {
-        debugLog(`findWindowsAudioDevice selected: ${chosen}`);
-        onDone(`audio=${chosen}`);
-        return;
-      }
-      onDone(null);
-    });
-
-    // Hard timeout: kill ffmpeg if it hangs during device enumeration.
     setTimeout(() => {
-      debugLog("findWindowsAudioDevice enumeration timed out");
       try { child.kill(); } catch { /* ignore */ }
-      onDone(null);
+      onDone([]);
     }, 8_000).unref?.();
+  });
+}
+
+/**
+ * List all DirectShow audio capture device names available on Windows.
+ *
+ * Tries the provided ffmpeg binary first (typically the locally downloaded
+ * one), then falls back to `ffmpeg` in PATH. This maximises the chance of
+ * finding devices even before the local binary is (re)downloaded, e.g. when
+ * a working ffmpeg is already installed system-wide.
+ *
+ * @returns Array of device names (without `audio=` prefix). Empty on non-Windows
+ *          or when no devices are found.
+ */
+export async function listWindowsAudioDevices(ffmpegPath?: string): Promise<string[]> {
+  if (process.platform !== "win32") return [];
+
+  const commands: string[] = [];
+  if (ffmpegPath && fs.existsSync(ffmpegPath)) commands.push(ffmpegPath);
+  if (ffmpegPath !== "ffmpeg") commands.push("ffmpeg");
+
+  const seen = new Set<string>();
+  for (const cmd of commands) {
+    const devices = await enumerateDshowDevices(cmd);
+    for (const d of devices) seen.add(d);
+    if (seen.size > 0) break; // Found devices with a working binary — stop.
+  }
+
+  return [...seen];
+}
+
+/**
+ * Enumerate DirectShow audio capture devices on Windows using ffmpeg and
+ * return the preferred device name (preferring microphone-like names).
+ * Returns a string suitable for ffmpeg's `-i` argument, e.g.
+ * `audio=Microphone (GM303)`, or null if no device is found.
+ */
+function findWindowsAudioDevice(ffmpegPath?: string): Promise<string | null> {
+  if (process.platform !== "win32") return Promise.resolve(null);
+
+  return listWindowsAudioDevices(ffmpegPath).then((candidates) => {
+    notifyUser(`🎙 Parsed dshow audio candidates: ${candidates.join("; ") || "(none)"}`, "info");
+    if (candidates.length === 0) return null;
+    const mic = candidates.find((name) => /microphone|mic|микрофон/i.test(name));
+    const chosen = mic ?? candidates[0];
+    debugLog(`findWindowsAudioDevice selected: ${chosen}`);
+    return `audio=${chosen}`;
   });
 }
 
@@ -496,6 +546,42 @@ function logFfmpegDevices(ffmpegPath?: string): Promise<void> {
     setTimeout(() => {
       try { child.kill(); } catch { /* ignore */ }
       resolve();
+    }, 5_000).unref?.();
+  });
+}
+
+/**
+ * Check whether a given ffmpeg binary supports the DirectShow (dshow) input
+ * device, which is required for audio capture on Windows. Runs `ffmpeg
+ * -devices` and looks for a `D  dshow` line under input devices.
+ */
+export function checkFfmpegSupportsDshow(ffmpegPath?: string): Promise<boolean> {
+  const command = ffmpegPath && fs.existsSync(ffmpegPath) ? ffmpegPath : "ffmpeg";
+
+  return new Promise<boolean>((resolve) => {
+    let output = "";
+    const child = spawn(command, ["-devices"], {
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+    });
+
+    child.stdout?.on("data", (chunk: Buffer) => {
+      output += chunk.toString("utf-8");
+    });
+    child.stderr?.on("data", (chunk: Buffer) => {
+      output += chunk.toString("utf-8");
+    });
+
+    child.on("error", () => resolve(false));
+    child.on("close", () => {
+      // ffmpeg -devices prints lines like:
+      //   D  dshow           DirectShow capture
+      resolve(/^D\s+dshow\b/im.test(output));
+    });
+
+    setTimeout(() => {
+      try { child.kill(); } catch { /* ignore */ }
+      resolve(false);
     }, 5_000).unref?.();
   });
 }

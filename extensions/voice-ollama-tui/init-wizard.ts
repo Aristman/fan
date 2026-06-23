@@ -17,7 +17,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { ExtensionCommandContext } from "@itone/fan-coding-agent";
 import { getExtensionDir } from "./config.js";
-import { checkDependencies, checkAudioDevice } from "./dependencies.js";
+import { checkDependencies } from "./dependencies.js";
 import { listOllamaModels } from "./ollama-service.js";
 import { ensureWhisperModel } from "./model-downloader.js";
 import {
@@ -29,8 +29,10 @@ import {
   getLocalBinaryPath,
   hasLocalBinary,
   hasLocalFfmpegBinary,
+  getLocalFfmpegPath,
   isWhisperCliInPath,
 } from "./bin-manager.js";
+import { listWindowsAudioDevices, checkFfmpegSupportsDshow } from "./audio-recorder.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -219,6 +221,30 @@ export async function runVoiceInitWizard(ctx: ExtensionCommandContext): Promise<
 		depStatus = checkDependencies();
 	}
 
+	// ── Windows: убедимся, что локальный ffmpeg поддерживает dshow ────
+	// Старые сборки (BtbN cross-compiled) не содержат indev dshow/wasapi и
+	// не могут ни перечислить, ни записать микрофон. Если локальный ffmpeg
+	// собран без dshow — удаляем его и перекачиваем рабочий (gyan.dev full).
+	if (process.platform === "win32" && hasLocalFfmpegBinary()) {
+		try {
+			const localFfmpeg = getLocalFfmpegPath();
+			ctx.ui.setStatus("voice-ollama-tui", "🎙 Проверка поддержки dshow...");
+			const supportsDshow = await checkFfmpegSupportsDshow(localFfmpeg);
+			if (!supportsDshow) {
+				ctx.ui.notify("Локальный ffmpeg не поддерживает dshow — перекачиваю рабочий бинарник...", "warning");
+				try { fs.unlinkSync(localFfmpeg); } catch { /* ignore */ }
+				await downloadFfmpegBinary(undefined, {
+					onStatus: (msg) => ctx.ui.notify(msg, "info"),
+				});
+				ctx.ui.notify("✅ ffmpeg обновлён до сборки с поддержкой dshow.", "info");
+			} else {
+				ctx.ui.notify("✅ Локальный ffmpeg поддерживает dshow.", "info");
+			}
+		} catch (err) {
+			ctx.ui.notify(`Не удалось проверить/обновить ffmpeg: ${err instanceof Error ? err.message : String(err)}`, "warning");
+		}
+	}
+
 	if (!depStatus.ok) {
 		const missingList = depStatus.missing.join(", ");
 		const instructionsPreview = depStatus.instructions.slice(0, 6).join("\n");
@@ -242,31 +268,12 @@ export async function runVoiceInitWizard(ctx: ExtensionCommandContext): Promise<
 		}
 	}
 
-	// ── Шаг 1: Проверка аудиоустройства ────────────────────────────────
-	const deviceOk = checkAudioDevice();
-	if (!deviceOk) {
-		ctx.ui.notify(
-			"Аудиоустройство не найдено. Проверьте подключение микрофона.",
-			"warning",
-		);
-		// Best-effort detection can fail on Windows for many reasons (no PATH
-		// ffmpeg yet, terminal permissions, dshow quirks). Don't block the
-		// wizard; just warn and let the user continue. The actual recording
-		// will fail later with a clear error if there really is no device.
-		const proceed = await ctx.ui.confirm(
-			"Аудиоустройство",
-			"⚠️ Не удалось найти аудиоустройство ввода.\n\nПроверьте, что микрофон подключён и настроен.\n\nПродолжить настройку?",
-		);
-		if (!proceed) {
-			ctx.ui.setStatus("voice-ollama-tui", "🎙 Настройка отменена");
-			return;
-		}
-	} else {
-		ctx.ui.notify("✅ Аудиоустройство найдено.", "info");
-	}
+	// ── Шаг 1: Выбор микрофона ─────────────────────────────────────────
+	const audioDevice = await stepAudioDevice(ctx);
 
-	// ── Шаг 2: Выбор языка распознавания ───────────────────────────────
+	// ── Шаг 2: Выбор языка распознавания	// ── Шаг 2: Выбор языка распознавания ───────────────────────────────
 	const state = await stepLanguage(ctx);
+	state.audioDevice = audioDevice;
 
 	// ── Шаг 3: Длительность записи ─────────────────────────────────────
 	await stepDuration(ctx, state);
@@ -289,6 +296,76 @@ export async function runVoiceInitWizard(ctx: ExtensionCommandContext): Promise<
 		"info",
 	);
 	ctx.ui.setStatus("voice-ollama-tui", "🎙 Настроено");
+}
+
+// ---------------------------------------------------------------------------
+// Step 1: Audio device selection (interactive microphone picker)
+// ---------------------------------------------------------------------------
+
+/**
+ * Interactive microphone selection.
+ *
+ * On Windows, enumerates DirectShow audio capture devices via the locally
+ * downloaded ffmpeg (and PATH ffmpeg as a fallback) and lets the user pick
+ * one. The chosen device is stored as `audio=<name>` in the config.
+ *
+ * On other platforms, offers a manual device name input defaulting to
+ * `default` (valid for ALSA on Linux / AVFoundation on macOS).
+ *
+ * @returns The selected audio device value for the AUDIO_DEVICE config key.
+ */
+async function stepAudioDevice(ctx: ExtensionCommandContext): Promise<string> {
+	if (process.platform !== "win32") {
+		// Non-Windows: "default" is a valid device for ALSA/AVFoundation.
+		const input = await ctx.ui.input(
+			"Имя аудиоустройства. По умолчанию: default",
+			DEFAULT_AUDIO_DEVICE,
+		);
+		return input?.trim() || DEFAULT_AUDIO_DEVICE;
+	}
+
+	// Windows: enumerate dshow devices using the locally downloaded ffmpeg.
+	ctx.ui.setStatus("voice-ollama-tui", "🎙 Поиск микрофонов...");
+	let localFfmpeg: string | undefined;
+	try {
+		localFfmpeg = getLocalFfmpegPath();
+	} catch {
+		localFfmpeg = undefined;
+	}
+
+	const devices = await listWindowsAudioDevices(localFfmpeg);
+
+	if (devices.length === 0) {
+		ctx.ui.notify(
+			"Не удалось обнаружить микрофоны автоматически. Проверьте, что микрофон подключён и ffmpeg поддерживает dshow.",
+			"warning",
+		);
+		// Offer manual entry of a dshow device name (raw, without audio=).
+		const manual = await ctx.ui.input(
+			"Введите имя микрофона (dshow) или оставьте default",
+			DEFAULT_AUDIO_DEVICE,
+		);
+		const value = manual?.trim() || DEFAULT_AUDIO_DEVICE;
+		if (value !== DEFAULT_AUDIO_DEVICE && !value.startsWith("audio=")) {
+			return `audio=${value}`;
+		}
+		return value;
+	}
+
+	// Build selection options: each device + an auto/default entry.
+	const options: string[] = [];
+	for (const d of devices) {
+		options.push(d);
+	}
+	options.push("Автоопределение (default)");
+
+	const chosen = await ctx.ui.select("Выберите микрофон для записи", options);
+
+	if (chosen === "Автоопределение (default)" || !chosen) {
+		return DEFAULT_AUDIO_DEVICE;
+	}
+	ctx.ui.notify(`Выбран микрофон: ${chosen}`, "info");
+	return `audio=${chosen}`;
 }
 
 // ---------------------------------------------------------------------------
