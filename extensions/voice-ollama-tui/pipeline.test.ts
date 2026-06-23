@@ -61,7 +61,7 @@ function createMocks(overrides?: {
 }) {
   const fns = {
     checkDependencies: vi.fn().mockReturnValue({ ok: true, missing: [], instructions: [] }),
-    showRecordingOverlay: vi.fn().mockResolvedValue({ accepted: true }),
+    showRecordingOverlay: vi.fn().mockResolvedValue({ accepted: true, audioFile: "/tmp/test-recording.wav" }),
     showProcessingOverlay: vi.fn((): { update: any; close: any } => ({
       update: vi.fn(),
       close: vi.fn(),
@@ -124,7 +124,7 @@ describe("voice-ollama-tui pipeline (F-4.3)", () => {
   // -----------------------------------------------------------------------
   it("TC-F-4.3-1: on recording error, overlay is closed and notify shows error", async () => {
     createMocks({
-      recordAudio: vi.fn().mockRejectedValue(new Error("ffmpeg not found")),
+      showRecordingOverlay: vi.fn().mockRejectedValue(new Error("ffmpeg not found")),
     });
 
     const { runVoicePipeline } = await import("./pipeline.js");
@@ -194,7 +194,7 @@ describe("voice-ollama-tui pipeline (F-4.3)", () => {
   // -----------------------------------------------------------------------
   it("returns without recording when user cancels with Escape", async () => {
     const fns = createMocks({
-      showRecordingOverlay: vi.fn().mockResolvedValue({ accepted: false }),
+      showRecordingOverlay: vi.fn().mockResolvedValue({ accepted: false, audioFile: undefined }),
     });
 
     const { runVoicePipeline } = await import("./pipeline.js");

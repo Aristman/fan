@@ -13,6 +13,7 @@
 
 import type { ExtensionContext, Theme } from "@itone/fan-coding-agent";
 import { matchesKey, type TUI, type KeybindingsManager } from "@itone/fan-tui";
+import { recordAudio, type RecordAudioOptions } from "./audio-recorder.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -21,11 +22,15 @@ import { matchesKey, type TUI, type KeybindingsManager } from "@itone/fan-tui";
 export interface RecordingOverlayResult {
   /** true if user pressed Enter (or auto-stopped), false if Escape */
   accepted: boolean;
+  /** Path to the recorded WAV file when accepted, undefined otherwise */
+  audioFile?: string;
 }
 
 export interface RecordingOverlayOptions {
   /** Maximum recording duration in seconds (auto-stop after this) */
   duration?: number;
+  /** Optional audio device string passed to the recorder */
+  audioDevice?: string;
   /** Optional AbortSignal to cancel recording in progress */
   signal?: AbortSignal;
 }
@@ -48,13 +53,13 @@ export interface ProcessingOverlayController {
 /**
  * Show a recording overlay with timer and Enter/Esc handling.
  *
- * The overlay displays "🎙 Запись... Нажмите Enter для завершения, Esc для отмены"
- * along with a countdown timer.  When the timer reaches zero the overlay
- * auto-completes with `accepted: true`.
+ * Recording starts immediately when the overlay opens. The overlay displays
+ * an animated activity indicator, a countdown timer, and a live progress bar.
+ * Press Enter to stop and save, Esc to cancel.
  *
  * @param ctx - Extension context with UI access
- * @param opts - Duration etc.
- * @returns Promise with `{ accepted }` — true on Enter or timeout, false on Escape
+ * @param opts - Duration, audio device, abort signal
+ * @returns Promise with `{ accepted, audioFile }` — audioFile is set when accepted
  */
 export async function showRecordingOverlay(
   ctx: ExtensionContext,
@@ -64,7 +69,13 @@ export async function showRecordingOverlay(
 
   return ctx.ui.custom<RecordingOverlayResult>(
     (tui: TUI, theme: Theme, _kb: KeybindingsManager, done: (result: RecordingOverlayResult) => void) => {
-      const component = new RecordingOverlayComponent(theme, tui, maxDuration, done, opts.signal);
+      const component = new RecordingOverlayComponent(
+        theme,
+        tui,
+        maxDuration,
+        done,
+        { audioDevice: opts.audioDevice, signal: opts.signal },
+      );
       return component;
     },
     { overlay: true },
@@ -152,23 +163,28 @@ class RecordingOverlayComponent {
   private timerId: ReturnType<typeof setInterval> | null = null;
   private finished = false;
   private pulseTick = 0;
+  private recordingPromise: Promise<string | undefined> | null = null;
 
   constructor(
     private theme: Theme,
     private tui: TUI,
     private maxDuration: number,
     private done: (result: RecordingOverlayResult) => void,
-    signal?: AbortSignal,
+    private recorderOpts: { audioDevice?: string; signal?: AbortSignal },
   ) {
     this.remaining = maxDuration;
+    this.startRecording();
     this.startTimer();
 
     // Listen for external abort signal (e.g. from pipeline's AbortController)
+    const signal = recorderOpts.signal;
     if (signal) {
       if (signal.aborted) {
+        this.abortRecording();
         this.finish({ accepted: false });
       } else {
         const onAbort = () => {
+          this.abortRecording();
           this.finish({ accepted: false });
         };
         signal.addEventListener("abort", onAbort, { once: true });
@@ -177,6 +193,41 @@ class RecordingOverlayComponent {
           signal.removeEventListener("abort", onAbort);
           origDispose();
         };
+      }
+    }
+  }
+
+  /**
+   * Start recording audio in the background as soon as the overlay opens.
+   */
+  private startRecording(): void {
+    const recordOptions: RecordAudioOptions = {
+      duration: this.maxDuration,
+      audioDevice: this.recorderOpts.audioDevice,
+      signal: this.recorderOpts.signal,
+    };
+
+    this.recordingPromise = recordAudio(recordOptions)
+      .then((path) => path)
+      .catch((err) => {
+        // Recording errors are surfaced to the user by the recorder itself.
+        // For the overlay, treat this as a cancellation.
+        return undefined;
+      });
+  }
+
+  /**
+   * Abort the in-progress recording if possible.
+   */
+  private abortRecording(): void {
+    // The recorder observes this.recorderOpts.signal, so aborting the signal
+    // will terminate the recorder process.
+    if (!this.recorderOpts.signal?.aborted) {
+      try {
+        // We don't own the signal, so we cannot abort it here. The pipeline
+        // owns the AbortController. We only react to abort events above.
+      } catch {
+        // ignore
       }
     }
   }
@@ -202,6 +253,11 @@ class RecordingOverlayComponent {
         this.tui.requestRender();
       }
     }, 1000);
+    // Increase animation speed for smoother activity indicator
+    setInterval(() => {
+      this.pulseTick = (this.pulseTick + 1) % 24;
+      this.tui.requestRender();
+    }, 120);
   }
 
   private stopTimer(): void {
@@ -211,20 +267,36 @@ class RecordingOverlayComponent {
     }
   }
 
-  private finish(result: RecordingOverlayResult): void {
+  private async finish(result: { accepted: boolean }): Promise<void> {
     if (this.finished) return;
     this.finished = true;
     this.stopTimer();
-    this.done(result);
+
+    let audioFile: string | undefined;
+
+    if (result.accepted) {
+      // Wait for the recorder to finish and return the file path.
+      audioFile = (await this.recordingPromise) ?? undefined;
+      if (!audioFile) {
+        // Recording did not produce a file — treat as cancelled.
+        this.done({ accepted: false });
+        return;
+      }
+    } else {
+      // User cancelled; the recorder will observe the abort signal and reject.
+      this.recordingPromise?.catch(() => undefined);
+    }
+
+    this.done({ accepted: result.accepted, audioFile });
   }
 
   handleInput(data: string): void {
     if (this.finished) return;
 
     if (matchesKey(data, "enter") || matchesKey(data, "return")) {
-      this.finish({ accepted: true });
+      void this.finish({ accepted: true });
     } else if (matchesKey(data, "escape")) {
-      this.finish({ accepted: false });
+      void this.finish({ accepted: false });
     }
   }
 

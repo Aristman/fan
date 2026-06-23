@@ -125,23 +125,21 @@ export async function runVoicePipeline(
   let modelOverlay: ProcessingOverlayController | undefined;
 
   try {
-    // ── Step 1: Recording overlay ───────────────────────────────────
-    const { accepted } = await showRecordingOverlay(ctx, {
-      duration: config.recordDurationMax,
-      signal: abortController.signal,
-    });
-
-    if (!accepted) {
-      // User cancelled with Escape — nothing more to do
-      return;
-    }
-
-    // ── Step 2: Record audio ────────────────────────────────────────
-    audioPath = await recordAudio({
+    // ── Step 1+2: Recording overlay + record audio simultaneously ───
+    // Recording starts immediately; the overlay shows live progress and
+    // the user can press Enter to stop or Escape to cancel.
+    const { accepted, audioFile } = await showRecordingOverlay(ctx, {
       duration: config.recordDurationMax,
       audioDevice: config.audioDevice,
       signal: abortController.signal,
     });
+
+    if (!accepted || !audioFile) {
+      // User cancelled with Escape or recording failed to produce a file
+      return;
+    }
+
+    audioPath = audioFile;
 
     // ── Step 3: Ensure whisper model ─────────────────────────────────
     try {

@@ -181,6 +181,11 @@ describe("voice-ollama-tui ui-overlay (F-2.2)", () => {
   it("TC-F-2.2-2: pressing Enter finishes recording with accepted=true", async () => {
     const customMock = createMockCustom();
 
+    // Mock recordAudio so the overlay does not try to spawn real ffmpeg.
+    vi.doMock("./audio-recorder.js", () => ({
+      recordAudio: vi.fn().mockResolvedValue("/tmp/voice-test/recording.wav"),
+    }));
+
     const mockCtx = {
       ui: { custom: customMock.mock },
       hasUI: true,
@@ -200,6 +205,7 @@ describe("voice-ollama-tui ui-overlay (F-2.2)", () => {
 
     const result = await promise;
     expect(result.accepted).toBe(true);
+    expect(result.audioFile).toBe("/tmp/voice-test/recording.wav");
   });
 
   // ── TC-F-2.2-3: Escape cancels recording → accepted=false ────────────
@@ -373,6 +379,10 @@ describe("voice-ollama-tui ui-overlay (F-2.2)", () => {
   // ── Enter via "return" key also works ─────────────────────────────────
   it("return key also finishes recording", async () => {
     const customMock = createMockCustom();
+
+    vi.doMock("./audio-recorder.js", () => ({
+      recordAudio: vi.fn().mockResolvedValue("/tmp/voice-test/recording.wav"),
+    }));
 
     const mockCtx = {
       ui: { custom: customMock.mock },

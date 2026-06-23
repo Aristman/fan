@@ -544,6 +544,13 @@ describe("voice-ollama-tui extension entry (F-1.1)", () => {
       }),
     }));
 
+    // Mock ui-overlay so recording does not spawn real ffmpeg.
+    // showRecordingOverlay now returns the recorded file directly.
+    vi.doMock("./ui-overlay.js", () => ({
+      showRecordingOverlay: vi.fn().mockResolvedValue({ accepted: true, audioFile: "/tmp/test-recording.wav" }),
+      showProcessingOverlay: vi.fn().mockReturnValue({ update: vi.fn(), close: vi.fn() }),
+    }));
+
     // Mock audio-recorder to avoid actual ffmpeg calls
     vi.doMock("./audio-recorder.js", () => ({
       recordAudio: vi.fn().mockResolvedValue("/tmp/test-recording.wav"),
@@ -584,11 +591,17 @@ describe("voice-ollama-tui extension entry (F-1.1)", () => {
     const shortcutHandler = registerShortcut.mock.calls[0][1].handler;
     await shortcutHandler({ ui: { notify, setStatus, custom, setEditorText, getEditorText } });
 
-    // The pipeline: showRecordingOverlay → recordAudio → showProcessingOverlay(model) →
-    // ensureWhisperModel → showProcessingOverlay(transcribing) → transcribe → insertTranscript
-    expect(custom).toHaveBeenCalledTimes(3);
+
+
+    // The pipeline now records inside showRecordingOverlay, then shows
+    // showProcessingOverlay(model) and showProcessingOverlay(transcribing).
+    // Since we mocked showRecordingOverlay/showProcessingOverlay to resolve
+    // immediately, ctx.ui.custom is not invoked by the pipeline itself.
     expect(setEditorText).toHaveBeenCalledWith("привет мир");
     expect(getEditorText).toHaveBeenCalledTimes(1);
     expect(notify).not.toHaveBeenCalled();
+
+    // resetModules before the next test so doMock is not reused
+    vi.resetModules();
   });
 });
