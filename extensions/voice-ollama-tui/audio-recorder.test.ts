@@ -279,6 +279,47 @@ describe("voice-ollama-tui audio recorder (F-2.1)", () => {
     }
   });
 
+  // ── RECORDER_ABORTED safety net: file exists after abort → return path ─
+  it("TC-F-2.1-4: returns output path when abort leaves a non-empty file", async () => {
+    // Use "pending" so the spawn doesn't resolve on its own
+    setupSpawnMock([{ kind: "pending" }]);
+
+    const mod = await import("./audio-recorder.js");
+
+    // Patch existsSync AND statSync so that the output .wav file appears
+    // to exist with content after the abort (the safety net).
+    vi.mocked(fs.existsSync).mockImplementation((p: unknown) => {
+      const pStr = String(p);
+      if (pStr.endsWith(".wav")) return true;
+      return true;
+    });
+    vi.mocked(fs.statSync).mockImplementation((p: unknown) => {
+      const pStr = String(p);
+      if (pStr.endsWith(".wav")) return { size: 12345 } as fs.Stats;
+      return { size: 0 } as fs.Stats;
+    });
+
+    const controller = new AbortController();
+
+    const promise = mod.recordAudio({ duration: 10, signal: controller.signal });
+
+    // Let the async setup complete, then abort
+    await vi.waitFor(() => {
+      expect(vi.mocked(spawn)).toHaveBeenCalled();
+    });
+
+    controller.abort();
+
+    const result = await promise;
+    expect(result).toContain(".wav");
+
+    // The child's kill should still have been called with SIGINT
+    const child = vi.mocked(spawn).mock.results[0]?.value as MockChild | undefined;
+    if (child) {
+      expect(child.kill).toHaveBeenCalledWith("SIGINT");
+    }
+  });
+
   // ── FFmpeg succeeds → returns output path ────────────────────────────
   it("resolves with output path when ffmpeg completes successfully", async () => {
     setupSpawnMock([{ kind: "success" }]);
