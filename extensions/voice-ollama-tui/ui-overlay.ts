@@ -160,6 +160,7 @@ export function showProcessingOverlay(
 
 class RecordingOverlayComponent implements Focusable {
   public focused = false;
+  public wantsKeyRelease = false;
   private remaining: number;
   private timerId: ReturnType<typeof setInterval> | null = null;
   private animationTimer: ReturnType<typeof setInterval> | null = null;
@@ -299,9 +300,14 @@ class RecordingOverlayComponent implements Focusable {
   handleInput(data: string): void {
     if (this.finished) return;
 
-    if (matchesKey(data, "enter") || matchesKey(data, "return")) {
+    // Also accept raw key sequences as a fallback when matchesKey does not
+    // recognize the terminal encoding.
+    const isEnter = matchesKey(data, "enter") || matchesKey(data, "return") || data === "\r" || data === "\n";
+    const isEscape = matchesKey(data, "escape") || data === "\x1b";
+
+    if (isEnter) {
       void this.finish({ accepted: true });
-    } else if (matchesKey(data, "escape")) {
+    } else if (isEscape) {
       void this.finish({ accepted: false });
     }
   }
