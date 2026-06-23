@@ -231,8 +231,12 @@ function spawnRecorder(
       return;
     }
 
+    const isWindows = process.platform === "win32";
     const child = spawn(command, args, {
-      stdio: ["ignore", "pipe", "pipe"],
+      // Keep stdin open so we can send 'q' to ffmpeg on Windows for a clean
+      // shutdown. SIGINT does not gracefully terminate processes on Windows,
+      // so writing 'q\n' to stdin is the only reliable way to flush the WAV.
+      stdio: ["pipe", "pipe", "pipe"],
     });
 
     let stderr = "";
@@ -297,9 +301,35 @@ function spawnRecorder(
       const onAbort = () => {
         if (finished) return;
         abortedBySignal = true;
-        debugLog(`spawnRecorder abort received for ${command}, sending SIGINT`);
-        // Use SIGINT so ffmpeg/sox/arecord flush and close the WAV file properly.
-        child.kill("SIGINT");
+
+        if (isWindows) {
+          // On Windows, POSIX signals are not reliably delivered to child
+          // processes. ffmpeg accepts 'q' on stdin to quit gracefully and
+          // flush the output file. sox/arecord are not first-class citizens
+          // on Windows, so this path targets ffmpeg.
+          debugLog(`spawnRecorder abort received for ${command}, sending 'q' to stdin (Windows)`);
+          try {
+            child.stdin?.write("q\n");
+            child.stdin?.end();
+          } catch (err) {
+            debugLog(`spawnRecorder stdin write failed: ${(err as Error).message}`);
+            // If stdin is closed/unavailable, fall back to SIGTERM.
+            child.kill();
+          }
+
+          // Safety net: if the process does not exit within 1.5s, force-kill it.
+          setTimeout(() => {
+            if (!finished) {
+              debugLog(`spawnRecorder force-killing ${command} after timeout`);
+              try { child.kill("SIGKILL"); } catch { /* ignore */ }
+              try { child.kill(); } catch { /* ignore */ }
+            }
+          }, 1500).unref?.();
+        } else {
+          debugLog(`spawnRecorder abort received for ${command}, sending SIGINT`);
+          // Use SIGINT so ffmpeg/sox/arecord flush and close the WAV file properly.
+          child.kill("SIGINT");
+        }
       };
 
       signal.addEventListener("abort", onAbort, { once: true });
