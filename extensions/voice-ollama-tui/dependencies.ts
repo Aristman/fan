@@ -1,4 +1,7 @@
+import fs from "node:fs";
+import path from "node:path";
 import { execSync } from "node:child_process";
+import { getCurrentPlatform, getLocalBinaryPath } from "./bin-manager.js";
 import type { VoiceOllamaConfig } from "./config.js";
 
 // ---------------------------------------------------------------------------
@@ -85,9 +88,34 @@ function checkArecord(): boolean {
 	return checkTool("arecord", "--version");
 }
 
-function checkWhisperCli(): boolean {
+function checkWhisperCliInPath(): boolean {
 	// whisper-cli supports both -h and --help
 	return checkTool("whisper-cli", "-h");
+}
+
+/**
+ * Check whether a prebuilt whisper-cli binary was downloaded locally by the
+ * `/voice init` wizard. The binary is stored under the extension directory at
+ * bin/<platform>/whisper-cli (or whisper-cli.exe on Windows).
+ */
+function hasLocalWhisperCli(): boolean {
+	try {
+		const platform = getCurrentPlatform();
+		if (!platform) return false;
+		const binPath = getLocalBinaryPath(platform);
+		const stat = fs.statSync(binPath);
+		return stat.isFile() && stat.size > 0;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Check whether whisper-cli is available, either in PATH or as a locally
+ * downloaded binary.
+ */
+function checkWhisperCli(): boolean {
+	return checkWhisperCliInPath() || hasLocalWhisperCli();
 }
 
 // ---------------------------------------------------------------------------
