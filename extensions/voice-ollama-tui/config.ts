@@ -83,6 +83,10 @@ export function getExtensionDir(): string {
   return path.dirname(fileURLToPath(import.meta.url));
 }
 
+export function createDefaultConfig(): VoiceOllamaConfig {
+  return DEFAULT_CONFIG;
+}
+
 function toBoolean(value: string | undefined, defaultValue: boolean): boolean {
   if (value === undefined) return defaultValue;
   return value.toLowerCase() === "true" || value === "1";
@@ -94,8 +98,8 @@ function normalizeDuration(value: number): number {
   return value;
 }
 
-export function loadConfig(): VoiceOllamaConfig {
-  const extensionDir = getExtensionDir();
+export function loadConfig(extensionDir?: string): VoiceOllamaConfig {
+  extensionDir = extensionDir ?? getExtensionDir();
   const envPath = path.join(extensionDir, ".env");
   const jsonPath = path.join(extensionDir, "config.json");
 

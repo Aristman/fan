@@ -127,6 +127,9 @@ function checkWhisperCli(): boolean {
  * Uses platform-specific commands. Returns true if a device was found,
  * false on error or if the command is unavailable.
  * Results are NOT cached since device state can change.
+ *
+ * Commands are run with `LC_ALL=C` to avoid locale-dependent parsing, with
+ * additional locale-agnostic fallbacks where available.
  */
 export function checkAudioDevice(): boolean {
 	const platform = process.platform;
@@ -134,25 +137,35 @@ export function checkAudioDevice(): boolean {
 		if (platform === "darwin") {
 			// macOS: list avfoundation devices
 			const out = execSync(
-				"ffmpeg -f avfoundation -list_devices true -i \"\" 2>&1",
+				"LC_ALL=C ffmpeg -f avfoundation -list_devices true -i \"\" 2>&1",
 				{ encoding: "utf-8", timeout: 10_000 },
 			);
 			// If output contains an audio device entry, it's likely working
 			return out.includes("Audio") || out.includes("microphone");
 		}
 		if (platform === "linux") {
-			// Linux: list alsa capture devices
-			// Output is localized; accept either English "card" or Russian "карта".
-			const out = execSync("arecord -l", {
+			// Locale-agnostic fallback: /proc/asound/cards lists ALSA cards
+			// regardless of the user's locale.
+			try {
+				const cards = fs.readFileSync("/proc/asound/cards", "utf-8");
+				if (cards.trim().length > 0 && /\[/.test(cards)) {
+					return true;
+				}
+			} catch {
+				// ignore and continue with command-based checks
+			}
+
+			// Linux: list alsa capture devices with forced C locale.
+			const out = execSync("LC_ALL=C arecord -l", {
 				encoding: "utf-8",
 				timeout: 10_000,
 			});
-			return /\bcard\b/i.test(out) || out.includes("карта");
+			return /\bcard\b/i.test(out);
 		}
 		if (platform === "win32") {
 			// Windows: try to list dshow devices
 			const out = execSync(
-				"ffmpeg -f dshow -list_devices true -i dummy 2>&1",
+				"LC_ALL=C ffmpeg -f dshow -list_devices true -i dummy 2>&1",
 				{ encoding: "utf-8", timeout: 10_000 },
 			);
 			return out.includes("Audio");

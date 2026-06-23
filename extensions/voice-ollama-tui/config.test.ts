@@ -26,6 +26,7 @@ import {
 } from "vitest";
 import {
   existsSync,
+  mkdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -38,8 +39,9 @@ import { fileURLToPath } from "node:url";
 // ---------------------------------------------------------------------------
 
 const EXT_DIR = fileURLToPath(new URL(".", import.meta.url));
-const ORIG_ENV = join(EXT_DIR, ".env");
-const ORIG_JSON = join(EXT_DIR, "config.json");
+const TEST_DIR = join(EXT_DIR, ".test-config-tmp");
+const ORIG_ENV = join(TEST_DIR, ".env");
+const ORIG_JSON = join(TEST_DIR, "config.json");
 const BACKUP_ENV = join(EXT_DIR, ".env.testbak");
 const BACKUP_JSON = join(EXT_DIR, "config.json.testbak");
 
@@ -49,28 +51,34 @@ interface ConfigFiles {
 }
 
 function backupConfig(): ConfigFiles {
-  const env = existsSync(ORIG_ENV);
-  const json = existsSync(ORIG_JSON);
+  // Clean isolated test directory
+  rmSync(TEST_DIR, { recursive: true, force: true });
+  mkdirSync(TEST_DIR, { recursive: true });
+
+  // Backup any real config files in the extension dir so we can restore them later
+  const env = existsSync(join(EXT_DIR, ".env"));
+  const json = existsSync(join(EXT_DIR, "config.json"));
   if (env) {
-    writeFileSync(BACKUP_ENV, readFileSync(ORIG_ENV, "utf-8"), "utf-8");
-    rmSync(ORIG_ENV);
+    writeFileSync(BACKUP_ENV, readFileSync(join(EXT_DIR, ".env"), "utf-8"), "utf-8");
+    rmSync(join(EXT_DIR, ".env"));
   }
   if (json) {
-    writeFileSync(BACKUP_JSON, readFileSync(ORIG_JSON, "utf-8"), "utf-8");
-    rmSync(ORIG_JSON);
+    writeFileSync(BACKUP_JSON, readFileSync(join(EXT_DIR, "config.json"), "utf-8"), "utf-8");
+    rmSync(join(EXT_DIR, "config.json"));
   }
   return { env, json };
 }
 
 function restoreConfig(had: ConfigFiles) {
-  rmSync(ORIG_ENV, { force: true });
-  rmSync(ORIG_JSON, { force: true });
+  rmSync(TEST_DIR, { recursive: true, force: true });
+  rmSync(join(EXT_DIR, ".env"), { force: true });
+  rmSync(join(EXT_DIR, "config.json"), { force: true });
   if (had.env && existsSync(BACKUP_ENV)) {
-    writeFileSync(ORIG_ENV, readFileSync(BACKUP_ENV, "utf-8"), "utf-8");
+    writeFileSync(join(EXT_DIR, ".env"), readFileSync(BACKUP_ENV, "utf-8"), "utf-8");
     rmSync(BACKUP_ENV);
   }
   if (had.json && existsSync(BACKUP_JSON)) {
-    writeFileSync(ORIG_JSON, readFileSync(BACKUP_JSON, "utf-8"), "utf-8");
+    writeFileSync(join(EXT_DIR, "config.json"), readFileSync(BACKUP_JSON, "utf-8"), "utf-8");
     rmSync(BACKUP_JSON);
   }
 }
@@ -92,15 +100,15 @@ describe("voice-ollama-tui config (F-1.2)", () => {
 
   beforeEach(() => {
     // Remove any leftover test config from previous test
-    rmSync(ORIG_ENV, { force: true });
-    rmSync(ORIG_JSON, { force: true });
+    rmSync(TEST_DIR, { recursive: true, force: true });
+    mkdirSync(TEST_DIR, { recursive: true });
     vi.resetModules();
   });
 
   // ── TC-F-1.2-2: defaults when no config file ──────────────────────────
   it("TC-F-1.2-2: uses defaults when no config file exists", async () => {
     const { loadConfig } = await import("./config.js");
-    const cfg = loadConfig();
+    const cfg = loadConfig(TEST_DIR);
 
     expect(cfg.recordDurationMax).toBe(60);
     expect(cfg.ollamaEnabled).toBe(false);
@@ -129,7 +137,7 @@ describe("voice-ollama-tui config (F-1.2)", () => {
     );
 
     const { loadConfig } = await import("./config.js");
-    const cfg = loadConfig();
+    const cfg = loadConfig(TEST_DIR);
 
     expect(cfg.whisperLanguage).toBe("ru");
     expect(cfg.ollamaEnabled).toBe(true);
@@ -146,7 +154,7 @@ describe("voice-ollama-tui config (F-1.2)", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     const { loadConfig } = await import("./config.js");
-    const cfg = loadConfig();
+    const cfg = loadConfig(TEST_DIR);
 
     expect(cfg.recordDurationMax).toBe(60);
     expect(warnSpy).toHaveBeenCalledTimes(1);
@@ -164,7 +172,7 @@ describe("voice-ollama-tui config (F-1.2)", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     const { loadConfig } = await import("./config.js");
-    const cfg = loadConfig();
+    const cfg = loadConfig(TEST_DIR);
 
     expect(cfg.recordDurationMax).toBe(60);
     expect(warnSpy).toHaveBeenCalled();
@@ -177,7 +185,7 @@ describe("voice-ollama-tui config (F-1.2)", () => {
     writeFileSync(ORIG_ENV, "RECORD_DURATION_MAX=5\n", "utf-8");
 
     const { loadConfig } = await import("./config.js");
-    const cfg = loadConfig();
+    const cfg = loadConfig(TEST_DIR);
 
     expect(cfg.recordDurationMax).toBe(5);
   });
@@ -187,7 +195,7 @@ describe("voice-ollama-tui config (F-1.2)", () => {
     writeFileSync(ORIG_ENV, "RECORD_DURATION_MAX=300\n", "utf-8");
 
     const { loadConfig } = await import("./config.js");
-    const cfg = loadConfig();
+    const cfg = loadConfig(TEST_DIR);
 
     expect(cfg.recordDurationMax).toBe(300);
   });
@@ -205,7 +213,7 @@ describe("voice-ollama-tui config (F-1.2)", () => {
     );
 
     const { loadConfig } = await import("./config.js");
-    const cfg = loadConfig();
+    const cfg = loadConfig(TEST_DIR);
 
     expect(cfg.whisperLanguage).toBe("en");
     expect(cfg.ollamaEnabled).toBe(true);
@@ -225,7 +233,7 @@ describe("voice-ollama-tui config (F-1.2)", () => {
     );
 
     const { loadConfig } = await import("./config.js");
-    const cfg = loadConfig();
+    const cfg = loadConfig(TEST_DIR);
 
     expect(cfg.whisperLanguage).toBe("de");
     expect(cfg.ollamaEnabled).toBe(true);
@@ -239,7 +247,7 @@ describe("voice-ollama-tui config (F-1.2)", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     const { loadConfig } = await import("./config.js");
-    const cfg = loadConfig();
+    const cfg = loadConfig(TEST_DIR);
 
     expect(cfg.recordDurationMax).toBe(60);
     expect(cfg.ollamaEnabled).toBe(false);
@@ -259,7 +267,7 @@ describe("voice-ollama-tui config (F-1.2)", () => {
     );
 
     const { loadConfig } = await import("./config.js");
-    const cfg = loadConfig();
+    const cfg = loadConfig(TEST_DIR);
 
     expect(cfg.whisperLanguage).toBe("fr");
     expect(cfg.ollamaSystemPrompt).toBe("Fix text");
@@ -270,7 +278,7 @@ describe("voice-ollama-tui config (F-1.2)", () => {
     writeFileSync(ORIG_ENV, "WHISPER_LANGUAGE='pt'\n", "utf-8");
 
     const { loadConfig } = await import("./config.js");
-    const cfg = loadConfig();
+    const cfg = loadConfig(TEST_DIR);
 
     expect(cfg.whisperLanguage).toBe("pt");
   });
@@ -290,7 +298,7 @@ describe("voice-ollama-tui config (F-1.2)", () => {
     );
 
     const { loadConfig } = await import("./config.js");
-    const cfg = loadConfig();
+    const cfg = loadConfig(TEST_DIR);
 
     expect(cfg.whisperLanguage).toBe("ja");
     expect(cfg.ollamaEnabled).toBe(false);
@@ -301,7 +309,7 @@ describe("voice-ollama-tui config (F-1.2)", () => {
     writeFileSync(ORIG_ENV, "OLLAMA_ENABLED=1\n", "utf-8");
 
     const { loadConfig } = await import("./config.js");
-    const cfg = loadConfig();
+    const cfg = loadConfig(TEST_DIR);
 
     expect(cfg.ollamaEnabled).toBe(true);
   });
@@ -311,7 +319,7 @@ describe("voice-ollama-tui config (F-1.2)", () => {
     writeFileSync(ORIG_ENV, "OLLAMA_ENABLED=FALSE\n", "utf-8");
 
     const { loadConfig } = await import("./config.js");
-    const cfg = loadConfig();
+    const cfg = loadConfig(TEST_DIR);
 
     expect(cfg.ollamaEnabled).toBe(false);
   });
@@ -321,7 +329,7 @@ describe("voice-ollama-tui config (F-1.2)", () => {
     writeFileSync(ORIG_ENV, "OLLAMA_ENABLED=0\n", "utf-8");
 
     const { loadConfig } = await import("./config.js");
-    const cfg = loadConfig();
+    const cfg = loadConfig(TEST_DIR);
 
     expect(cfg.ollamaEnabled).toBe(false);
   });
@@ -332,7 +340,7 @@ describe("voice-ollama-tui config (F-1.2)", () => {
     writeFileSync(ORIG_JSON, JSON.stringify({ WHISPER_LANGUAGE: "de" }), "utf-8");
 
     const { loadConfig } = await import("./config.js");
-    const cfg = loadConfig();
+    const cfg = loadConfig(TEST_DIR);
 
     expect(cfg.whisperLanguage).toBe("ru"); // from .env, not config.json
   });
@@ -342,7 +350,7 @@ describe("voice-ollama-tui config (F-1.2)", () => {
     writeFileSync(ORIG_ENV, "RECORD_DURATION_MAX=abc\n", "utf-8");
 
     const { loadConfig } = await import("./config.js");
-    const cfg = loadConfig();
+    const cfg = loadConfig(TEST_DIR);
 
     expect(cfg.recordDurationMax).toBe(60);
   });
@@ -360,7 +368,7 @@ describe("voice-ollama-tui config (F-1.2)", () => {
     );
 
     const { loadConfig } = await import("./config.js");
-    const cfg = loadConfig();
+    const cfg = loadConfig(TEST_DIR);
 
     expect(cfg.whisperLanguage).toBe("de");
     expect(cfg.ollamaModel).toBe("llama3.2");
@@ -380,7 +388,7 @@ describe("voice-ollama-tui config (F-1.2)", () => {
     );
 
     const { loadConfig } = await import("./config.js");
-    const cfg = loadConfig();
+    const cfg = loadConfig(TEST_DIR);
 
     expect(cfg.whisperLanguage).toBe("fr");
     expect(cfg.ollamaEnabled).toBe(true);
@@ -399,7 +407,7 @@ describe("voice-ollama-tui config (F-1.2)", () => {
     );
 
     const { loadConfig } = await import("./config.js");
-    const cfg = loadConfig();
+    const cfg = loadConfig(TEST_DIR);
 
     expect(cfg.ollamaSystemPrompt).toBe("Fix punctuation. Always check: a=b and c=d");
     expect(cfg.whisperModelPath).toBe("/path/to/model=base.bin");
@@ -414,7 +422,7 @@ describe("voice-ollama-tui config (F-1.2)", () => {
     );
 
     const { loadConfig } = await import("./config.js");
-    const cfg = loadConfig();
+    const cfg = loadConfig(TEST_DIR);
 
     expect(cfg.ollamaSystemPrompt).toBe("Fix #1: check punctuation");
   });
