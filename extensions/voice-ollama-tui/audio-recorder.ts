@@ -406,9 +406,16 @@ function findWasapiAudioDevice(ffmpegPath?: string): Promise<string | null> {
     });
 
     child.on("close", (code) => {
-      const rawPreview = output.slice(0, 2000).replace(/\r?\n/g, " | ");
+      const rawPreview = output.slice(0, 3000).replace(/\r?\n/g, " | ");
       debugLog(`findWasapiAudioDevice raw output (code=${code}):\n${output}`);
-      notifyUser(`🎙 wasapi exit=${code} output=${rawPreview || "(empty)"}`, "info");
+      notifyUser(`🎙 wasapi-list exit=${code} out=${rawPreview || "(empty)"}`, "info");
+
+      // Detect missing wasapi support: ffmpeg prints "Unknown input format: 'wasapi'".
+      if (/Unknown input format/i.test(output)) {
+        notifyUser("🎙 ffmpeg собран БЕЗ поддержки wasapi", "error");
+        onDone(null);
+        return;
+      }
 
       const lines = output.split(/\r?\n/);
       let inCapture = false;
@@ -451,6 +458,45 @@ function findWasapiAudioDevice(ffmpegPath?: string): Promise<string | null> {
       try { child.kill(); } catch { /* ignore */ }
       onDone(null);
     }, 8_000).unref?.();
+  });
+}
+
+/**
+ * Log which input device formats this ffmpeg build supports (dshow, wasapi,
+ * etc.). Runs `ffmpeg -devices` and notifies the user with the relevant lines.
+ */
+function logFfmpegDevices(ffmpegPath?: string): Promise<void> {
+  const command = ffmpegPath && fs.existsSync(ffmpegPath) ? ffmpegPath : "ffmpeg";
+
+  return new Promise<void>((resolve) => {
+    let output = "";
+    const child = spawn(command, ["-devices"], {
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+    });
+
+    child.stdout?.on("data", (chunk: Buffer) => {
+      output += chunk.toString("utf-8");
+    });
+    child.stderr?.on("data", (chunk: Buffer) => {
+      output += chunk.toString("utf-8");
+    });
+
+    child.on("error", () => resolve());
+    child.on("close", () => {
+      const lines = output.split(/\r?\n/).map((l) => l.trim());
+      const indevs = lines.filter((l) => /^D\s/i.test(l));
+      notifyUser(
+        `🎙 ffmpeg indevs: ${indevs.join(", ") || "(none)"} | has_dshow=${/dshow/i.test(output)} has_wasapi=${/wasapi/i.test(output)}`,
+        "info",
+      );
+      resolve();
+    });
+
+    setTimeout(() => {
+      try { child.kill(); } catch { /* ignore */ }
+      resolve();
+    }, 5_000).unref?.();
   });
 }
 
@@ -760,6 +806,8 @@ export async function recordAudio(options: RecordAudioOptions = {}): Promise<str
   let effectiveAudioDevice: string | undefined;
   let wasapiDevice: string | undefined;
   if (process.platform === "win32" && !userDevice) {
+    // First, log which input devices this ffmpeg build supports.
+    await logFfmpegDevices(binPath);
     effectiveAudioDevice = (await findWindowsAudioDevice(binPath)) ?? undefined;
     if (!effectiveAudioDevice) {
       notifyUser("🎙 Не удалось определить микрофон через dshow, пробую wasapi", "warning");
