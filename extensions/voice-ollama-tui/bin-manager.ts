@@ -9,7 +9,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { execSync } from "node:child_process";
-import { parseTarGzip } from "nanotar";
+import * as tar from "tar";
 import { getExtensionDir } from "./config.js";
 import { VoiceError } from "./errors.js";
 
@@ -516,36 +516,18 @@ async function extractArchive(
 ): Promise<void> {
   fs.mkdirSync(extractDir, { recursive: true });
 
-  // Use nanotar for cross-platform tar.gz extraction. The system tar command
-  // is unreliable on Windows (cmd.exe tar may fail on -xzf), so a pure-JS
-  // parser avoids external CLI dependencies.
-  onStatus?.("[extract] reading archive");
-  const archiveData = fs.readFileSync(archivePath);
-  onStatus?.(`[extract] archive size ${archiveData.length} bytes, parsing...`);
-
-  let files;
-  try {
-    files = await parseTarGzip(archiveData);
-  } catch (parseErr) {
-    const detail = parseErr instanceof Error ? parseErr.message : String(parseErr);
-    const stack = parseErr instanceof Error ? parseErr.stack : "";
-    onStatus?.(`[extract] parse error: ${detail}\n${stack}`);
-    throw parseErr;
-  }
-
-  onStatus?.(`[extract] ${files.length} entries`);
-  let written = 0;
-  for (const file of files) {
-    if (file.type !== "file" || !file.data) continue;
-
-    // nanotar names include the top-level directory prefix from the archive,
-    // e.g. "voice-ollama-tui-ffmpeg-bin-windows-x64/ffmpeg.exe".
-    const relativeName = file.name.replace(/^[^/]+\//, "");
-    const outPath = path.join(extractDir, relativeName);
-
-    fs.mkdirSync(path.dirname(outPath), { recursive: true });
-    fs.writeFileSync(outPath, file.data);
-    written += 1;
-  }
-  onStatus?.(`[extract] wrote ${written} file(s)`);
+  // Use the 'tar' npm package for cross-platform tar.gz extraction.
+  // It is the same battle-tested library used by npm itself and works on
+  // Windows without relying on the system tar CLI.
+  onStatus?.("[extract] extracting archive with tar package");
+  await tar.x({
+    file: archivePath,
+    cwd: extractDir,
+    strip: 1,
+    gzip: true,
+    onwarn: (code, message) => {
+      onStatus?.(`[extract] tar warn ${code}: ${message}`);
+    },
+  });
+  onStatus?.("[extract] extraction complete");
 }
