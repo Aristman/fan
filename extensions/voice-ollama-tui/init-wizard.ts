@@ -131,6 +131,7 @@ export async function runVoiceInitWizard(ctx: ExtensionCommandContext): Promise<
 					ctx.ui.setStatus("voice-ollama-tui", "🎙 Скачивание whisper-cli...");
 					ctx.ui.notify("Скачиваю whisper-cli из FAN Store...", "info");
 					const binPath = await downloadWhisperBinary(platform, {
+						onStatus: (msg) => ctx.ui.notify(msg, "info"),
 						onProgress: ({ downloaded, total }) => {
 							const pct = total > 0 ? Math.round((downloaded / total) * 100) : 0;
 							ctx.ui.setStatus(
@@ -189,6 +190,7 @@ export async function runVoiceInitWizard(ctx: ExtensionCommandContext): Promise<
 					ctx.ui.setStatus("voice-ollama-tui", "🎙 Скачивание ffmpeg...");
 					ctx.ui.notify("Скачиваю ffmpeg из FAN Store...", "info");
 					const binPath = await downloadFfmpegBinary(platform, {
+						onStatus: (msg) => ctx.ui.notify(msg, "info"),
 						onProgress: ({ downloaded, total }) => {
 							const pct = total > 0 ? Math.round((downloaded / total) * 100) : 0;
 							ctx.ui.setStatus(

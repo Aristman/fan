@@ -78,6 +78,11 @@ export interface DownloadProgress {
   total: number;
 }
 
+export interface DownloadOptions {
+  onProgress?: (progress: DownloadProgress) => void;
+  onStatus?: (message: string) => void;
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -282,9 +287,7 @@ export function hasLocalFfmpegBinary(platform?: Platform): boolean {
  */
 export async function downloadFfmpegBinary(
   platform?: Platform,
-  options?: {
-    onProgress?: (progress: DownloadProgress) => void;
-  },
+  options?: DownloadOptions,
 ): Promise<string> {
   const p = platform ?? getCurrentPlatform();
   if (!p) {
@@ -312,29 +315,43 @@ export async function downloadFfmpegBinary(
   fs.mkdirSync(tempDir, { recursive: true });
   fs.mkdirSync(binDir, { recursive: true });
 
+  const status = (msg: string) => options?.onStatus?.(`[ffmpeg] ${msg}`);
+
   try {
-    await downloadFile(url, archivePath, options?.onProgress);
-    await extractArchive(archivePath, extractDir, p);
+    status(`Скачивание архива: ${url}`);
+    await downloadFile(url, archivePath, options);
+    const archiveSize = fs.statSync(archivePath).size;
+    status(`Архив скачан: ${archiveSize} байт`);
+
+    status("Распаковка архива...");
+    await extractArchive(archivePath, extractDir, p, status);
+    status("Архив распакован");
 
     const extractedBinPath = path.join(extractDir, pkgName, FFMPEG_BINARY_NAMES[p]);
+    status(`Поиск бинарника: ${extractedBinPath}`);
     if (!fs.existsSync(extractedBinPath)) {
       throw new VoiceError(
         `Binary not found inside downloaded archive: ${extractedBinPath}`,
       );
     }
 
+    status("Копирование бинарника...");
     fs.copyFileSync(extractedBinPath, binPath);
     if (process.platform !== "win32") {
       fs.chmodSync(binPath, 0o755);
     }
+    status(`Бинарник сохранён: ${binPath}`);
 
     return binPath;
   } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    const stack = err instanceof Error ? err.stack : "";
+    status(`Ошибка: ${detail}\n${stack}`);
     if (err instanceof VoiceError) {
       throw err;
     }
     throw new VoiceError(
-      `Failed to download ffmpeg binary from ${url}: ${err instanceof Error ? err.message : String(err)}`,
+      `Failed to download ffmpeg binary from ${url}: ${detail}`,
     );
   } finally {
     try {
@@ -356,9 +373,7 @@ export async function downloadFfmpegBinary(
  */
 export async function downloadWhisperBinary(
   platform?: Platform,
-  options?: {
-    onProgress?: (progress: DownloadProgress) => void;
-  },
+  options?: DownloadOptions,
 ): Promise<string> {
   const p = platform ?? getCurrentPlatform();
   if (!p) {
@@ -386,29 +401,43 @@ export async function downloadWhisperBinary(
   fs.mkdirSync(tempDir, { recursive: true });
   fs.mkdirSync(binDir, { recursive: true });
 
+  const status = (msg: string) => options?.onStatus?.(`[whisper] ${msg}`);
+
   try {
-    await downloadFile(url, archivePath, options?.onProgress);
-    await extractArchive(archivePath, extractDir, p);
+    status(`Скачивание архива: ${url}`);
+    await downloadFile(url, archivePath, options);
+    const archiveSize = fs.statSync(archivePath).size;
+    status(`Архив скачан: ${archiveSize} байт`);
+
+    status("Распаковка архива...");
+    await extractArchive(archivePath, extractDir, p, status);
+    status("Архив распакован");
 
     const extractedBinPath = path.join(extractDir, pkgName, BINARY_NAMES[p]);
+    status(`Поиск бинарника: ${extractedBinPath}`);
     if (!fs.existsSync(extractedBinPath)) {
       throw new VoiceError(
         `Binary not found inside downloaded archive: ${extractedBinPath}`,
       );
     }
 
+    status("Копирование бинарника...");
     fs.copyFileSync(extractedBinPath, binPath);
     if (process.platform !== "win32") {
       fs.chmodSync(binPath, 0o755);
     }
+    status(`Бинарник сохранён: ${binPath}`);
 
     return binPath;
   } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    const stack = err instanceof Error ? err.stack : "";
+    status(`Ошибка: ${detail}\n${stack}`);
     if (err instanceof VoiceError) {
       throw err;
     }
     throw new VoiceError(
-      `Failed to download whisper-cli binary from ${url}: ${err instanceof Error ? err.message : String(err)}`,
+      `Failed to download whisper-cli binary from ${url}: ${detail}`,
     );
   } finally {
     try {
@@ -426,8 +455,9 @@ export async function downloadWhisperBinary(
 async function downloadFile(
   url: string,
   destination: string,
-  onProgress?: (progress: DownloadProgress) => void,
+  options?: DownloadOptions,
 ): Promise<void> {
+  options?.onStatus?.(`[download] GET ${url}`);
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`HTTP ${response.status} ${response.statusText}`);
@@ -435,6 +465,7 @@ async function downloadFile(
 
   const contentLength = response.headers.get("content-length");
   const total = contentLength ? Number.parseInt(contentLength, 10) : 0;
+  options?.onStatus?.(`[download] content-length=${total}`);
 
   const reader = response.body?.getReader();
   if (!reader) {
@@ -451,13 +482,16 @@ async function downloadFile(
 
       downloaded += value.byteLength;
       await new Promise<void>((resolve, reject) => {
-        writeStream.write(Buffer.from(value.buffer), (err) => {
+        // Use Buffer.from(Uint8Array) to preserve byte offset/length.
+        // Buffer.from(value.buffer) would use the entire backing ArrayBuffer
+        // and corrupt archives whose chunks are views into a larger buffer.
+        writeStream.write(Buffer.from(value), (err) => {
           if (err) reject(err);
           else resolve();
         });
       });
 
-      onProgress?.({ downloaded, total });
+      options?.onProgress?.({ downloaded, total });
     }
 
     writeStream.end();
@@ -465,6 +499,7 @@ async function downloadFile(
       writeStream.on("finish", resolve);
       writeStream.on("error", reject);
     });
+    options?.onStatus?.(`[download] finished, wrote ${downloaded} bytes`);
   } catch (err) {
     writeStream.destroy();
     throw err;
@@ -477,15 +512,29 @@ async function extractArchive(
   archivePath: string,
   extractDir: string,
   _platform: Platform,
+  onStatus?: (message: string) => void,
 ): Promise<void> {
   fs.mkdirSync(extractDir, { recursive: true });
 
   // Use nanotar for cross-platform tar.gz extraction. The system tar command
   // is unreliable on Windows (cmd.exe tar may fail on -xzf), so a pure-JS
   // parser avoids external CLI dependencies.
+  onStatus?.("[extract] reading archive");
   const archiveData = fs.readFileSync(archivePath);
-  const files = await parseTarGzip(archiveData);
+  onStatus?.(`[extract] archive size ${archiveData.length} bytes, parsing...`);
 
+  let files;
+  try {
+    files = await parseTarGzip(archiveData);
+  } catch (parseErr) {
+    const detail = parseErr instanceof Error ? parseErr.message : String(parseErr);
+    const stack = parseErr instanceof Error ? parseErr.stack : "";
+    onStatus?.(`[extract] parse error: ${detail}\n${stack}`);
+    throw parseErr;
+  }
+
+  onStatus?.(`[extract] ${files.length} entries`);
+  let written = 0;
   for (const file of files) {
     if (file.type !== "file" || !file.data) continue;
 
@@ -496,5 +545,7 @@ async function extractArchive(
 
     fs.mkdirSync(path.dirname(outPath), { recursive: true });
     fs.writeFileSync(outPath, file.data);
+    written += 1;
   }
+  onStatus?.(`[extract] wrote ${written} file(s)`);
 }
