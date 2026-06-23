@@ -341,6 +341,8 @@ function spawnRecorder(
       stderr += chunk.toString("utf-8");
     });
 
+    debugLog(`spawnRecorder started command=${command} args=${args.join(" ")} outputPath=${ctx.outputPath}`);
+
     let removeAbortListener: (() => void) | undefined;
 
     const finalize = () => {

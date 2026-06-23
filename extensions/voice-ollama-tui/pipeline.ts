@@ -22,6 +22,7 @@ import { checkDependencies } from "./dependencies.js";
 import { showRecordingOverlay, showProcessingOverlay } from "./ui-overlay.js";
 import type { ProcessingOverlayController } from "./ui-overlay.js";
 import { recordAudio } from "./audio-recorder.js";
+import { getFfmpegPath } from "./dependencies.js";
 import { ensureWhisperModel } from "./model-downloader.js";
 import { transcribe } from "./whisper-service.js";
 import { improveText } from "./ollama-service.js";
@@ -128,14 +129,19 @@ export async function runVoicePipeline(
     // ── Step 1+2: Recording overlay + record audio simultaneously ───
     // Recording starts immediately; the overlay shows live progress and
     // the user can press Enter to stop or Escape to cancel.
+    const ffmpegPath = getFfmpegPath();
+    ctx.ui.notify(`🎙 Распознаю ffmpeg: ${ffmpegPath ?? "не найден"}`, "info");
+
     const { accepted, audioFile } = await showRecordingOverlay(ctx, {
       duration: config.recordDurationMax,
       audioDevice: config.audioDevice,
       signal: abortController.signal,
+      binPath: ffmpegPath,
     });
 
     if (!accepted || !audioFile) {
       // User cancelled with Escape or recording failed to produce a file
+      ctx.ui.notify("🎙 Запись отменена или не удалась (нет файла)", "warning");
       return;
     }
 

@@ -33,6 +33,8 @@ export interface RecordingOverlayOptions {
   audioDevice?: string;
   /** Optional AbortSignal to cancel recording in progress */
   signal?: AbortSignal;
+  /** Optional path to a local ffmpeg binary */
+  binPath?: string;
 }
 
 export type ProcessingStatus = "transcribing" | "ollama" | "done";
@@ -74,7 +76,7 @@ export async function showRecordingOverlay(
         tui,
         maxDuration,
         done,
-        { audioDevice: opts.audioDevice, signal: opts.signal },
+        { audioDevice: opts.audioDevice, signal: opts.signal, binPath: opts.binPath },
         ctx.ui.notify,
       );
       return component;
@@ -182,7 +184,7 @@ class RecordingOverlayComponent implements Focusable {
     private tui: TUI,
     private maxDuration: number,
     private done: (result: RecordingOverlayResult) => void,
-    private recorderOpts: { audioDevice?: string; signal?: AbortSignal },
+    private recorderOpts: { audioDevice?: string; signal?: AbortSignal; binPath?: string },
     private notify?: (message: string, type?: "info" | "warning" | "error") => void,
   ) {
     this.remaining = maxDuration;
@@ -238,6 +240,7 @@ class RecordingOverlayComponent implements Focusable {
       duration: this.maxDuration,
       audioDevice: this.recorderOpts.audioDevice,
       signal: this.recordingSignal(),
+      binPath: this.recorderOpts.binPath,
     };
 
     this.recordingPromise = recordAudio(recordOptions)

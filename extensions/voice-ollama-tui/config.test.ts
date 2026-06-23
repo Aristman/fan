@@ -537,6 +537,7 @@ describe("voice-ollama-tui extension entry (F-1.1)", () => {
 
     // Mock dependencies so the handler proceeds past the check
     vi.doMock("./dependencies.js", () => ({
+      getFfmpegPath: vi.fn().mockReturnValue("ffmpeg"),
       checkDependencies: () => ({
         ok: true,
         missing: [],

@@ -76,6 +76,7 @@ function createMocks(overrides?: {
   const merged = { ...fns, ...overrides };
 
   vi.doMock("./dependencies.js", () => ({
+    getFfmpegPath: vi.fn().mockReturnValue("ffmpeg"),
     checkDependencies: merged.checkDependencies,
   }));
 
@@ -319,9 +320,10 @@ describe("voice-ollama-tui pipeline (F-4.3)", () => {
 
     await (runVoicePipeline as any)(ctx, makeMinimalConfig());
 
-    expect(ctx.ui.notify).toHaveBeenCalledTimes(1);
-    expect(ctx.ui.notify.mock.calls[0][0]).toContain("Unexpected TUI crash");
-    expect(ctx.ui.notify.mock.calls[0][1]).toBe("error");
+    const errorCalls = ctx.ui.notify.mock.calls.filter((c: any) => c[1] === "error");
+    expect(errorCalls.length).toBe(1);
+    expect(errorCalls[0][0]).toContain("Unexpected TUI crash");
+    expect(errorCalls[0][1]).toBe("error");
 
     // Should not proceed past the failed step
     expect(fns.recordAudio).not.toHaveBeenCalled();
