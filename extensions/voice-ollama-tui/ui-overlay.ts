@@ -314,6 +314,14 @@ class RecordingOverlayComponent {
     const secs = this.remaining % 60;
     const timerStr = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
 
+    // Progress bar fills from left as recording approaches maxDuration
+    const progress = Math.max(0, Math.min(1, 1 - this.remaining / this.maxDuration));
+    const barLen = Math.max(1, innerW - 4);
+    const filled = Math.round(barLen * progress);
+    const empty = barLen - filled;
+    const progressBar =
+      th.fg("accent", "█".repeat(filled)) + th.fg("dim", "░".repeat(empty));
+
     const lines: string[] = [];
 
     // Top border
@@ -322,20 +330,25 @@ class RecordingOverlayComponent {
     // Title row
     lines.push(
       th.fg("border", "│") +
-        padLine(` ${th.fg("error", "🎙")} ${th.fg("accent", "Recording...")}    ${th.fg("dim", timerStr)} `) +
+        padLine(` ${th.fg("error", "🎙")} ${th.fg("accent", "Запись...")}    ${th.fg("dim", timerStr)} `) +
         th.fg("border", "│"),
     );
 
     // Activity indicator (pulsing bar — MEDIUM-02)
     const bar = this.activityIndicator();
     lines.push(
-      th.fg("border", "│") + padLine(` ${bar}  Recording `) + th.fg("border", "│"),
+      th.fg("border", "│") + padLine(` ${bar}  Идёт запись `) + th.fg("border", "│"),
+    );
+
+    // Progress bar
+    lines.push(
+      th.fg("border", "│") + padLine(` ${progressBar} `) + th.fg("border", "│"),
     );
 
     // Instructions
     lines.push(
       th.fg("border", "│") +
-        padLine(` ${th.fg("dim", "Press Enter to finish, Esc to cancel")} `) +
+        padLine(` ${th.fg("dim", "Enter — завершить, Esc — отменить")} `) +
         th.fg("border", "│"),
     );
 

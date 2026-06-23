@@ -160,7 +160,7 @@ describe("voice-ollama-tui ui-overlay (F-2.2)", () => {
     const fullText = stripAnsi(rendered.join("\n"));
 
     // Should contain recording-related status
-    expect(fullText).toContain("Recording");
+    expect(fullText).toContain("Запись");
     expect(fullText).toContain("🎙");
 
     // Should contain instructions
