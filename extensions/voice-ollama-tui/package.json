@@ -7,7 +7,7 @@
     "name": "voice-ollama-tui",
     "type": "extension",
     "displayName": "Voice Input for TUI (Ollama)",
-    "description": "Record voice, transcribe with whisper.cpp, optionally improve via Ollama, insert text into TUI editor. Includes /voice init setup wizard and automatic whisper-cli binary download.",
+    "description": "Голосовой ввод в TUI FAN: запись аудио, распознавание через whisper.cpp, опциональное улучшение текста через Ollama. Включает мастер настройки /voice init с автозагрузкой бинарника whisper-cli.",
     "version": "1.2.0",
     "entry": "index.ts",
     "author": "FAN Research & Spec Generator",

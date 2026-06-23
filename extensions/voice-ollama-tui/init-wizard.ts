@@ -22,9 +22,11 @@ import { listOllamaModels } from "./ollama-service.js";
 import { ensureWhisperModel } from "./model-downloader.js";
 import {
   downloadWhisperBinary,
+  getBinaryDownloadInfo,
   getCurrentPlatform,
   getLocalBinaryPath,
   hasLocalBinary,
+  isWhisperCliInPath,
 } from "./bin-manager.js";
 
 // ---------------------------------------------------------------------------
@@ -90,19 +92,32 @@ export async function runVoiceInitWizard(ctx: ExtensionCommandContext): Promise<
 	if (!depStatus.ok && depStatus.missing.includes("whisper-cli")) {
 		const platform = getCurrentPlatform();
 		if (platform && !hasLocalBinary()) {
+			const info = await getBinaryDownloadInfo(platform);
+			const sizeText = info?.sizeBytes
+				? `размер ~${formatBytes(info.sizeBytes)}`
+				: "размер будет определён при скачивании";
+
 			ctx.ui.notify(
-				"whisper-cli не найден. Можно скачать готовый бинарник из FAN Store.",
+				`whisper-cli не найден. Для ${platform} доступен готовый бинарник (${sizeText}).`,
 				"info",
 			);
-			const download = await ctx.ui.confirm(
-				"Скачать whisper-cli?",
-				`whisper.cpp (whisper-cli) не найден в PATH.\n\nДля платформы ${platform} доступен готовый бинарник в FAN Store.\n\nСкачать и установить whisper-cli автоматически?`,
-			);
+
+			const message = [
+				"whisper.cpp (whisper-cli) не найден в PATH.",
+				"",
+				`Для вашей платформы — ${platform} — можно автоматически скачать готовый бинарник whisper-cli (${sizeText}).`,
+				"",
+				"Бинарник будет загружен из FAN Store и сохранён локально в директории расширения.",
+				"",
+				"Скачать и установить whisper-cli?",
+			].join("\n");
+
+			const download = await ctx.ui.confirm("Скачать whisper-cli?", message);
 			if (download) {
 				try {
 					ctx.ui.setStatus("voice-ollama-tui", "🎙 Скачивание whisper-cli...");
 					ctx.ui.notify("Скачиваю whisper-cli из FAN Store...", "info");
-					const binPath = await downloadWhisperBinary({
+					const binPath = await downloadWhisperBinary(platform, {
 						onProgress: ({ downloaded, total }) => {
 							const pct = total > 0 ? Math.round((downloaded / total) * 100) : 0;
 							ctx.ui.setStatus(
