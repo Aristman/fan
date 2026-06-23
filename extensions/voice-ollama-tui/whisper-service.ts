@@ -16,6 +16,21 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import { WhisperError } from "./errors.js";
 
+let _notifyFn: ((message: string, type?: "info" | "warning" | "error") => void) | undefined;
+
+/** Set a notify callback so whisper diagnostics are visible in the TUI. */
+export function setWhisperNotify(notify: (message: string, type?: "info" | "warning" | "error") => void): void {
+  _notifyFn = notify;
+}
+
+function notifyUser(message: string, type?: "info" | "warning" | "error"): void {
+  try {
+    _notifyFn?.(message, type);
+  } catch {
+    // ignore
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -102,8 +117,21 @@ export async function transcribe(
     );
   }
 
-  // Validate model file exists
+  // Validate model file exists and report its size (corrupt/truncated
+  // downloads are a common cause of whisper-cli load failures).
   ensureModelExists(modelPath);
+  try {
+    const modelSize = fs.statSync(modelPath).size;
+    notifyUser(`🎙 whisper model: ${modelPath} (${modelSize} bytes)`, "info");
+    if (modelSize < 1_000_000) {
+      notifyUser(
+        `⚠️ Модель подозрительно маленькая (${modelSize} байт). Возможно, скачивание было прервано.`,
+        "warning",
+      );
+    }
+  } catch {
+    // Best-effort; ensureModelExists already handles the missing case.
+  }
 
   // Build whisper-cli arguments
   // Use custom flags if provided (LOW-02), otherwise use defaults
@@ -117,6 +145,8 @@ export async function transcribe(
       ];
 
   return new Promise<string>((resolve, reject) => {
+    notifyUser(`🎙 whisper-cli: ${binPath} ${args.join(" ")}`, "info");
+
     const child = spawn(binPath, args, {
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -155,9 +185,12 @@ export async function transcribe(
 
     child.on("close", (code) => {
       if (code !== 0) {
-        const detail = stderr.trim()
-          ? `: ${stderr.slice(0, 500)}`
-          : "";
+        // whisper-cli prints load/runtime errors to stderr, but some Windows
+        // builds print diagnostics to stdout. Surface both for diagnosis.
+        const combined = (stderr + "\n" + stdout).trim();
+        const detail = combined ? `: ${combined.slice(0, 1000)}` : " (no output)";
+        notifyUser(`🎙 whisper-cli stderr: ${stderr.slice(0, 500) || "(empty)"}`, "error");
+        notifyUser(`🎙 whisper-cli stdout: ${stdout.slice(0, 500) || "(empty)"}`, "error");
         reject(
           new WhisperError(
             `whisper-cli exited with code ${code}${detail}`,

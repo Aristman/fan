@@ -580,6 +580,7 @@ describe("voice-ollama-tui extension entry (F-1.1)", () => {
     // Mock whisper-service to return a recognised text
     vi.doMock("./whisper-service.js", () => ({
       transcribe: vi.fn().mockResolvedValue("привет мир"),
+      setWhisperNotify: vi.fn(),
     }));
 
     // Mock model-downloader to skip actual download

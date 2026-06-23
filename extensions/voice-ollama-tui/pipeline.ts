@@ -24,7 +24,7 @@ import type { ProcessingOverlayController } from "./ui-overlay.js";
 import { recordAudio, setRecorderNotify } from "./audio-recorder.js";
 import { getFfmpegPath, setDependencyNotify } from "./dependencies.js";
 import { ensureWhisperModel } from "./model-downloader.js";
-import { transcribe } from "./whisper-service.js";
+import { transcribe, setWhisperNotify } from "./whisper-service.js";
 import { improveText } from "./ollama-service.js";
 import type { ImproveTextResult } from "./ollama-service.js";
 import { insertTranscript } from "./editor-utils.js";
@@ -120,6 +120,7 @@ export async function runVoicePipeline(
   // can surface their internal path-resolution diagnostics in the TUI.
   setRecorderNotify(ctx.ui.notify);
   setDependencyNotify(ctx.ui.notify);
+  setWhisperNotify(ctx.ui.notify);
 
   if (!ensureDependencies(ctx, config)) {
     return;

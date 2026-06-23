@@ -97,6 +97,7 @@ function createMocks(overrides?: {
 
   vi.doMock("./whisper-service.js", () => ({
     transcribe: merged.transcribe,
+    setWhisperNotify: vi.fn(),
   }));
 
   vi.doMock("./ollama-service.js", () => ({
