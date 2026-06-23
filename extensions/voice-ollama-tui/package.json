@@ -1,6 +1,6 @@
 {
   "name": "voice-ollama-tui",
-  "version": "1.2.5",
+  "version": "1.2.6",
   "type": "module",
   "main": "index.ts",
   "fan": {
@@ -8,7 +8,7 @@
     "type": "extension",
     "displayName": "Voice Input for TUI (Ollama)",
     "description": "Голосовой ввод в TUI FAN: запись аудио, распознавание через whisper.cpp, опциональное улучшение текста через Ollama. Включает мастер настройки /voice init с автозагрузкой бинарника whisper-cli.",
-    "version": "1.2.5",
+    "version": "1.2.6",
     "entry": "index.ts",
     "author": "FAN Research & Spec Generator",
     "tags": ["tui", "voice", "ollama", "whisper", "input"]
