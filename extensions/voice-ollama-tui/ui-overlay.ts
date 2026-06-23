@@ -173,6 +173,8 @@ class RecordingOverlayComponent implements Focusable {
   private finished = false;
   private pulseTick = 0;
   private recordingPromise: Promise<string | undefined> | null = null;
+  private localAbortController = new AbortController();
+  private externalAbortCleanup: (() => void) | undefined;
 
   constructor(
     private theme: Theme,
@@ -190,20 +192,40 @@ class RecordingOverlayComponent implements Focusable {
     if (signal) {
       if (signal.aborted) {
         this.abortRecording();
-        this.finish({ accepted: false });
+        void this.finish({ accepted: false });
       } else {
-        const onAbort = () => {
-          this.abortRecording();
-          this.finish({ accepted: false });
+        const onExternalAbort = () => {
+          this.localAbortController.abort();
+          void this.finish({ accepted: false });
         };
-        signal.addEventListener("abort", onAbort, { once: true });
-        const origDispose = this.dispose.bind(this);
-        this.dispose = () => {
-          signal.removeEventListener("abort", onAbort);
-          origDispose();
-        };
+        signal.addEventListener("abort", onExternalAbort, { once: true });
+        this.externalAbortCleanup = () => signal.removeEventListener("abort", onExternalAbort);
       }
     }
+  }
+
+  /**
+   * Create a combined AbortSignal from the local overlay controller and the
+   * external pipeline signal. Stopping the local controller lets us stop the
+   * recording on Enter while still respecting an external abort.
+   */
+  private recordingSignal(): AbortSignal {
+    if (!this.recorderOpts.signal) {
+      return this.localAbortController.signal;
+    }
+
+    const controller = new AbortController();
+    const onAbort = () => controller.abort();
+
+    if (this.localAbortController.signal.aborted || this.recorderOpts.signal.aborted) {
+      controller.abort();
+      return controller.signal;
+    }
+
+    this.localAbortController.signal.addEventListener("abort", onAbort, { once: true });
+    this.recorderOpts.signal.addEventListener("abort", onAbort, { once: true });
+
+    return controller.signal;
   }
 
   /**
@@ -213,7 +235,7 @@ class RecordingOverlayComponent implements Focusable {
     const recordOptions: RecordAudioOptions = {
       duration: this.maxDuration,
       audioDevice: this.recorderOpts.audioDevice,
-      signal: this.recorderOpts.signal,
+      signal: this.recordingSignal(),
     };
 
     this.recordingPromise = recordAudio(recordOptions)
@@ -226,18 +248,12 @@ class RecordingOverlayComponent implements Focusable {
   }
 
   /**
-   * Abort the in-progress recording if possible.
+   * Abort the in-progress recording. Used when Enter/Escape is pressed or
+   * the external signal aborts.
    */
   private abortRecording(): void {
-    // The recorder observes this.recorderOpts.signal, so aborting the signal
-    // will terminate the recorder process.
-    if (!this.recorderOpts.signal?.aborted) {
-      try {
-        // We don't own the signal, so we cannot abort it here. The pipeline
-        // owns the AbortController. We only react to abort events above.
-      } catch {
-        // ignore
-      }
+    if (!this.localAbortController.signal.aborted) {
+      this.localAbortController.abort();
     }
   }
 
@@ -284,11 +300,13 @@ class RecordingOverlayComponent implements Focusable {
     if (this.finished) return;
     this.finished = true;
     this.stopTimer();
+    this.externalAbortCleanup?.();
 
     let audioFile: string | undefined;
 
     if (result.accepted) {
-      // Wait for the recorder to finish and return the file path.
+      // Stop the recorder so it finalizes the file, then wait for the path.
+      this.abortRecording();
       audioFile = (await this.recordingPromise) ?? undefined;
       if (!audioFile) {
         // Recording did not produce a file — treat as cancelled.
@@ -296,7 +314,8 @@ class RecordingOverlayComponent implements Focusable {
         return;
       }
     } else {
-      // User cancelled; the recorder will observe the abort signal and reject.
+      // User cancelled; abort the recorder and ignore the resulting error.
+      this.abortRecording();
       this.recordingPromise?.catch(() => undefined);
     }
 
@@ -382,6 +401,8 @@ class RecordingOverlayComponent implements Focusable {
 
   dispose(): void {
     this.stopTimer();
+    this.externalAbortCleanup?.();
+    this.abortRecording();
   }
 }
 
