@@ -12,7 +12,7 @@
  */
 
 import type { ExtensionContext, Theme } from "@itone/fan-coding-agent";
-import { matchesKey, type TUI, type KeybindingsManager } from "@itone/fan-tui";
+import { matchesKey, type TUI, type KeybindingsManager, type Focusable } from "@itone/fan-tui";
 import { recordAudio, type RecordAudioOptions } from "./audio-recorder.js";
 
 // ---------------------------------------------------------------------------
@@ -158,9 +158,11 @@ export function showProcessingOverlay(
 // Component: RecordingOverlayComponent
 // ---------------------------------------------------------------------------
 
-class RecordingOverlayComponent {
+class RecordingOverlayComponent implements Focusable {
+  public focused = false;
   private remaining: number;
   private timerId: ReturnType<typeof setInterval> | null = null;
+  private animationTimer: ReturnType<typeof setInterval> | null = null;
   private finished = false;
   private pulseTick = 0;
   private recordingPromise: Promise<string | undefined> | null = null;
@@ -248,13 +250,13 @@ class RecordingOverlayComponent {
       this.remaining--;
       if (this.remaining <= 0) {
         this.stopTimer();
-        this.finish({ accepted: true });
+        void this.finish({ accepted: true });
       } else {
         this.tui.requestRender();
       }
     }, 1000);
     // Increase animation speed for smoother activity indicator
-    setInterval(() => {
+    this.animationTimer = setInterval(() => {
       this.pulseTick = (this.pulseTick + 1) % 24;
       this.tui.requestRender();
     }, 120);
@@ -264,6 +266,10 @@ class RecordingOverlayComponent {
     if (this.timerId !== null) {
       clearInterval(this.timerId);
       this.timerId = null;
+    }
+    if (this.animationTimer !== null) {
+      clearInterval(this.animationTimer);
+      this.animationTimer = null;
     }
   }
 
