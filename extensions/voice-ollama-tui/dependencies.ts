@@ -129,8 +129,17 @@ function checkWhisperCli(): boolean {
  */
 function debugLog(message: string): void {
 	try {
-		const logPath = path.join(os.tmpdir(), "voice-ollama-debug.log");
-		fs.appendFileSync(logPath, `${new Date().toISOString()} ${message}\n`);
+		const lines = `${new Date().toISOString()} ${message}\n`;
+		// Try multiple locations for cross-platform observability.
+		for (const dir of [os.tmpdir(), path.join(process.env.HOME ?? process.env.USERPROFILE ?? os.tmpdir(), ".fan")]) {
+			try {
+				if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+				fs.appendFileSync(path.join(dir, "voice-ollama-debug.log"), lines);
+				break;
+			} catch {
+				// try next location
+			}
+		}
 	} catch {
 		// ignore
 	}
@@ -197,8 +206,10 @@ export function checkAudioDevice(): boolean {
 			// Resolve the ffmpeg binary to use: prefer locally downloaded, then PATH.
 			// After a clean install ffmpeg is not in PATH yet, so the local binary
 			// is the only way to enumerate devices without requiring a manual install.
-			const ffmpegPath = getFfmpegPath() ?? "ffmpeg";
-			debugLog(`checkAudioDevice using ffmpeg path: ${ffmpegPath}`);
+			const rawFfmpegPath = getFfmpegPath() ?? "ffmpeg";
+			// Quote the path on Windows so spaces/slashes do not break cmd.exe.
+			const ffmpegPath = rawFfmpegPath.includes(" ") ? `"${rawFfmpegPath}"` : rawFfmpegPath;
+			debugLog(`checkAudioDevice using ffmpeg path: ${rawFfmpegPath} (quoted: ${ffmpegPath})`);
 
 			// Windows: list dshow audio capture devices. Do NOT prefix with
 			// LC_ALL=C — cmd.exe does not understand it and the spawn fails.
@@ -225,7 +236,7 @@ export function checkAudioDevice(): boolean {
 				// quoted device name or audio label, assume an input exists.
 				const found = hasAudioSection && (hasQuotedDevice || hasAudioLabel || hasAudioPin);
 				debugLog(`checkAudioDevice dshow parsed: audioSection=${hasAudioSection} quoted=${hasQuotedDevice} audioLabel=${hasAudioLabel} pin=${hasAudioPin} => ${found}`);
-				return found;
+				if (found) return true;
 			} catch (dshowErr) {
 				debugLog(`checkAudioDevice dshow failed: ${(dshowErr as Error).message}`);
 			}
@@ -237,7 +248,10 @@ export function checkAudioDevice(): boolean {
 					'powershell -NoProfile -Command "Get-CimInstance Win32_SoundDevice | Select-Object Name"',
 					{ encoding: "utf-8", timeout: 10_000 },
 				);
-				const hasDevice = out.trim().split(/\r?\n/).length > 1;
+				debugLog(`checkAudioDevice powershell output:\n${out}`);
+				const lines = out.trim().split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
+				// Header "Name" plus at least one device line means audio hardware exists.
+				const hasDevice = lines.length > 1 && lines.some((l) => l !== "Name");
 				debugLog(`checkAudioDevice powershell sound devices found=${hasDevice}`);
 				return hasDevice;
 			} catch (psErr) {

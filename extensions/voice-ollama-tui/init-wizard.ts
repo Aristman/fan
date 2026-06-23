@@ -247,6 +247,10 @@ export async function runVoiceInitWizard(ctx: ExtensionCommandContext): Promise<
 			"Аудиоустройство не найдено. Проверьте подключение микрофона.",
 			"warning",
 		);
+		// Best-effort detection can fail on Windows for many reasons (no PATH
+		// ffmpeg yet, terminal permissions, dshow quirks). Don't block the
+		// wizard; just warn and let the user continue. The actual recording
+		// will fail later with a clear error if there really is no device.
 		const proceed = await ctx.ui.confirm(
 			"Аудиоустройство",
 			"⚠️ Не удалось найти аудиоустройство ввода.\n\nПроверьте, что микрофон подключён и настроен.\n\nПродолжить настройку?",
