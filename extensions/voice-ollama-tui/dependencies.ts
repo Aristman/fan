@@ -209,10 +209,23 @@ export function checkAudioDevice(): boolean {
 					`${ffmpegPath} -f dshow -list_devices true -i dummy 2>&1`,
 					{ encoding: "utf-8", timeout: 10_000 },
 				);
-				debugLog(`checkAudioDevice dshow output length=${out.length}`);
-				// dshow output contains "DirectShow audio devices" and then a list
-				// of devices. Look for either the section header or any audio pin.
-				return /audio devices/i.test(out) || /\[dshow @/.test(out);
+				debugLog(`checkAudioDevice dshow output:\n${out}`);
+
+				// ffmpeg dshow output on Windows looks like:
+				// [dshow @ ...] DirectShow audio devices
+				// [dshow @ ...]  "Microphone (Realtek(R) Audio)"
+				// [dshow @ ...]    Alternative name "..."
+				// Some builds append "(audio)" after the device name.
+				const hasAudioSection = /DirectShow audio devices/i.test(out);
+				const hasQuotedDevice = /"[^"]+"/.test(out);
+				const hasAudioPin = /\[dshow @/.test(out);
+				const hasAudioLabel = /\(audio\)/i.test(out);
+
+				// Be permissive: if we see the audio section and at least one
+				// quoted device name or audio label, assume an input exists.
+				const found = hasAudioSection && (hasQuotedDevice || hasAudioLabel || hasAudioPin);
+				debugLog(`checkAudioDevice dshow parsed: audioSection=${hasAudioSection} quoted=${hasQuotedDevice} audioLabel=${hasAudioLabel} pin=${hasAudioPin} => ${found}`);
+				return found;
 			} catch (dshowErr) {
 				debugLog(`checkAudioDevice dshow failed: ${(dshowErr as Error).message}`);
 			}
