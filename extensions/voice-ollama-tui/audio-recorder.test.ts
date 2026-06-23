@@ -242,7 +242,7 @@ describe("voice-ollama-tui audio recorder (F-2.1)", () => {
     });
   });
 
-  // ── TC-F-2.1-3: abort signal terminates recording ───────────────────
+  // ── TC-F-2.1-3: abort signal terminates recording with SIGINT ──────
   it("TC-F-2.1-3: abort signal correctly terminates the process", async () => {
     // Use "pending" so the spawn doesn't resolve on its own
     setupSpawnMock([{ kind: "pending" }]);
@@ -258,16 +258,24 @@ describe("voice-ollama-tui audio recorder (F-2.1)", () => {
       expect(vi.mocked(spawn)).toHaveBeenCalled();
     });
 
+    // Override existsSync so the "abort + file exists" safety net does not
+    // kick in — we want to verify the error path.
+    vi.mocked(fs.existsSync).mockImplementation((p: unknown) => {
+      const pStr = String(p);
+      if (pStr.endsWith(".wav")) return false;
+      return true;
+    });
+
     controller.abort();
 
     const err = await promise.catch((e: unknown) => e);
     expect(err).toBeInstanceOf(mod.AudioRecorderError);
     expect(err).toMatchObject({ code: "RECORDER_ABORTED" });
 
-    // The child's kill should have been called
+    // The child's kill should have been called with SIGINT
     const child = vi.mocked(spawn).mock.results[0]?.value as MockChild | undefined;
     if (child) {
-      expect(child.kill).toHaveBeenCalledWith("SIGTERM");
+      expect(child.kill).toHaveBeenCalledWith("SIGINT");
     }
   });
 

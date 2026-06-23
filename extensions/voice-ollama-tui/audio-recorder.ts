@@ -251,7 +251,8 @@ function spawnRecorder(
       const onAbort = () => {
         if (finished) return;
         finished = true;
-        child.kill("SIGTERM");
+        // Use SIGINT so ffmpeg/sox/arecord flush and close the WAV file properly.
+        child.kill("SIGINT");
         const error = new AudioRecorderError(
           "Recording was aborted.",
           "RECORDER_ABORTED",
@@ -310,8 +311,18 @@ async function tryRecorder(
 
     return ctx.outputPath;
   } catch (err: unknown) {
-    // If it's an AudioRecorderError (process ran but failed), re-throw
+    // If it's an AudioRecorderError (process ran but failed), check for abort + existing file
     if (err instanceof AudioRecorderError) {
+      // If the error is abort-related but the output file already exists with content,
+      // the SIGINT likely let the recorder flush before exiting. Return the file.
+      if (
+        err.code === "RECORDER_ABORTED" &&
+        ctx.outputPath &&
+        fs.existsSync(ctx.outputPath) &&
+        fs.statSync(ctx.outputPath).size > 0
+      ) {
+        return ctx.outputPath;
+      }
       throw err;
     }
 
