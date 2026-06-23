@@ -123,22 +123,51 @@ function checkWhisperCli(): boolean {
 // ---------------------------------------------------------------------------
 
 /**
+ * Best-effort debug log to a temp file. Mirrors the helper in audio-recorder.ts
+ * so dependency diagnostics are also observable in /tmp/voice-ollama-debug.log.
+ */
+function debugLog(message: string): void {
+	try {
+		const logPath = "/tmp/voice-ollama-debug.log";
+		fs.appendFileSync(logPath, `${new Date().toISOString()} ${message}\n`);
+	} catch {
+		// ignore
+	}
+}
+
+/**
+ * Execute a command and capture stdout+stderr. On Windows, `LC_ALL=C` is not
+ * passed because it is not a valid cmd.exe construct and may cause the spawn
+ * to fail before ffmpeg even starts.
+ */
+function execWithFallback(command: string, options: { encoding: "utf-8"; timeout: number; env?: NodeJS.ProcessEnv }): string {
+	return execSync(command, {
+		encoding: options.encoding,
+		timeout: options.timeout,
+		env: options.env,
+		windowsHide: true,
+	});
+}
+
+/**
  * Perform a basic check that the system has an accessible audio input device.
  * Uses platform-specific commands. Returns true if a device was found,
  * false on error or if the command is unavailable.
  * Results are NOT cached since device state can change.
  *
- * Commands are run with `LC_ALL=C` to avoid locale-dependent parsing, with
- * additional locale-agnostic fallbacks where available.
+ * Commands are run with `LC_ALL=C` on Unix to avoid locale-dependent parsing,
+ * with additional locale-agnostic fallbacks where available. On Windows the
+ * command is run directly (no shell locale prefix) because cmd.exe does not
+ * support it.
  */
 export function checkAudioDevice(): boolean {
 	const platform = process.platform;
 	try {
 		if (platform === "darwin") {
 			// macOS: list avfoundation devices
-			const out = execSync(
-				"LC_ALL=C ffmpeg -f avfoundation -list_devices true -i \"\" 2>&1",
-				{ encoding: "utf-8", timeout: 10_000 },
+			const out = execWithFallback(
+				"ffmpeg -f avfoundation -list_devices true -i \"\" 2>&1",
+				{ encoding: "utf-8", timeout: 10_000, env: { ...process.env, LC_ALL: "C" } },
 			);
 			// If output contains an audio device entry, it's likely working
 			return out.includes("Audio") || out.includes("microphone");
@@ -156,22 +185,48 @@ export function checkAudioDevice(): boolean {
 			}
 
 			// Linux: list alsa capture devices with forced C locale.
-			const out = execSync("LC_ALL=C arecord -l", {
+			const out = execWithFallback("arecord -l", {
 				encoding: "utf-8",
 				timeout: 10_000,
+				env: { ...process.env, LC_ALL: "C" },
 			});
 			return /\bcard\b/i.test(out);
 		}
 		if (platform === "win32") {
-			// Windows: try to list dshow devices
-			const out = execSync(
-				"LC_ALL=C ffmpeg -f dshow -list_devices true -i dummy 2>&1",
-				{ encoding: "utf-8", timeout: 10_000 },
-			);
-			return out.includes("Audio");
+			// Windows: list dshow audio capture devices. Do NOT prefix with
+			// LC_ALL=C — cmd.exe does not understand it and the spawn fails.
+			// The "dummy" input name is the documented placeholder for dshow
+			// device enumeration; some ffmpeg builds also accept "audio=dummy".
+			try {
+				const out = execWithFallback(
+					"ffmpeg -f dshow -list_devices true -i dummy 2>&1",
+					{ encoding: "utf-8", timeout: 10_000 },
+				);
+				debugLog(`checkAudioDevice dshow output length=${out.length}`);
+				// dshow output contains "DirectShow audio devices" and then a list
+				// of devices. Look for either the section header or any audio pin.
+				return /audio devices/i.test(out) || /\[dshow @/.test(out);
+			} catch (dshowErr) {
+				debugLog(`checkAudioDevice dshow failed: ${(dshowErr as Error).message}`);
+			}
+
+			// Fallback: use PowerShell to enumerate sound devices. This works on
+			// modern Windows even when ffmpeg's dshow enumeration is broken.
+			try {
+				const out = execWithFallback(
+					'powershell -NoProfile -Command "Get-CimInstance Win32_SoundDevice | Select-Object Name"',
+					{ encoding: "utf-8", timeout: 10_000 },
+				);
+				const hasDevice = out.trim().split(/\r?\n/).length > 1;
+				debugLog(`checkAudioDevice powershell sound devices found=${hasDevice}`);
+				return hasDevice;
+			} catch (psErr) {
+				debugLog(`checkAudioDevice powershell fallback failed: ${(psErr as Error).message}`);
+			}
 		}
 		return false;
-	} catch {
+	} catch (err) {
+		debugLog(`checkAudioDevice unexpected error: ${(err as Error).message}`);
 		return false;
 	}
 }

@@ -66,7 +66,7 @@ function mockConfig(overrides?: Record<string, unknown>) {
     ollamaBaseUrl: "http://localhost:11434",
     ollamaModel: undefined,
     ollamaSystemPrompt: "Fix punctuation.",
-    shortcut: "ctrl+space",
+    shortcut: "ctrl+shift+space",
     ...overrides,
   };
 }
@@ -116,7 +116,7 @@ describe("voice-ollama-tui smoke test", () => {
     // ── Shortcut registration ──────────────────────────────────────────
     expect(api.registerShortcut).toHaveBeenCalledTimes(1);
     expect(api.registerShortcut).toHaveBeenCalledWith(
-      "ctrl+space",
+      "ctrl+shift+space",
       expect.objectContaining({
         description: expect.stringContaining("voice input"),
         handler: expect.any(Function),
