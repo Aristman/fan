@@ -132,10 +132,10 @@ describe("voice-ollama-tui pipeline (F-4.3)", () => {
 
     await (runVoicePipeline as any)(ctx, makeMinimalConfig());
 
-    // After error, should call notify with error type
-    expect(ctx.ui.notify).toHaveBeenCalledTimes(1);
-    expect(ctx.ui.notify.mock.calls[0][0]).toContain("ffmpeg not found");
-    expect(ctx.ui.notify.mock.calls[0][1]).toBe("error");
+    // After error, should call notify with error type among debug notifications
+    const errorCalls = ctx.ui.notify.mock.calls.filter((c: any) => c[1] === "error");
+    expect(errorCalls.length).toBe(1);
+    expect(errorCalls[0][0]).toContain("ffmpeg not found");
   });
 
   // -----------------------------------------------------------------------
@@ -155,10 +155,10 @@ describe("voice-ollama-tui pipeline (F-4.3)", () => {
       (runVoicePipeline as any)(ctx, makeMinimalConfig()),
     ).resolves.toBeUndefined();
 
-    // Should show a notify with error type
-    expect(ctx.ui.notify).toHaveBeenCalledTimes(1);
-    expect(ctx.ui.notify.mock.calls[0][0]).toContain("WHISPER_FAILED");
-    expect(ctx.ui.notify.mock.calls[0][1]).toBe("error");
+    // Should show a notify with error type among debug notifications
+    const errorCalls = ctx.ui.notify.mock.calls.filter((c: any) => c[1] === "error");
+    expect(errorCalls.length).toBe(1);
+    expect(errorCalls[0][0]).toContain("WHISPER_FAILED");
 
     // insertTranscript should NOT be called (failed before that step)
     expect(fns.insertTranscript).not.toHaveBeenCalled();
@@ -181,9 +181,9 @@ describe("voice-ollama-tui pipeline (F-4.3)", () => {
 
     await (runVoicePipeline as any)(ctx, makeMinimalConfig());
 
-    expect(ctx.ui.notify).toHaveBeenCalledTimes(1);
-    expect(ctx.ui.notify.mock.calls[0][0]).toContain("Missing tools");
-    expect(ctx.ui.notify.mock.calls[0][1]).toBe("warning");
+    const warningCalls = ctx.ui.notify.mock.calls.filter((c: any) => c[1] === "warning");
+    expect(warningCalls.length).toBe(1);
+    expect(warningCalls[0][0]).toContain("Missing tools");
 
     // Should not proceed to record
     expect(fns.showRecordingOverlay).not.toHaveBeenCalled();
@@ -202,8 +202,9 @@ describe("voice-ollama-tui pipeline (F-4.3)", () => {
 
     await (runVoicePipeline as any)(ctx, makeMinimalConfig());
 
-    // Should not show any notification — cancellation is normal
-    expect(ctx.ui.notify).not.toHaveBeenCalled();
+    // Should not show any error notification — cancellation is normal
+    const errorCalls = ctx.ui.notify.mock.calls.filter((c: any) => c[1] === "error");
+    expect(errorCalls.length).toBe(0);
 
     // Should not proceed past recording overlay
     expect(fns.recordAudio).not.toHaveBeenCalled();
@@ -226,8 +227,9 @@ describe("voice-ollama-tui pipeline (F-4.3)", () => {
     expect(fns.insertTranscript).toHaveBeenCalledTimes(1);
     expect(fns.insertTranscript).toHaveBeenCalledWith(ctx, "привет мир");
 
-    // No errors
-    expect(ctx.ui.notify).not.toHaveBeenCalled();
+    // No error notifications
+    const errorCalls = ctx.ui.notify.mock.calls.filter((c: any) => c[1] === "error");
+    expect(errorCalls.length).toBe(0);
   });
 
   // -----------------------------------------------------------------------
@@ -252,7 +254,8 @@ describe("voice-ollama-tui pipeline (F-4.3)", () => {
     // insertTranscript should have been called with improved text
     expect(fns.insertTranscript).toHaveBeenCalledTimes(1);
     expect(fns.insertTranscript).toHaveBeenCalledWith(ctx, "Привет, мир! Как дела?");
-    expect(ctx.ui.notify).not.toHaveBeenCalled();
+    const errorCalls = ctx.ui.notify.mock.calls.filter((c: any) => c[1] === "error");
+    expect(errorCalls.length).toBe(0);
   });
 
   // -----------------------------------------------------------------------
@@ -271,9 +274,9 @@ describe("voice-ollama-tui pipeline (F-4.3)", () => {
 
     await (runVoicePipeline as any)(ctx, config);
 
-    // Should show warning about Ollama failure
-    expect(ctx.ui.notify).toHaveBeenCalledTimes(1);
-    expect(ctx.ui.notify.mock.calls[0][1]).toBe("warning");
+    // Should show warning about Ollama failure among debug notifications
+    const warningCalls = ctx.ui.notify.mock.calls.filter((c: any) => c[1] === "warning");
+    expect(warningCalls.length).toBeGreaterThanOrEqual(1);
 
     // Should still insert the original text (fallback)
     expect(fns.insertTranscript).toHaveBeenCalledTimes(1);
@@ -293,10 +296,10 @@ describe("voice-ollama-tui pipeline (F-4.3)", () => {
 
     await (runVoicePipeline as any)(ctx, makeMinimalConfig());
 
-    // Should show error about model download
-    expect(ctx.ui.notify).toHaveBeenCalledTimes(1);
-    expect(ctx.ui.notify.mock.calls[0][0]).toContain("Model download failed");
-    expect(ctx.ui.notify.mock.calls[0][1]).toBe("error");
+    // Should show error about model download among debug notifications
+    const errorCalls = ctx.ui.notify.mock.calls.filter((c: any) => c[1] === "error");
+    expect(errorCalls.length).toBe(1);
+    expect(errorCalls[0][0]).toContain("Model download failed");
 
     // Should not proceed to transcribe
     expect(fns.transcribe).not.toHaveBeenCalled();

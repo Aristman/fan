@@ -142,6 +142,7 @@ export async function runVoicePipeline(
     audioPath = audioFile;
 
     // ── Step 3: Ensure whisper model ─────────────────────────────────
+    ctx.ui.notify("🎙 Проверяю модель whisper...", "info");
     try {
       modelOverlay = showProcessingOverlay(ctx, "transcribing", { signal: abortController.signal });
 
@@ -155,6 +156,7 @@ export async function runVoicePipeline(
       safeCloseOverlay(modelOverlay);
       modelOverlay = undefined;
       ctx.ui.setStatus("voice-ollama-tui", "🎙 Ready");
+      ctx.ui.notify("🎙 Модель whisper готова", "info");
     } catch (modelErr) {
       safeCloseOverlay(modelOverlay);
       modelOverlay = undefined;
@@ -164,6 +166,7 @@ export async function runVoicePipeline(
     }
 
     // ── Step 4: Transcribe ──────────────────────────────────────────
+    ctx.ui.notify("🎙 Начинаю транскрибацию...", "info");
     processingOverlay = showProcessingOverlay(ctx, "transcribing", { signal: abortController.signal });
 
     let text: string;
@@ -183,8 +186,11 @@ export async function runVoicePipeline(
       return;
     }
 
+    ctx.ui.notify(`🎙 Распознано: "${text.slice(0, 80)}${text.length > 80 ? "..." : ""}"`, "info");
+
     // ── Step 5: Optional Ollama improvement (F-4.2) ─────────────────
     if (config.ollamaEnabled) {
+      ctx.ui.notify(`🎙 Отправляю в Ollama (${config.ollamaModel})...`, "info");
       processingOverlay.update("ollama");
 
       let result: ImproveTextResult;
@@ -199,6 +205,9 @@ export async function runVoicePipeline(
 
       if (result.usedOllama) {
         text = result.text;
+        ctx.ui.notify(`🎙 Ollama исправил текст: "${text.slice(0, 80)}${text.length > 80 ? "..." : ""}"`, "info");
+      } else {
+        ctx.ui.notify("🎙 Ollama не использовался, вставляю исходный текст", "info");
       }
     }
 
@@ -207,7 +216,9 @@ export async function runVoicePipeline(
     safeCloseOverlay(processingOverlay);
     processingOverlay = undefined;
 
+    ctx.ui.notify("🎙 Вставляю результат в строку ввода...", "info");
     insertTranscript(ctx, text);
+    ctx.ui.notify("🎙 Готово", "info");
 
     // Check if user or external signal aborted during processing
     if (abortController.signal.aborted) {
