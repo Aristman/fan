@@ -68,6 +68,16 @@ const LANGUAGE_OPTIONS = [
 	{ label: "Другой", value: "other" },
 ];
 
+const DEFAULT_RECORD_DURATION_MAX = 60;
+const DEFAULT_LANGUAGE = "auto";
+const DEFAULT_OLLAMA_ENABLED = false;
+const DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434";
+const DEFAULT_OLLAMA_MODEL = "llama3.2";
+const DEFAULT_OLLAMA_SYSTEM_PROMPT =
+	"You are a helpful assistant. Fix punctuation and obvious typos in the user's dictated text. Preserve the original meaning and language. Return ONLY the corrected text, nothing else.";
+const DEFAULT_SHORTCUT = "ctrl+space";
+const DEFAULT_AUDIO_DEVICE = "default";
+
 const DURATION_OPTIONS = [
 	{ label: "5 секунд", value: "5" },
 	{ label: "15 секунд", value: "15" },
@@ -208,7 +218,7 @@ export async function runVoiceInitWizard(ctx: ExtensionCommandContext): Promise<
 
 	// ── Шаг 8: Предложение /reload ─────────────────────────────────────
 	ctx.ui.notify(
-		"✅ Настройка завершена! Выполните /reload для применения шортката.",
+		`✅ Настройка завершена! Шорткат: ${state.shortcut}. Выполните /reload для применения.`,
 		"info",
 	);
 	ctx.ui.setStatus("voice-ollama-tui", "🎙 Настроено");
@@ -220,7 +230,11 @@ export async function runVoiceInitWizard(ctx: ExtensionCommandContext): Promise<
 
 async function stepLanguage(ctx: ExtensionCommandContext): Promise<WizardState> {
 	const langLabels = LANGUAGE_OPTIONS.map((o) => o.label);
-	const chosen = await ctx.ui.select("Выберите язык распознавания", langLabels);
+	const defaultLangLabel = LANGUAGE_OPTIONS[0].label;
+	const chosen = await ctx.ui.select(
+		"Выберите язык распознавания",
+		langLabels,
+	);
 	const selected = LANGUAGE_OPTIONS.find((o) => o.label === chosen) ?? LANGUAGE_OPTIONS[0];
 
 	let language = selected.value;
@@ -231,14 +245,13 @@ async function stepLanguage(ctx: ExtensionCommandContext): Promise<WizardState> 
 
 	return {
 		language,
-		recordDurationMax: 60,
-		ollamaEnabled: false,
-		ollamaBaseUrl: "http://localhost:11434",
-		ollamaModel: "llama3.2",
-		ollamaSystemPrompt:
-			"You are a helpful assistant. Fix punctuation and obvious typos in the user's dictated text. Preserve the original meaning and language. Return ONLY the corrected text, nothing else.",
-		shortcut: "ctrl+shift+v",
-		audioDevice: "",
+		recordDurationMax: DEFAULT_RECORD_DURATION_MAX,
+		ollamaEnabled: DEFAULT_OLLAMA_ENABLED,
+		ollamaBaseUrl: DEFAULT_OLLAMA_BASE_URL,
+		ollamaModel: DEFAULT_OLLAMA_MODEL,
+		ollamaSystemPrompt: DEFAULT_OLLAMA_SYSTEM_PROMPT,
+		shortcut: DEFAULT_SHORTCUT,
+		audioDevice: DEFAULT_AUDIO_DEVICE,
 	};
 }
 
@@ -248,13 +261,21 @@ async function stepLanguage(ctx: ExtensionCommandContext): Promise<WizardState> 
 
 async function stepDuration(ctx: ExtensionCommandContext, state: WizardState): Promise<void> {
 	const durLabels = DURATION_OPTIONS.map((o) => o.label);
-	const chosen = await ctx.ui.select("Максимальная длительность записи (сек)", durLabels);
+	const defaultLabel = DURATION_OPTIONS.find((o) => o.value === String(DEFAULT_RECORD_DURATION_MAX))?.label ??
+		DURATION_OPTIONS[3].label;
+	const chosen = await ctx.ui.select(
+		`Максимальная длительность записи (сек). По умолчанию: ${DEFAULT_RECORD_DURATION_MAX}`,
+		durLabels,
+	);
 	const selected = DURATION_OPTIONS.find((o) => o.label === chosen);
 
 	if (selected?.value === "custom") {
-		const custom = await ctx.ui.input("Длительность (5–300 секунд)", "60");
-		const parsed = Number.parseInt(custom?.trim() || "60", 10);
-		state.recordDurationMax = Number.isNaN(parsed) ? 60 : Math.max(5, Math.min(300, parsed));
+		const custom = await ctx.ui.input(
+			"Длительность (5–300 секунд)",
+			String(DEFAULT_RECORD_DURATION_MAX),
+		);
+		const parsed = Number.parseInt(custom?.trim() || String(DEFAULT_RECORD_DURATION_MAX), 10);
+		state.recordDurationMax = Number.isNaN(parsed) ? DEFAULT_RECORD_DURATION_MAX : Math.max(5, Math.min(300, parsed));
 	} else if (selected) {
 		state.recordDurationMax = Number.parseInt(selected.value, 10);
 	}
@@ -267,7 +288,7 @@ async function stepDuration(ctx: ExtensionCommandContext, state: WizardState): P
 async function stepOllama(ctx: ExtensionCommandContext, state: WizardState): Promise<void> {
 	const enableOllama = await ctx.ui.confirm(
 		"Подключить Ollama?",
-		"Ollama может улучшать распознанный текст: исправлять пунктуацию и очевидные опечатки.\n\nВключить постобработку через Ollama?",
+		`Ollama может улучшать распознанный текст: исправлять пунктуацию и очевидные опечатки.\n\nПо умолчанию: ${DEFAULT_OLLAMA_ENABLED ? "включено" : "отключено"}.\n\nВключить постобработку через Ollama?`,
 	);
 	if (!enableOllama) {
 		state.ollamaEnabled = false;
@@ -278,8 +299,8 @@ async function stepOllama(ctx: ExtensionCommandContext, state: WizardState): Pro
 
 	// Ввод baseUrl
 	let baseUrl = await ctx.ui.input(
-		"Адрес Ollama сервера",
-		"http://localhost:11434",
+		`Адрес Ollama сервера. По умолчанию: ${DEFAULT_OLLAMA_BASE_URL}`,
+		DEFAULT_OLLAMA_BASE_URL,
 	);
 	if (!baseUrl?.trim()) {
 		baseUrl = "http://localhost:11434";
@@ -307,15 +328,15 @@ async function stepOllama(ctx: ExtensionCommandContext, state: WizardState): Pro
 		state.ollamaModel = chosen || modelsResult.models[0];
 	} else {
 		const modelName = await ctx.ui.input(
-			"Название модели Ollama",
-			"llama3.2",
+			`Название модели Ollama. По умолчанию: ${DEFAULT_OLLAMA_MODEL}`,
+			DEFAULT_OLLAMA_MODEL,
 		);
-		state.ollamaModel = modelName?.trim() || "llama3.2";
+		state.ollamaModel = modelName?.trim() || DEFAULT_OLLAMA_MODEL;
 	}
 
 	// System prompt
 	const prompt = await ctx.ui.input(
-		"System prompt для Ollama (оставьте пустым для умолчания)",
+		`System prompt для Ollama (оставьте пустым для умолчания: ${DEFAULT_OLLAMA_MODEL})`,
 		"",
 	);
 	if (prompt?.trim()) {
@@ -329,10 +350,10 @@ async function stepOllama(ctx: ExtensionCommandContext, state: WizardState): Pro
 
 async function stepShortcut(ctx: ExtensionCommandContext, state: WizardState): Promise<void> {
 	const shortcut = await ctx.ui.input(
-		"Горячая клавиша для голосового ввода",
-		"ctrl+shift+v",
+		`Горячая клавиша для голосового ввода. По умолчанию: ${DEFAULT_SHORTCUT}`,
+		DEFAULT_SHORTCUT,
 	);
-	state.shortcut = shortcut?.trim() || "ctrl+shift+v";
+	state.shortcut = shortcut?.trim() || DEFAULT_SHORTCUT;
 }
 
 // ---------------------------------------------------------------------------
@@ -404,7 +425,7 @@ async function stepSaveConfig(ctx: ExtensionCommandContext, state: WizardState):
 		"# Generated by /voice-init wizard",
 		"",
 		"# Audio",
-		`AUDIO_DEVICE=${state.audioDevice || "default"}`,
+		`AUDIO_DEVICE=${state.audioDevice || DEFAULT_AUDIO_DEVICE}`,
 		`RECORD_DURATION_MAX=${state.recordDurationMax}`,
 		"",
 		"# Whisper",

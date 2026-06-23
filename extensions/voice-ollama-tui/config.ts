@@ -76,7 +76,7 @@ const DEFAULT_CONFIG: VoiceOllamaConfig = {
   ollamaBaseUrl: "http://localhost:11434",
   ollamaSystemPrompt:
     "You are a helpful assistant. Fix punctuation and obvious typos in the user's dictated text. Preserve the original meaning and language. Return ONLY the corrected text, nothing else.",
-  shortcut: "ctrl+shift+v",
+  shortcut: "ctrl+space",
 };
 
 export function getExtensionDir(): string {

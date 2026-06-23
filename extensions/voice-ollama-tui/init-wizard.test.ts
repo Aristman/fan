@@ -128,7 +128,7 @@ describe("voice-ollama-tui init-wizard (TC-VI)", () => {
         // We need to carefully order mocks.
         input: vi
           .fn()
-          .mockResolvedValueOnce("ctrl+shift+v"), // Step 5: шорткат
+          .mockResolvedValueOnce("ctrl+space"), // Step 5: шорткат
       },
     });
 
@@ -158,7 +158,7 @@ describe("voice-ollama-tui init-wizard (TC-VI)", () => {
 
     const inputMock = vi.fn().mockImplementation(() => {
       inputCall++;
-      return Promise.resolve("ctrl+shift+v"); // step 5
+      return Promise.resolve("ctrl+space"); // step 5
     });
 
     const customCtx = mockCtx({
@@ -202,7 +202,7 @@ describe("voice-ollama-tui init-wizard (TC-VI)", () => {
     expect(envContent).toContain("WHISPER_LANGUAGE=ru");
     expect(envContent).toContain("RECORD_DURATION_MAX=60");
     expect(envContent).toContain("OLLAMA_ENABLED=false");
-    expect(envContent).toContain("SHORTCUT=ctrl+shift+v");
+    expect(envContent).toContain("SHORTCUT=ctrl+space");
 
     // Final notification
     expect(notify).toHaveBeenCalledWith(
@@ -377,7 +377,7 @@ describe("voice-ollama-tui init-wizard (TC-VI)", () => {
     const inputMock = vi.fn().mockImplementation(() => {
       inputCall++;
       if (inputCall === 1) return Promise.resolve("http://localhost:11434"); // step 4: baseUrl
-      if (inputCall === 2) return Promise.resolve("ctrl+shift+v"); // step 5: shortcut
+      if (inputCall === 2) return Promise.resolve("ctrl+space"); // step 5: shortcut
       return Promise.resolve("");
     });
 
