@@ -39,6 +39,8 @@ interface RecorderContext {
   options: RecordAudioOptions;
   /** Resolved device name (Windows auto-discovery may populate this). */
   effectiveAudioDevice?: string;
+  /** Resolved WASAPI capture device name (Windows). */
+  wasapiDevice?: string;
   /**
    * Resolved path to the ffmpeg binary. Populated from options.binPath
    * if provided and the file exists, otherwise defaults to "ffmpeg".
@@ -149,12 +151,12 @@ const wasapiRecorder: Recorder = {
     if (process.platform !== "win32") return null;
 
     // wasapi uses Windows endpoint names, not dshow "audio=..." names.
-    // Ignore any stale dshow device from ctx.effectiveAudioDevice; use the
-    // user-provided wasapi device name or the system default endpoint.
-    const input =
+    // Use the discovered capture endpoint, or a user-provided wasapi device.
+    const userWasapi =
       ctx.options.audioDevice && ctx.options.audioDevice !== "default" && ctx.options.audioDevice !== "audio=default"
         ? ctx.options.audioDevice
-        : "default";
+        : undefined;
+    const input = ctx.wasapiDevice ?? userWasapi ?? "default";
 
     return [
       "-f", "wasapi",
@@ -356,6 +358,96 @@ function findWindowsAudioDevice(ffmpegPath?: string): Promise<string | null> {
     // Hard timeout: kill ffmpeg if it hangs during device enumeration.
     setTimeout(() => {
       debugLog("findWindowsAudioDevice enumeration timed out");
+      try { child.kill(); } catch { /* ignore */ }
+      onDone(null);
+    }, 8_000).unref?.();
+  });
+}
+
+/**
+ * Enumerate WASAPI audio capture devices on Windows using ffmpeg.
+ * Returns the first capture endpoint name, e.g. "Microphone (Realtek Audio)".
+ * Returns null if enumeration fails or no device found.
+ */
+function findWasapiAudioDevice(ffmpegPath?: string): Promise<string | null> {
+  if (process.platform !== "win32") return Promise.resolve(null);
+
+  const command = ffmpegPath && fs.existsSync(ffmpegPath) ? ffmpegPath : "ffmpeg";
+
+  return new Promise<string | null>((resolve) => {
+    let output = "";
+    let finished = false;
+
+    notifyUser(`🎙 Поиск микрофона WASAPI: ${command}`, "info");
+
+    const child = spawn(command, ["-list_devices", "true", "-f", "wasapi", "-i", "dummy"], {
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+    });
+
+    const onDone = (device: string | null) => {
+      if (finished) return;
+      finished = true;
+      resolve(device);
+    };
+
+    child.stdout?.on("data", (chunk: Buffer) => {
+      output += chunk.toString("utf-8");
+    });
+    child.stderr?.on("data", (chunk: Buffer) => {
+      output += chunk.toString("utf-8");
+    });
+
+    child.on("error", (err) => {
+      const msg = `findWasapiAudioDevice spawn error: ${err.message}`;
+      debugLog(msg);
+      notifyUser(`🎙 ${msg}`, "error");
+      onDone(null);
+    });
+
+    child.on("close", (code) => {
+      const rawPreview = output.slice(0, 2000).replace(/\r?\n/g, " | ");
+      debugLog(`findWasapiAudioDevice raw output (code=${code}):\n${output}`);
+      notifyUser(`🎙 wasapi exit=${code} output=${rawPreview || "(empty)"}`, "info");
+
+      const lines = output.split(/\r?\n/);
+      let inCapture = false;
+      const candidates: string[] = [];
+      for (const line of lines) {
+        // ffmpeg wasapi prints two sections:
+        //   "[wasapi @ ...] Output devices:"
+        //   "[wasapi @ ...] Input devices:" (capture)
+        if (/Output devices:/i.test(line)) {
+          inCapture = false;
+          continue;
+        }
+        if (/Input devices:/i.test(line)) {
+          inCapture = true;
+          continue;
+        }
+        if (inCapture) {
+          // Lines look like:  "[wasapi @ ...] "Microphone (Realtek Audio)""
+          const match = line.match(/"([^"]+)"\s*$/);
+          if (match && match[1].trim().length > 0) {
+            candidates.push(match[1].trim());
+          }
+        }
+      }
+
+      notifyUser(`🎙 Parsed wasapi input candidates: ${candidates.join("; ") || "(none)"}`, "info");
+
+      const mic = candidates.find((name) => /microphone|mic|микрофон/i.test(name));
+      const chosen = mic ?? candidates[0];
+      if (chosen) {
+        debugLog(`findWasapiAudioDevice selected: ${chosen}`);
+        onDone(chosen);
+        return;
+      }
+      onDone(null);
+    });
+
+    setTimeout(() => {
+      debugLog("findWasapiAudioDevice enumeration timed out");
       try { child.kill(); } catch { /* ignore */ }
       onDone(null);
     }, 8_000).unref?.();
@@ -666,24 +758,30 @@ export async function recordAudio(options: RecordAudioOptions = {}): Promise<str
       : undefined;
 
   let effectiveAudioDevice: string | undefined;
+  let wasapiDevice: string | undefined;
   if (process.platform === "win32" && !userDevice) {
     effectiveAudioDevice = (await findWindowsAudioDevice(binPath)) ?? undefined;
     if (!effectiveAudioDevice) {
-      notifyUser("🎙 Не удалось определить микрофон автоматически, пробую audio=none", "warning");
-      effectiveAudioDevice = "audio=none";
+      notifyUser("🎙 Не удалось определить микрофон через dshow, пробую wasapi", "warning");
+      wasapiDevice = (await findWasapiAudioDevice(binPath)) ?? undefined;
+      if (!wasapiDevice) {
+        notifyUser("🎙 WASAPI устройства тоже не найдены", "warning");
+      }
+      // Keep effectiveAudioDevice unset so dshow recorder returns null.
     }
   }
   notifyUser(
-    `🎙 recordAudio audioDevice=${options.audioDevice ?? "(unset)"} userDevice=${userDevice ?? "(auto)"} effective=${effectiveAudioDevice ?? getDefaultDeviceArgs()?.join(" ") ?? "(none)"}`,
+    `🎙 recordAudio audioDevice=${options.audioDevice ?? "(unset)"} userDevice=${userDevice ?? "(auto)"} effective=${effectiveAudioDevice ?? "(none)"} wasapi=${wasapiDevice ?? "(none)"}`,
     "info",
   );
-  debugLog(`recordAudio audioDevice=${options.audioDevice ?? "(unset)"} userDevice=${userDevice ?? "(auto)"} effective=${effectiveAudioDevice ?? "(none)"}`);
+  debugLog(`recordAudio audioDevice=${options.audioDevice ?? "(unset)"} userDevice=${userDevice ?? "(auto)"} effective=${effectiveAudioDevice ?? "(none)"} wasapi=${wasapiDevice ?? "(none)"}`);
 
   const ctx: RecorderContext = {
     outputPath,
     tempDir,
     options: { ...options, audioDevice: userDevice },
     effectiveAudioDevice,
+    wasapiDevice,
     binPath,
   };
 
