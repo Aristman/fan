@@ -46,6 +46,7 @@ export interface Args {
 	verbose?: boolean;
 	port?: number;
 	host?: string;
+	temperature?: number;
 	messages: string[];
 	fileArgs: string[];
 	/** Unknown flags (potentially extension flags) - map of flag name to value */
@@ -180,6 +181,13 @@ export function parseArgs(args: string[]): Args {
 			} else {
 				result.host = hostStr;
 			}
+		} else if (arg === "--temperature") {
+			const tempStr = args[++i];
+			if (!tempStr || Number.isNaN(Number(tempStr))) {
+				result.diagnostics.push({ type: "error", message: `--temperature requires a valid number` });
+			} else {
+				result.temperature = Number(tempStr);
+			}
 		} else if (arg === "--_server-daemon") {
 			// Internal flag: run server in daemon mode. Consumed silently.
 			result.mode = "server";
@@ -251,6 +259,7 @@ ${chalk.bold("Options:")}
   --mode <mode>                  Output mode: text (default), json, rpc, or server
   --port <port>                  Server port (default: 3456, used with --mode server)
   --host <host>                  Server bind address (default: localhost, used with --mode server)
+  --temperature <number>         Sampling temperature (0.0-1.0) for the model
   --web                          Start web server with dashboard (opens browser)
   --print, -p                    Non-interactive mode: process prompt and exit
   --continue, -c                 Continue previous session

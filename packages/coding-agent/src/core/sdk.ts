@@ -55,6 +55,8 @@ export interface CreateAgentSessionOptions {
 	model?: Model<any>;
 	/** Thinking level. Default: from settings, else 'medium' (clamped to model capabilities) */
 	thinkingLevel?: ThinkingLevel;
+	/** Sampling temperature (0.0-1.0). When omitted, uses model settings / provider default. */
+	temperature?: number;
 	/** Models available for cycling (Ctrl+P in interactive mode) */
 	scopedModels?: Array<{ model: Model<any>; thinkingLevel?: ThinkingLevel }>;
 
@@ -313,6 +315,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			systemPrompt: "",
 			model,
 			thinkingLevel,
+			temperature: options.temperature,
 			tools: [],
 		},
 		convertToLlm: convertToLlmWithBlockImages,

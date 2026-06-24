@@ -711,6 +711,11 @@ function buildSessionOptions(
 		options.thinkingLevel = parsed.thinking;
 	}
 
+	// Temperature from CLI
+	if (parsed.temperature !== undefined) {
+		options.temperature = parsed.temperature;
+	}
+
 	// Scoped models for Ctrl+P cycling
 	// Keep thinking level undefined when not explicitly set in the model pattern.
 	// Undefined means "inherit current session thinking level" during cycling.
