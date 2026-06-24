@@ -4,7 +4,7 @@
  * Verifies the main happy path:
  *   1. Config loads with defaults.
  *   2. /voice command is registered.
- *   3. ctrl+shift+v shortcut is registered.
+ *   3. f12 shortcut is registered.
  *   4. session_start / session_shutdown event handlers are registered.
  *   5. Running the /voice handler invokes the pipeline and inserts transcript.
  *
@@ -66,7 +66,7 @@ function mockConfig(overrides?: Record<string, unknown>) {
     ollamaBaseUrl: "http://localhost:11434",
     ollamaModel: undefined,
     ollamaSystemPrompt: "Fix punctuation.",
-    shortcut: "ctrl+shift+space",
+    shortcut: "f12",
     ...overrides,
   };
 }
@@ -116,7 +116,7 @@ describe("voice-ollama-tui smoke test", () => {
     // ── Shortcut registration ──────────────────────────────────────────
     expect(api.registerShortcut).toHaveBeenCalledTimes(1);
     expect(api.registerShortcut).toHaveBeenCalledWith(
-      "ctrl+shift+space",
+      "f12",
       expect.objectContaining({
         description: expect.stringContaining("voice input"),
         handler: expect.any(Function),
@@ -220,11 +220,7 @@ describe("voice-ollama-tui smoke test", () => {
     const ctx = mockCtx();
     await sessionStartHandler!({}, ctx);
 
-    expect(ctx.ui.setStatus).toHaveBeenCalledWith("voice-ollama-tui", "🎙 Ready");
-    expect(ctx.ui.notify).toHaveBeenCalledWith(
-      expect.stringContaining("Voice shortcut registered"),
-      "info",
-    );
+    expect(ctx.ui.setStatus).toHaveBeenCalledWith("voice-ollama-tui", "🎙 Готов");
   });
 
   it("session_start handler: warns when dependencies are missing", async () => {
@@ -258,13 +254,9 @@ describe("voice-ollama-tui smoke test", () => {
     const ctx = mockCtx();
     await sessionStartHandler!({}, ctx);
 
-    expect(ctx.ui.notify).toHaveBeenCalledWith(
-      expect.stringContaining("Missing tools"),
-      "warning",
-    );
     expect(ctx.ui.setStatus).toHaveBeenCalledWith(
       "voice-ollama-tui",
-      expect.stringContaining("Need"),
+      expect.stringContaining("Не хватает"),
     );
   });
 

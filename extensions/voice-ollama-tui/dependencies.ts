@@ -61,47 +61,39 @@ function checkTool(command: string, versionFlag: string): boolean {
 }
 
 const FFMPEG_INSTRUCTIONS = [
-	"ffmpeg, sox, or arecord is required for audio recording.",
+	"Для записи аудио нужен ffmpeg, sox или arecord.",
 	"",
-	"Install ffmpeg (recommended, cross-platform):",
+	"Установите ffmpeg (рекомендуется, кроссплатформенно):",
 	"  • macOS: brew install ffmpeg",
 	"  • Ubuntu/Debian: sudo apt install ffmpeg",
 	"  • Fedora: sudo dnf install ffmpeg",
 	"  • Windows (winget): winget install ffmpeg",
 	"  • Windows (choco): choco install ffmpeg",
 	"",
-	"Or install sox (cross-platform):",
+	"Либо установите sox (кроссплатформенно):",
 	"  • macOS: brew install sox",
 	"  • Ubuntu/Debian: sudo apt install sox",
 	"  • Fedora: sudo dnf install sox",
 	"",
-	"Or install arecord (alsa-utils, Linux-only):",
+	"Либо установите arecord (alsa-utils, только Linux):",
 	"  • Ubuntu/Debian: sudo apt install alsa-utils",
 	"  • Fedora: sudo dnf install alsa-utils",
 ];
 
 const WHISPER_INSTRUCTIONS = [
-	"whisper-cli (whisper.cpp) is required for speech recognition.",
+	"Для распознавания речи нужен whisper-cli (whisper.cpp).",
 	"",
-	"Install whisper.cpp:",
-	"  1. Clone: git clone https://github.com/ggerganov/whisper.cpp.git",
-	"  2. Build: cd whisper.cpp && make",
-	"  3. Copy the binary: cp whisper-cli /usr/local/bin/ (or add to PATH)",
+	"Установите whisper.cpp:",
+	"  1. git clone https://github.com/ggerganov/whisper.cpp.git",
+	"  2. cd whisper.cpp && make",
+	"  3. cp whisper-cli /usr/local/bin/ (или добавьте в PATH)",
 	"",
-	"Or download a pre-built release from:",
-	"  https://github.com/ggerganov/whisper.cpp/releases",
+	"Либо выполните /voice init — мастер скачает готовый бинарник автоматически.",
 ];
 
 function checkFfmpeg(): boolean {
 	const inPath = checkTool("ffmpeg", "-version");
 	const localExists = hasLocalFfmpegBinary();
-	let localPath: string | undefined;
-	try {
-		localPath = getLocalFfmpegPath();
-	} catch {
-		localPath = undefined;
-	}
-	depNotify(`🎙 checkFfmpeg pathInPath=${inPath} localPath=${localPath ?? "(none)"} localExists=${localExists}`, "info");
 	return inPath || localExists;
 }
 
@@ -305,22 +297,14 @@ export function checkAudioDevice(): boolean {
 export function getFfmpegPath(): string | undefined {
 	if (hasLocalFfmpegBinary()) {
 		try {
-			const localPath = getLocalFfmpegPath();
-			depNotify(`🎙 getFfmpegPath local=${localPath} exists=true`, "info");
-			return localPath;
+			return getLocalFfmpegPath();
 		} catch {
 			// fall through to PATH check
 		}
 	}
-	const localPath = (() => {
-		try { return getLocalFfmpegPath(); } catch { return undefined; }
-	})();
-	depNotify(`🎙 getFfmpegPath local=${localPath ?? "(none)"} exists=false`, "info");
 	if (checkTool("ffmpeg", "-version")) {
-		depNotify("🎙 getFfmpegPath falling back to ffmpeg in PATH", "warning");
 		return "ffmpeg";
 	}
-	depNotify("🎙 getFfmpegPath: no ffmpeg available", "error");
 	return undefined;
 }
 

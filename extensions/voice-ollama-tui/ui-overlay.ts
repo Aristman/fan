@@ -311,18 +311,14 @@ class RecordingOverlayComponent implements Focusable {
     let audioFile: string | undefined;
 
     if (result.accepted) {
-      this.notify?.("🎙 Завершаю запись...");
       // Stop the recorder so it finalizes the file, then wait for the path.
       this.abortRecording();
       audioFile = (await this.recordingPromise) ?? undefined;
-      this.notify?.(`🎙 overlay: recordingPromise resolved to ${audioFile ?? "undefined"}`);
       if (!audioFile) {
-        this.notify?.("🎙 Запись не удалась — файл не создан");
         // Recording did not produce a file — treat as cancelled.
         this.done({ accepted: false });
         return;
       }
-      this.notify?.("🎙 Файл записан: " + audioFile);
     } else {
       // User cancelled; abort the recorder and ignore the resulting error.
       this.abortRecording();
@@ -494,20 +490,20 @@ class ProcessingOverlayComponent {
       case "transcribing":
         return {
           icon: "🔊",
-          text: "Transcribing...",
-          subtext: "Processing audio via whisper.cpp",
+          text: "Распознавание...",
+          subtext: "Обработка аудио через whisper.cpp",
         };
       case "ollama":
         return {
           icon: "🤖",
-          text: "Improving text via Ollama...",
-          subtext: "Post-processing with language model",
+          text: "Улучшение текста через Ollama...",
+          subtext: "Постобработка языковой моделью",
         };
       case "done":
         return {
           icon: "✅",
-          text: "Done!",
-          subtext: "Text inserted into editor",
+          text: "Готово!",
+          subtext: "Текст вставлен в редактор",
         };
     }
   }

@@ -40,7 +40,7 @@ function makeMinimalConfig() {
     ollamaEnabled: false,
     ollamaBaseUrl: "http://localhost:11434",
     ollamaSystemPrompt: "Fix punctuation.",
-    shortcut: "ctrl+shift+v",
+    shortcut: "f12",
   };
 }
 
@@ -187,7 +187,7 @@ describe("voice-ollama-tui pipeline (F-4.3)", () => {
 
     const warningCalls = ctx.ui.notify.mock.calls.filter((c: any) => c[1] === "warning");
     expect(warningCalls.length).toBe(1);
-    expect(warningCalls[0][0]).toContain("Missing tools");
+    expect(warningCalls[0][0]).toContain("Не установлены");
 
     // Should not proceed to record
     expect(fns.showRecordingOverlay).not.toHaveBeenCalled();
@@ -303,7 +303,7 @@ describe("voice-ollama-tui pipeline (F-4.3)", () => {
     // Should show error about model download among debug notifications
     const errorCalls = ctx.ui.notify.mock.calls.filter((c: any) => c[1] === "error");
     expect(errorCalls.length).toBe(1);
-    expect(errorCalls[0][0]).toContain("Model download failed");
+    expect(errorCalls[0][0]).toContain("Не удалось загрузить модель");
 
     // Should not proceed to transcribe
     expect(fns.transcribe).not.toHaveBeenCalled();

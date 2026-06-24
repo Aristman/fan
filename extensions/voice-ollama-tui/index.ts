@@ -10,13 +10,13 @@ export default function (pi: ExtensionAPI) {
 
   const handler = async (ctx: any) => {
     try {
-      ctx.ui?.notify?.("🎙 Voice shortcut triggered", "info");
       await runVoicePipeline(ctx, config);
     } catch (err) {
       ctx.ui?.notify?.(
-        `Voice shortcut failed: ${err instanceof Error ? err.message : String(err)}`,
+        `🎙 Ошибка голосового ввода: ${err instanceof Error ? err.message : String(err)}`,
         "error",
       );
+      ctx.ui?.setStatus?.("voice-ollama-tui", "🎙 Ошибка");
       throw err;
     }
   };
@@ -42,31 +42,9 @@ export default function (pi: ExtensionAPI) {
     const status = checkDependencies(config);
     if (!status.ok) {
       const missingList = status.missing.join(", ");
-      ctx.ui.notify(
-        `Missing tools: ${missingList}. Install them for voice input to work.`,
-        "warning",
-      );
-      ctx.ui.setStatus("voice-ollama-tui", `🎙 Need: ${missingList}`);
+      ctx.ui.setStatus("voice-ollama-tui", `🎙 Не хватает: ${missingList}`);
     } else {
-      ctx.ui.notify(
-        `Voice shortcut registered: ${config.shortcut}`,
-        "info",
-      );
-      ctx.ui.setStatus("voice-ollama-tui", "🎙 Ready");
-    }
-  });
-
-  pi.on("session_start", async (_event, ctx) => {
-    const status = checkDependencies(config);
-    if (!status.ok) {
-      const missingList = status.missing.join(", ");
-      ctx.ui.notify(
-        `Missing tools: ${missingList}. Install them for voice input to work.`,
-        "warning",
-      );
-      ctx.ui.setStatus("voice-ollama-tui", `🎙 Need: ${missingList}`);
-    } else {
-      ctx.ui.setStatus("voice-ollama-tui", "🎙 Ready");
+      ctx.ui.setStatus("voice-ollama-tui", "🎙 Готов");
     }
   });
 

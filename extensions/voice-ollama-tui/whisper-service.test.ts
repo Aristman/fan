@@ -366,7 +366,7 @@ describe("voice-ollama-tui whisper service (F-3.1)", () => {
     await expect(promise).rejects.toMatchObject({
       name: "WhisperError",
       code: "WHISPER_FAILED",
-      message: expect.stringContaining("Audio file not found"),
+      message: expect.stringContaining("Аудиофайл не найден"),
     });
 
     // spawn should not have been called
@@ -390,7 +390,7 @@ describe("voice-ollama-tui whisper service (F-3.1)", () => {
     await expect(promise).rejects.toMatchObject({
       name: "WhisperError",
       code: "WHISPER_FAILED",
-      message: expect.stringContaining("exited with code 1"),
+      message: expect.stringContaining("завершился с кодом 1"),
     });
   });
 

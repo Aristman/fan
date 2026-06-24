@@ -79,8 +79,9 @@ function ensureDependencies(ctx: ExtensionContext, config: VoiceOllamaConfig): b
   const status = checkDependencies(config);
   if (!status.ok) {
     const missingList = status.missing.join(", ");
+    ctx.ui.setStatus("voice-ollama-tui", `🎙 Не хватает: ${missingList}`);
     ctx.ui.notify(
-      `Missing tools: ${missingList}. /voice will not work until installed. See instructions.`,
+      `🎙 Не установлены: ${missingList}. Выполните /voice init для настройки.`,
       "warning",
     );
   }
@@ -132,11 +133,8 @@ export async function runVoicePipeline(
   let modelOverlay: ProcessingOverlayController | undefined;
 
   try {
-    // ── Step 1+2: Recording overlay + record audio simultaneously ───
-    // Recording starts immediately; the overlay shows live progress and
-    // the user can press Enter to stop or Escape to cancel.
+    // ── Step 1+2: Запись ─────────────────────────────────────────────
     const ffmpegPath = getFfmpegPath();
-    ctx.ui.notify(`🎙 Распознаю ffmpeg: ${ffmpegPath ?? "не найден"}`, "info");
 
     const { accepted, audioFile } = await showRecordingOverlay(ctx, {
       duration: config.recordDurationMax,
@@ -146,40 +144,32 @@ export async function runVoicePipeline(
     });
 
     if (!accepted || !audioFile) {
-      // User cancelled with Escape or recording failed to produce a file
-      ctx.ui.notify("🎙 Запись отменена или не удалась (нет файла)", "warning");
+      ctx.ui.setStatus("voice-ollama-tui", "🎙 Готов");
       return;
     }
 
     audioPath = audioFile;
 
-    // ── Step 3: Ensure whisper model ─────────────────────────────────
-    ctx.ui.notify("🎙 Проверяю модель whisper...", "info");
+    // ── Step 3: Проверка модели whisper ────────────────────────────────
+    ctx.ui.setStatus("voice-ollama-tui", "🎙 Подготовка модели...");
+    modelOverlay = showProcessingOverlay(ctx, "transcribing", { signal: abortController.signal });
     try {
-      modelOverlay = showProcessingOverlay(ctx, "transcribing", { signal: abortController.signal });
-
       await ensureWhisperModel({
         modelPath: config.whisperModelPath,
         onProgress: (_downloaded, _total) => {
           // Overlay stays on "transcribing" during download
         },
       });
-
-      safeCloseOverlay(modelOverlay);
-      modelOverlay = undefined;
-      ctx.ui.setStatus("voice-ollama-tui", "🎙 Ready");
-      ctx.ui.notify("🎙 Модель whisper готова", "info");
     } catch (modelErr) {
       safeCloseOverlay(modelOverlay);
       modelOverlay = undefined;
-      ctx.ui.setStatus("voice-ollama-tui", "🎙 Model download failed");
-      ctx.ui.notify(`Model download failed: ${errorMessage(modelErr)}`, "error");
+      ctx.ui.setStatus("voice-ollama-tui", "🎙 Ошибка модели");
+      ctx.ui.notify(`🎙 Не удалось загрузить модель: ${errorMessage(modelErr)}`, "error");
       return;
     }
 
-    // ── Step 4: Transcribe ──────────────────────────────────────────
-    ctx.ui.notify("🎙 Начинаю транскрибацию...", "info");
-    processingOverlay = showProcessingOverlay(ctx, "transcribing", { signal: abortController.signal });
+    // ── Step 4: Транскрибация ───────────────────────────────────────
+    ctx.ui.setStatus("voice-ollama-tui", "🎙 Распознавание...");
 
     let text: string;
     try {
@@ -189,65 +179,56 @@ export async function runVoicePipeline(
         binPath: config.whisperBinPath,
       });
     } catch (transcribeErr) {
+      safeCloseOverlay(modelOverlay);
       safeCloseOverlay(processingOverlay);
-      processingOverlay = undefined;
-      ctx.ui.notify(`Transcription failed: ${errorMessage(transcribeErr)}`, "error");
-
-      // Cleanup temp audio
+      ctx.ui.setStatus("voice-ollama-tui", "🎙 Ошибка распознавания");
+      ctx.ui.notify(`🎙 Ошибка распознавания: ${errorMessage(transcribeErr)}`, "error");
       removePath(audioPath);
       return;
     }
 
-    ctx.ui.notify(`🎙 Распознано: "${text.slice(0, 80)}${text.length > 80 ? "..." : ""}"`, "info");
-
-    // ── Step 5: Optional Ollama improvement (F-4.2) ─────────────────
+    // ── Step 5: Опциональная постобработка Ollama ───────────────────
     if (config.ollamaEnabled) {
-      ctx.ui.notify(`🎙 Отправляю в Ollama (${config.ollamaModel})...`, "info");
+      processingOverlay = processingOverlay ?? showProcessingOverlay(ctx, "ollama", { signal: abortController.signal });
       processingOverlay.update("ollama");
+      ctx.ui.setStatus("voice-ollama-tui", "🎙 Постобработка (Ollama)...");
 
       let result: ImproveTextResult;
       try {
         result = await improveText(config, text, { signal: abortController.signal });
       } catch (ollamaErr) {
-        // improveText already has internal try/catch fallback, but
-        // wrap just in case of unexpected synchronous errors
-        ctx.ui.notify(`Ollama improvement failed: ${errorMessage(ollamaErr)}`, "warning");
+        ctx.ui.notify(`🎙 Ollama недоступен, вставляю исходный текст.`, "warning");
         result = { text, usedOllama: false };
       }
 
       if (result.usedOllama) {
         text = result.text;
-        ctx.ui.notify(`🎙 Ollama исправил текст: "${text.slice(0, 80)}${text.length > 80 ? "..." : ""}"`, "info");
-      } else {
-        ctx.ui.notify("🎙 Ollama не использовался, вставляю исходный текст", "info");
       }
     }
 
-    // ── Step 6: Done ────────────────────────────────────────────────
-    processingOverlay.update("done");
+    // ── Step 6: Готово ──────────────────────────────────────────────
+    safeCloseOverlay(modelOverlay);
     safeCloseOverlay(processingOverlay);
-    processingOverlay = undefined;
 
-    ctx.ui.notify("🎙 Вставляю результат в строку ввода...", "info");
     insertTranscript(ctx, text);
-    ctx.ui.notify("🎙 Готово", "info");
+    ctx.ui.setStatus("voice-ollama-tui", "🎙 Готово");
 
-    // Check if user or external signal aborted during processing
     if (abortController.signal.aborted) {
-      ctx.ui.notify("Voice input was cancelled.", "warning");
+      ctx.ui.setStatus("voice-ollama-tui", "🎙 Отменено");
       return;
     }
   } catch (err) {
-    // Global catch — any unexpected error in the entire pipeline
+    // Глобальный catch — любая непредвиденная ошибка
     safeCloseOverlay(modelOverlay);
     safeCloseOverlay(processingOverlay);
+    ctx.ui.setStatus("voice-ollama-tui", "🎙 Ошибка");
     try {
-      ctx.ui.notify(`Voice input failed: ${errorMessage(err)}`, "error");
+      ctx.ui.notify(`🎙 Ошибка голосового ввода: ${errorMessage(err)}`, "error");
     } catch {
-      // Best-effort notification. The pipeline itself must never propagate an error.
+      // Конвейер никогда не должен пробрасывать ошибку дальше.
     }
   } finally {
-    // ── Cleanup: remove temporary audio file if it exists ───────────
+    // ── Очистка: удалить временный аудиофайл ────────────────────────
     removePath(audioPath);
   }
 }

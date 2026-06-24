@@ -399,7 +399,7 @@ describe("voice-ollama-tui audio recorder (F-2.1)", () => {
       expect(err).toBeInstanceOf(AudioRecorderError);
       expect(err).toMatchObject({
         code: "RECORDER_FAILED",
-        message: expect.stringContaining("arecord exited with code 3"),
+        message: expect.stringContaining("arecord завершился с кодом 3"),
       });
     }
   });
@@ -415,7 +415,7 @@ describe("voice-ollama-tui audio recorder (F-2.1)", () => {
     expect(err).toBeInstanceOf(AudioRecorderError);
     expect(err).toMatchObject({
       code: "RECORDER_FAILED",
-      message: expect.stringContaining("empty file"),
+      message: expect.stringContaining("пустой файл"),
     });
   });
 
@@ -637,7 +637,7 @@ describe("voice-ollama-tui audio recorder fallback (F-2.3)", () => {
     expect(err).toBeInstanceOf(AudioRecorderError);
     expect(err).toMatchObject({
       code: "RECORDER_FAILED",
-      message: expect.stringContaining("arecord exited with code 2"),
+      message: expect.stringContaining("arecord завершился с кодом 2"),
     });
 
     // All three were called

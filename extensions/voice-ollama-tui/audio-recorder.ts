@@ -408,7 +408,6 @@ function findWindowsAudioDevice(ffmpegPath?: string): Promise<string | null> {
   if (process.platform !== "win32") return Promise.resolve(null);
 
   return listWindowsAudioDevices(ffmpegPath).then((candidates) => {
-    notifyUser(`🎙 Parsed dshow audio candidates: ${candidates.join("; ") || "(none)"}`, "info");
     if (candidates.length === 0) return null;
     const mic = candidates.find((name) => /microphone|mic|микрофон/i.test(name));
     const chosen = mic ?? candidates[0];
@@ -431,8 +430,6 @@ function findWasapiAudioDevice(ffmpegPath?: string): Promise<string | null> {
     let output = "";
     let finished = false;
 
-    notifyUser(`🎙 Поиск микрофона WASAPI: ${command}`, "info");
-
     const child = spawn(command, ["-list_devices", "true", "-f", "wasapi", "-i", "dummy"], {
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
@@ -452,20 +449,15 @@ function findWasapiAudioDevice(ffmpegPath?: string): Promise<string | null> {
     });
 
     child.on("error", (err) => {
-      const msg = `findWasapiAudioDevice spawn error: ${err.message}`;
-      debugLog(msg);
-      notifyUser(`🎙 ${msg}`, "error");
+      debugLog(`findWasapiAudioDevice spawn error: ${err.message}`);
       onDone(null);
     });
 
     child.on("close", (code) => {
-      const rawPreview = output.slice(0, 3000).replace(/\r?\n/g, " | ");
       debugLog(`findWasapiAudioDevice raw output (code=${code}):\n${output}`);
-      notifyUser(`🎙 wasapi-list exit=${code} out=${rawPreview || "(empty)"}`, "info");
 
       // Detect missing wasapi support: ffmpeg prints "Unknown input format: 'wasapi'".
       if (/Unknown input format/i.test(output)) {
-        notifyUser("🎙 ffmpeg собран БЕЗ поддержки wasapi", "error");
         onDone(null);
         return;
       }
@@ -493,8 +485,6 @@ function findWasapiAudioDevice(ffmpegPath?: string): Promise<string | null> {
           }
         }
       }
-
-      notifyUser(`🎙 Parsed wasapi input candidates: ${candidates.join("; ") || "(none)"}`, "info");
 
       const mic = candidates.find((name) => /microphone|mic|микрофон/i.test(name));
       const chosen = mic ?? candidates[0];
@@ -697,7 +687,6 @@ function spawnRecorder(
       stderr += chunk.toString("utf-8");
     });
 
-    notifyUser(`🎙 Recorder: starting ${command} ${args.join(" ")}`, "info");
     debugLog(`spawnRecorder started command=${command} args=${args.join(" ")} outputPath=${ctx.outputPath}`);
 
     let removeAbortListener: (() => void) | undefined;
@@ -736,7 +725,6 @@ function spawnRecorder(
       // Treat this as success only when we know the abort came from our signal.
       if (abortedBySignal) {
         if (outputSize > 0 || await waitForOutputFile(ctx.outputPath)) {
-          notifyUser(`🎙 Recorder: abort produced file size=${outputSize}`, "info");
           debugLog(`spawnRecorder treating non-zero exit as success due to abort + existing file`);
           resolve({ child, stderr });
           return;
@@ -744,10 +732,9 @@ function spawnRecorder(
       }
 
       const detail = stderr.trim() ? extractFfmpegError(stderr) : "(no stderr)";
-      notifyUser(`🎙 Recorder failed: code=${code} ${detail}`, "error");
       const msg = stderr.trim()
-        ? `${command} exited with code ${code}: ${stderr.slice(0, 500)}`
-        : `${command} exited with code ${code}`;
+        ? `${command} завершился с кодом ${code}: ${stderr.slice(0, 500)}`
+        : `${command} завершился с кодом ${code}`;
       const error = new AudioRecorderError(msg, "RECORDER_FAILED");
       reject(error);
     });
@@ -850,14 +837,14 @@ async function tryRecorder(
       const stat = fs.statSync(ctx.outputPath);
       if (stat.size === 0) {
         throw new AudioRecorderError(
-          `${recorder.name} produced an empty file.`,
+          `${recorder.name} создал пустой файл.`,
           "RECORDER_FAILED",
         );
       }
     } catch (err) {
       if (err instanceof AudioRecorderError) throw err;
       throw new AudioRecorderError(
-        `${recorder.name} completed but output file was not created.`,
+        `${recorder.name} завершился, но выходной файл не создан.`,
         "RECORDER_FAILED",
       );
     }
@@ -935,7 +922,6 @@ export async function recordAudio(options: RecordAudioOptions = {}): Promise<str
       binPath = "ffmpeg";
     }
   }
-  notifyUser(`🎙 recordAudio resolved binPath=${binPath} exists=${fs.existsSync(binPath)}`, "info");
   debugLog(`recordAudio binPath=${binPath}`);
 
   // On Windows, dshow requires an actual device name. Auto-discover one now.
@@ -957,26 +943,12 @@ export async function recordAudio(options: RecordAudioOptions = {}): Promise<str
     const indevs = await probeFfmpegIndevs(binPath);
     dshowSupported = indevs.dshow;
     wasapiSupported = indevs.wasapi;
-    notifyUser(
-      `🎙 ffmpeg indevs: has_dshow=${dshowSupported} has_wasapi=${wasapiSupported}`,
-      "info",
-    );
     effectiveAudioDevice = (await findWindowsAudioDevice(binPath)) ?? undefined;
     if (!effectiveAudioDevice) {
-      notifyUser("🎙 Не удалось определить микрофон через dshow, пробую wasapi", "warning");
       wasapiDevice = (await findWasapiAudioDevice(binPath)) ?? undefined;
-      if (!wasapiDevice) {
-        notifyUser("🎙 WASAPI устройства тоже не найдены", "warning");
-      }
       // Keep effectiveAudioDevice unset so dshow recorder returns null.
     }
   }
-  notifyUser(
-    `🎙 recordAudio audioDevice=${options.audioDevice ?? "(unset)"} userDevice=${userDevice ?? "(auto)"} effective=${effectiveAudioDevice ?? "(none)"} wasapi=${wasapiDevice ?? "(none)"}`,
-    "info",
-  );
-  debugLog(`recordAudio audioDevice=${options.audioDevice ?? "(unset)"} userDevice=${userDevice ?? "(auto)"} effective=${effectiveAudioDevice ?? "(none)"} wasapi=${wasapiDevice ?? "(none)"}`);
-
   const ctx: RecorderContext = {
     outputPath,
     tempDir,
@@ -1037,7 +1009,7 @@ export async function recordAudio(options: RecordAudioOptions = {}): Promise<str
 
   // No recorder available at all
   throw new AudioRecorderError(
-    "No audio recording tool found. Install ffmpeg for cross-platform audio recording:\n" +
+    "Не найден инструмент записи аудио. Установите ffmpeg для кроссплатформенной записи:\n" +
     "  • macOS: brew install ffmpeg\n" +
     "  • Ubuntu/Debian: sudo apt install ffmpeg\n" +
     "  • Fedora: sudo dnf install ffmpeg\n" +

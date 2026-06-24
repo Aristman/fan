@@ -6,7 +6,7 @@
  *   TC-F-1.2-2: Defaults when no config file exists
  *   TC-F-1.2-3: Invalid RECORD_DURATION_MAX clamped to default + warning
  *   TC-F-1.1-1: /voice command registered
- *   TC-F-1.1-2: ctrl+shift+space shortcut registered
+ *   TC-F-1.1-2: f12 shortcut registered
  *
  * Strategy:
  *   loadConfig() resolves its extension directory via import.meta.url,
@@ -112,7 +112,7 @@ describe("voice-ollama-tui config (F-1.2)", () => {
 
     expect(cfg.recordDurationMax).toBe(60);
     expect(cfg.ollamaEnabled).toBe(false);
-    expect(cfg.shortcut).toBe("ctrl+shift+space");
+    expect(cfg.shortcut).toBe("f12");
     expect(cfg.recordFormat).toBe("wav");
     expect(cfg.whisperBinPath).toBe("whisper-cli");
     expect(cfg.whisperLanguage).toBe("auto");
@@ -437,7 +437,7 @@ describe("voice-ollama-tui extension entry (F-1.1)", () => {
     vi.resetModules();
   });
 
-  it("registers /voice command and ctrl+shift+space shortcut (default export)", async () => {
+  it("registers /voice command and f12 shortcut (default export)", async () => {
     const registerCommand = vi.fn();
     const registerShortcut = vi.fn();
     const on = vi.fn();
@@ -465,7 +465,7 @@ describe("voice-ollama-tui extension entry (F-1.1)", () => {
         ollamaBaseUrl: "http://localhost:11434",
         ollamaModel: undefined,
         ollamaSystemPrompt: "Fix punctuation.",
-        shortcut: "ctrl+shift+space",
+        shortcut: "f12",
       }),
     }));
 
@@ -487,7 +487,7 @@ describe("voice-ollama-tui extension entry (F-1.1)", () => {
     // Shortcut registration
     expect(registerShortcut).toHaveBeenCalledTimes(1);
     expect(registerShortcut).toHaveBeenCalledWith(
-      "ctrl+shift+space",
+      "f12",
       expect.objectContaining({
         description: expect.stringContaining("voice input"),
       }),
@@ -531,7 +531,7 @@ describe("voice-ollama-tui extension entry (F-1.1)", () => {
         ollamaBaseUrl: "http://localhost:11434",
         ollamaModel: undefined,
         ollamaSystemPrompt: "Fix punctuation.",
-        shortcut: "ctrl+shift+space",
+        shortcut: "f12",
       }),
     }));
 
@@ -603,8 +603,7 @@ describe("voice-ollama-tui extension entry (F-1.1)", () => {
     // immediately, ctx.ui.custom is not invoked by the pipeline itself.
     expect(setEditorText).toHaveBeenCalledWith("привет мир");
     expect(getEditorText).toHaveBeenCalledTimes(1);
-    // notify is called with debug info message when shortcut triggered
-    expect(notify).toHaveBeenCalledWith("🎙 Voice shortcut triggered", "info");
+    // Shortcut handler no longer emits a debug notify; it runs the pipeline silently.
 
     // resetModules before the next test so doMock is not reused
     vi.resetModules();

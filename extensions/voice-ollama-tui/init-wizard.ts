@@ -80,7 +80,7 @@ const DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434";
 const DEFAULT_OLLAMA_MODEL = "llama3.2";
 const DEFAULT_OLLAMA_SYSTEM_PROMPT =
 	"You are a helpful assistant. Fix punctuation and obvious typos in the user's dictated text. Preserve the original meaning and language. Return ONLY the corrected text, nothing else.";
-const DEFAULT_SHORTCUT = "ctrl+shift+space";
+const DEFAULT_SHORTCUT = "f12";
 const DEFAULT_AUDIO_DEVICE = "default";
 
 const DURATION_OPTIONS = [

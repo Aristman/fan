@@ -70,15 +70,15 @@ function ensureModelExists(modelPath: string): void {
   try {
     if (!fs.existsSync(modelPath)) {
       throw new WhisperError(
-        `Whisper model not found at: ${modelPath}. ` +
-          `Download it or set WHISPER_MODEL_PATH in .env / config.json.`,
+        `Модель Whisper не найдена: ${modelPath}. ` +
+          `Скачайте её или укажите WHISPER_MODEL_PATH в .env / config.json.`,
         "WHISPER_MODEL_NOT_FOUND",
       );
     }
   } catch (err: unknown) {
     if (err instanceof WhisperError) throw err;
     throw new WhisperError(
-      `Failed to check model path "${modelPath}": ${(err as Error).message}`,
+      `Не удалось проверить путь к модели "${modelPath}": ${(err as Error).message}`,
       "WHISPER_MODEL_NOT_FOUND",
       { cause: err },
     );
@@ -112,7 +112,7 @@ export async function transcribe(
   // Validate input audio file exists
   if (!fs.existsSync(audioPath)) {
     throw new WhisperError(
-      `Audio file not found: ${audioPath}`,
+      `Аудиофайл не найден: ${audioPath}`,
       "WHISPER_FAILED",
     );
   }
@@ -122,7 +122,6 @@ export async function transcribe(
   ensureModelExists(modelPath);
   try {
     const modelSize = fs.statSync(modelPath).size;
-    notifyUser(`🎙 whisper model: ${modelPath} (${modelSize} bytes)`, "info");
     if (modelSize < 1_000_000) {
       notifyUser(
         `⚠️ Модель подозрительно маленькая (${modelSize} байт). Возможно, скачивание было прервано.`,
@@ -145,8 +144,6 @@ export async function transcribe(
       ];
 
   return new Promise<string>((resolve, reject) => {
-    notifyUser(`🎙 whisper-cli: ${binPath} ${args.join(" ")}`, "info");
-
     const child = spawn(binPath, args, {
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -166,8 +163,8 @@ export async function transcribe(
       if (err.code === "ENOENT") {
         reject(
           new WhisperError(
-            `whisper-cli is not installed or not found in PATH. ` +
-              `Install whisper.cpp and ensure whisper-cli is available.`,
+            `whisper-cli не установлен или не найден в PATH. ` +
+              `Установите whisper.cpp или выполните /voice init.`,
             "WHISPER_NOT_FOUND",
             { cause: err },
           ),
@@ -175,7 +172,7 @@ export async function transcribe(
       } else {
         reject(
           new WhisperError(
-            `whisper-cli process error: ${err.message}`,
+            `Ошибка процесса whisper-cli: ${err.message}`,
             "WHISPER_FAILED",
             { cause: err },
           ),
@@ -188,12 +185,10 @@ export async function transcribe(
         // whisper-cli prints load/runtime errors to stderr, but some Windows
         // builds print diagnostics to stdout. Surface both for diagnosis.
         const combined = (stderr + "\n" + stdout).trim();
-        const detail = combined ? `: ${combined.slice(0, 1000)}` : " (no output)";
-        notifyUser(`🎙 whisper-cli stderr: ${stderr.slice(0, 500) || "(empty)"}`, "error");
-        notifyUser(`🎙 whisper-cli stdout: ${stdout.slice(0, 500) || "(empty)"}`, "error");
+        const detail = combined ? `: ${combined.slice(0, 1000)}` : " (нет вывода)";
         reject(
           new WhisperError(
-            `whisper-cli exited with code ${code}${detail}`,
+            `whisper-cli завершился с кодом ${code}${detail}`,
             "WHISPER_FAILED",
           ),
         );

@@ -327,13 +327,13 @@ describe("voice-ollama-tui ui-overlay (F-2.2)", () => {
     const component = call!.component;
 
     const rendered = stripAnsi(component.render!(40).join("\n"));
-    expect(rendered).toContain("Transcribing");
+    expect(rendered).toContain("Распознавание");
     expect(rendered).toContain("🔊");
 
     // Controller can update status
     controller.update("ollama");
     const updated = stripAnsi(component.render!(40).join("\n"));
-    expect(updated).toContain("Improving");
+    expect(updated).toContain("Улучшение");
 
     // Controller close resolves the overlay
     controller.close();
@@ -354,7 +354,7 @@ describe("voice-ollama-tui ui-overlay (F-2.2)", () => {
     const component = call!.component;
 
     const rendered = stripAnsi(component.render!(40).join("\n"));
-    expect(rendered).toContain("Improving");
+    expect(rendered).toContain("Улучшение");
     expect(rendered).toContain("Ollama");
     expect(rendered).toContain("🤖");
 
