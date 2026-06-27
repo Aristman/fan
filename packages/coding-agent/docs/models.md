@@ -12,6 +12,10 @@ Add custom providers and models (Ollama, vLLM, LM Studio, proxies) via `~/.fan/a
 - [Overriding Built-in Providers](#overriding-built-in-providers)
 - [Per-model Overrides](#per-model-overrides)
 - [OpenAI Compatibility](#openai-compatibility)
+- [Adding Custom Providers Without Code Changes](#adding-custom-providers-without-code-changes)
+- [The `envVar` Field](#the-envvar-field)
+- [When Is `apiKey` Required?](#when-is-apikey-required)
+- [Limitations](#limitations)
 
 ## Minimal Example
 
@@ -134,7 +138,8 @@ Set `api` at provider level (default for all models) or model level (override pe
 |-------|-------------|
 | `baseUrl` | API endpoint URL |
 | `api` | API type (see above) |
-| `apiKey` | API key (see value resolution below) |
+| `apiKey` | API key (see value resolution below). Optional — see [When Is `apiKey` Required?](#when-is-apikey-required) |
+| `envVar` | Environment variable name for this provider's API key (e.g. `"MY_PROVIDER_KEY"`). Makes auth detection explicit — see [The `envVar` Field](#the-envvar-field) |
 | `headers` | Custom headers (see value resolution below) |
 | `authHeader` | Set `true` to add `Authorization: Bearer <apiKey>` automatically |
 | `models` | Array of model configurations |
@@ -237,6 +242,48 @@ Merge semantics:
 - Custom models are upserted by `id` within the provider.
 - If a custom model `id` matches a built-in model `id`, the custom model replaces that built-in model.
 - If a custom model `id` is new, it is added alongside built-in models.
+
+### Inheriting `baseUrl` and `api` from Built-in Models
+
+For built-in providers (like `zai`, `openai`, `anthropic`, etc.), you can add new model IDs
+without specifying `baseUrl` or `api` — they are inherited from the provider's existing
+built-in models:
+
+```json
+{
+  "providers": {
+    "zai": {
+      "models": [
+        { "id": "glm-5-turbo" },
+        { "id": "glm-5" }
+      ]
+    }
+  }
+}
+```
+
+The custom models inherit `baseUrl` and `api` from the first built-in `zai` model.
+`apiKey` can be provided via `models.json`, the `apiKey` field, or environment variable.
+
+When `baseUrl` or `api` are explicitly provided on the provider or model level, they take
+precedence over inherited values:
+
+```json
+{
+  "providers": {
+    "zai": {
+      "baseUrl": "https://custom-proxy.example.com/v1",
+      "api": "openai-completions",
+      "models": [
+        { "id": "glm-5" }
+      ]
+    }
+  }
+}
+```
+
+> **Note:** If the provider name does **not** match a built-in provider, `baseUrl` and `api`
+> are still required — they cannot be inherited.
 
 ## Per-model Overrides
 
@@ -390,3 +437,73 @@ Vercel AI Gateway example:
   }
 }
 ```
+
+## Adding Custom Providers Without Code Changes
+
+Any provider name can be used in `models.json`. The `api` field must be one of the supported API types (see [Supported APIs](#supported-apis)). The `baseUrl` field points to the provider's API endpoint.
+
+Example for a generic OpenAI-compatible provider:
+
+```json
+{
+  "providers": {
+    "my-provider": {
+      "api": "openai-completions",
+      "baseUrl": "https://api.example.com/v1",
+      "apiKey": "sk-...",
+      "models": [
+        { "id": "my-model" }
+      ]
+    }
+  }
+}
+```
+
+You can use any string as the provider key — there is no hardcoded allowlist. As long as the `api` type is supported, the provider will work.
+
+## The `envVar` Field
+
+The optional `envVar` field tells FAN which environment variable contains the API key for this provider. This is used for auth detection and availability display in `/model`.
+
+```json
+{
+  "providers": {
+    "my-provider": {
+      "api": "openai-completions",
+      "baseUrl": "https://api.example.com/v1",
+      "envVar": "MY_PROVIDER_API_KEY",
+      "models": [
+        { "id": "my-model" }
+      ]
+    }
+  }
+}
+```
+
+Without `envVar`, FAN will still try to look up credentials in `auth.json`, environment variables, or the `apiKey` field. But `envVar` makes the mapping from provider to environment variable explicit, which:
+
+- Enables accurate auth detection in `/model` availability checks.
+- Allows FAN to discover the API key even when `apiKey` is omitted from `models.json`.
+- Avoids ambiguity when the provider name does not match a known environment variable pattern.
+
+The `envVar` value is also forwarded to `getEnvApiKey()` so the provider can be found via environment lookup alongside built-in providers.
+
+## When Is `apiKey` Required?
+
+The `apiKey` field is **not strictly required** in `models.json`. FAN resolves credentials through a priority chain at request time:
+
+1. **Runtime override** — `--api-key` CLI flag (highest priority)
+2. **`auth.json`** — API key or OAuth token stored via `/login`
+3. **OAuth token** — Auto-refreshed bearer credentials
+4. **Environment variable** — Standard env vars (e.g. `OPENAI_API_KEY`) or the one named by `envVar`
+5. **`models.json` `apiKey`** — The literal string, env var name, or shell command from the provider config (lowest priority)
+
+If you omit `apiKey` entirely, FAN will search through `auth.json` and environment variables. If no credential is found at request time, FAN reports a clear auth error and the model becomes unavailable.
+
+For local servers (Ollama, LM Studio, vLLM) that do not require authentication, you can still include any dummy `apiKey` value — it is sent but ignored by the server.
+
+## Limitations
+
+- **New wire protocols require code.** Adding a new `api` type (e.g., a custom streaming protocol) still requires a stream implementation and registration in code. Only the supported API types listed in [Supported APIs](#supported-apis) are available.
+- **Built-in data ships with FAN.** The built-in provider and model data is compiled into the binary. User additions via `models.json` are merged on top — they can override or extend but cannot remove built-in entries.
+- **Validation uses the same rules as built-in providers.** Custom providers go through the same schema validation as built-in ones. Invalid configurations produce clear error messages on load.

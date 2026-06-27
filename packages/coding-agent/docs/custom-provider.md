@@ -117,6 +117,8 @@ pi.registerProvider("my-llm", {
 
 When `models` is provided, it **replaces** all existing models for that provider.
 
+> **Note:** For built-in providers, you can also add models via `~/.fan/agent/models.json` without writing an extension. In that file, built-in providers inherit `baseUrl` and `api` from their existing models, so you only need to specify the model `id`. See [models.md](models.md).
+
 ## Unregister Provider
 
 Use `pi.unregisterProvider(name)` to remove a provider that was previously registered via `pi.registerProvider(name, ...)`:

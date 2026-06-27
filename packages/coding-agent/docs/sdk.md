@@ -360,6 +360,10 @@ if (!opus) throw new Error("Model not found");
 // (doesn't check if API key exists)
 const customModel = modelRegistry.find("my-provider", "my-model");
 
+// For built-in providers, you can add new model IDs in models.json
+// without specifying baseUrl/api — they are inherited from existing models.
+// Example: { "providers": { "zai": { "models": [{ "id": "glm-5-turbo" }] } } }
+
 // Get only models that have valid API keys configured
 const available = await modelRegistry.getAvailable();
 

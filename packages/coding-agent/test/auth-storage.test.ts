@@ -459,4 +459,96 @@ describe("AuthStorage", () => {
 			expect(apiKey).toBe("stored-key");
 		});
 	});
+
+	describe("providerEnvVars (from models.json envVar field)", () => {
+		test("setProviderEnvVars affects hasAuth for custom provider", () => {
+			authStorage = AuthStorage.create(authJsonPath);
+
+			// Before setProviderEnvVars
+			expect(authStorage.hasAuth("custom-provider")).toBe(false);
+
+			authStorage.setProviderEnvVars(new Map([["custom-provider", "MY_CUSTOM_KEY"]]));
+
+			// After setProviderEnvVars but env var not set
+			expect(authStorage.hasAuth("custom-provider")).toBe(false);
+
+			// Set the env var
+			process.env.MY_CUSTOM_KEY = "secret";
+			try {
+				expect(authStorage.hasAuth("custom-provider")).toBe(true);
+			} finally {
+				delete process.env.MY_CUSTOM_KEY;
+			}
+
+			// After removing env var
+			expect(authStorage.hasAuth("custom-provider")).toBe(false);
+		});
+
+		test("setProviderEnvVars affects getApiKey", async () => {
+			authStorage = AuthStorage.create(authJsonPath);
+			authStorage.setProviderEnvVars(new Map([["custom-provider", "MY_CUSTOM_KEY"]]));
+
+			process.env.MY_CUSTOM_KEY = "secret";
+			try {
+				const apiKey = await authStorage.getApiKey("custom-provider");
+				expect(apiKey).toBe("secret");
+			} finally {
+				delete process.env.MY_CUSTOM_KEY;
+			}
+		});
+
+		test("known providers still work without setProviderEnvVars", async () => {
+			process.env.OPENAI_API_KEY = "sk-openai-test";
+			try {
+				authStorage = AuthStorage.create(authJsonPath);
+				// Should work via the hardcoded env map even without setProviderEnvVars
+				expect(authStorage.hasAuth("openai")).toBe(true);
+
+				const apiKey = await authStorage.getApiKey("openai");
+				expect(apiKey).toBe("sk-openai-test");
+			} finally {
+				delete process.env.OPENAI_API_KEY;
+			}
+		});
+
+		test("setProviderEnvVars can be updated to add more mappings", async () => {
+			authStorage = AuthStorage.create(authJsonPath);
+
+			// First mapping
+			authStorage.setProviderEnvVars(new Map([["provider-a", "PROVIDER_A_KEY"]]));
+			process.env.PROVIDER_A_KEY = "key-a-value";
+			process.env.PROVIDER_B_KEY = "key-b-value";
+			try {
+				// provider-a should work
+				const keyA = await authStorage.getApiKey("provider-a");
+				expect(keyA).toBe("key-a-value");
+
+				// provider-b should NOT work yet
+				expect(authStorage.hasAuth("provider-b")).toBe(false);
+
+				// Update mappings
+				authStorage.setProviderEnvVars(
+					new Map([
+						["provider-a", "PROVIDER_A_KEY"],
+						["provider-b", "PROVIDER_B_KEY"],
+					]),
+				);
+
+				expect(authStorage.hasAuth("provider-b")).toBe(true);
+				const keyB = await authStorage.getApiKey("provider-b");
+				expect(keyB).toBe("key-b-value");
+			} finally {
+				delete process.env.PROVIDER_A_KEY;
+				delete process.env.PROVIDER_B_KEY;
+			}
+		});
+
+		test("setProviderEnvVars with unset env var returns undefined from getApiKey", async () => {
+			authStorage = AuthStorage.create(authJsonPath);
+			authStorage.setProviderEnvVars(new Map([["custom", "UNSET_ENV_VAR_12345"]]));
+
+			const apiKey = await authStorage.getApiKey("custom");
+			expect(apiKey).toBeUndefined();
+		});
+	});
 });

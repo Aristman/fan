@@ -290,7 +290,7 @@ curl -X POST http://localhost:3456/api/sessions/sess_a1b2c3d4/messages \
 GET /api/models
 ```
 
-Returns all configured models and routing rules from `~/.fan/agent/models.json`.
+Returns all configured models and routing rules. Merges built-in model catalog with custom entries from `~/.fan/agent/models.json`. For built-in providers, models can be added by ID only — `baseUrl` and `api` are inherited from existing models.
 
 **Example:**
 

@@ -41,7 +41,7 @@ Nested objects merge recursively (partial overrides supported).
 | Vercel AI Gateway | `AI_GATEWAY_API_KEY` | — |
 | GitHub Copilot | `COPILOT_GITHUB_TOKEN` | `GH_TOKEN`, `GITHUB_TOKEN` |
 
-Keys can also be set per-provider in `models.json` via `apiKey` (takes precedence over env vars).
+Keys can also be set per-provider in `models.json` via `apiKey` (takes precedence over env vars) or via the `envVar` field to explicitly name the environment variable to use.
 
 ### Runtime Flags
 
@@ -179,6 +179,23 @@ Custom token counts: `thinkingBudgets.minimal`, `.low`, `.medium`, `.high` (all 
 
 `~/.fan/agent/models.json` — custom models and provider overrides.
 
+For built-in providers (e.g. `zai`, `openai`, `anthropic`), you can add new models by ID only — `baseUrl` and `api` are inherited:
+
+```json
+{
+  "providers": {
+    "zai": {
+      "models": [
+        { "id": "glm-5-turbo" },
+        { "id": "glm-5" }
+      ]
+    }
+  }
+}
+```
+
+For custom providers, specify `baseUrl`, `api`, and optionally `apiKey` or `envVar`:
+
 ```json
 {
   "providers": {
@@ -217,8 +234,13 @@ Custom token counts: `thinkingBudgets.minimal`, `.low`, `.medium`, `.high` (all 
 | `headers` | `Record<string, string>?` | Extra HTTP headers |
 | `compat` | `object?` | Compatibility settings |
 | `authHeader` | `boolean?` | Use Authorization header |
+| `envVar` | `string?` | Environment variable name for this provider's API key |
 | `models` | `ModelDef[]?` | Custom model definitions |
 | `modelOverrides` | `Record<string, override>?` | Per-model tweaks by model ID |
+
+Notes:
+- For **built-in providers** (e.g. `zai`, `openai`, `anthropic`), `models` entries only need an `id` — `baseUrl` and `api` are inherited from existing built-in models.
+- For **custom providers**, `baseUrl` and `api` are required unless the provider inherits from a built-in one.
 
 ### Model Definition
 

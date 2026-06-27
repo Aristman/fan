@@ -71,7 +71,32 @@ describe("ModelRegistry", () => {
 		writeFileSync(modelsJsonPath, JSON.stringify({ providers }));
 	}
 
-	const openAiModel: Model<Api> = {
+	function createProviderConfig(
+	baseUrl: string,
+	models: Array<{ id: string; name?: string }>,
+	api: string = "anthropic-messages",
+	overrides?: { apiKey?: string; envVar?: string; headers?: Record<string, string>; authHeader?: boolean },
+) {
+	return {
+		baseUrl,
+		apiKey: overrides?.apiKey ?? "TEST_KEY",
+		api,
+		...((overrides?.envVar && { envVar: overrides.envVar }) || {}),
+		...((overrides?.headers && { headers: overrides.headers }) || {}),
+		...((overrides?.authHeader && { authHeader: overrides.authHeader }) || {}),
+		models: models.map((m) => ({
+			id: m.id,
+			name: m.name ?? m.id,
+			reasoning: false,
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 100000,
+			maxTokens: 8000,
+		})),
+	};
+}
+
+const openAiModel: Model<Api> = {
 		id: "test-openai-model",
 		name: "Test OpenAI Model",
 		api: "openai-completions",
@@ -1137,6 +1162,536 @@ describe("ModelRegistry", () => {
 					expect(auth.error).toContain('Failed to resolve API key for provider "custom-provider"');
 				}
 			});
+		});
+	});
+
+	describe("custom model auth (apiKey / envVar / hasConfiguredAuth)", () => {
+		// Track env vars we set
+		const setEnvVars: string[] = [];
+
+		afterEach(() => {
+			for (const name of setEnvVars) {
+				delete process.env[name];
+			}
+			setEnvVars.length = 0;
+		});
+
+		function withEnvVar(name: string, value: string | undefined, fn: () => void): void {
+			const original = process.env[name];
+			try {
+				process.env[name] = value;
+				fn();
+			} finally {
+				if (original === undefined) {
+					delete process.env[name];
+				} else {
+					process.env[name] = original;
+				}
+			}
+		}
+
+		test("custom provider without apiKey loads without error", () => {
+			writeRawModelsJson({
+				"custom-no-key": {
+					baseUrl: "https://custom.example.com/v1",
+					api: "openai-completions",
+					models: [
+						{
+							id: "custom-model",
+							name: "Custom Model",
+							reasoning: false,
+							input: ["text"],
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+							contextWindow: 100000,
+							maxTokens: 8000,
+						},
+					],
+				},
+			});
+
+			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+			expect(registry.find("custom-no-key", "custom-model")).toBeDefined();
+			expect(registry.getError()).toBeUndefined();
+		});
+
+		test("custom provider with literal apiKey is available", () => {
+			writeRawModelsJson({
+				"custom-literal-key": {
+					baseUrl: "https://custom.example.com/v1",
+					apiKey: "sk-test-literal",
+					api: "openai-completions",
+					models: [
+						{
+							id: "custom-model",
+							name: "Custom Model",
+							reasoning: false,
+							input: ["text"],
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+							contextWindow: 100000,
+							maxTokens: 8000,
+						},
+					],
+				},
+			});
+
+			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+			const model = registry.find("custom-literal-key", "custom-model");
+			expect(model).toBeDefined();
+			expect(registry.hasConfiguredAuth(model!)).toBe(true);
+			expect(registry.getAvailable().some((m) => m.provider === "custom-literal-key")).toBe(true);
+		});
+
+		test("custom provider with env var apiKey (set) is available", () => {
+			withEnvVar("MY_TEST_API_KEY", "sk-test-env", () => {
+				writeRawModelsJson({
+					"custom-env-key": {
+						baseUrl: "https://custom.example.com/v1",
+						apiKey: "MY_TEST_API_KEY",
+						api: "openai-completions",
+						models: [
+							{
+								id: "custom-model",
+								name: "Custom Model",
+								reasoning: false,
+								input: ["text"],
+								cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+								contextWindow: 100000,
+								maxTokens: 8000,
+							},
+						],
+					},
+				});
+
+				const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+				const model = registry.find("custom-env-key", "custom-model");
+				expect(model).toBeDefined();
+				expect(registry.hasConfiguredAuth(model!)).toBe(true);
+				expect(registry.getAvailable().some((m) => m.provider === "custom-env-key")).toBe(true);
+			});
+		});
+
+		test("custom provider with apiKey as literal value (not matching env var) is available as literal", () => {
+			// "literal-value" is not an env var name so resolveConfigValueUncached
+			// returns it as-is (literal fallback)
+			delete process.env["literal_api_key_value"];
+
+			writeRawModelsJson({
+				"custom-literal-key": {
+					baseUrl: "https://custom.example.com/v1",
+					apiKey: "literal_api_key_value",
+					api: "openai-completions",
+					models: [
+						{
+							id: "custom-model",
+							name: "Custom Model",
+							reasoning: false,
+							input: ["text"],
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+							contextWindow: 100000,
+							maxTokens: 8000,
+						},
+					],
+				},
+			});
+
+			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+			const model = registry.find("custom-literal-key", "custom-model");
+			expect(model).toBeDefined();
+			expect(registry.hasConfiguredAuth(model!)).toBe(true);
+			expect(registry.getAvailable().some((m) => m.provider === "custom-literal-key")).toBe(true);
+		});
+
+		test("custom provider with shell command apiKey is available without executing", () => {
+			writeRawModelsJson({
+				"custom-shell-key": {
+					baseUrl: "https://custom.example.com/v1",
+					apiKey: "!exit 1",
+					api: "openai-completions",
+					models: [
+						{
+							id: "custom-model",
+							name: "Custom Model",
+							reasoning: false,
+							input: ["text"],
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+							contextWindow: 100000,
+							maxTokens: 8000,
+						},
+					],
+				},
+			});
+
+			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+			const model = registry.find("custom-shell-key", "custom-model");
+			expect(model).toBeDefined();
+			// hasConfiguredAuth should return true (shell commands are assumed available)
+			expect(registry.hasConfiguredAuth(model!)).toBe(true);
+			// getAvailable should include this model without executing the command
+			expect(registry.getAvailable().some((m) => m.provider === "custom-shell-key")).toBe(true);
+		});
+
+		test("envVar field is respected for auth check", () => {
+			writeRawModelsJson({
+				"custom-envvar-field": {
+					baseUrl: "https://custom.example.com/v1",
+					envVar: "MY_PROVIDER_API_KEY",
+					api: "openai-completions",
+					models: [
+						{
+							id: "custom-model",
+							name: "Custom Model",
+							reasoning: false,
+							input: ["text"],
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+							contextWindow: 100000,
+							maxTokens: 8000,
+						},
+					],
+				},
+			});
+
+			// With the env var set
+			withEnvVar("MY_PROVIDER_API_KEY", "sk-envvar-test", () => {
+				// Reload registry to pick up env var
+				const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+				const model = registry.find("custom-envvar-field", "custom-model");
+				expect(model).toBeDefined();
+				expect(registry.hasConfiguredAuth(model!)).toBe(true);
+			});
+
+			// Without the env var set
+			const registry2 = ModelRegistry.create(authStorage, modelsJsonPath);
+			const model2 = registry2.find("custom-envvar-field", "custom-model");
+			expect(model2).toBeDefined();
+			expect(registry2.hasConfiguredAuth(model2!)).toBe(false);
+		});
+	});
+
+	describe("getProviderEnvVars()", () => {
+		test("returns provider-to-env-var mappings from models.json", () => {
+			writeRawModelsJson({
+				"custom-provider-a": {
+					baseUrl: "https://a.example.com/v1",
+					envVar: "PROVIDER_A_KEY",
+					api: "openai-completions",
+					models: [
+						{
+							id: "model-a",
+							name: "Model A",
+							reasoning: false,
+							input: ["text"],
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+							contextWindow: 100000,
+							maxTokens: 8000,
+						},
+					],
+				},
+				"custom-provider-b": {
+					baseUrl: "https://b.example.com/v1",
+					envVar: "PROVIDER_B_KEY",
+					api: "openai-completions",
+					models: [
+						{
+							id: "model-b",
+							name: "Model B",
+							reasoning: false,
+							input: ["text"],
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+							contextWindow: 100000,
+							maxTokens: 8000,
+						},
+					],
+				},
+			});
+
+			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+			const envVars = registry.getProviderEnvVars();
+
+			expect(envVars.get("custom-provider-a")).toBe("PROVIDER_A_KEY");
+			expect(envVars.get("custom-provider-b")).toBe("PROVIDER_B_KEY");
+			expect(envVars.size).toBe(2);
+		});
+
+		test("provider without envVar is not in the map", () => {
+			writeRawModelsJson({
+				"custom-no-envvar": {
+					baseUrl: "https://example.com/v1",
+					apiKey: "TEST_KEY",
+					api: "openai-completions",
+					models: [
+						{
+							id: "model",
+							name: "Model",
+							reasoning: false,
+							input: ["text"],
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+							contextWindow: 100000,
+							maxTokens: 8000,
+						},
+					],
+				},
+			});
+
+			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+			const envVars = registry.getProviderEnvVars();
+
+			expect(envVars.get("custom-no-envvar")).toBeUndefined();
+			expect(envVars.size).toBe(0);
+		});
+
+		test("envVar is set on authStorage via setProviderEnvVars", () => {
+			writeRawModelsJson({
+				"custom-envvar-auth": {
+					baseUrl: "https://example.com/v1",
+					envVar: "AUTH_CHECK_VAR",
+					api: "openai-completions",
+					models: [
+						{
+							id: "model",
+							name: "Model",
+							reasoning: false,
+							input: ["text"],
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+							contextWindow: 100000,
+							maxTokens: 8000,
+						},
+					],
+				},
+			});
+
+			// Before env var is set
+			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+			const model = registry.find("custom-envvar-auth", "model");
+			expect(model).toBeDefined();
+
+			// hasConfiguredAuth doesn't use envVar directly — only via authStorage.hasAuth which
+			// checks getEnvApiKey with the providerEnvVars mapping
+			expect(registry.hasConfiguredAuth(model!)).toBe(false);
+
+			// Set the env var and verify authStorage picks it up via providerEnvVars
+			process.env.AUTH_CHECK_VAR = "test-key";
+			try {
+				registry.refresh();
+				expect(registry.hasConfiguredAuth(model!)).toBe(true);
+			} finally {
+				delete process.env.AUTH_CHECK_VAR;
+			}
+		});
+
+		test("refresh() syncs updated envVar mappings to authStorage", () => {
+			// Initial setup: provider with envVar pointing to VAR_A
+			writeRawModelsJson({
+				"custom-refresh-env": {
+					baseUrl: "https://example.com/v1",
+					envVar: "REFRESH_ENV_VAR_A",
+					api: "openai-completions",
+					models: [
+						{
+							id: "model",
+							name: "Model",
+							reasoning: false,
+							input: ["text"],
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+							contextWindow: 100000,
+							maxTokens: 8000,
+						},
+					],
+				},
+			});
+
+			// Set VAR_A in env
+			process.env.REFRESH_ENV_VAR_A = "key-from-a";
+			try {
+				const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+				const model = registry.find("custom-refresh-env", "model");
+				expect(model).toBeDefined();
+				// Auth should be configured (VAR_A is set)
+				expect(registry.hasConfiguredAuth(model!)).toBe(true);
+				expect(authStorage.hasAuth("custom-refresh-env")).toBe(true);
+
+				// Now change the envVar in models.json to point to VAR_B instead
+				writeRawModelsJson({
+					"custom-refresh-env": {
+						baseUrl: "https://example.com/v1",
+						envVar: "REFRESH_ENV_VAR_B",
+						api: "openai-completions",
+						models: [
+							{
+								id: "model",
+								name: "Model",
+								reasoning: false,
+								input: ["text"],
+								cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+								contextWindow: 100000,
+								maxTokens: 8000,
+							},
+						],
+					},
+				});
+
+				// Set VAR_B in env
+				process.env.REFRESH_ENV_VAR_B = "key-from-b";
+
+				// Without the fix, this refresh() would NOT update authStorage.providerEnvVars,
+				// so authStorage.hasAuth() would still check REFRESH_ENV_VAR_A (still set) and return true.
+				// But the intent is to verify the mapping was updated to REFRESH_ENV_VAR_B.
+				registry.refresh();
+
+				// hasAuth should still be true (VAR_B is set)
+				expect(authStorage.hasAuth("custom-refresh-env")).toBe(true);
+				expect(registry.hasConfiguredAuth(model!)).toBe(true);
+
+				// Now clear VAR_A - after refresh, auth should still work because it should be using VAR_B
+				delete process.env.REFRESH_ENV_VAR_A;
+				expect(authStorage.hasAuth("custom-refresh-env")).toBe(true);
+			} finally {
+				delete process.env.REFRESH_ENV_VAR_A;
+				delete process.env.REFRESH_ENV_VAR_B;
+			}
+		});
+	});
+
+	describe("inherited provider defaults (built-in provider, only model IDs)", () => {
+		test("existing built-in provider with only model IDs inherits baseUrl and api from built-in models", () => {
+			writeRawModelsJson({
+				zai: {
+					models: [
+						{ id: "glm-5-turbo" },
+						{ id: "glm-5" },
+					],
+				},
+			});
+
+			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+			expect(registry.getError()).toBeUndefined();
+
+			const glm5turbo = registry.find("zai", "glm-5-turbo");
+			const glm5 = registry.find("zai", "glm-5");
+
+			expect(glm5turbo).toBeDefined();
+			expect(glm5turbo!.provider).toBe("zai");
+			// Inherited from built-in zai model
+			expect(glm5turbo!.api).toBe("openai-completions");
+			expect(glm5turbo!.baseUrl).toBe("https://api.z.ai/api/coding/paas/v4");
+
+			expect(glm5).toBeDefined();
+			expect(glm5!.provider).toBe("zai");
+			expect(glm5!.api).toBe("openai-completions");
+			expect(glm5!.baseUrl).toBe("https://api.z.ai/api/coding/paas/v4");
+
+			// getAll() includes the new models
+			const all = registry.getAll();
+			expect(all.some((m) => m.provider === "zai" && m.id === "glm-5-turbo")).toBe(true);
+			expect(all.some((m) => m.provider === "zai" && m.id === "glm-5")).toBe(true);
+
+			// Built-in models should also still be present
+			expect(all.some((m) => m.provider === "zai" && m.id === "glm-4.5-air")).toBe(true);
+		});
+
+		test("unknown provider without baseUrl/api throws validation error", () => {
+			writeRawModelsJson({
+				"unknown-provider": {
+					models: [
+						{ id: "some-model" },
+					],
+				},
+			});
+
+			// Creating registry should fail validation
+			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+			expect(registry.getError()).toBeDefined();
+			expect(registry.getError()).toContain('"baseUrl" is required');
+			expect(registry.getError()).toContain("unknown-provider");
+
+			// Model should not be loaded
+			expect(registry.find("unknown-provider", "some-model")).toBeUndefined();
+		});
+
+		test("existing provider with explicit baseUrl/api overrides inherited values", () => {
+			writeRawModelsJson({
+				zai: {
+					baseUrl: "https://custom-zai.example.com/v1",
+					api: "anthropic-messages",
+					models: [
+						{ id: "glm-5" },
+					],
+				},
+			});
+
+			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+			expect(registry.getError()).toBeUndefined();
+
+			const glm5 = registry.find("zai", "glm-5");
+			expect(glm5).toBeDefined();
+			expect(glm5!.api).toBe("anthropic-messages");
+			expect(glm5!.baseUrl).toBe("https://custom-zai.example.com/v1");
+		});
+
+		test("model-level baseUrl overrides inherited baseUrl", () => {
+			writeRawModelsJson({
+				zai: {
+					models: [
+						{
+							id: "glm-5",
+							baseUrl: "https://custom-model.example.com/v1",
+						},
+					],
+				},
+			});
+
+			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+			expect(registry.getError()).toBeUndefined();
+
+			const glm5 = registry.find("zai", "glm-5");
+			expect(glm5).toBeDefined();
+			expect(glm5!.baseUrl).toBe("https://custom-model.example.com/v1");
+		});
+
+		test("getAvailable includes inherited-auth model when provider auth is configured", () => {
+			// Set the env var for zai
+			process.env.ZAI_API_KEY = "test-zai-key";
+			try {
+				writeRawModelsJson({
+					zai: {
+						apiKey: "ZAI_API_KEY",
+						models: [
+							{ id: "glm-5-turbo" },
+						],
+					},
+				});
+
+				const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+				expect(registry.getError()).toBeUndefined();
+
+				const available = registry.getAvailable();
+				const glm5turboAvailable = available.find((m) => m.provider === "zai" && m.id === "glm-5-turbo");
+
+				expect(glm5turboAvailable).toBeDefined();
+				expect(glm5turboAvailable!.api).toBe("openai-completions");
+				expect(glm5turboAvailable!.baseUrl).toBe("https://api.z.ai/api/coding/paas/v4");
+			} finally {
+				delete process.env.ZAI_API_KEY;
+			}
+		});
+
+		test("built-in provider with only model IDs and explicit apiKey still works", () => {
+			writeRawModelsJson({
+				zai: {
+					apiKey: "sk-test-zai-key",
+					models: [
+						{ id: "glm-5-turbo" },
+					],
+				},
+			});
+
+			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+			expect(registry.getError()).toBeUndefined();
+
+			const glm5turbo = registry.find("zai", "glm-5-turbo");
+			expect(glm5turbo).toBeDefined();
+			expect(glm5turbo!.api).toBe("openai-completions");
+			expect(glm5turbo!.baseUrl).toBe("https://api.z.ai/api/coding/paas/v4");
+			expect(registry.hasConfiguredAuth(glm5turbo!)).toBe(true);
 		});
 	});
 });

@@ -1,5 +1,5 @@
 # Documentation Manifest
-> Last updated: 2026-06-15 (FAN 1.0.0 preparation)
+> Last updated: 2026-06-25 (FAN 1.0.2 — models.md update)
 > Comprehensive index of all project documentation.
 
 ## User-Facing Documentation
@@ -45,7 +45,8 @@
 | `packages/ai/README.md` | ✅ | @itone/fan-ai — Unified LLM API |
 | `packages/agent/README.md` | ✅ | @itone/fan-agent-core — Stateful agent |
 | `packages/coding-agent/README.md` | ✅ | @itone/fan-coding-agent — CLI & Runtime |
-| `packages/coding-agent/docs/` | ✅ | 23 API doc files (extensions, rpc, sdk, tui, etc.) |
+| `packages/coding-agent/docs/models.md` | ✅ | Custom models configuration guide (providers, envVar, auth resolution) |
+| `packages/coding-agent/docs/` (other) | ✅ | Extensions, RPC, SDK, TUI, etc. (22 files) |
 | `packages/tui/README.md` | ✅ | @itone/fan-tui — Terminal UI framework |
 | `packages/web-ui/README.md` | ✅ | @itone/fan-web-ui — Web components |
 | `packages/api-gateway/README.md` | ✅ | @fan/api-gateway — HTTP/WS server |
@@ -106,4 +107,4 @@
 
 All 5 package READMEs have been created — status updated to ✅.
 
-Total: **43 tracked documents** (41 ✅, 6 ⚠️, 0 ❌)
+Total: **44 tracked documents** (42 ✅, 6 ⚠️, 0 ❌)

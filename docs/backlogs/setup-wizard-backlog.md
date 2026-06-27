@@ -9,7 +9,7 @@
 New users face a friction-heavy setup:
 1. Clone repo → `npm install` → build errors (missing native bindings, permission issues)
 2. No `.env.example` — must read source code to discover env var names
-3. `~/.fan/agent/models.json` schema undocumented — trial and error for custom providers
+3. ~~`~/.fan/agent/models.json` schema undocumented — trial and error for custom providers~~ (resolved: see `packages/coding-agent/docs/models.md`)
 4. `.fan/settings.json` must be created manually
 5. Platform-specific issues (Linux permissions, Windows CRLF, macOS ARM) have no guided resolution
 

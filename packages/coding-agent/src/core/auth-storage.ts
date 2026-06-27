@@ -180,6 +180,7 @@ export class AuthStorage {
 	private data: AuthStorageData = {};
 	private runtimeOverrides: Map<string, string> = new Map();
 	private fallbackResolver?: (provider: string) => string | undefined;
+	private providerEnvVars?: ReadonlyMap<string, string>;
 	private loadError: Error | null = null;
 	private errors: Error[] = [];
 
@@ -222,6 +223,10 @@ export class AuthStorage {
 	 */
 	setFallbackResolver(resolver: (provider: string) => string | undefined): void {
 		this.fallbackResolver = resolver;
+	}
+
+	setProviderEnvVars(envVars: ReadonlyMap<string, string>): void {
+		this.providerEnvVars = envVars;
 	}
 
 	private recordError(error: unknown): void {
@@ -319,7 +324,7 @@ export class AuthStorage {
 	hasAuth(provider: string): boolean {
 		if (this.runtimeOverrides.has(provider)) return true;
 		if (this.data[provider]) return true;
-		if (getEnvApiKey(provider)) return true;
+		if (getEnvApiKey(provider, Object.fromEntries(this.providerEnvVars ?? []))) return true;
 		if (this.fallbackResolver?.(provider)) return true;
 		return false;
 	}
@@ -468,7 +473,7 @@ export class AuthStorage {
 		}
 
 		// Fall back to environment variable
-		const envKey = getEnvApiKey(providerId);
+		const envKey = getEnvApiKey(providerId, Object.fromEntries(this.providerEnvVars ?? []));
 		if (envKey) return envKey;
 
 		// Fall back to custom resolver (e.g., models.json custom providers)

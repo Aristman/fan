@@ -170,6 +170,7 @@ const ProviderConfigSchema = Type.Object({
 	headers: Type.Optional(Type.Record(Type.String(), Type.String())),
 	compat: Type.Optional(OpenAICompatSchema),
 	authHeader: Type.Optional(Type.Boolean()),
+	envVar: Type.Optional(Type.String({ minLength: 1 })),
 	models: Type.Optional(Type.Array(ModelDefinitionSchema)),
 	modelOverrides: Type.Optional(Type.Record(Type.String(), ModelOverrideSchema)),
 });
@@ -280,6 +281,28 @@ function applyModelOverride(model: Model<Api>, override: ModelOverride): Model<A
 	return result;
 }
 
+/**
+ * Get the inherited baseUrl and api for a provider from its built-in models.
+ * Returns undefined if the provider has no built-in models.
+ */
+function getBuiltInProviderDefaults(providerName: string): { baseUrl: string; api: string } | undefined {
+	try {
+		const providers = getProviders() as string[];
+		if (!providers.includes(providerName)) return undefined;
+
+		const builtInModels = getModels(providerName as KnownProvider) as Model<Api>[];
+		if (builtInModels.length === 0) return undefined;
+
+		const firstModel = builtInModels[0];
+		return {
+			baseUrl: firstModel.baseUrl,
+			api: firstModel.api,
+		};
+	} catch {
+		return undefined;
+	}
+}
+
 /** Clear the config value command cache. Exported for testing. */
 export const clearApiKeyCache = clearConfigValueCache;
 
@@ -291,17 +314,35 @@ export class ModelRegistry {
 	private providerRequestConfigs: Map<string, ProviderRequestConfig> = new Map();
 	private modelRequestHeaders: Map<string, Record<string, string>> = new Map();
 	private registeredProviders: Map<string, ProviderConfigInput> = new Map();
+	private providerEnvVars: Map<string, string> = new Map();
 	private loadError: string | undefined = undefined;
 
 	private constructor(
 		readonly authStorage: AuthStorage,
 		private modelsJsonPath: string | undefined,
 	) {
+		this.authStorage.setFallbackResolver((provider: string) => {
+			const config = this.providerRequestConfigs.get(provider);
+			if (config?.apiKey) {
+				// Shell commands are assumed available (can't verify without executing)
+				if (config.apiKey.startsWith("!")) {
+					return "<available>";
+				}
+				try {
+					return resolveConfigValueOrThrow(config.apiKey, `API key for provider "${provider}"`);
+				} catch {
+					return undefined;
+				}
+			}
+			return undefined;
+		});
 		this.loadModels();
 	}
 
 	static create(authStorage: AuthStorage, modelsJsonPath: string = join(getAgentDir(), "models.json")): ModelRegistry {
-		return new ModelRegistry(authStorage, modelsJsonPath);
+		const registry = new ModelRegistry(authStorage, modelsJsonPath);
+		authStorage.setProviderEnvVars(registry.providerEnvVars);
+		return registry;
 	}
 
 	static inMemory(authStorage: AuthStorage): ModelRegistry {
@@ -321,6 +362,9 @@ export class ModelRegistry {
 		resetOAuthProviders();
 
 		this.loadModels();
+
+		// Sync envVar mappings to authStorage so hasAuth() picks up changes after refresh
+		this.authStorage.setProviderEnvVars(this.providerEnvVars);
 
 		for (const [providerName, config] of this.registeredProviders.entries()) {
 			this.applyProviderConfig(providerName, config);
@@ -449,6 +493,9 @@ export class ModelRegistry {
 						this.storeModelHeaders(providerName, modelId, modelOverride.headers);
 					}
 				}
+				if (providerConfig.envVar) {
+					this.providerEnvVars.set(providerName, providerConfig.envVar);
+				}
 			}
 
 			return { models: this.parseModels(config), overrides, modelOverrides, error: undefined };
@@ -469,6 +516,9 @@ export class ModelRegistry {
 			const hasModelOverrides =
 				providerConfig.modelOverrides && Object.keys(providerConfig.modelOverrides).length > 0;
 
+			// Check if this provider has built-in models that can provide defaults
+			const builtInDefaults = getBuiltInProviderDefaults(providerName);
+
 			if (models.length === 0) {
 				// Override-only config: needs baseUrl, compat, modelOverrides, or some combination.
 				if (!providerConfig.baseUrl && !providerConfig.compat && !hasModelOverrides) {
@@ -477,19 +527,17 @@ export class ModelRegistry {
 					);
 				}
 			} else {
-				// Custom models are merged into provider models and require endpoint + auth.
-				if (!providerConfig.baseUrl) {
+				// Custom models need baseUrl — but built-in providers can inherit it.
+				if (!providerConfig.baseUrl && !builtInDefaults) {
 					throw new Error(`Provider ${providerName}: "baseUrl" is required when defining custom models.`);
-				}
-				if (!providerConfig.apiKey) {
-					throw new Error(`Provider ${providerName}: "apiKey" is required when defining custom models.`);
 				}
 			}
 
 			for (const modelDef of models) {
 				const hasModelApi = !!modelDef.api;
 
-				if (!hasProviderApi && !hasModelApi) {
+				// Built-in providers can inherit 'api' from their existing models.
+				if (!hasProviderApi && !hasModelApi && !builtInDefaults) {
 					throw new Error(
 						`Provider ${providerName}, model ${modelDef.id}: no "api" specified. Set at provider or model level.`,
 					);
@@ -512,22 +560,29 @@ export class ModelRegistry {
 			const modelDefs = providerConfig.models ?? [];
 			if (modelDefs.length === 0) continue; // Override-only, no custom models
 
+			// Determine inherited baseUrl and api for built-in providers
+			const builtInDefaults = getBuiltInProviderDefaults(providerName);
+			const inheritedBaseUrl = providerConfig.baseUrl ?? builtInDefaults?.baseUrl;
+			const inheritedApi = providerConfig.api ?? builtInDefaults?.api;
+
 			for (const modelDef of modelDefs) {
-				const api = modelDef.api || providerConfig.api;
+				const api = modelDef.api || inheritedApi;
 				if (!api) continue;
 
 				const compat = mergeCompat(providerConfig.compat, modelDef.compat);
 				this.storeModelHeaders(providerName, modelDef.id, modelDef.headers);
 
-				// Provider baseUrl is required when custom models are defined.
-				// Individual models can override it with modelDef.baseUrl.
+				// Use explicit baseUrl, then provider-level, then inherited from built-in.
+				const baseUrl = modelDef.baseUrl ?? inheritedBaseUrl;
+				if (!baseUrl) continue;
+
 				const defaultCost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 				models.push({
 					id: modelDef.id,
 					name: modelDef.name ?? modelDef.id,
 					api: api as Api,
 					provider: providerName,
-					baseUrl: modelDef.baseUrl ?? providerConfig.baseUrl!,
+					baseUrl,
 					reasoning: modelDef.reasoning ?? false,
 					input: (modelDef.input ?? ["text"]) as ("text" | "image")[],
 					cost: modelDef.cost ?? defaultCost,
@@ -569,10 +624,20 @@ export class ModelRegistry {
 	 * Get API key for a model.
 	 */
 	hasConfiguredAuth(model: Model<Api>): boolean {
-		return (
-			this.authStorage.hasAuth(model.provider) ||
-			this.providerRequestConfigs.get(model.provider)?.apiKey !== undefined
-		);
+		if (this.authStorage.hasAuth(model.provider)) return true;
+
+		const config = this.providerRequestConfigs.get(model.provider);
+		if (config?.apiKey) {
+			// Shell command apiKeys are assumed available (can't verify without executing)
+			if (config.apiKey.startsWith("!")) {
+				return true;
+			}
+			// Try to resolve env var reference
+			const resolved = resolveConfigValueUncached(config.apiKey);
+			if (resolved) return true;
+		}
+
+		return false;
 	}
 
 	private getModelRequestKey(provider: string, modelId: string): string {
@@ -662,6 +727,13 @@ export class ModelRegistry {
 
 		const providerApiKey = this.providerRequestConfigs.get(provider)?.apiKey;
 		return providerApiKey ? resolveConfigValueUncached(providerApiKey) : undefined;
+	}
+
+	/**
+	 * Get the provider-to-env-var mappings from models.json.
+	 */
+	getProviderEnvVars(): ReadonlyMap<string, string> {
+		return this.providerEnvVars;
 	}
 
 	/**
