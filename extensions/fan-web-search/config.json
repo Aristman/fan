@@ -1,0 +1,72 @@
+{
+  "search": {
+    "defaultCount": 10,
+    "timeout": 30000,
+    "probeTimeout": 15000,
+    "providers": {
+      "meta-search": {
+        "enabled": true,
+        "priority": 2,
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+        "probeTimeoutMs": 15000,
+        "engines": {
+          "mojeek": {
+            "enabled": true,
+            "url": "https://www.mojeek.com/search"
+          }
+        }
+      },
+      "searxng": {
+        "enabled": true,
+        "url": "http://127.0.0.1:8888",
+        "priority": 4
+      },
+      "brave": {
+        "enabled": false,
+        "url": "https://api.search.brave.com/res/v1/web/search",
+        "priority": 5
+      },
+      "yandex": {
+        "enabled": true,
+        "url": "https://searchapi.api.cloud.yandex.net/v2/web/search",
+        "priority": 1,
+        "maxPassages": 2,
+        "groupsOnPage": 50
+      },
+      "zai": {
+        "enabled": false,
+        "url": "https://api.z.ai/api/mcp/web_search_prime/mcp",
+        "priority": 3,
+        "mcpTool": "web_search_prime",
+        "mcpProtocol": "2024-11-05",
+        "location": "us",
+        "contentSize": "medium",
+        "clientName": "fan-agent",
+        "clientVersion": "1.0"
+      }
+    }
+  },
+  "reader": {
+    "defaultFormat": "markdown",
+    "timeout": 60000,
+    "minContentLength": 50,
+    "maxLinks": 50,
+    "maxImages": 30,
+    "maxConsecutiveNewlines": 3,
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+  },
+  "format": {
+    "maxLinks": 20,
+    "maxImages": 10
+  },
+  "tls": {
+    "rejectUnauthorized": false
+  },
+  "apiKeys": {
+    "braveApiKey": "",
+    "zaiApiKey": "d1f8c08beec043a59188dd3eafa63c6d.3CIU2KbiYHPC2FbP",
+    "yandexApiKey": "AQVNwJaRaFmFDa_ZiyOJF6C_d4eiS-kope8VJbUh",
+    "yandexFolderId": "b1g9htfehuml24vnr1jf"
+  },
+  "healthCacheTtlMs": 300000
+}

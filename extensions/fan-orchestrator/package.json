@@ -1,0 +1,30 @@
+{
+	"name": "fan-orchestrator",
+	"version": "6.0.0",
+	"description": "FAN orchestrator v6.0.0 — per-worker temperature support (default + per-agent override), hard-fail no-op detection, loop prevention, 8 agent types, RPC workers", 
+	"type": "module",
+	"main": "./orchestrator-extension.js",
+	"types": "./orchestrator-extension.d.ts",
+	"fan": {
+		"name": "fan-orchestrator",
+		"type": "extension",
+		"displayName": "FAN Orchestrator v4",
+		"description": "Orchestrator v6.0.0: per-worker temperature support, loop prevention, 8 agent types, RPC workers, dynamic coordinator prompt, task pipeline",
+		"version": "6.0.0",
+		"main": "orchestrator-extension.js",
+		"entry": "src/orchestrator-extension.ts",
+		"author": "FAN Team",
+		"tags": [
+			"orchestrator",
+			"multi-agent",
+			"workers",
+			"tasks",
+			"planning",
+			"delegate"
+		],
+		"bundled": true
+	},
+	"dependencies": {
+		"@sinclair/typebox": "^0.34.0"
+	}
+}

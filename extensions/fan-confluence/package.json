@@ -1,0 +1,27 @@
+{
+  "name": "fan-confluence",
+  "private": true,
+  "version": "2.0.0",
+  "type": "module",
+  "description": "Confluence Data Center integration for fan — read/write pages, search via CQL, Markdown ↔ Storage Format conversion",
+  "scripts": {
+    "clean": "echo 'nothing to clean'",
+    "build": "echo 'nothing to build'",
+    "check": "echo 'nothing to check'",
+    "test": "vitest run"
+  },
+  "fan": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "dependencies": {
+    "turndown": "^7.2.0",
+    "turndown-plugin-gfm": "^1.0.2",
+    "marked": "^15.0.0"
+  },
+  "devDependencies": {
+    "vitest": "^3.0.0",
+    "@types/turndown": "^5.0.5"
+  }
+}

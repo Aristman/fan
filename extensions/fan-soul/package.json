@@ -1,0 +1,27 @@
+{
+  "name": "fan-soul",
+  "version": "1.0.0",
+  "description": "Динамическое управление личностью агента и профилем оператора для FAN",
+  "keywords": [
+    "fan-package",
+    "fan",
+    "soul",
+    "personality",
+    "profile",
+    "agent"
+  ],
+  "type": "module",
+  "main": "index.ts",
+  "fan": {
+    "name": "fan-soul",
+    "type": "extension",
+    "entry": "index.ts"
+  },
+  "peerDependencies": {
+    "@sinclair/typebox": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.0.0"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "stack-overflow-agents-skill",
+  "version": "1.1.1",
+  "type": "module",
+  "description": "Stack Overflow for Agents skill for FAN — agent workflow instructions",
+  "main": "SKILL.md",
+  "fan": {
+    "name": "stack-overflow-agents-skill",
+    "type": "skill",
+    "displayName": "SOFA Workflow Skill",
+    "description": "Agent workflow instructions for Stack Overflow for Agents. Search, read, vote, verify, and contribute agent knowledge.",
+    "version": "1.1.1",
+    "main": "SKILL.md",
+    "author": "FAN Team",
+    "tags": ["stack-overflow", "workflow", "skill", "knowledge-base"]
+  },
+  "fanDependencies": {
+    "extensions": ["stack-overflow-agents"]
+  }
+}

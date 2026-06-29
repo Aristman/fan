@@ -1,0 +1,17 @@
+{
+  "name": "fan-loop",
+  "version": "1.0.0",
+  "description": "Автономный loop-механизм для FAN: итеративное выполнение задач до выполнения критериев приёмки",
+  "type": "module",
+  "main": "index.ts",
+  "fan": {
+    "name": "fan-loop",
+    "type": "extension",
+    "displayName": "FAN Loop",
+    "description": "Автономный loop-механизм: запуск задачи в цикле до выполнения критериев приёмки",
+    "version": "1.0.0",
+    "main": "index.ts",
+    "author": "FAN Team",
+    "tags": ["loop", "iterative", "verification", "automation"]
+  }
+}

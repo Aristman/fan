@@ -1,0 +1,20 @@
+{
+  "name": "fan-persistent-memory",
+  "version": "4.0.0",
+  "description": "Расширение персистентной памяти для FAN с гибридным RAG-поиском (FTS4 + эмбеддинги)",
+  "type": "module",
+  "main": "src/index.ts",
+  "fan": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "dependencies": {
+    "@sinclair/typebox": "^0.34.0",
+    "sql.js": "^1.11.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.2",
+    "typescript": "^6.0.2"
+  }
+}

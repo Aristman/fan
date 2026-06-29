@@ -1,0 +1,25 @@
+{
+  "providers": {
+    "meta-search": {
+      "status": "available",
+      "lastChecked": 1782588228288
+    },
+    "searxng": {
+      "status": "available",
+      "lastChecked": 1782588228288
+    },
+    "yandex": {
+      "status": "available",
+      "lastChecked": 1782588228288
+    }
+  },
+  "metaSearchEngines": {
+    "mojeek": {
+      "status": "unavailable",
+      "lastChecked": 1782588222560,
+      "resultCount": 0,
+      "responseTimeMs": 0
+    }
+  },
+  "updatedAt": 1782588228288
+}

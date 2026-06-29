@@ -1,0 +1,42 @@
+{
+  "name": "fan-web-search",
+  "version": "1.7.0",
+  "description": "Multi-provider web search with automatic fallback chain (meta-search → SearXNG → Brave → Yandex → Z.AI) and web page reader for FAN",
+  "keywords": [
+    "fan-package",
+    "fan",
+    "extension",
+    "web-search",
+    "search",
+    "reader"
+  ],
+  "type": "module",
+  "license": "MIT",
+  "author": "FAN Team",
+  "main": "index.ts",
+  "dependencies": {
+    "@sinclair/typebox": "^0.34.0",
+    "node-html-markdown": "^1.3.0",
+    "undici": "^7.25.0"
+  },
+  "fan": {
+    "name": "fan-web-search",
+    "type": "extension",
+    "displayName": "FAN Web Search",
+    "description": "Multi-provider web search with priority-based provider routing and automatic fallback chain (Yandex → Meta-search → Z.AI → SearXNG → Brave) and web page reader",
+    "version": "1.7.0",
+    "main": "index.ts",
+    "author": "FAN Team",
+    "tags": [
+      "web-search",
+      "search",
+      "reader",
+      "mojeek",
+      "searxng",
+      "brave",
+      "yandex",
+      "zai",
+      "tls"
+    ]
+  }
+}
