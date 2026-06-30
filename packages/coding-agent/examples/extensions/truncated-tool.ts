@@ -15,7 +15,7 @@
  */
 
 import { mkdtemp, writeFile } from "node:fs/promises";
-import type { ExtensionAPI } from "@itone/fan-coding-agent";
+import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
 import {
 	DEFAULT_MAX_BYTES,
 	DEFAULT_MAX_LINES,
@@ -23,8 +23,8 @@ import {
 	type TruncationResult,
 	truncateHead,
 	withFileMutationQueue,
-} from "@itone/fan-coding-agent";
-import { Text } from "@itone/fan-tui";
+} from "@seaagents/fan-coding-agent";
+import { Text } from "@seaagents/fan-tui";
 import { Type } from "@sinclair/typebox";
 import { execSync } from "child_process";
 import { tmpdir } from "os";

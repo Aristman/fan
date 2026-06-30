@@ -10,7 +10,7 @@
  *   /loop "описание задачи" -c "критерии" -m 10    — прямой запуск
  *   /loop --help                                   — справка
  */
-import type { ExtensionAPI, ExtensionCommandContext } from "@itone/fan-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@seaagents/fan-coding-agent";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";

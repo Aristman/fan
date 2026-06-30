@@ -1,4 +1,4 @@
-import type { Transport } from "@itone/fan-ai";
+import type { Transport } from "@seaagents/fan-ai";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import lockfile from "proper-lockfile";

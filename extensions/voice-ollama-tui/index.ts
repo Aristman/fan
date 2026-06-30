@@ -1,5 +1,5 @@
-import type { ExtensionAPI, ExtensionCommandContext } from "@itone/fan-coding-agent";
-import type { KeyId } from "@itone/fan-tui";
+import type { ExtensionAPI, ExtensionCommandContext } from "@seaagents/fan-coding-agent";
+import type { KeyId } from "@seaagents/fan-tui";
 import { loadConfig } from "./config.js";
 import { checkDependencies, resetDependencyCache } from "./dependencies.js";
 import { runVoicePipeline } from "./pipeline.js";

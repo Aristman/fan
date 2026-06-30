@@ -5,8 +5,8 @@ See [AGENTS.md](../../../AGENTS.md) for additional guidelines.
 ## Setup
 
 ```bash
-git clone https://github.com/itone/fan-mono
-cd fan-mono
+git clone https://github.com/seaagents/fan
+cd fan
 npm install
 npm run build
 ```
@@ -14,7 +14,7 @@ npm run build
 Run from source:
 
 ```bash
-/path/to/fan-mono/fan-test.sh
+/path/to/fan/fan-test.sh
 ```
 
 The script can be run from any directory. FAN keeps the caller's current working directory.

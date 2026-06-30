@@ -10,8 +10,8 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentTool } from "@itone/fan-agent-core";
-import { Agent } from "@itone/fan-agent-core";
+import type { AgentTool } from "@seaagents/fan-agent-core";
+import { Agent } from "@seaagents/fan-agent-core";
 import type {
 	AssistantMessage,
 	AssistantMessageEvent,
@@ -24,8 +24,8 @@ import type {
 	ThinkingContent,
 	ToolCall,
 	Usage,
-} from "@itone/fan-ai";
-import { createAssistantMessageEventStream } from "@itone/fan-ai";
+} from "@seaagents/fan-ai";
+import { createAssistantMessageEventStream } from "@seaagents/fan-ai";
 import { AgentSession, type AgentSessionEvent } from "../src/core/agent-session.js";
 import { AuthStorage } from "../src/core/auth-storage.js";
 import { ModelRegistry } from "../src/core/model-registry.js";

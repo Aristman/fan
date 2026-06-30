@@ -1,4 +1,4 @@
-# Спецификация: Filin Agent Next (FAN) — Local Runtime Agent
+# Спецификация: Fast Agents Network (FAN) — Local Runtime Agent
 
 ## Метаданные
 - **Дата**: 2026-04-10
@@ -10,7 +10,7 @@
 ## 1. Обзор
 
 ### 1.1 Цель
-Filin Agent Next (FAN) — локальный AI runtime-agent для разработчиков. Запускается на машине пользователя, предоставляет внешний API для подключения различных UI-клиентов (TUI, WebView, IDEA plugin и т.д.). Основан на fan-coding-agent в ядре, расширен кастомным оркестратором, extensions и skills.
+Fast Agents Network (FAN) — локальный AI runtime-agent для разработчиков. Запускается на машине пользователя, предоставляет внешний API для подключения различных UI-клиентов (TUI, WebView, IDEA plugin и т.д.). Основан на fan-coding-agent в ядре, расширен кастомным оркестратором, extensions и skills.
 
 ### 1.2 Контекст
 Текущая MVP-SPEC описывает web SaaS платформу. Данная спецификация пересматривает архитектуру в сторону local-first runtime-агента, который:
@@ -98,9 +98,9 @@ Filin Agent Next (FAN) — локальный AI runtime-agent для разра
 
 ```
 packages/
-├── ai/              # fan-ai (unchanged from fan-mono)
+├── ai/              # fan-ai (unchanged from fan)
 ├── agent/           # fan-agent-core (unchanged)
-├── tui/             # fan-tui (kept from fan-mono)
+├── tui/             # fan-tui (kept from fan)
 ├── web-ui/          # fan-web-ui components (kept, used by dashboard client)
 ├── coding-agent/    # fan-coding-agent (modified: add FAN extensions)
 ├── orchestrator/    # NEW: Coordinator extension + subagent management
@@ -260,7 +260,7 @@ model ClientToken {
 
 ### 5.1 Стек технологий
 - **Runtime:** Bun
-- **Core:** fan-ai, fan-agent-core, fan-coding-agent, fan-tui (from fan-mono)
+- **Core:** fan-ai, fan-agent-core, fan-coding-agent, fan-tui (from fan)
 - **Monorepo:** npm workspaces
 - **API:** HTTP (Hono) + stdio RPC + WebSocket
 - **Database:** Prisma + SQLite
@@ -268,7 +268,7 @@ model ClientToken {
 - **Build:** tsup
 - **Language:** TypeScript (strict)
 
-### 5.2 Существующие packages из fan-mono (keep unchanged)
+### 5.2 Существующие packages из fan (keep unchanged)
 - `packages/ai/` — LLM abstraction
 - `packages/agent/` — Agent runtime
 - `packages/tui/` — Terminal UI
@@ -360,7 +360,7 @@ model ClientToken {
 ## 10. Implementation Phases
 
 ### Phase 1: Foundation (Day 1-3)
-- [x] Fork fan-mono, set up monorepo structure
+- [x] Fork fan, set up monorepo structure
 - [x] Remove packages/mom, packages/pods
 - [x] Create packages/orchestrator skeleton
 - [x] Create packages/model-manager skeleton
@@ -412,7 +412,7 @@ model ClientToken {
 - **Tests:** 29 tests (task-manager: 17, subagent-runner: 11, agents: 1) — all passing
 - **Verification:** All 18 criteria passed (11 automated + 7 manual TUI)
 - **Fixed bugs:** agent discovery path (dist→src), chain/parallel details shape mismatch
-- **Dependencies:** @itone/fan-ai, @itone/fan-agent-core, @itone/fan-coding-agent, @itone/fan-tui, @sinclair/typebox
+- **Dependencies:** @seaagents/fan-ai, @seaagents/fan-agent-core, @seaagents/fan-coding-agent, @seaagents/fan-tui, @sinclair/typebox
 
 ### Phase 5: Orchestrator Hardening (Day 12-16)
 

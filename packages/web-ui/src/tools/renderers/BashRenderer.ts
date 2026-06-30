@@ -1,4 +1,4 @@
-import type { ToolResultMessage } from "@itone/fan-ai";
+import type { ToolResultMessage } from "@seaagents/fan-ai";
 import { html } from "lit";
 import { SquareTerminal } from "lucide";
 import { i18n } from "../../utils/i18n.js";

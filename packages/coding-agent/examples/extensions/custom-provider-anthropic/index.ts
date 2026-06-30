@@ -42,8 +42,8 @@ import {
 	type Tool,
 	type ToolCall,
 	type ToolResultMessage,
-} from "@itone/fan-ai";
-import type { ExtensionAPI } from "@itone/fan-coding-agent";
+} from "@seaagents/fan-ai";
+import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
 
 // =============================================================================
 // OAuth Implementation (copied from packages/ai/src/utils/oauth/anthropic.ts)

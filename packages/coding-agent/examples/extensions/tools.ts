@@ -9,9 +9,9 @@
  * 2. Use /tools to open the tool selector
  */
 
-import type { ExtensionAPI, ExtensionContext, ToolInfo } from "@itone/fan-coding-agent";
-import { getSettingsListTheme } from "@itone/fan-coding-agent";
-import { Container, type SettingItem, SettingsList } from "@itone/fan-tui";
+import type { ExtensionAPI, ExtensionContext, ToolInfo } from "@seaagents/fan-coding-agent";
+import { getSettingsListTheme } from "@seaagents/fan-coding-agent";
+import { Container, type SettingItem, SettingsList } from "@seaagents/fan-tui";
 
 // State persisted to session
 interface ToolsState {

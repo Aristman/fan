@@ -1,6 +1,6 @@
 # FAN Landing Page
 
-> PipBoy / Fallout 3 terminal style landing page for **FAN (Filin Agent Next)**.
+> PipBoy / Fallout 3 terminal style landing page for **FAN (Fast Agents Network)**.
 
 ## Overview
 
@@ -105,4 +105,4 @@ Edit `index.html` to change text. Main sections:
 
 ## License
 
-MIT © Filin Agent Next Team
+MIT © Fast Agents Network Team

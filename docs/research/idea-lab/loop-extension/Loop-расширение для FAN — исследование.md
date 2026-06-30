@@ -467,7 +467,7 @@ Nathan Onn описал рабочий процесс с 38 тест-кейса�
 - [Claude Code Agent SDK — Agent Loop](https://code.claude.com/docs/en/agent-sdk/agent-loop) — официальная документация агентского цикла
 - [Claude Code Testing: Ralph Loop Method](https://www.nathanonn.com/claude-code-testing-ralph-loop-verification/) — практический пример с 38 тест-кейсами
 - [Everything is a Ralph Loop](https://ghuntley.com/loop/) — философия persistent loops
-- [FAN Orchestrator Guide](https://github.com/itonemonorepo/fan/docs/guides/orchestrator.md) — текущая архитектура оркестратора
+- [FAN Orchestrator Guide](https://github.com/seaagents/fan/docs/guides/orchestrator.md) — текущая архитектура оркестратора
 
 ### Глоссарий
 

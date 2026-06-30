@@ -1,4 +1,4 @@
-import { truncateToWidth, visibleWidth } from "@itone/fan-tui";
+import { truncateToWidth, visibleWidth } from "@seaagents/fan-tui";
 import { describe, expect, it } from "vitest";
 
 /**

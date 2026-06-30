@@ -9,7 +9,6 @@ export type KnownApi =
 	| "azure-openai-responses"
 	| "openai-codex-responses"
 	| "anthropic-messages"
-	| "bedrock-converse-stream"
 	| "google-generative-ai"
 	| "google-gemini-cli"
 	| "google-vertex";
@@ -17,7 +16,6 @@ export type KnownApi =
 export type Api = KnownApi | (string & {});
 
 export type KnownProvider =
-	| "amazon-bedrock"
 	| "anthropic"
 	| "google"
 	| "google-gemini-cli"
@@ -88,7 +86,6 @@ export interface StreamOptions {
 	/**
 	 * Optional custom HTTP headers to include in API requests.
 	 * Merged with provider defaults; can override default headers.
-	 * Not supported by all providers (e.g., AWS Bedrock uses SDK auth).
 	 */
 	headers?: Record<string, string>;
 	/**
@@ -371,7 +368,7 @@ export interface OpenRouterRouting {
  * @see https://vercel.com/docs/ai-gateway/models-and-providers/provider-options
  */
 export interface VercelGatewayRouting {
-	/** List of provider slugs to exclusively use for this request (e.g., ["bedrock", "anthropic"]). */
+	/** List of provider slugs to exclusively use for this request (e.g., ["anthropic"]). */
 	only?: string[];
 	/** List of provider slugs to try in order (e.g., ["anthropic", "openai"]). */
 	order?: string[];

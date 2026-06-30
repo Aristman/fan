@@ -5,7 +5,7 @@
  * Requires: npm install in this directory
  */
 
-import type { ExtensionAPI } from "@itone/fan-coding-agent";
+import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
 import { Type } from "@sinclair/typebox";
 import ms from "ms";
 

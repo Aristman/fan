@@ -1,5 +1,5 @@
-import type { AssistantMessage } from "@itone/fan-ai";
-import { Container, Markdown, type MarkdownTheme, Spacer, Text } from "@itone/fan-tui";
+import type { AssistantMessage } from "@seaagents/fan-ai";
+import { Container, Markdown, type MarkdownTheme, Spacer, Text } from "@seaagents/fan-tui";
 import { getMarkdownTheme, theme } from "../theme/theme.js";
 
 /**

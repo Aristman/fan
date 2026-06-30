@@ -1,5 +1,5 @@
-import type { AgentMessage } from "@itone/fan-agent-core";
-import type { ImageContent, Message, TextContent } from "@itone/fan-ai";
+import type { AgentMessage } from "@seaagents/fan-agent-core";
+import type { ImageContent, Message, TextContent } from "@seaagents/fan-ai";
 import { randomUUID } from "crypto";
 import {
 	appendFileSync,

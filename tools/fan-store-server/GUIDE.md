@@ -1,6 +1,6 @@
 # FAN Repo Server — Руководство
 
-> Полное руководство по работе с FAN Repo Server — репозиторием расширений, скиллов и тем для FAN (Filin Agent Next).
+> Полное руководство по работе с FAN Repo Server — репозиторием расширений, скиллов и тем для FAN (Fast Agents Network).
 
 ---
 
@@ -802,10 +802,10 @@ fan-store publish
     "tags": ["tag1", "tag2"]
   },
   "dependencies": {
-    "@itone/fan-coding-agent": "workspace:*",
-    "@itone/fan-ai": "workspace:*",
-    "@itone/fan-agent-core": "workspace:*",
-    "@itone/fan-tui": "workspace:*",
+    "@seaagents/fan-coding-agent": "workspace:*",
+    "@seaagents/fan-ai": "workspace:*",
+    "@seaagents/fan-agent-core": "workspace:*",
+    "@seaagents/fan-tui": "workspace:*",
     "@sinclair/typebox": "^0.34.0"
   }
 }

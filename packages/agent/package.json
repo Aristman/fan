@@ -1,5 +1,5 @@
 {
-	"name": "@itone/fan-agent-core",
+	"name": "@seaagents/fan-agent-core",
 	"version": "1.0.2",
 	"description": "General-purpose agent with transport abstraction, state management, and attachment support",
 	"type": "module",
@@ -17,7 +17,8 @@
 		"prepublishOnly": "npm run clean && npm run build"
 	},
 	"dependencies": {
-		"@itone/fan-ai": "*"
+		"@sinclair/typebox": "^0.34.41",
+		"@seaagents/fan-ai": "*"
 	},
 	"keywords": [
 		"ai",
@@ -26,11 +27,11 @@
 		"transport",
 		"state-management"
 	],
-	"author": "Filin Agent Next Team",
+	"author": "Fast Agents Network Team",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/itone/fan-mono.git",
+		"url": "git+https://github.com/seaagents/fan.git",
 		"directory": "packages/agent"
 	},
 	"engines": {

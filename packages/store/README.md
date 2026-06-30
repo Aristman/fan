@@ -22,7 +22,7 @@
 
 ## Архитектура / Как работает
 
-FAN Store — это Extension для FAN (`@itone/fan-coding-agent`). При загрузке он:
+FAN Store — это Extension для FAN (`@seaagents/fan-coding-agent`). При загрузке он:
 
 1. Регистрирует 5 LLM-инструментов и slash-команду
 2. При старте каждой сессии проверяет наличие обновлений в репозиториях
@@ -104,7 +104,7 @@ npm run clean      # удалить dist/
 ## Зависимости
 
 **Runtime:**
-- `@itone/fan-coding-agent` — FAN Coding Agent SDK (Extension API, инструменты, команды)
+- `@seaagents/fan-coding-agent` — FAN Coding Agent SDK (Extension API, инструменты, команды)
 - `@sinclair/typebox` — валидация схем TypeScript
 
 **Dev:**
@@ -118,4 +118,4 @@ npm run clean      # удалить dist/
 
 ## License
 
-MIT © Filin Agent Next Team
+MIT © Fast Agents Network Team

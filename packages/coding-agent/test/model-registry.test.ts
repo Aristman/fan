@@ -1,9 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Api, Context, Model, OpenAICompletionsCompat } from "@itone/fan-ai";
-import { getApiProvider } from "@itone/fan-ai";
-import { getOAuthProvider } from "@itone/fan-ai/oauth";
+import type { Api, Context, Model, OpenAICompletionsCompat } from "@seaagents/fan-ai";
+import { getApiProvider } from "@seaagents/fan-ai";
+import { getOAuthProvider } from "@seaagents/fan-ai/oauth";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.js";
 import { clearApiKeyCache, ModelRegistry } from "../src/core/model-registry.js";
@@ -72,31 +72,31 @@ describe("ModelRegistry", () => {
 	}
 
 	function createProviderConfig(
-	baseUrl: string,
-	models: Array<{ id: string; name?: string }>,
-	api: string = "anthropic-messages",
-	overrides?: { apiKey?: string; envVar?: string; headers?: Record<string, string>; authHeader?: boolean },
-) {
-	return {
-		baseUrl,
-		apiKey: overrides?.apiKey ?? "TEST_KEY",
-		api,
-		...((overrides?.envVar && { envVar: overrides.envVar }) || {}),
-		...((overrides?.headers && { headers: overrides.headers }) || {}),
-		...((overrides?.authHeader && { authHeader: overrides.authHeader }) || {}),
-		models: models.map((m) => ({
-			id: m.id,
-			name: m.name ?? m.id,
-			reasoning: false,
-			input: ["text"],
-			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-			contextWindow: 100000,
-			maxTokens: 8000,
-		})),
-	};
-}
+		baseUrl: string,
+		models: Array<{ id: string; name?: string }>,
+		api: string = "anthropic-messages",
+		overrides?: { apiKey?: string; envVar?: string; headers?: Record<string, string>; authHeader?: boolean },
+	) {
+		return {
+			baseUrl,
+			apiKey: overrides?.apiKey ?? "TEST_KEY",
+			api,
+			...((overrides?.envVar && { envVar: overrides.envVar }) || {}),
+			...((overrides?.headers && { headers: overrides.headers }) || {}),
+			...((overrides?.authHeader && { authHeader: overrides.authHeader }) || {}),
+			models: models.map((m) => ({
+				id: m.id,
+				name: m.name ?? m.id,
+				reasoning: false,
+				input: ["text"],
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+				contextWindow: 100000,
+				maxTokens: 8000,
+			})),
+		};
+	}
 
-const openAiModel: Model<Api> = {
+	const openAiModel: Model<Api> = {
 		id: "test-openai-model",
 		name: "Test OpenAI Model",
 		api: "openai-completions",
@@ -526,7 +526,7 @@ const openAiModel: Model<Api> = {
 					modelOverrides: {
 						"anthropic/claude-sonnet-4": {
 							compat: {
-								openRouterRouting: { only: ["amazon-bedrock"] },
+								openRouterRouting: { only: ["anthropic"] },
 							},
 						},
 					},
@@ -538,7 +538,7 @@ const openAiModel: Model<Api> = {
 
 			const sonnet = models.find((m) => m.id === "anthropic/claude-sonnet-4");
 			const compat = sonnet?.compat as OpenAICompletionsCompat | undefined;
-			expect(compat?.openRouterRouting).toEqual({ only: ["amazon-bedrock"] });
+			expect(compat?.openRouterRouting).toEqual({ only: ["anthropic"] });
 		});
 
 		test("model override deep merges compat settings", () => {
@@ -568,7 +568,7 @@ const openAiModel: Model<Api> = {
 				openrouter: {
 					modelOverrides: {
 						"anthropic/claude-sonnet-4": {
-							compat: { openRouterRouting: { only: ["amazon-bedrock"] } },
+							compat: { openRouterRouting: { only: ["anthropic"] } },
 						},
 						"anthropic/claude-opus-4": {
 							compat: { openRouterRouting: { only: ["anthropic"] } },
@@ -585,7 +585,7 @@ const openAiModel: Model<Api> = {
 
 			const sonnetCompat = sonnet?.compat as OpenAICompletionsCompat | undefined;
 			const opusCompat = opus?.compat as OpenAICompletionsCompat | undefined;
-			expect(sonnetCompat?.openRouterRouting).toEqual({ only: ["amazon-bedrock"] });
+			expect(sonnetCompat?.openRouterRouting).toEqual({ only: ["anthropic"] });
 			expect(opusCompat?.openRouterRouting).toEqual({ only: ["anthropic"] });
 		});
 
@@ -1555,10 +1555,7 @@ const openAiModel: Model<Api> = {
 		test("existing built-in provider with only model IDs inherits baseUrl and api from built-in models", () => {
 			writeRawModelsJson({
 				zai: {
-					models: [
-						{ id: "glm-5-turbo" },
-						{ id: "glm-5" },
-					],
+					models: [{ id: "glm-5-turbo" }, { id: "glm-5" }],
 				},
 			});
 
@@ -1591,9 +1588,7 @@ const openAiModel: Model<Api> = {
 		test("unknown provider without baseUrl/api throws validation error", () => {
 			writeRawModelsJson({
 				"unknown-provider": {
-					models: [
-						{ id: "some-model" },
-					],
+					models: [{ id: "some-model" }],
 				},
 			});
 
@@ -1612,9 +1607,7 @@ const openAiModel: Model<Api> = {
 				zai: {
 					baseUrl: "https://custom-zai.example.com/v1",
 					api: "anthropic-messages",
-					models: [
-						{ id: "glm-5" },
-					],
+					models: [{ id: "glm-5" }],
 				},
 			});
 
@@ -1654,9 +1647,7 @@ const openAiModel: Model<Api> = {
 				writeRawModelsJson({
 					zai: {
 						apiKey: "ZAI_API_KEY",
-						models: [
-							{ id: "glm-5-turbo" },
-						],
+						models: [{ id: "glm-5-turbo" }],
 					},
 				});
 
@@ -1678,9 +1669,7 @@ const openAiModel: Model<Api> = {
 			writeRawModelsJson({
 				zai: {
 					apiKey: "sk-test-zai-key",
-					models: [
-						{ id: "glm-5-turbo" },
-					],
+					models: [{ id: "glm-5-turbo" }],
 				},
 			});
 

@@ -1,5 +1,5 @@
-import type { Api, Context, Model, SimpleStreamOptions } from "@itone/fan-ai";
-import { streamSimple } from "@itone/fan-ai";
+import type { Api, Context, Model, SimpleStreamOptions } from "@seaagents/fan-ai";
+import { streamSimple } from "@seaagents/fan-ai";
 
 /**
  * Centralized proxy decision logic.

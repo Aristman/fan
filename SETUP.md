@@ -81,7 +81,7 @@ If you prefer to set up manually instead of using `fan init`, follow the steps b
 ### Clone & Install
 
 ```bash
-git clone https://oneproject.it-one.ru/stash/scm/ailab/fan.git
+git clone https://github.com/seaagents/fan.git
 cd fan
 npm install
 ```

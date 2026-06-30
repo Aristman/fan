@@ -1,4 +1,4 @@
-import type { Model } from "@itone/fan-ai";
+import type { Model } from "@seaagents/fan-ai";
 import {
 	Container,
 	type Focusable,
@@ -9,7 +9,7 @@ import {
 	matchesKey,
 	Spacer,
 	Text,
-} from "@itone/fan-tui";
+} from "@seaagents/fan-tui";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 

@@ -1,5 +1,5 @@
-import type { AgentMessage } from "@itone/fan-agent-core";
-import type { AssistantMessage, Model } from "@itone/fan-ai";
+import type { AgentMessage } from "@seaagents/fan-agent-core";
+import type { AssistantMessage, Model } from "@seaagents/fan-ai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { generateSummary } from "../src/core/compaction/index.js";
 
@@ -7,8 +7,8 @@ const { completeSimpleMock } = vi.hoisted(() => ({
 	completeSimpleMock: vi.fn(),
 }));
 
-vi.mock("@itone/fan-ai", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("@itone/fan-ai")>();
+vi.mock("@seaagents/fan-ai", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("@seaagents/fan-ai")>();
 	return {
 		...actual,
 		completeSimple: completeSimpleMock,

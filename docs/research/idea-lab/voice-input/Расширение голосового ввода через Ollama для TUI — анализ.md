@@ -310,7 +310,7 @@ FAN имеет зрелое API расширений:
 
 | Компонент | Технология | Обоснование |
 |-----------|------------|-------------|
-| Расширение FAN | TypeScript, `@itone/fan-coding-agent` | Стандартный способ расширения TUI и команд. |
+| Расширение FAN | TypeScript, `@seaagents/fan-coding-agent` | Стандартный способ расширения TUI и команд. |
 | Запись аудио | `sox`, `arecord`, `ffmpeg` | Кросс-платформенные CLI-утилиты для записи с микрофона. |
 | Распознавание речи | `whisper.cpp` CLI | Локальный, мультиязычный, MIT-лицензия. |
 | Постобработка | Ollama `/api/chat` | Гибкая локальная/удалённая модель для улучшения текста. |
@@ -421,8 +421,8 @@ const improvedText = data.message.content;
 
 ### Дополнительные материалы
 
-- [Документация FAN — Extensions](https://github.com/itone/fan-coding-agent/blob/main/docs/extensions.md)
-- [Пример qna.ts](https://github.com/itone/fan-coding-agent/blob/main/examples/extensions/qna.ts)
+- [Документация FAN — Extensions](https://github.com/seaagents/fan/blob/main/packages/coding-agent/docs/extensions.md)
+- [Пример qna.ts](https://github.com/seaagents/fan/blob/main/packages/coding-agent/examples/extensions/qna.ts)
 - [Ollama API docs](https://github.com/ollama/ollama/blob/main/docs/api.md)
 - [Ollama Audio models](https://ollama.com/search?c=audio)
 - [whisper.cpp](https://github.com/ggerganov/whisper.cpp)
@@ -431,7 +431,7 @@ const improvedText = data.message.content;
 
 | Термин | Определение |
 |--------|-------------|
-| FAN extension | Расширение для Filin Agent Next, написанное на TypeScript и подключаемое через Extension API. |
+| FAN extension | Расширение для Fast Agents Network, написанное на TypeScript и подключаемое через Extension API. |
 | TUI | Terminal User Interface — интерфейс FAN в терминале. |
 | whisper.cpp | Локальная реализация модели Whisper для распознавания речи. |
 | Ollama | Инструмент для запуска локальных больших языковых моделей через HTTP API. |

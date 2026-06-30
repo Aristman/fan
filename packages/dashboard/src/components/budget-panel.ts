@@ -1,7 +1,7 @@
 // @fan/dashboard/components — <budget-panel> element
 
 import type { BudgetStatus } from "@fan/api-gateway/types";
-import { formatCost, formatTokenCount } from "@itone/fan-web-ui";
+import { formatCost, formatTokenCount } from "@seaagents/fan-web-ui";
 import { html, LitElement, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { AlertTriangle, Coins, DollarSign, RefreshCw } from "lucide";

@@ -1,4 +1,4 @@
-import type { ImageContent } from "@itone/fan-ai";
+import type { ImageContent } from "@seaagents/fan-ai";
 import { applyExifOrientation } from "./exif-orientation.js";
 import { loadPhoton } from "./photon.js";
 

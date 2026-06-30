@@ -1,6 +1,6 @@
-import type { ExtensionAPI } from "@itone/fan-coding-agent";
+import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { StringEnum } from "@itone/fan-ai";
+import { StringEnum } from "@seaagents/fan-ai";
 import { loadConfig, saveConfig, configExists, getEnvPath, type ConfluenceConfig } from "./config.js";
 import { initClient, healthCheck, type ConfluenceClient } from "./client.js";
 import { convertStorageToMarkdown } from "./converters/storage-to-md.js";

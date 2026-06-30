@@ -1,6 +1,6 @@
 import "@mariozechner/mini-lit/dist/ThemeToggle.js";
-import { Agent, type AgentMessage } from "@itone/fan-agent-core";
-import { getModel } from "@itone/fan-ai";
+import { Agent, type AgentMessage } from "@seaagents/fan-agent-core";
+import { getModel } from "@seaagents/fan-ai";
 import {
 	type AgentState,
 	ApiKeyPromptDialog,
@@ -18,7 +18,7 @@ import {
 	SettingsDialog,
 	SettingsStore,
 	setAppStorage,
-} from "@itone/fan-web-ui";
+} from "@seaagents/fan-web-ui";
 import { html, render } from "lit";
 import { Bell, History, Plus, Settings } from "lucide";
 import "./app.css";

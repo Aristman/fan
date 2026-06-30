@@ -4,7 +4,7 @@
 import { accessSync, constants, existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
-import { getProvidersRegistry } from "@itone/fan-ai";
+import { getProvidersRegistry } from "@seaagents/fan-ai";
 import { APP_NAME, getAgentDir, getModelsPath, getSessionsDir, getSettingsPath, VERSION } from "../config.js";
 
 interface DiagnosticResult {

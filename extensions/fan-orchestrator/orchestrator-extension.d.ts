@@ -16,7 +16,7 @@
  *   /plan [task]          — Generate implementation plan
  *   /delegate <agent> <task> — Quick delegate
  */
-import type { ExtensionFactory } from "@itone/fan-coding-agent";
+import type { ExtensionFactory } from "@seaagents/fan-coding-agent";
 export declare const orchestratorExtension: ExtensionFactory;
 export default orchestratorExtension;
 //# sourceMappingURL=orchestrator-extension.d.ts.map

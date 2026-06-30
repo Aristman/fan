@@ -10,7 +10,7 @@ import {
 	streamSimple,
 	type ToolResultMessage,
 	validateToolArguments,
-} from "@itone/fan-ai";
+} from "@seaagents/fan-ai";
 import type {
 	AgentContext,
 	AgentEvent,

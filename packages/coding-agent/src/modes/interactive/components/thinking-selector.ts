@@ -1,5 +1,5 @@
-import type { ThinkingLevel } from "@itone/fan-agent-core";
-import { Container, type SelectItem, SelectList, type SelectListLayoutOptions } from "@itone/fan-tui";
+import type { ThinkingLevel } from "@seaagents/fan-agent-core";
+import { Container, type SelectItem, SelectList, type SelectListLayoutOptions } from "@seaagents/fan-tui";
 import { getSelectListTheme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 

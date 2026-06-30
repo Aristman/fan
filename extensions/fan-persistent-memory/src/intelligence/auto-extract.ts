@@ -1,4 +1,4 @@
-import type { ExtensionContext } from "@itone/fan-coding-agent";
+import type { ExtensionContext } from "@seaagents/fan-coding-agent";
 import type { MemoryCategory, MemoryDraft } from "../types.js";
 import type { MemoryConfig } from "../config.js";
 import type { DraftRepository, MemoryRepository } from "../storage/repositories.js";

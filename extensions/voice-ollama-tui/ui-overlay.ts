@@ -11,8 +11,8 @@
  *   TC-F-2.2-3: Escape cancels recording → accepted=false
  */
 
-import type { ExtensionContext, Theme } from "@itone/fan-coding-agent";
-import { matchesKey, type TUI, type KeybindingsManager, type Focusable } from "@itone/fan-tui";
+import type { ExtensionContext, Theme } from "@seaagents/fan-coding-agent";
+import { matchesKey, type TUI, type KeybindingsManager, type Focusable } from "@seaagents/fan-tui";
 import { recordAudio, setRecorderNotify, type RecordAudioOptions } from "./audio-recorder.js";
 
 // ---------------------------------------------------------------------------

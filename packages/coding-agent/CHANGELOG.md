@@ -5,7 +5,7 @@
 ### Исправления
 
 - **Сборка** — удалена зависимость от `scripts/sync-version.mjs`. Версия
-  `@itone/fan-coding-agent` теперь управляется вручную в `package.json`.
+  `@seaagents/fan-coding-agent` теперь управляется вручную в `package.json`.
 - **Ребрендинг** — замена оставшихся `pi`-упоминаний на `fan` в
   `export-html/template.js`, `migrations.ts`, `theme-schema.json` и примерах
   расширений.
@@ -20,7 +20,7 @@
 ## [1.0.0] - 2026-06-14
 
 FAN 1.0.0 — стабилизация API и CLI-интерфейса. Все основные компоненты
-`@itone/fan-coding-agent` достигли production-ready состояния.
+`@seaagents/fan-coding-agent` достигли production-ready состояния.
 
 ### Новое
 
@@ -64,7 +64,7 @@ FAN 1.0.0 — стабилизация API и CLI-интерфейса. Все �
 
 ### Архитектура
 
-- `@itone/fan-coding-agent` — единый CLI/runtime пакет
+- `@seaagents/fan-coding-agent` — единый CLI/runtime пакет
 - **bin:** `fan` — точка входа для бинарника
 - **entry point:** `dist/bun/cli.js` для `bun build --compile`
 - **CLI-команды:** `fan`, `fan init`, `fan doctor`, `fan server`, `fan server start/stop/status`
@@ -74,9 +74,9 @@ FAN 1.0.0 — стабилизация API и CLI-интерфейса. Все �
 
 ### Зависимости пакета
 
-- `@itone/fan-ai` — унифицированное LLM API (10+ провайдеров)
-- `@itone/fan-agent-core` — абстракция агента с транспортами и состоянием
-- `@itone/fan-tui` — TUI-библиотека с дифференциальным рендерингом
+- `@seaagents/fan-ai` — унифицированное LLM API (10+ провайдеров)
+- `@seaagents/fan-agent-core` — абстракция агента с транспортами и состоянием
+- `@seaagents/fan-tui` — TUI-библиотека с дифференциальным рендерингом
 - `@fan/api-gateway` — HTTP/WebSocket сервер для клиентских подключений
 - `@fan/db` — слой базы данных (Prisma + SQLite)
 - `@fan/model-manager` — маршрутизация провайдеров, fallback-цепочки, бюджет

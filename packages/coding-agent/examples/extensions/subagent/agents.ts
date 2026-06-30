@@ -4,7 +4,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { getAgentDir, parseFrontmatter } from "@itone/fan-coding-agent";
+import { getAgentDir, parseFrontmatter } from "@seaagents/fan-coding-agent";
 
 export type AgentScope = "user" | "project" | "both";
 

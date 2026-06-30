@@ -1,5 +1,5 @@
 import { Type, type Static } from "@sinclair/typebox";
-import type { ExtensionAPI, ExtensionContext } from "@itone/fan-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@seaagents/fan-coding-agent";
 import { sanitizeContent, type MemoryCategory, type MemoryScope } from "../types.js";
 import type { MemoryConfig } from "../config.js";
 import type { MemoryRepository } from "../storage/repositories.js";

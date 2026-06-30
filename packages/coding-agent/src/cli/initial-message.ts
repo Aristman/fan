@@ -1,4 +1,4 @@
-import type { ImageContent } from "@itone/fan-ai";
+import type { ImageContent } from "@seaagents/fan-ai";
 import type { Args } from "./args.js";
 
 export interface InitialMessageInput {

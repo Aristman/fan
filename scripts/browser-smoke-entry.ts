@@ -1,4 +1,4 @@
-import { complete, getModel } from "@itone/fan-ai";
+import { complete, getModel } from "@seaagents/fan-ai";
 
 const model = getModel("google", "gemini-2.5-flash");
 console.log(model.id, typeof complete);

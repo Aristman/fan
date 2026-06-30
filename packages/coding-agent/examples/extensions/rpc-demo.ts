@@ -17,7 +17,7 @@
  * - setEditorText() - via /rpc-prefill command
  */
 
-import type { ExtensionAPI } from "@itone/fan-coding-agent";
+import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
 
 export default function (pi: ExtensionAPI) {
 	let turnCount = 0;

@@ -10,9 +10,9 @@
  * correct for that point in history.
  */
 
-import { StringEnum } from "@itone/fan-ai";
-import type { ExtensionAPI, ExtensionContext, Theme } from "@itone/fan-coding-agent";
-import { matchesKey, Text, truncateToWidth } from "@itone/fan-tui";
+import { StringEnum } from "@seaagents/fan-ai";
+import type { ExtensionAPI, ExtensionContext, Theme } from "@seaagents/fan-coding-agent";
+import { matchesKey, Text, truncateToWidth } from "@seaagents/fan-tui";
 import { Type } from "@sinclair/typebox";
 
 interface Todo {

@@ -1,6 +1,6 @@
 import { join } from "node:path";
-import type { ThinkingLevel } from "@itone/fan-agent-core";
-import type { Model } from "@itone/fan-ai";
+import type { ThinkingLevel } from "@seaagents/fan-agent-core";
+import type { Model } from "@seaagents/fan-ai";
 import { getAgentDir } from "../config.js";
 import { AuthStorage } from "./auth-storage.js";
 import type { SessionStartEvent, ToolDefinition } from "./extensions/index.js";

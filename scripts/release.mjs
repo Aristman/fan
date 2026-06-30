@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Release script for fan-mono
+ * Release script for fan
  *
  * Usage: node scripts/release.mjs <major|minor|patch>
  *

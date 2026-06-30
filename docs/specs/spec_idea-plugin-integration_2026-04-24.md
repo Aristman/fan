@@ -11,7 +11,7 @@
 ## 1. Обзор
 
 ### 1.1 Цель
-Создать плагин для IntelliJ Platform, который интегрирует FAN Agent (Filin Agent Next) во все JetBrains IDE — PyCharm, WebStorm, GoLand, Rider, IntelliJ IDEA CE/UE и другие. Плагин предоставляет чат-интерфейс с AI-агентом, отображение файловых операций в редакторе и контекстную интеграцию с открытым кодом.
+Создать плагин для IntelliJ Platform, который интегрирует FAN Agent (Fast Agents Network) во все JetBrains IDE — PyCharm, WebStorm, GoLand, Rider, IntelliJ IDEA CE/UE и другие. Плагин предоставляет чат-интерфейс с AI-агентом, отображение файловых операций в редакторе и контекстную интеграцию с открытым кодом.
 
 ### 1.2 Контекст
 FAN Runtime — локальный AI runtime-agent, который запускается на машине пользователя и предоставляет HTTP REST + WebSocket API (14 REST-эндпоинтов, стриминг через WS). Текущие клиенты: TUI (fan-tui), Dashboard (Lit web UI). IntelliJ Plugin — следующий клиент, работающий через тот же FAN API Gateway.
@@ -864,7 +864,7 @@ val events: SharedFlow<FanEvent> = _events.asSharedFlow()
     <id>fan.idea.plugin</id>
     <name>FAN Agent</name>
     <version>1.0.0</version>
-    <vendor>Filin Agent Next</vendor>
+    <vendor>Fast Agents Network</vendor>
     <description>AI coding agent integration powered by FAN Runtime</description>
     
     <depends>com.intellij.modules.platform</depends>

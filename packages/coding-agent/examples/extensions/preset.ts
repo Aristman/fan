@@ -40,9 +40,9 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { ExtensionAPI, ExtensionContext } from "@itone/fan-coding-agent";
-import { DynamicBorder, getAgentDir } from "@itone/fan-coding-agent";
-import { Container, Key, type SelectItem, SelectList, Text } from "@itone/fan-tui";
+import type { ExtensionAPI, ExtensionContext } from "@seaagents/fan-coding-agent";
+import { DynamicBorder, getAgentDir } from "@seaagents/fan-coding-agent";
+import { Container, Key, type SelectItem, SelectList, Text } from "@seaagents/fan-tui";
 
 // Preset configuration
 interface Preset {

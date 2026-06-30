@@ -31,7 +31,7 @@ See these complete provider examples:
 ## Quick Reference
 
 ```typescript
-import type { ExtensionAPI } from "@itone/fan-coding-agent";
+import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
 
 export default function (pi: ExtensionAPI) {
   // Override baseUrl for existing provider
@@ -165,7 +165,6 @@ The `api` field determines which streaming implementation is used:
 | `google-generative-ai` | Google Generative AI API |
 | `google-gemini-cli` | Google Cloud Code Assist API |
 | `google-vertex` | Google Vertex AI API |
-| `bedrock-converse-stream` | Amazon Bedrock Converse API |
 
 Most OpenAI-compatible providers work with `openai-completions`. Use `compat` for quirks:
 
@@ -215,7 +214,7 @@ pi.registerProvider("custom-api", {
 Add OAuth/SSO authentication that integrates with `/login`:
 
 ```typescript
-import type { OAuthCredentials, OAuthLoginCallbacks } from "@itone/fan-ai";
+import type { OAuthCredentials, OAuthLoginCallbacks } from "@seaagents/fan-ai";
 
 pi.registerProvider("corporate-ai", {
   baseUrl: "https://ai.corp.com/v1",
@@ -308,12 +307,11 @@ interface OAuthCredentials {
 For providers with non-standard APIs, implement `streamSimple`. Study the existing provider implementations before writing your own:
 
 **Reference implementations:**
-- [anthropic.ts](https://github.com/itone/fan-mono/blob/main/packages/ai/src/providers/anthropic.ts) - Anthropic Messages API
-- [mistral.ts](https://github.com/itone/fan-mono/blob/main/packages/ai/src/providers/mistral.ts) - Mistral Conversations API
-- [openai-completions.ts](https://github.com/itone/fan-mono/blob/main/packages/ai/src/providers/openai-completions.ts) - OpenAI Chat Completions
-- [openai-responses.ts](https://github.com/itone/fan-mono/blob/main/packages/ai/src/providers/openai-responses.ts) - OpenAI Responses API
-- [google.ts](https://github.com/itone/fan-mono/blob/main/packages/ai/src/providers/google.ts) - Google Generative AI
-- [amazon-bedrock.ts](https://github.com/itone/fan-mono/blob/main/packages/ai/src/providers/amazon-bedrock.ts) - AWS Bedrock
+- [anthropic.ts](https://github.com/seaagents/fan/blob/main/packages/ai/src/providers/anthropic.ts) - Anthropic Messages API
+- [mistral.ts](https://github.com/seaagents/fan/blob/main/packages/ai/src/providers/mistral.ts) - Mistral Conversations API
+- [openai-completions.ts](https://github.com/seaagents/fan/blob/main/packages/ai/src/providers/openai-completions.ts) - OpenAI Chat Completions
+- [openai-responses.ts](https://github.com/seaagents/fan/blob/main/packages/ai/src/providers/openai-responses.ts) - OpenAI Responses API
+- [google.ts](https://github.com/seaagents/fan/blob/main/packages/ai/src/providers/google.ts) - Google Generative AI
 
 ### Stream Pattern
 
@@ -328,7 +326,7 @@ import {
   type SimpleStreamOptions,
   calculateCost,
   createAssistantMessageEventStream,
-} from "@itone/fan-ai";
+} from "@seaagents/fan-ai";
 
 function streamMyProvider(
   model: Model<any>,
@@ -485,7 +483,7 @@ pi.registerProvider("my-provider", {
 
 ## Testing Your Implementation
 
-Test your provider against the same test suites used by built-in providers. Copy and adapt these test files from [packages/ai/test/](https://github.com/itone/fan-mono/tree/main/packages/ai/test):
+Test your provider against the same test suites used by built-in providers. Copy and adapt these test files from [packages/ai/test/](https://github.com/seaagents/fan/tree/main/packages/ai/test):
 
 | Test | Purpose |
 |------|---------|

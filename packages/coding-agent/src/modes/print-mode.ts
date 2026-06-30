@@ -6,7 +6,7 @@
  * - `fan --mode json "prompt"` - JSON event stream
  */
 
-import type { AssistantMessage, ImageContent } from "@itone/fan-ai";
+import type { AssistantMessage, ImageContent } from "@seaagents/fan-ai";
 import type { AgentSessionRuntime } from "../core/agent-session-runtime.js";
 import { flushRawStdout, writeRawStdout } from "../core/output-guard.js";
 

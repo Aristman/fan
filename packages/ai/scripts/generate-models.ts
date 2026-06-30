@@ -181,44 +181,6 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 
 		const models: Model<any>[] = [];
 
-		// Process Amazon Bedrock models
-		if (data["amazon-bedrock"]?.models) {
-			for (const [modelId, model] of Object.entries(data["amazon-bedrock"].models)) {
-				const m = model as ModelsDevModel;
-				if (m.tool_call !== true) continue;
-
-				let id = modelId;
-
-				if (id.startsWith("ai21.jamba")) {
-					// These models doesn't support tool use in streaming mode
-					continue;
-				}
-
-				if (id.startsWith("mistral.mistral-7b-instruct-v0")) {
-					// These models doesn't support system messages
-					continue;
-				}
-
-				models.push({
-					id,
-					name: m.name || id,
-					api: "bedrock-converse-stream" as const,
-					provider: "amazon-bedrock" as const,
-					baseUrl: "https://bedrock-runtime.us-east-1.amazonaws.com",
-					reasoning: m.reasoning === true,
-					input: (m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"]) as ("text" | "image")[],
-					cost: {
-						input: m.cost?.input || 0,
-						output: m.cost?.output || 0,
-						cacheRead: m.cost?.cache_read || 0,
-						cacheWrite: m.cost?.cache_write || 0,
-					},
-					contextWindow: m.limit?.context || 4096,
-					maxTokens: m.limit?.output || 4096,
-				});
-			}
-		}
-
 		// Process Anthropic models
 		if (data.anthropic?.models) {
 			for (const [modelId, model] of Object.entries(data.anthropic.models)) {
@@ -690,10 +652,6 @@ async function generateModels() {
 
 	// Temporary overrides until upstream model metadata is corrected.
 	for (const candidate of allModels) {
-		if (candidate.provider === "amazon-bedrock" && candidate.id.includes("anthropic.claude-opus-4-6-v1")) {
-			candidate.cost.cacheRead = 0.5;
-			candidate.cost.cacheWrite = 6.25;
-		}
 		if (
 			(candidate.provider === "anthropic" ||
 				candidate.provider === "opencode" ||
@@ -743,27 +701,6 @@ async function generateModels() {
 
 	}
 
-
-	// Add missing EU Opus 4.6 profile
-	if (!allModels.some((m) => m.provider === "amazon-bedrock" && m.id === "eu.anthropic.claude-opus-4-6-v1")) {
-		allModels.push({
-			id: "eu.anthropic.claude-opus-4-6-v1",
-			name: "Claude Opus 4.6 (EU)",
-			api: "bedrock-converse-stream",
-			provider: "amazon-bedrock",
-			baseUrl: "https://bedrock-runtime.us-east-1.amazonaws.com",
-			reasoning: true,
-			input: ["text", "image"],
-			cost: {
-				input: 5,
-				output: 25,
-				cacheRead: 0.5,
-				cacheWrite: 6.25,
-			},
-			contextWindow: 200000,
-			maxTokens: 128000,
-		});
-	}
 
 	// Add missing Claude Opus 4.6
 	if (!allModels.some(m => m.provider === "anthropic" && m.id === "claude-opus-4-6")) {

@@ -1,6 +1,6 @@
 # Migrating from fan/pi to FAN
 
-> FAN is a fork of [fan-mono](https://github.com/nicepkg/fan) (also known as fan-coding-agent or pi-coding-agent). This guide covers what changed and how to migrate.
+> FAN is a fork of [fan](https://github.com/nicepkg/fan) (also known as fan-coding-agent or pi-coding-agent). This guide covers what changed and how to migrate.
 
 ## What Changed
 

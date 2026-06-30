@@ -7,7 +7,6 @@ import type { Api, Context, Model, StreamOptions, ToolResultMessage } from "../s
 type StreamOptionsWithExtras = StreamOptions & Record<string, unknown>;
 
 import { hasAzureOpenAICredentials, resolveAzureDeploymentName } from "./azure-utils.js";
-import { hasBedrockCredentials } from "./bedrock-utils.js";
 import { resolveApiKey } from "./oauth.js";
 
 // Empty schema for test tools - must be proper OBJECT type for Cloud Code Assist
@@ -707,21 +706,6 @@ describe("AI Providers Unicode Surrogate Pair Tests", () => {
 		});
 	});
 
-	describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock Provider Unicode Handling", () => {
-		const llm = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
-
-		it("should handle emoji in tool results", { retry: 3, timeout: 30000 }, async () => {
-			await testEmojiInToolResults(llm);
-		});
-
-		it("should handle real-world LinkedIn comment data with emoji", { retry: 3, timeout: 30000 }, async () => {
-			await testRealWorldLinkedInData(llm);
-		});
-
-		it("should handle unpaired high surrogate (0xD83D) in tool results", { retry: 3, timeout: 30000 }, async () => {
-			await testUnpairedHighSurrogate(llm);
-		});
-	});
 
 	describe("OpenAI Codex Provider Unicode Handling", () => {
 		it.skipIf(!openaiCodexToken)(

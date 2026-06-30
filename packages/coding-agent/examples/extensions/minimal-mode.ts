@@ -16,7 +16,7 @@
  * Then use ctrl+o to toggle between minimal (collapsed) and full (expanded) views.
  */
 
-import type { ExtensionAPI } from "@itone/fan-coding-agent";
+import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
 import {
 	createBashTool,
 	createEditTool,
@@ -25,8 +25,8 @@ import {
 	createLsTool,
 	createReadTool,
 	createWriteTool,
-} from "@itone/fan-coding-agent";
-import { Text } from "@itone/fan-tui";
+} from "@seaagents/fan-coding-agent";
+import { Text } from "@seaagents/fan-tui";
 import { homedir } from "os";
 
 /**

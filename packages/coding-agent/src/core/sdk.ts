@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { ModelManager } from "@fan/model-manager";
-import { Agent, type AgentMessage, type ThinkingLevel } from "@itone/fan-agent-core";
-import { type Message, type Model, streamSimple } from "@itone/fan-ai";
+import { Agent, type AgentMessage, type ThinkingLevel } from "@seaagents/fan-agent-core";
+import { type Message, type Model, streamSimple } from "@seaagents/fan-ai";
 import { getAgentDir, getDocsPath } from "../config.js";
 import { AgentSession } from "./agent-session.js";
 import { AuthStorage } from "./auth-storage.js";
@@ -146,7 +146,7 @@ function getDefaultAgentDir(): string {
  * const { session } = await createAgentSession();
  *
  * // With explicit model
- * import { getModel } from '@itone/fan-ai';
+ * import { getModel } from '@seaagents/fan-ai';
  * const { session } = await createAgentSession({
  *   model: getModel('anthropic', 'claude-opus-4-5'),
  *   thinkingLevel: 'high',

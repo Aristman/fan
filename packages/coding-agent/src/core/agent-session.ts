@@ -16,9 +16,9 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import type { ModelManager } from "@fan/model-manager";
-import type { Agent, AgentEvent, AgentMessage, AgentState, AgentTool, ThinkingLevel } from "@itone/fan-agent-core";
-import type { AssistantMessage, ImageContent, Message, Model, TextContent } from "@itone/fan-ai";
-import { isContextOverflow, modelsAreEqual, resetApiProviders, supportsXhigh } from "@itone/fan-ai";
+import type { Agent, AgentEvent, AgentMessage, AgentState, AgentTool, ThinkingLevel } from "@seaagents/fan-agent-core";
+import type { AssistantMessage, ImageContent, Message, Model, TextContent } from "@seaagents/fan-ai";
+import { isContextOverflow, modelsAreEqual, resetApiProviders, supportsXhigh } from "@seaagents/fan-ai";
 import { getDocsPath } from "../config.js";
 import { theme } from "../modes/interactive/theme/theme.js";
 import { stripFrontmatter } from "../utils/frontmatter.js";

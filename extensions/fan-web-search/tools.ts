@@ -1,5 +1,5 @@
-import type { ExtensionAPI, ExtensionCommandContext } from "@itone/fan-coding-agent";
-import { StringEnum } from "@itone/fan-ai";
+import type { ExtensionAPI, ExtensionCommandContext } from "@seaagents/fan-coding-agent";
+import { StringEnum } from "@seaagents/fan-ai";
 import { Type } from "@sinclair/typebox";
 import type {
   WebSearchConfig, SearchParams, RecencyFilter,

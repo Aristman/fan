@@ -11,8 +11,8 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Agent, type ThinkingLevel } from "@itone/fan-agent-core";
-import { getModel, type Model } from "@itone/fan-ai";
+import { Agent, type ThinkingLevel } from "@seaagents/fan-agent-core";
+import { getModel, type Model } from "@seaagents/fan-ai";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { AgentSession } from "../src/core/agent-session.js";
 import { ModelRegistry } from "../src/core/model-registry.js";

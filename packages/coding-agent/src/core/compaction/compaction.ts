@@ -5,9 +5,9 @@
  * and after compaction the session is reloaded.
  */
 
-import type { AgentMessage } from "@itone/fan-agent-core";
-import type { AssistantMessage, Model, Usage } from "@itone/fan-ai";
-import { completeSimple } from "@itone/fan-ai";
+import type { AgentMessage } from "@seaagents/fan-agent-core";
+import type { AssistantMessage, Model, Usage } from "@seaagents/fan-ai";
+import { completeSimple } from "@seaagents/fan-ai";
 import {
 	convertToLlm,
 	createBranchSummaryMessage,

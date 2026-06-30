@@ -6,7 +6,6 @@ import type { Api, Context, Model, StreamOptions } from "../src/types.js";
 type StreamOptionsWithExtras = StreamOptions & Record<string, unknown>;
 
 import { hasAzureOpenAICredentials, resolveAzureDeploymentName } from "./azure-utils.js";
-import { hasBedrockCredentials } from "./bedrock-utils.js";
 import { resolveApiKey } from "./oauth.js";
 
 // Resolve OAuth tokens at module level (async, runs before tests)
@@ -50,7 +49,7 @@ async function testTokensOnAbort<TApi extends Api>(llm: Model<TApi>, options: St
 
 	expect(msg.stopReason).toBe("aborted");
 
-	// OpenAI providers, OpenAI Codex, Gemini CLI, zai, Amazon Bedrock, and the GPT-OSS model on Antigravity only send usage in the final chunk,
+	// OpenAI providers, OpenAI Codex, Gemini CLI, zai, and the GPT-OSS model on Antigravity only send usage in the final chunk,
 	// so when aborted they have no token stats. Anthropic and Google send usage information early in the stream.
 	// MiniMax and Kimi report input tokens but not output tokens differently on aborted requests.
 	if (
@@ -61,7 +60,6 @@ async function testTokensOnAbort<TApi extends Api>(llm: Model<TApi>, options: St
 		llm.api === "openai-codex-responses" ||
 		llm.provider === "google-gemini-cli" ||
 		llm.provider === "zai" ||
-		llm.provider === "amazon-bedrock" ||
 		llm.provider === "vercel-ai-gateway" ||
 		(llm.provider === "google-antigravity" && llm.id.includes("gpt-oss"))
 	) {
@@ -168,7 +166,7 @@ describe("Token Statistics on Abort", () => {
 	});
 
 	describe.skipIf(!process.env.ZAI_API_KEY)("zAI Provider", () => {
-		const llm = getModel("zai", "glm-4.5-flash");
+		const llm = getModel("zai", "glm-5-turbo");
 
 		it("should include token stats when aborted mid-stream", { retry: 3, timeout: 30000 }, async () => {
 			await testTokensOnAbort(llm);
@@ -294,11 +292,4 @@ describe("Token Statistics on Abort", () => {
 		);
 	});
 
-	describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock Provider", () => {
-		const llm = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
-
-		it("should include token stats when aborted mid-stream", { retry: 3, timeout: 30000 }, async () => {
-			await testTokensOnAbort(llm);
-		});
-	});
 });

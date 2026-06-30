@@ -4,11 +4,11 @@
 
 ---
 
-# Filin Agent Next — MVP Specification
+# Fast Agents Network — MVP Specification
 
 **Дата:** 2026-04-10
 **Статус:** Planning
-**База:** Форк itone/fan-mono → Aristman/fan-mono
+**База:** Форк seaagents/fan → Aristman/fan
 
 ---
 
@@ -256,8 +256,8 @@ User opens dashboard
 | **WS** | Hono + @hono/websocket | Native, no extra deps |
 | **Streaming** | SSE over WebSocket | Simpler than raw WS, pi-ai EventStream compatible |
 | **File serving** | Vite dev → Hono static in prod | Dev DX + production ready |
-| **Monorepo** | npm workspaces (existing) | Same tooling as fan-mono |
-| **Build** | tsup (consistent with fan-mono) | Fast, esm/cjs, dts |
+| **Monorepo** | npm workspaces (existing) | Same tooling as fan |
+| **Build** | tsup (consistent with fan) | Fast, esm/cjs, dts |
 
 ---
 
@@ -295,7 +295,7 @@ User opens dashboard
 
 ---
 
-## Migration from fan-mono
+## Migration from fan
 
 ### Remove (not needed for SaaS)
 - `packages/mom/` — Slack bot (not relevant)
@@ -313,7 +313,7 @@ User opens dashboard
 ### Add
 - `packages/api/` — Hono API server
 - `packages/db/` — Prisma + SQLite
-- `packages/dashboard/` — Filin web UI
+- `packages/dashboard/` — FAN web UI
 
 ---
 
@@ -325,4 +325,4 @@ User opens dashboard
 | pi-ai API keys in memory | Load from encrypted DB, never log |
 | WebSocket reconnection | Client auto-reconnect with last message ID |
 | Large sessions (context overflow) | Leverage pi compaction algorithm |
-| fan-mono breaking changes | Pin to specific version, cherry-pick updates |
+| fan breaking changes | Pin to specific version, cherry-pick updates |

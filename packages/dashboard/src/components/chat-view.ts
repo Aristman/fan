@@ -10,7 +10,7 @@ import type { FanWsClient } from "../api/ws-client.js";
 import { icon } from "../lib/icon.js";
 
 // ---------------------------------------------------------------------------
-// Local format helpers (avoid dependency on @itone/fan-web-ui internals)
+// Local format helpers (avoid dependency on @seaagents/fan-web-ui internals)
 // ---------------------------------------------------------------------------
 
 function formatCost(cost: number): string {

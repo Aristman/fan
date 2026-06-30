@@ -1,6 +1,6 @@
-import type { OAuthProviderInterface } from "@itone/fan-ai";
-import { getOAuthProviders } from "@itone/fan-ai/oauth";
-import { Container, getKeybindings, Spacer, TruncatedText } from "@itone/fan-tui";
+import type { OAuthProviderInterface } from "@seaagents/fan-ai";
+import { getOAuthProviders } from "@seaagents/fan-ai/oauth";
+import { Container, getKeybindings, Spacer, TruncatedText } from "@seaagents/fan-tui";
 import type { AuthStorage } from "../../../core/auth-storage.js";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";

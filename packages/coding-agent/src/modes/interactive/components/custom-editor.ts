@@ -1,4 +1,4 @@
-import { Editor, type EditorOptions, type EditorTheme, type TUI } from "@itone/fan-tui";
+import { Editor, type EditorOptions, type EditorTheme, type TUI } from "@seaagents/fan-tui";
 import type { AppKeybinding, KeybindingsManager } from "../../../core/keybindings.js";
 
 /**

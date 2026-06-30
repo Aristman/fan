@@ -2,8 +2,8 @@
  * Hello Tool - Minimal custom tool example
  */
 
-import { Type } from "@itone/fan-ai";
-import { defineTool, type ExtensionAPI } from "@itone/fan-coding-agent";
+import { Type } from "@seaagents/fan-ai";
+import { defineTool, type ExtensionAPI } from "@seaagents/fan-coding-agent";
 
 const helloTool = defineTool({
 	name: "hello",

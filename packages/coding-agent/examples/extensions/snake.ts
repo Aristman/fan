@@ -2,8 +2,8 @@
  * Snake game extension - play snake with /snake command
  */
 
-import type { ExtensionAPI } from "@itone/fan-coding-agent";
-import { matchesKey, visibleWidth } from "@itone/fan-tui";
+import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
+import { matchesKey, visibleWidth } from "@seaagents/fan-tui";
 
 const GAME_WIDTH = 40;
 const GAME_HEIGHT = 15;

@@ -12,7 +12,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 // ---------------------------------------------------------------------------
 // Constants for keyboard input simulation
 //
-// matchesKey(data, keyId) from @itone/fan-tui expects:
+// matchesKey(data, keyId) from @seaagents/fan-tui expects:
 //   - data: raw terminal byte sequence
 //   - keyId: string like "enter", "escape", "return"
 //

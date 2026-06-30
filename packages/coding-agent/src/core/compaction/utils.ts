@@ -2,8 +2,8 @@
  * Shared utilities for compaction and branch summarization.
  */
 
-import type { AgentMessage } from "@itone/fan-agent-core";
-import type { Message } from "@itone/fan-ai";
+import type { AgentMessage } from "@seaagents/fan-agent-core";
+import type { Message } from "@seaagents/fan-ai";
 
 // ============================================================================
 // File Operation Tracking

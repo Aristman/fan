@@ -1,4 +1,4 @@
-import { Box, Markdown, type MarkdownTheme, Text } from "@itone/fan-tui";
+import { Box, Markdown, type MarkdownTheme, Text } from "@seaagents/fan-tui";
 import type { ParsedSkillBlock } from "../../../core/agent-session.js";
 import { getMarkdownTheme, theme } from "../theme/theme.js";
 import { keyText } from "./keybinding-hints.js";

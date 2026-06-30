@@ -10,9 +10,9 @@
 
 | Аспект | Pi (образец) | FAN (копия) |
 |--------|-------------|-------------|
-| **SDK** | `@mariozechner/pi-coding-agent` | `@itone/fan-coding-agent` |
-| **TUI** | `@mariozechner/pi-tui` | `@itone/fan-tui` |
-| **AI utils** | свой `StringEnum` helper (inline) | `StringEnum` из `@itone/fan-ai` |
+| **SDK** | `@mariozechner/pi-coding-agent` | `@seaagents/fan-coding-agent` |
+| **TUI** | `@mariozechner/pi-tui` | `@seaagents/fan-tui` |
+| **AI utils** | свой `StringEnum` helper (inline) | `StringEnum` из `@seaagents/fan-ai` |
 | **Воркер-протокол** | `--mode rpc` (JSONL interactive) | `--mode json -p` (JSON pipe, single-shot) |
 | **Конфигурация** | `config.json` + `config.ts` с defaults | конфиг вшит в код / отсутствует |
 | **Agent definitions** | Hardcoded в `agents.ts` (TypeScript) | `.md` файлы с frontmatter (discoverable) |

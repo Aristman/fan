@@ -16,8 +16,8 @@
  * Adapted from pi-ask-answer v1.0.1
  */
 
-import type { Component, ExtensionAPI, KeybindingsManager, Theme, TUI } from "@itone/fan-coding-agent";
-import { Editor, type EditorTheme, Key, matchesKey, Text, truncateToWidth } from "@itone/fan-tui";
+import type { Component, ExtensionAPI, KeybindingsManager, Theme, TUI } from "@seaagents/fan-coding-agent";
+import { Editor, type EditorTheme, Key, matchesKey, Text, truncateToWidth } from "@seaagents/fan-tui";
 import { Type } from "@sinclair/typebox";
 
 // ─── Shared Types ────────────────────────────────────────────

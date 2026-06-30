@@ -1,5 +1,5 @@
 import * as fs from "node:fs";
-import { Container, Image, Spacer, Text } from "@itone/fan-tui";
+import { Container, Image, Spacer, Text } from "@seaagents/fan-tui";
 import { getBundledInteractiveAssetPath } from "../../../config.js";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";

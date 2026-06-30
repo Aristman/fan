@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext } from "@itone/fan-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@seaagents/fan-coding-agent";
 
 const COMPACT_THRESHOLD_TOKENS = 100_000;
 

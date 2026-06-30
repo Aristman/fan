@@ -2,7 +2,7 @@
     <id>fan.idea.plugin</id>
     <name>FAN Agent</name>
     <version>1.0.0</version>
-    <vendor>Filin Agent Next</vendor>
+    <vendor>Fast Agents Network</vendor>
     <description><![CDATA[
         AI coding agent integration powered by FAN Runtime.<br/>
         Connect to your local FAN Server for AI-assisted coding directly in your IDE.

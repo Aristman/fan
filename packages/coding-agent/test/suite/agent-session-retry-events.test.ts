@@ -1,5 +1,5 @@
-import type { AgentTool } from "@itone/fan-agent-core";
-import { fauxAssistantMessage, fauxThinking, fauxToolCall } from "@itone/fan-ai";
+import type { AgentTool } from "@seaagents/fan-agent-core";
+import { fauxAssistantMessage, fauxThinking, fauxToolCall } from "@seaagents/fan-ai";
 import { Type } from "@sinclair/typebox";
 import { afterEach, describe, expect, it } from "vitest";
 import { createHarness, type Harness } from "./harness.js";

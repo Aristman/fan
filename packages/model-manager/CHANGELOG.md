@@ -188,5 +188,5 @@ fallback-цепочки и учёт бюджета в production-ready сост�
 - **ProviderRouter** — унифицированное API для 10+ LLM провайдеров
 - **FallbackChain** — автоматический fallback при недоступности провайдера
 - **BudgetTracker** — отслеживание расходов с дневными и месячными лимитами
-- Интеграция с @itone/fan-ai и @fan/db
+- Интеграция с @seaagents/fan-ai и @fan/db
 - Базовые правила маршрутизации (RoutingRule)

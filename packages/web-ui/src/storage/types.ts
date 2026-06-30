@@ -1,5 +1,5 @@
-import type { AgentMessage, ThinkingLevel } from "@itone/fan-agent-core";
-import type { Model } from "@itone/fan-ai";
+import type { AgentMessage, ThinkingLevel } from "@seaagents/fan-agent-core";
+import type { Model } from "@seaagents/fan-ai";
 
 /**
  * Transaction interface for atomic operations across stores.

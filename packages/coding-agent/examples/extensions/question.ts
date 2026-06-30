@@ -4,8 +4,8 @@
  * Escape in editor returns to options, Escape in options cancels
  */
 
-import type { ExtensionAPI } from "@itone/fan-coding-agent";
-import { Editor, type EditorTheme, Key, matchesKey, Text, truncateToWidth } from "@itone/fan-tui";
+import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
+import { Editor, type EditorTheme, Key, matchesKey, Text, truncateToWidth } from "@seaagents/fan-tui";
 import { Type } from "@sinclair/typebox";
 
 interface OptionWithDesc {

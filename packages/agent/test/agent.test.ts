@@ -1,4 +1,4 @@
-import { type AssistantMessage, type AssistantMessageEvent, EventStream, getModel } from "@itone/fan-ai";
+import { type AssistantMessage, type AssistantMessageEvent, EventStream, getModel } from "@seaagents/fan-ai";
 import { describe, expect, it } from "vitest";
 import { Agent } from "../src/index.js";
 

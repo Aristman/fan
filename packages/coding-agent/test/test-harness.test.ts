@@ -3,8 +3,8 @@
  * Validates that the faux provider and session factory work correctly.
  */
 
-import type { AgentTool } from "@itone/fan-agent-core";
-import type { AssistantMessage } from "@itone/fan-ai";
+import type { AgentTool } from "@seaagents/fan-agent-core";
+import type { AssistantMessage } from "@seaagents/fan-ai";
 import { Type } from "@sinclair/typebox";
 import { afterEach, describe, expect, it } from "vitest";
 import { createHarness, createHarnessWithExtensions, type Harness } from "./test-harness.js";

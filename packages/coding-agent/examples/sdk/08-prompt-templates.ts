@@ -10,7 +10,7 @@ import {
 	DefaultResourceLoader,
 	type PromptTemplate,
 	SessionManager,
-} from "@itone/fan-coding-agent";
+} from "@seaagents/fan-coding-agent";
 
 // Define custom templates
 const deployTemplate: PromptTemplate = {

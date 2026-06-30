@@ -1,6 +1,6 @@
 # Contributing to FAN
 
-Thank you for your interest in contributing to Filin Agent Next (FAN)! 🎉
+Thank you for your interest in contributing to Fast Agents Network (FAN)! 🎉
 
 FAN is a local AI runtime-agent for developers, built as a TypeScript monorepo with Bun. Contributions of all kinds are
 welcome — bug fixes, features, docs, extensions, and more.
@@ -13,11 +13,11 @@ FAN is an npm workspaces monorepo. Packages live in `packages/`:
 
 | Package         | Name                      | Description                                                |
 |-----------------|---------------------------|------------------------------------------------------------|
-| `ai`            | `@itone/fan-ai`           | AI provider abstraction, unified LLM API, model interfaces |
-| `agent`         | `@itone/fan-agent-core`   | Agent core — transport, state management, attachments      |
-| `tui`           | `@itone/fan-tui`          | Terminal UI library with differential rendering            |
-| `web-ui`        | `@itone/fan-web-ui`       | Reusable web UI components for AI chat interfaces          |
-| `coding-agent`  | `@itone/fan-coding-agent` | Main CLI — agent loop, tools, sessions, extension runner   |
+| `ai`            | `@seaagents/fan-ai`           | AI provider abstraction, unified LLM API, model interfaces |
+| `agent`         | `@seaagents/fan-agent-core`   | Agent core — transport, state management, attachments      |
+| `tui`           | `@seaagents/fan-tui`          | Terminal UI library with differential rendering            |
+| `web-ui`        | `@seaagents/fan-web-ui`       | Reusable web UI components for AI chat interfaces          |
+| `coding-agent`  | `@seaagents/fan-coding-agent` | Main CLI — agent loop, tools, sessions, extension runner   |
 | `orchestrator`  | `@fan/orchestrator`       | Multi-agent task decomposition and coordination            |
 | `model-manager` | `@fan/model-manager`      | Provider routing, fallback chains, budget tracking         |
 | `api-gateway`   | `@fan/api-gateway`        | HTTP/WebSocket REST API server                             |
@@ -127,8 +127,8 @@ Extensions add tools, commands, and lifecycle hooks. See `packages/coding-agent/
 1. Create a file (e.g., `my-extension.ts`):
 
 ```typescript
-import type {ExtensionAPI} from "@itone/fan-coding-agent";
-import {Type} from "@itone/fan-ai";
+import type {ExtensionAPI} from "@seaagents/fan-coding-agent";
+import {Type} from "@seaagents/fan-ai";
 
 export default function (pi: ExtensionAPI) {
     pi.registerTool({

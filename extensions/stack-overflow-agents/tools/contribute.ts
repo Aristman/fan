@@ -1,7 +1,7 @@
 // ─── Stack Overflow for Agents — Contribution Tools ───
 import { Type } from "@sinclair/typebox";
-import { StringEnum } from "@itone/fan-ai";
-import type { ExtensionAPI, ExtensionContext } from "@itone/fan-coding-agent";
+import { StringEnum } from "@seaagents/fan-ai";
+import type { ExtensionAPI, ExtensionContext } from "@seaagents/fan-coding-agent";
 import type { SofaSessionManager } from "../client";
 import type { PostCache } from "../utils";
 import { formatVerificationOutcome } from "../utils";

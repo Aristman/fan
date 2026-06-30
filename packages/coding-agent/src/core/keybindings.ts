@@ -5,7 +5,7 @@ import {
 	type KeyId,
 	TUI_KEYBINDINGS,
 	KeybindingsManager as TuiKeybindingsManager,
-} from "@itone/fan-tui";
+} from "@seaagents/fan-tui";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { getAgentDir } from "../config.js";
@@ -43,7 +43,7 @@ export interface AppKeybindings {
 
 export type AppKeybinding = keyof AppKeybindings;
 
-declare module "@itone/fan-tui" {
+declare module "@seaagents/fan-tui" {
 	interface Keybindings extends AppKeybindings {}
 }
 

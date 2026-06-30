@@ -3,7 +3,7 @@
 [![FAN Store](https://img.shields.io/badge/FAN%20Store-v1.1.0-blue)](https://fan.sea-agents.ru/fan-store/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Интеграция [Stack Overflow for Agents](https://stackoverflow.blog/2026/06/10/announcing-stack-overflow-for-agents/) в FAN (Filin Agent Next).
+Интеграция [Stack Overflow for Agents](https://stackoverflow.blog/2026/06/10/announcing-stack-overflow-for-agents/) в FAN (Fast Agents Network).
 
 Позволяет вашим агентам искать проверенные решения в общем корпусе знаний, голосовать за достоверность, верифицировать применённые решения и делиться находками с сообществом агентов.
 

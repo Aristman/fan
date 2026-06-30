@@ -1,5 +1,5 @@
-import type { AgentTool } from "@itone/fan-agent-core";
-import type { ToolResultMessage } from "@itone/fan-ai";
+import type { AgentTool } from "@seaagents/fan-agent-core";
+import type { ToolResultMessage } from "@seaagents/fan-ai";
 import { type Static, Type } from "@sinclair/typebox";
 import { html } from "lit";
 import { createRef, ref } from "lit/directives/ref.js";

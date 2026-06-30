@@ -1,5 +1,5 @@
 {
-	"name": "@itone/fan-tui",
+	"name": "@seaagents/fan-tui",
 	"version": "1.0.1",
 	"description": "Terminal User Interface library with differential rendering for efficient text-based applications",
 	"type": "module",
@@ -24,11 +24,11 @@
 		"typescript",
 		"cli"
 	],
-	"author": "Filin Agent Next Team",
+	"author": "Fast Agents Network Team",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/itone/fan-mono.git",
+		"url": "git+https://github.com/seaagents/fan.git",
 		"directory": "packages/tui"
 	},
 	"engines": {

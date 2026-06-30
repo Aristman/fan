@@ -16,8 +16,8 @@ import {
 	registerApiProvider,
 	resetApiProviders,
 	type SimpleStreamOptions,
-} from "@itone/fan-ai";
-import { registerOAuthProvider, resetOAuthProviders } from "@itone/fan-ai/oauth";
+} from "@seaagents/fan-ai";
+import { registerOAuthProvider, resetOAuthProviders } from "@seaagents/fan-ai/oauth";
 import { type Static, Type } from "@sinclair/typebox";
 import AjvModule from "ajv";
 import { existsSync, readFileSync } from "fs";
@@ -182,6 +182,8 @@ const ModelsConfigSchema = Type.Object({
 ajv.addSchema(ModelsConfigSchema, "ModelsConfig");
 
 type ModelsConfig = Static<typeof ModelsConfigSchema>;
+type ProviderConfig = NonNullable<ModelsConfig["providers"][string]>;
+type ModelOverrideMap = NonNullable<ProviderConfig["modelOverrides"]>;
 
 /** Provider override config (baseUrl, compat) without request auth/headers */
 interface ProviderOverride {
@@ -476,8 +478,9 @@ export class ModelRegistry {
 
 			const overrides = new Map<string, ProviderOverride>();
 			const modelOverrides = new Map<string, Map<string, ModelOverride>>();
+			const providers = config.providers as Record<string, ProviderConfig>;
 
-			for (const [providerName, providerConfig] of Object.entries(config.providers)) {
+			for (const [providerName, providerConfig] of Object.entries(providers)) {
 				if (providerConfig.baseUrl || providerConfig.compat) {
 					overrides.set(providerName, {
 						baseUrl: providerConfig.baseUrl,
@@ -488,8 +491,9 @@ export class ModelRegistry {
 				this.storeProviderRequestConfig(providerName, providerConfig);
 
 				if (providerConfig.modelOverrides) {
-					modelOverrides.set(providerName, new Map(Object.entries(providerConfig.modelOverrides)));
-					for (const [modelId, modelOverride] of Object.entries(providerConfig.modelOverrides)) {
+					const overridesMap = providerConfig.modelOverrides as Record<string, ModelOverride>;
+					modelOverrides.set(providerName, new Map(Object.entries(overridesMap)));
+					for (const [modelId, modelOverride] of Object.entries(overridesMap)) {
 						this.storeModelHeaders(providerName, modelId, modelOverride.headers);
 					}
 				}
@@ -510,7 +514,8 @@ export class ModelRegistry {
 	}
 
 	private validateConfig(config: ModelsConfig): void {
-		for (const [providerName, providerConfig] of Object.entries(config.providers)) {
+		const providers = config.providers as Record<string, ProviderConfig>;
+		for (const [providerName, providerConfig] of Object.entries(providers)) {
 			const hasProviderApi = !!providerConfig.api;
 			const models = providerConfig.models ?? [];
 			const hasModelOverrides =
@@ -555,8 +560,9 @@ export class ModelRegistry {
 
 	private parseModels(config: ModelsConfig): Model<Api>[] {
 		const models: Model<Api>[] = [];
+		const providers = config.providers as Record<string, ProviderConfig>;
 
-		for (const [providerName, providerConfig] of Object.entries(config.providers)) {
+		for (const [providerName, providerConfig] of Object.entries(providers)) {
 			const modelDefs = providerConfig.models ?? [];
 			if (modelDefs.length === 0) continue; // Override-only, no custom models
 

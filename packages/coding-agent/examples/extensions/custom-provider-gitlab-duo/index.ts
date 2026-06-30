@@ -20,8 +20,8 @@ import {
 	type SimpleStreamOptions,
 	streamSimpleAnthropic,
 	streamSimpleOpenAIResponses,
-} from "@itone/fan-ai";
-import type { ExtensionAPI } from "@itone/fan-coding-agent";
+} from "@seaagents/fan-ai";
+import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
 
 // =============================================================================
 // Constants

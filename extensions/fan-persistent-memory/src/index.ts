@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@itone/fan-coding-agent";
+import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
 import { MemoryDatabase } from "./storage/database.js";
 import { MemoryRepository, DraftRepository, ClusterRepository } from "./storage/repositories.js";
 import { Retriever } from "./rag/retriever.js";

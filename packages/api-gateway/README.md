@@ -122,4 +122,4 @@ npm run clean      # удалить dist/
 
 ## License
 
-MIT © Filin Agent Next Team
+MIT © Fast Agents Network Team

@@ -1,8 +1,8 @@
-import type { AgentMessage, AgentTool } from "@itone/fan-agent-core";
+import type { AgentMessage, AgentTool } from "@seaagents/fan-agent-core";
 import type {
 	AssistantMessage as AssistantMessageType,
 	ToolResultMessage as ToolResultMessageType,
-} from "@itone/fan-ai";
+} from "@seaagents/fan-ai";
 import { html, LitElement, type TemplateResult } from "lit";
 import { property } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";

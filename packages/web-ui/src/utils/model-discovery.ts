@@ -1,5 +1,5 @@
-import type { Model } from "@itone/fan-ai";
 import { LMStudioClient } from "@lmstudio/sdk";
+import type { Model } from "@seaagents/fan-ai";
 import { Ollama } from "ollama/browser";
 
 /**

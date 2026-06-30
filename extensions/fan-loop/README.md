@@ -106,7 +106,7 @@ fan-loop/
 
 ## Зависимости
 
-- **FAN Core** — расширение использует `ExtensionAPI` из `@itone/fan-coding-agent`
+- **FAN Core** — расширение использует `ExtensionAPI` из `@seaagents/fan-coding-agent`
 - **fan binary** — для запуска RPC-воркеров (`fan --mode rpc`)
 - **Node.js** — `child_process.spawn`, `fs`, `crypto`
 

@@ -8,7 +8,7 @@
  * paths relative to your cwd.
  */
 
-import { getModel } from "@itone/fan-ai";
+import { getModel } from "@seaagents/fan-ai";
 import {
 	AuthStorage,
 	createAgentSession,
@@ -19,7 +19,7 @@ import {
 	type ResourceLoader,
 	SessionManager,
 	SettingsManager,
-} from "@itone/fan-coding-agent";
+} from "@seaagents/fan-coding-agent";
 
 // Custom auth storage location
 const authStorage = AuthStorage.create("/tmp/my-agent/auth.json");

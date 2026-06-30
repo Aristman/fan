@@ -6,7 +6,6 @@ import type { Api, Context, Model, StreamOptions } from "../src/types.js";
 type StreamOptionsWithExtras = StreamOptions & Record<string, unknown>;
 
 import { hasAzureOpenAICredentials, resolveAzureDeploymentName } from "./azure-utils.js";
-import { hasBedrockCredentials } from "./bedrock-utils.js";
 import { resolveApiKey } from "./oauth.js";
 
 // Resolve OAuth tokens at module level (async, runs before tests)
@@ -242,19 +241,4 @@ describe("AI Providers Abort Tests", () => {
 		});
 	});
 
-	describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock Provider Abort", () => {
-		const llm = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
-
-		it("should abort mid-stream", { retry: 3 }, async () => {
-			await testAbortSignal(llm, { reasoning: "medium" });
-		});
-
-		it("should handle immediate abort", { retry: 3 }, async () => {
-			await testImmediateAbort(llm);
-		});
-
-		it("should handle abort then new message", { retry: 3 }, async () => {
-			await testAbortThenNewMessage(llm);
-		});
-	});
 });

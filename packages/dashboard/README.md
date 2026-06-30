@@ -126,7 +126,7 @@ npm run clean      # удалить dist/
 **Runtime:**
 - `lit` — Web Components фреймворк
 - `lucide` — SVG иконки
-- `@itone/fan-web-ui` — общие UI-компоненты FAN
+- `@seaagents/fan-web-ui` — общие UI-компоненты FAN
 
 **Dev:**
 - `vite` — сборщик и dev-сервер
@@ -143,4 +143,4 @@ npm run clean      # удалить dist/
 
 ## License
 
-MIT © Filin Agent Next Team
+MIT © Fast Agents Network Team

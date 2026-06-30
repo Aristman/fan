@@ -1,5 +1,5 @@
 {
-	"name": "@itone/fan-coding-agent",
+	"name": "@seaagents/fan-coding-agent",
 	"version": "1.0.3",
 	"description": "Fan coding agent CLI with read, write, edit, bash tools and session management",
 	"type": "module",
@@ -41,11 +41,14 @@
 	},
 	"dependencies": {
 		"@fan/api-gateway": "*",
+		"@fan/db": "*",
 		"@fan/model-manager": "*",
+		"@seaagents/fan-web-ui": "*",
 		"@fan/store": "*",
-		"@itone/fan-agent-core": "*",
-		"@itone/fan-ai": "*",
-		"@itone/fan-tui": "*",
+		"@seaagents/fan-agent-core": "*",
+		"@seaagents/fan-ai": "*",
+		"@seaagents/fan-tui": "*",
+		"@sinclair/typebox": "^0.34.41",
 		"@mariozechner/jiti": "^2.6.2",
 		"@silvia-odwyer/photon-node": "^0.3.4",
 		"ajv": "^8.17.1",
@@ -91,11 +94,11 @@
 		"tui",
 		"agent"
 	],
-	"author": "Filin Agent Next Team",
+	"author": "Fast Agents Network Team",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/itone/fan-mono.git",
+		"url": "git+https://github.com/seaagents/fan.git",
 		"directory": "packages/coding-agent"
 	},
 	"engines": {

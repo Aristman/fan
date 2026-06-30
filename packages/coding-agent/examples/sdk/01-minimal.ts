@@ -5,7 +5,7 @@
  * from cwd and ~/.fan/agent. Model chosen from settings or first available.
  */
 
-import { createAgentSession } from "@itone/fan-coding-agent";
+import { createAgentSession } from "@seaagents/fan-coding-agent";
 
 const { session } = await createAgentSession();
 

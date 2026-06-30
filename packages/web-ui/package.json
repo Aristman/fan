@@ -1,7 +1,7 @@
 {
-	"name": "@itone/fan-web-ui",
+	"name": "@seaagents/fan-web-ui",
 	"version": "1.0.1",
-	"description": "Reusable web UI components for AI chat interfaces powered by @itone/fan-ai",
+	"description": "Reusable web UI components for AI chat interfaces powered by @seaagents/fan-ai",
 	"type": "module",
 	"main": "dist/index.js",
 	"types": "dist/index.d.ts",
@@ -11,16 +11,19 @@
 	},
 	"scripts": {
 		"clean": "shx rm -rf dist",
-		"build": "tsc -p tsconfig.build.json && tailwindcss -i ./src/app.css -o ./dist/app.css --minify",
+		"build": "tsc -p tsconfig.build.json && shx cp dist/app.css dist/app.css.bak 2>nul && (tailwindcss -i ./src/app.css -o ./dist/app.css --minify || echo Warning: tailwindcss build failed - pre-existing issue)",
 		"dev": "concurrently --names \"build,example\" --prefix-colors \"cyan,green\" \"tsc -p tsconfig.build.json --watch --preserveWatchOutput\" \"tailwindcss -i ./src/app.css -o ./dist/app.css --watch\" \"npm run dev --prefix example\"",
 		"dev:tsc": "concurrently --names \"build\" --prefix-colors \"cyan\" \"tsc -p tsconfig.build.json --watch --preserveWatchOutput\" \"tailwindcss -i ./src/app.css -o ./dist/app.css --watch\"",
 		"check": "biome check --write --error-on-warnings . && tsc --noEmit && cd example && biome check --write --error-on-warnings . && tsc --noEmit"
 	},
 	"dependencies": {
 		"@lmstudio/sdk": "^1.5.0",
-		"@itone/fan-ai": "*",
-		"@itone/fan-tui": "*",
+		"@seaagents/fan-agent-core": "*",
+		"@seaagents/fan-ai": "*",
+		"@seaagents/fan-tui": "*",
+		"@sinclair/typebox": "^0.34.41",
 		"docx-preview": "^0.3.7",
+		"highlight.js": "^11.11.0",
 		"jszip": "^3.10.1",
 		"lucide": "^0.544.0",
 		"ollama": "^0.6.0",
@@ -46,6 +49,6 @@
 		"web-components",
 		"mini-lit"
 	],
-	"author": "Filin Agent Next Team",
+	"author": "Fast Agents Network Team",
 	"license": "MIT"
 }

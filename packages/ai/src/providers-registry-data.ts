@@ -134,13 +134,6 @@ export const providersRegistryData = {
 			wizardModels: [],
 			authType: "adc",
 		},
-		"amazon-bedrock": {
-			displayName: "Amazon Bedrock",
-			envVars: [],
-			primaryEnvVar: "",
-			wizardModels: [],
-			authType: "aws",
-		},
 		huggingface: {
 			displayName: "HuggingFace",
 			envVars: ["HF_TOKEN"],

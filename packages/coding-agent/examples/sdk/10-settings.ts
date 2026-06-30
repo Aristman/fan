@@ -4,7 +4,7 @@
  * Override settings using SettingsManager.
  */
 
-import { createAgentSession, SessionManager, SettingsManager } from "@itone/fan-coding-agent";
+import { createAgentSession, SessionManager, SettingsManager } from "@seaagents/fan-coding-agent";
 
 // Load current settings (merged global + project)
 const settingsManagerFromDisk = SettingsManager.create();

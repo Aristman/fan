@@ -17,8 +17,8 @@ OSS weekend runs Thursday, April 2, 2026 through Monday, April 13, 2026. New iss
 </p>
 <p align="center">
   <a href="https://discord.com/invite/3cU7Bz4UPx"><img alt="Discord" src="https://img.shields.io/badge/discord-community-5865F2?style=flat-square&logo=discord&logoColor=white" /></a>
-  <a href="https://www.npmjs.com/package/@itone/fan-coding-agent"><img alt="npm" src="https://img.shields.io/npm/v/@itone/fan-coding-agent?style=flat-square" /></a>
-  <a href="https://github.com/itone/fan-mono/actions/workflows/ci.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/itone/fan-mono/ci.yml?style=flat-square&branch=main" /></a>
+  <a href="https://www.npmjs.com/package/@seaagents/fan-coding-agent"><img alt="npm" src="https://img.shields.io/npm/v/@seaagents/fan-coding-agent?style=flat-square" /></a>
+  <a href="https://github.com/seaagents/fan/actions/workflows/ci.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/seaagents/fan/ci.yml?style=flat-square&branch=main" /></a>
 </p>
 <p align="center">
   <a href="https://fan.dev">fan.dev</a> domain graciously donated by
@@ -42,11 +42,11 @@ For the full explanation, see [this post on X](https://x.com/badlogicgames/statu
 
 To publish sessions, use [`badlogic/pi-share-hf`](https://github.com/badlogic/pi-share-hf). Read its README.md for setup instructions. All you need is a Hugging Face account, the Hugging Face CLI, and `pi-share-hf`.
 
-You can also watch [this video](https://x.com/badlogicgames/status/2041151967695634619), where I show how I publish my `fan-mono` sessions.
+You can also watch [this video](https://x.com/badlogicgames/status/2041151967695634619), where I show how I publish my sessions.
 
-I regularly publish my own `fan-mono` work sessions here:
+I regularly publish my own work sessions here:
 
-- [badlogicgames/fan-mono on Hugging Face](https://huggingface.co/datasets/badlogicgames/fan-mono)
+- [badlogicgames/fan on Hugging Face](https://huggingface.co/datasets/badlogicgames/fan)
 
 ## Table of Contents
 
@@ -77,7 +77,7 @@ I regularly publish my own `fan-mono` work sessions here:
 ## Quick Start
 
 ```bash
-npm install -g @itone/fan-coding-agent
+npm install -g @seaagents/fan-coding-agent
 ```
 
 Authenticate with an API key:
@@ -117,7 +117,6 @@ For each built-in provider, fan maintains a list of tool-capable models, updated
 - Azure OpenAI
 - Google Gemini
 - Google Vertex
-- Amazon Bedrock
 - Mistral
 - Groq
 - Cerebras
@@ -408,7 +407,7 @@ See [docs/packages.md](docs/packages.md).
 ### SDK
 
 ```typescript
-import { AuthStorage, createAgentSession, ModelRegistry, SessionManager } from "@itone/fan-coding-agent";
+import { AuthStorage, createAgentSession, ModelRegistry, SessionManager } from "@seaagents/fan-coding-agent";
 
 const authStorage = AuthStorage.create();
 const modelRegistry = ModelRegistry.create(authStorage);
@@ -613,6 +612,6 @@ MIT
 
 ## See Also
 
-- [@itone/fan-ai](https://www.npmjs.com/package/@itone/fan-ai): Core LLM toolkit
-- [@itone/fan-agent-core](https://www.npmjs.com/package/@itone/fan-agent-core): Agent framework
-- [@itone/fan-tui](https://www.npmjs.com/package/@itone/fan-tui): Terminal UI components
+- [@seaagents/fan-ai](https://www.npmjs.com/package/@seaagents/fan-ai): Core LLM toolkit
+- [@seaagents/fan-agent-core](https://www.npmjs.com/package/@seaagents/fan-agent-core): Agent framework
+- [@seaagents/fan-tui](https://www.npmjs.com/package/@seaagents/fan-tui): Terminal UI components

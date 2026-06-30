@@ -1,4 +1,4 @@
-import { setKeybindings } from "@itone/fan-tui";
+import { setKeybindings } from "@seaagents/fan-tui";
 import { beforeAll, beforeEach, describe, expect, test } from "vitest";
 import { KeybindingsManager } from "../src/core/keybindings.js";
 import type {

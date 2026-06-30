@@ -454,8 +454,8 @@ Add it to the `ProcessingStatus` type in `ui-overlay.ts`.
 | **Type** | Package management |
 
 **Description:**
-The extension declares peerDependencies on `@itone/fan-coding-agent`,
-`@itone/fan-tui`, `@sinclair/typebox`, and `@itone/fan-ai`, but has no `dependencies`
+The extension declares peerDependencies on `@seaagents/fan-coding-agent`,
+`@seaagents/fan-tui`, `@sinclair/typebox`, and `@seaagents/fan-ai`, but has no `dependencies`
 or `devDependencies` to actually install these. The `README.md` step 2 says
 `npm install`, which would only install `@types/node` and `typescript`.
 

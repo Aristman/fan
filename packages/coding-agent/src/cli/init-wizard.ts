@@ -2,7 +2,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
-import { getWizardProviders, isProviderConfigured } from "@itone/fan-ai";
+import { getWizardProviders, isProviderConfigured } from "@seaagents/fan-ai";
 import { APP_NAME, getAgentDir, getEnvPath, getModelsPath, getSettingsPath, VERSION } from "../config.js";
 
 const WIZARD_PROVIDERS = getWizardProviders();

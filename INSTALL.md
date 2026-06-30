@@ -1,6 +1,6 @@
 # Installation Guide
 
-Complete installation instructions for FAN (Filin Agent Next) — a local AI runtime-agent for developers.
+Complete installation instructions for FAN (Fast Agents Network) — a local AI runtime-agent for developers.
 
 ---
 

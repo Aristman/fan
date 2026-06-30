@@ -4,8 +4,8 @@
  * Run with: npx tsx test/streaming-render-debug.ts
  */
 
-import type { AssistantMessage } from "@itone/fan-ai";
-import { ProcessTerminal, TUI } from "@itone/fan-tui";
+import type { AssistantMessage } from "@seaagents/fan-ai";
+import { ProcessTerminal, TUI } from "@seaagents/fan-tui";
 import { readFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";

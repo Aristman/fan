@@ -1,4 +1,4 @@
-import type { AgentToolResult, ExtensionAPI, ExtensionCommandContext } from "@itone/fan-coding-agent";
+import type { AgentToolResult, ExtensionAPI, ExtensionCommandContext } from "@seaagents/fan-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { DraftQueue } from "./drafts.js";
 import { Extractor } from "./extractor.js";

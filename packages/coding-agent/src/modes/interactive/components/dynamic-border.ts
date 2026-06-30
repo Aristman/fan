@@ -1,4 +1,4 @@
-import type { Component } from "@itone/fan-tui";
+import type { Component } from "@seaagents/fan-tui";
 import { theme } from "../theme/theme.js";
 
 /**

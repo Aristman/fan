@@ -7,8 +7,8 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import type { ExtensionContext } from "@itone/fan-coding-agent";
-import { fuzzyFilter, Input, Key, matchesKey, truncateToWidth } from "@itone/fan-tui";
+import type { ExtensionContext } from "@seaagents/fan-coding-agent";
+import { fuzzyFilter, Input, Key, matchesKey, truncateToWidth } from "@seaagents/fan-tui";
 import type { StoreConfig } from "./config.js";
 import type { ArchiveInstaller } from "./installer.js";
 import { ProgressOverlay } from "./progress-overlay.js";

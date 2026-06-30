@@ -7,8 +7,9 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { AgentMessage } from "@itone/fan-agent-core";
-import type { AssistantMessage, ImageContent, Message, Model, OAuthProviderId } from "@itone/fan-ai";
+import type { AgentMessage } from "@seaagents/fan-agent-core";
+import type { ArtifactMessage, UserMessageWithAttachments } from "@seaagents/fan-web-ui";
+import type { AssistantMessage, ImageContent, Message, Model, OAuthProviderId } from "@seaagents/fan-ai";
 import type {
 	AutocompleteItem,
 	EditorComponent,
@@ -19,7 +20,7 @@ import type {
 	OverlayHandle,
 	OverlayOptions,
 	SlashCommand,
-} from "@itone/fan-tui";
+} from "@seaagents/fan-tui";
 import {
 	CombinedAutocompleteProvider,
 	type Component,
@@ -35,7 +36,7 @@ import {
 	TruncatedText,
 	TUI,
 	visibleWidth,
-} from "@itone/fan-tui";
+} from "@seaagents/fan-tui";
 import { spawn, spawnSync } from "child_process";
 import { fetchManifest, UPDATE_SERVER_URL } from "../../cli/self-update.js";
 import { APP_NAME, getAgentDir, getAuthPath, getDebugLogPath, getShareViewerUrl, VERSION } from "../../config.js";

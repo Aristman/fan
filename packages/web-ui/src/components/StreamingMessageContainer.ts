@@ -1,5 +1,5 @@
-import type { AgentMessage, AgentTool } from "@itone/fan-agent-core";
-import type { ToolResultMessage } from "@itone/fan-ai";
+import type { AgentMessage, AgentTool } from "@seaagents/fan-agent-core";
+import type { ToolResultMessage } from "@seaagents/fan-ai";
 import { html, LitElement } from "lit";
 import { property, state } from "lit/decorators.js";
 

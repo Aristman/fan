@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@itone/fan-coding-agent";
+import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
 import { loadConfig } from "./config.js";
 import { initProviderChain, registerTools, zaiProvider } from "./tools.js";
 

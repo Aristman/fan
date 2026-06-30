@@ -5,10 +5,10 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentMessage, AgentTool } from "@itone/fan-agent-core";
-import { Agent } from "@itone/fan-agent-core";
-import type { FauxModelDefinition, FauxProviderRegistration, FauxResponseStep, Model } from "@itone/fan-ai";
-import { registerFauxProvider } from "@itone/fan-ai";
+import type { AgentMessage, AgentTool } from "@seaagents/fan-agent-core";
+import { Agent } from "@seaagents/fan-agent-core";
+import type { FauxModelDefinition, FauxProviderRegistration, FauxResponseStep, Model } from "@seaagents/fan-ai";
+import { registerFauxProvider } from "@seaagents/fan-ai";
 import { AgentSession, type AgentSessionEvent } from "../../src/core/agent-session.js";
 import { AuthStorage } from "../../src/core/auth-storage.js";
 import type { ExtensionRunner } from "../../src/core/extensions/index.js";

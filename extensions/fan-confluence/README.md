@@ -1,6 +1,6 @@
 # fan-confluence
 
-Confluence Data Center integration extension for [fan](https://github.com/itone/fan-mono).
+Confluence Data Center integration extension for [fan](https://github.com/seaagents/fan).
 
 Provides 6 tools for reading, writing, and searching Confluence pages directly from LLM agent sessions.
 

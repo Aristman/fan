@@ -42,13 +42,13 @@
 ## Package Documentation
 | File | Status | Description |
 |------|--------|-------------|
-| `packages/ai/README.md` | ✅ | @itone/fan-ai — Unified LLM API |
-| `packages/agent/README.md` | ✅ | @itone/fan-agent-core — Stateful agent |
-| `packages/coding-agent/README.md` | ✅ | @itone/fan-coding-agent — CLI & Runtime |
+| `packages/ai/README.md` | ✅ | @seaagents/fan-ai — Unified LLM API |
+| `packages/agent/README.md` | ✅ | @seaagents/fan-agent-core — Stateful agent |
+| `packages/coding-agent/README.md` | ✅ | @seaagents/fan-coding-agent — CLI & Runtime |
 | `packages/coding-agent/docs/models.md` | ✅ | Custom models configuration guide (providers, envVar, auth resolution) |
 | `packages/coding-agent/docs/` (other) | ✅ | Extensions, RPC, SDK, TUI, etc. (22 files) |
-| `packages/tui/README.md` | ✅ | @itone/fan-tui — Terminal UI framework |
-| `packages/web-ui/README.md` | ✅ | @itone/fan-web-ui — Web components |
+| `packages/tui/README.md` | ✅ | @seaagents/fan-tui — Terminal UI framework |
+| `packages/web-ui/README.md` | ✅ | @seaagents/fan-web-ui — Web components |
 | `packages/api-gateway/README.md` | ✅ | @fan/api-gateway — HTTP/WS server |
 | `packages/db/README.md` | ✅ | @fan/db — Prisma + SQLite |
 | `packages/model-manager/README.md` | ✅ | @fan/model-manager — Model routing & budget |
@@ -78,7 +78,7 @@
 ## Backlogs
 | File | Status | Description |
 |------|--------|-------------|
-| `docs/backlogs/package-fork-backlog.md` | ✅ | Fork backlog @mariozechner/* → @itone/* |
+| `docs/backlogs/package-fork-backlog.md` | ✅ | Fork backlog @mariozechner/* → @seaagents/* |
 | `docs/backlogs/setup-wizard-backlog.md` | ✅ | fan init setup wizard backlog |
 
 ## Skills (11 встроенных)

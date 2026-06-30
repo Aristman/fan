@@ -1,6 +1,6 @@
-import type { AgentTool } from "@itone/fan-agent-core";
-import { fauxAssistantMessage, fauxToolCall } from "@itone/fan-ai";
-import type { ExtensionAPI } from "@itone/fan-coding-agent";
+import type { AgentTool } from "@seaagents/fan-agent-core";
+import { fauxAssistantMessage, fauxToolCall } from "@seaagents/fan-ai";
+import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { afterEach, describe, expect, it } from "vitest";
 import { createHarness, getAssistantTexts, getUserTexts, type Harness } from "../harness.js";

@@ -4,8 +4,8 @@
  * Shows how to select a specific model and thinking level.
  */
 
-import { getModel } from "@itone/fan-ai";
-import { AuthStorage, createAgentSession, ModelRegistry } from "@itone/fan-coding-agent";
+import { getModel } from "@seaagents/fan-ai";
+import { AuthStorage, createAgentSession, ModelRegistry } from "@seaagents/fan-coding-agent";
 
 // Set up auth storage and model registry
 const authStorage = AuthStorage.create();

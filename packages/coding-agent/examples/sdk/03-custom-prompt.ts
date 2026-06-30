@@ -4,7 +4,7 @@
  * Shows how to replace or modify the default system prompt.
  */
 
-import { createAgentSession, DefaultResourceLoader, SessionManager } from "@itone/fan-coding-agent";
+import { createAgentSession, DefaultResourceLoader, SessionManager } from "@seaagents/fan-coding-agent";
 
 // Option 1: Replace prompt entirely
 const loader1 = new DefaultResourceLoader({

@@ -1,4 +1,4 @@
-import type { AgentState } from "@itone/fan-agent-core";
+import type { AgentState } from "@seaagents/fan-agent-core";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { basename, join } from "path";
 import { APP_NAME, getExportTemplateDir } from "../../config.js";

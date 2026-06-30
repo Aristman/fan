@@ -1,4 +1,4 @@
-import { type Component, Container, getKeybindings, Spacer, Text, truncateToWidth } from "@itone/fan-tui";
+import { type Component, Container, getKeybindings, Spacer, Text, truncateToWidth } from "@seaagents/fan-tui";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 

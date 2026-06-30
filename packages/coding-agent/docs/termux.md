@@ -17,7 +17,7 @@ pkg update && pkg upgrade
 pkg install nodejs termux-api git
 
 # Install fan
-npm install -g @itone/fan-coding-agent
+npm install -g @seaagents/fan-coding-agent
 
 # Create config directory
 mkdir -p ~/.fan/agent

@@ -2,7 +2,7 @@
  * FAN Store — LLM-callable tool registration.
  */
 
-import type { ExtensionAPI } from "@itone/fan-coding-agent";
+import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
 import { Type } from "@sinclair/typebox";
 import type { StoreConfig } from "./config.js";
 import type { ArchiveInstaller } from "./installer.js";

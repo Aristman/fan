@@ -264,7 +264,7 @@ export async function writeSoulFile(key: SoulFileKey, content: string): Promise<
 
 	try {
 		const { withFileMutationQueue } = await import(
-			"@itone/fan-coding-agent"
+			"@seaagents/fan-coding-agent"
 		);
 		await withFileMutationQueue(path, async () => {
 			writeFileSync(path, content, "utf-8");

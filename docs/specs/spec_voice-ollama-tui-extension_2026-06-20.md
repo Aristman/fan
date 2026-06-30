@@ -176,7 +176,7 @@
 
 - **Язык**: TypeScript
 - **Runtime**: Bun / Node.js (через jiti в FAN)
-- **FAN Extension API**: `@itone/fan-coding-agent`
+- **FAN Extension API**: `@seaagents/fan-coding-agent`
 - **Запись аудио**: `ffmpeg` (приоритет), fallback `sox`/`arecord`
 - **Распознавание речи**: `whisper.cpp` CLI
 - **Постобработка**: Ollama HTTP API (`/api/chat`, `/api/tags`)

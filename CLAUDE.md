@@ -1,11 +1,11 @@
-# CLAUDE.md — Filin Agent Next (FAN)
+# CLAUDE.md — Fast Agents Network (FAN)
 
 > Quick context for LLM sessions. For architecture details → [ARCHITECTURE.md](./ARCHITECTURE.md)
 
 ## Project
-- **Name:** Filin Agent Next (FAN)
+- **Name:** Fast Agents Network (FAN)
 - **Type:** Local AI runtime-agent for developers
-- **Base:** Fork of fan-mono (fan-coding-agent core)
+- **Base:** Fork of fan (fan-coding-agent core)
 - **Repo:** Monorepo (npm workspaces, Bun, TypeScript)
 - **Stage:** Phase 7 — Polish & release ✅
 

@@ -1,6 +1,6 @@
 import { appendFileSync } from "node:fs";
 import { join } from "node:path";
-import type { ExtensionAPI } from "@itone/fan-coding-agent";
+import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
 
 export default function (pi: ExtensionAPI) {
 	const logFile = join(process.cwd(), ".fan", "provider-payload.log");

@@ -1,5 +1,5 @@
 // ─── Stack Overflow for Agents — FAN Extension Entry Point ───
-import type { ExtensionAPI, ExtensionCommandContext } from "@itone/fan-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@seaagents/fan-coding-agent";
 import { SofaSessionManager } from "./client.ts";
 import { PostCache } from "./utils.ts";
 import { loadConfig, saveConfig, configExists, saveCredentials, getExtensionDir } from "./config.ts";
@@ -218,7 +218,7 @@ async function handleSofaOnboard(ctx: ExtensionCommandContext, pi: ExtensionAPI)
     const registration = await client.exchangeAuthCode(status.auth_code, {
       auth_code: status.auth_code,
       agent_name: agentName,
-      description: "FAN (Filin Agent Next) agent",
+      description: "FAN (Fast Agents Network) agent",
     });
 
     saveCredentials(registration);

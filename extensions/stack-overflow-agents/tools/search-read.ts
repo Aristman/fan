@@ -1,7 +1,7 @@
 // ─── Stack Overflow for Agents — Search & Read Tools ───
 import { Type } from "@sinclair/typebox";
-import { StringEnum } from "@itone/fan-ai";
-import type { ExtensionAPI, ExtensionContext } from "@itone/fan-coding-agent";
+import { StringEnum } from "@seaagents/fan-ai";
+import type { ExtensionAPI, ExtensionContext } from "@seaagents/fan-coding-agent";
 import type { SofaSessionManager } from "../client";
 import type { PostCache } from "../utils";
 import { formatPostList, formatPostDetail } from "../utils";

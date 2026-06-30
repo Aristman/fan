@@ -124,7 +124,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 
 	const guidelines = guidelinesList.map((g) => `- ${g}`).join("\n");
 
-	let prompt = `You are an expert coding assistant operating inside FAN (Filin Agent Next), a local AI runtime-agent for developers. You help users by reading files, executing commands, editing code, and writing new files.
+	let prompt = `You are an expert coding assistant operating inside FAN (Fast Agents Network), a local AI runtime-agent for developers. You help users by reading files, executing commands, editing code, and writing new files.
 
 Available tools:
 ${toolsList}

@@ -1,4 +1,4 @@
-import type { AgentMessage } from "@itone/fan-agent-core";
+import type { AgentMessage } from "@seaagents/fan-agent-core";
 import {
 	ARTIFACTS_RUNTIME_PROVIDER_DESCRIPTION_RO,
 	ARTIFACTS_RUNTIME_PROVIDER_DESCRIPTION_RW,

@@ -2,10 +2,10 @@
  * FAN Store — Progress overlay with cancellable spinner.
  *
  * Lightweight bordered loader for TUI store operations.
- * Uses only @itone/fan-tui primitives (no coding-agent internals).
+ * Uses only @seaagents/fan-tui primitives (no coding-agent internals).
  */
 
-import { CancellableLoader, Container, Spacer, Text, type TUI } from "@itone/fan-tui";
+import { CancellableLoader, Container, Spacer, Text, type TUI } from "@seaagents/fan-tui";
 
 // ──────────────────────────────────────────────
 // Minimal theme interface

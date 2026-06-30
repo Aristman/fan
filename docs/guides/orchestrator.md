@@ -31,7 +31,7 @@ cp -r ~/.fan/packages/fan-orchestrator ~/.fan/agent/extensions/
 
 To disable the orchestrator, remove or rename its folder in `~/.fan/agent/extensions/`.
 
-> **Architecture note:** The orchestrator is a standalone extension — it is NOT hardcoded into the `@itone/fan-coding-agent` core. It's loaded at runtime through FAN's extension system.
+> **Architecture note:** The orchestrator is a standalone extension — it is NOT hardcoded into the `@seaagents/fan-coding-agent` core. It's loaded at runtime through FAN's extension system.
 
 ## Coordinator Mode
 

@@ -1,6 +1,6 @@
 # FAN Web UI - Example
 
-This is a minimal example showing how to use `@itone/fan-web-ui` in a web application.
+This is a minimal example showing how to use `@seaagents/fan-web-ui` in a web application.
 
 ## Setup
 

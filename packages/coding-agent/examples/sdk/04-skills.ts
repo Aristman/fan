@@ -11,7 +11,7 @@ import {
 	DefaultResourceLoader,
 	SessionManager,
 	type Skill,
-} from "@itone/fan-coding-agent";
+} from "@seaagents/fan-coding-agent";
 
 // Or define custom skills inline
 const customSkill: Skill = {

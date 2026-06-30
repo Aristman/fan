@@ -337,7 +337,7 @@ export class ArchiveInstaller {
 
 	/**
 	 * Install dependencies in a directory using bun.
-	 * Strips workspace:* and @itone/* bare * dependencies from package.json
+	 * Strips workspace:* and @seaagents/* bare * dependencies from package.json
 	 * before install (not resolvable outside monorepo).
 	 */
 	private async installDeps(dir: string, onProgress?: ProgressCallback): Promise<void> {
@@ -360,8 +360,8 @@ export class ArchiveInstaller {
 						cleaned = true;
 						continue;
 					}
-					// Strip bare * version on @itone/* packages (workspace deps without workspace: protocol)
-					if (val === "*" && key.startsWith("@itone/")) {
+					// Strip bare * version on @seaagents/* packages (workspace deps without workspace: protocol)
+					if (val === "*" && key.startsWith("@seaagents/")) {
 						delete (deps as Record<string, string>)[key];
 						cleaned = true;
 					}

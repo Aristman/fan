@@ -1,6 +1,6 @@
-import type { AgentTool } from "@itone/fan-agent-core";
-import type { ImageContent, TextContent } from "@itone/fan-ai";
-import { Text } from "@itone/fan-tui";
+import type { AgentTool } from "@seaagents/fan-agent-core";
+import type { ImageContent, TextContent } from "@seaagents/fan-ai";
+import { Text } from "@seaagents/fan-tui";
 import { type Static, Type } from "@sinclair/typebox";
 import { constants } from "fs";
 import { access as fsAccess, readFile as fsReadFile } from "fs/promises";

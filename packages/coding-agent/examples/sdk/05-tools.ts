@@ -22,7 +22,7 @@ import {
 	readOnlyTools,
 	readTool,
 	SessionManager,
-} from "@itone/fan-coding-agent";
+} from "@seaagents/fan-coding-agent";
 
 // Read-only mode (no edit/write) - uses process.cwd()
 await createAgentSession({

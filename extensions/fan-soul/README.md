@@ -82,7 +82,7 @@ fan store install fan-soul
 
 Расширение адаптировано из `pi-soul` v1.0.1:
 - Путь: `~/.pi/` → `~/.fan/`
-- Импорты: `@mariozechner/pi-coding-agent` → `@itone/fan-coding-agent`
+- Импорты: `@mariozechner/pi-coding-agent` → `@seaagents/fan-coding-agent`
 - Package discovery: `pi` → `fan`
 - Пустые шаблоны без записей по умолчанию
 - Интерактивный `/soul init` через `ctx.ui.input()` вместо создания файлов с шаблоном

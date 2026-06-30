@@ -1,4 +1,4 @@
-import { type AssistantMessage, fauxAssistantMessage, type Model } from "@itone/fan-ai";
+import { type AssistantMessage, fauxAssistantMessage, type Model } from "@seaagents/fan-ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createHarness, type Harness } from "./harness.js";
 

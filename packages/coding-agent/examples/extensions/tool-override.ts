@@ -20,8 +20,8 @@
  *   pi -e ./tool-override.ts
  */
 
-import type { TextContent } from "@itone/fan-ai";
-import { type ExtensionAPI, getAgentDir, withFileMutationQueue } from "@itone/fan-coding-agent";
+import type { TextContent } from "@seaagents/fan-ai";
+import { type ExtensionAPI, getAgentDir, withFileMutationQueue } from "@seaagents/fan-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { constants, readFileSync } from "fs";
 import { access, appendFile, readFile } from "fs/promises";

@@ -20,7 +20,6 @@ import type { Api, Context, Model, StreamOptions, Usage } from "../src/types.js"
 type StreamOptionsWithExtras = StreamOptions & Record<string, unknown>;
 
 import { hasAzureOpenAICredentials, resolveAzureDeploymentName } from "./azure-utils.js";
-import { hasBedrockCredentials } from "./bedrock-utils.js";
 import { resolveApiKey } from "./oauth.js";
 
 // Resolve OAuth tokens at module level (async, runs before tests)
@@ -331,10 +330,10 @@ describe("totalTokens field", () => {
 
 	describe.skipIf(!process.env.ZAI_API_KEY)("z.ai", () => {
 		it(
-			"glm-4.5-flash - should return totalTokens equal to sum of components",
+			"glm-5-turbo - should return totalTokens equal to sum of components",
 			{ retry: 3, timeout: 60000 },
 			async () => {
-				const llm = getModel("zai", "glm-4.5-flash");
+				const llm = getModel("zai", "glm-5-turbo");
 
 				console.log(`\nz.ai / ${llm.id}:`);
 				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.ZAI_API_KEY });
@@ -651,24 +650,6 @@ describe("totalTokens field", () => {
 		);
 	});
 
-	describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock", () => {
-		it(
-			"claude-sonnet-4-5 - should return totalTokens equal to sum of components",
-			{ retry: 3, timeout: 60000 },
-			async () => {
-				const llm = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
-
-				console.log(`\nAmazon Bedrock / ${llm.id}:`);
-				const { first, second } = await testTotalTokensWithCache(llm);
-
-				logUsage("First request", first);
-				logUsage("Second request", second);
-
-				assertTotalTokensEqualsComponents(first);
-				assertTotalTokensEqualsComponents(second);
-			},
-		);
-	});
 
 	// =========================================================================
 	// OpenAI Codex (OAuth)

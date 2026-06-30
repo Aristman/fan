@@ -5,9 +5,9 @@
  * a summary of the branch being left so context isn't lost.
  */
 
-import type { AgentMessage } from "@itone/fan-agent-core";
-import type { Model } from "@itone/fan-ai";
-import { completeSimple } from "@itone/fan-ai";
+import type { AgentMessage } from "@seaagents/fan-agent-core";
+import type { Model } from "@seaagents/fan-ai";
+import { completeSimple } from "@seaagents/fan-ai";
 import {
 	convertToLlm,
 	createBranchSummaryMessage,

@@ -6,7 +6,6 @@ import type { Api, AssistantMessage, Context, Model, StreamOptions, UserMessage 
 type StreamOptionsWithExtras = StreamOptions & Record<string, unknown>;
 
 import { hasAzureOpenAICredentials, resolveAzureDeploymentName } from "./azure-utils.js";
-import { hasBedrockCredentials } from "./bedrock-utils.js";
 import { resolveApiKey } from "./oauth.js";
 
 // Resolve OAuth tokens at module level (async, runs before tests)
@@ -428,25 +427,6 @@ describe("AI Providers Empty Message Tests", () => {
 		});
 	});
 
-	describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock Provider Empty Messages", () => {
-		const llm = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
-
-		it("should handle empty content array", { retry: 3, timeout: 30000 }, async () => {
-			await testEmptyMessage(llm);
-		});
-
-		it("should handle empty string content", { retry: 3, timeout: 30000 }, async () => {
-			await testEmptyStringMessage(llm);
-		});
-
-		it("should handle whitespace-only content", { retry: 3, timeout: 30000 }, async () => {
-			await testWhitespaceOnlyMessage(llm);
-		});
-
-		it("should handle empty assistant message in conversation", { retry: 3, timeout: 30000 }, async () => {
-			await testEmptyAssistantMessage(llm);
-		});
-	});
 
 	// =========================================================================
 	// OAuth-based providers (credentials from ~/.fan/agent/oauth.json)

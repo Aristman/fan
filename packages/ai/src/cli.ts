@@ -64,7 +64,7 @@ async function main(): Promise<void> {
 
 	if (!command || command === "help" || command === "--help" || command === "-h") {
 		const providerList = PROVIDERS.map((p) => `  ${p.id.padEnd(20)} ${p.name}`).join("\n");
-		console.log(`Usage: npx @itone/fan-ai <command> [provider]
+		console.log(`Usage: npx @seaagents/fan-ai <command> [provider]
 
 Commands:
   login [provider]  Login to an OAuth provider
@@ -74,9 +74,9 @@ Providers:
 ${providerList}
 
 Examples:
-  npx @itone/fan-ai login              # interactive provider selection
-  npx @itone/fan-ai login anthropic    # login to specific provider
-  npx @itone/fan-ai list               # list providers
+  npx @seaagents/fan-ai login              # interactive provider selection
+  npx @seaagents/fan-ai login anthropic    # login to specific provider
+  npx @seaagents/fan-ai list               # list providers
 `);
 		return;
 	}
@@ -113,7 +113,7 @@ Examples:
 
 		if (!PROVIDERS.some((p) => p.id === provider)) {
 			console.error(`Unknown provider: ${provider}`);
-			console.error(`Use 'npx @itone/fan-ai list' to see available providers`);
+			console.error(`Use 'npx @seaagents/fan-ai list' to see available providers`);
 			process.exit(1);
 		}
 
@@ -123,7 +123,7 @@ Examples:
 	}
 
 	console.error(`Unknown command: ${command}`);
-	console.error(`Use 'npx @itone/fan-ai --help' for usage`);
+	console.error(`Use 'npx @seaagents/fan-ai --help' for usage`);
 	process.exit(1);
 }
 

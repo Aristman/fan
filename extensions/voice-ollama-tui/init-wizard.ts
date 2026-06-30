@@ -15,7 +15,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import type { ExtensionCommandContext } from "@itone/fan-coding-agent";
+import type { ExtensionCommandContext } from "@seaagents/fan-coding-agent";
 import { getExtensionDir } from "./config.js";
 import { checkDependencies } from "./dependencies.js";
 import { listOllamaModels } from "./ollama-service.js";

@@ -12,10 +12,10 @@
  * - Progress tracking widget during execution
  */
 
-import type { AgentMessage } from "@itone/fan-agent-core";
-import type { AssistantMessage, TextContent } from "@itone/fan-ai";
-import type { ExtensionAPI, ExtensionContext } from "@itone/fan-coding-agent";
-import { Key } from "@itone/fan-tui";
+import type { AgentMessage } from "@seaagents/fan-agent-core";
+import type { AssistantMessage, TextContent } from "@seaagents/fan-ai";
+import type { ExtensionAPI, ExtensionContext } from "@seaagents/fan-coding-agent";
+import { Key } from "@seaagents/fan-tui";
 import { extractTodoItems, isSafeCommand, markCompletedSteps, type TodoItem } from "./utils.js";
 
 // Tools

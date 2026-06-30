@@ -4,7 +4,7 @@
  * Ported from packages/coding-agent/examples/extensions/subagent/index.ts
  * with FAN-specific enhancements (ModelManager integration, budget awareness).
  */
-import type { Message } from "@itone/fan-ai";
+import type { Message } from "@seaagents/fan-ai";
 import type { AgentConfig, OrchestratorConfig, SingleResult } from "./types.js";
 export declare const MAX_PARALLEL_TASKS = 8;
 export declare const MAX_CONCURRENCY = 4;

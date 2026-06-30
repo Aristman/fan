@@ -24,8 +24,8 @@ npm run build
 | `@fan/orchestrator` | 29 | task-manager (17), subagent-runner (11), agents (1) | ✅ 29 passed |
 | `@fan/model-manager` | 42 | db, router, fallback, budget | ✅ 42 passed |
 | `@fan/api-gateway` | 39 | auth (12), http-server (24), ws-handler (3) | ✅ 39 passed |
-| `@itone/fan-agent` | 36 | agent core | ✅ 36 passed |
-| `@itone/fan-tui` | 511 | terminal UI | ✅ 511 pass, 8 skip (Windows ANSI) |
+| `@seaagents/fan-agent` | 36 | agent core | ✅ 36 passed |
+| `@seaagents/fan-tui` | 511 | terminal UI | ✅ 511 pass, 8 skip (Windows ANSI) |
 
 Не запускать: `packages/ai` (таймауты на Node 24/Windows, upstream).
 

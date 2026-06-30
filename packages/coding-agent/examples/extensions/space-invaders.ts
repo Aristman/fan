@@ -3,8 +3,8 @@
  * Uses Kitty keyboard protocol for smooth movement (press/release detection)
  */
 
-import type { ExtensionAPI } from "@itone/fan-coding-agent";
-import { isKeyRelease, Key, matchesKey, visibleWidth } from "@itone/fan-tui";
+import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
+import { isKeyRelease, Key, matchesKey, visibleWidth } from "@seaagents/fan-tui";
 
 const GAME_WIDTH = 60;
 const GAME_HEIGHT = 24;

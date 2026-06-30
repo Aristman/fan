@@ -23,9 +23,9 @@
  *   pi -e ./built-in-tool-renderer.ts
  */
 
-import type { BashToolDetails, EditToolDetails, ExtensionAPI, ReadToolDetails } from "@itone/fan-coding-agent";
-import { createBashTool, createEditTool, createReadTool, createWriteTool } from "@itone/fan-coding-agent";
-import { Text } from "@itone/fan-tui";
+import type { BashToolDetails, EditToolDetails, ExtensionAPI, ReadToolDetails } from "@seaagents/fan-coding-agent";
+import { createBashTool, createEditTool, createReadTool, createWriteTool } from "@seaagents/fan-coding-agent";
+import { Text } from "@seaagents/fan-tui";
 
 export default function (pi: ExtensionAPI) {
 	const cwd = process.cwd();

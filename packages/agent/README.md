@@ -1,18 +1,18 @@
-# @itone/fan-agent-core
+# @seaagents/fan-agent-core
 
-Stateful agent with tool execution and event streaming. Built on `@itone/fan-ai`.
+Stateful agent with tool execution and event streaming. Built on `@seaagents/fan-ai`.
 
 ## Installation
 
 ```bash
-npm install @itone/fan-agent-core
+npm install @seaagents/fan-agent-core
 ```
 
 ## Quick Start
 
 ```typescript
-import { Agent } from "@itone/fan-agent-core";
-import { getModel } from "@itone/fan-ai";
+import { Agent } from "@seaagents/fan-agent-core";
+import { getModel } from "@seaagents/fan-ai";
 
 const agent = new Agent({
   initialState: {
@@ -332,7 +332,7 @@ Follow-up messages are checked only when there are no more tool calls and no ste
 Extend `AgentMessage` via declaration merging:
 
 ```typescript
-declare module "@itone/fan-agent-core" {
+declare module "@seaagents/fan-agent-core" {
   interface CustomAgentMessages {
     notification: { role: "notification"; text: string; timestamp: number };
   }
@@ -404,7 +404,7 @@ Thrown errors are caught by the agent and reported to the LLM as tool errors wit
 For browser apps that proxy through a backend:
 
 ```typescript
-import { Agent, streamProxy } from "@itone/fan-agent-core";
+import { Agent, streamProxy } from "@seaagents/fan-agent-core";
 
 const agent = new Agent({
   streamFn: (model, context, options) =>
@@ -421,7 +421,7 @@ const agent = new Agent({
 For direct control without the Agent class:
 
 ```typescript
-import { agentLoop, agentLoopContinue } from "@itone/fan-agent-core";
+import { agentLoop, agentLoopContinue } from "@seaagents/fan-agent-core";
 
 const context: AgentContext = {
   systemPrompt: "You are helpful.",

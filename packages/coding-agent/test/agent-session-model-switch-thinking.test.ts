@@ -1,5 +1,5 @@
-import { Agent, type ThinkingLevel } from "@itone/fan-agent-core";
-import { getModel } from "@itone/fan-ai";
+import { Agent, type ThinkingLevel } from "@seaagents/fan-agent-core";
+import { getModel } from "@seaagents/fan-ai";
 import { describe, expect, it } from "vitest";
 import { AgentSession } from "../src/core/agent-session.js";
 import { AuthStorage } from "../src/core/auth-storage.js";

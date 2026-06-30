@@ -12,7 +12,7 @@
 		"test": "vitest run"
 	},
 	"dependencies": {
-		"@itone/fan-web-ui": "file:../web-ui",
+		"@seaagents/fan-web-ui": "file:../web-ui",
 		"lit": "^3.3.1",
 		"lucide": "^0.544.0"
 	},

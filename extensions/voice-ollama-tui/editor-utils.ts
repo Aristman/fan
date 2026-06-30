@@ -9,7 +9,7 @@
  *   TC-F-3.3-3: Empty recognised text shows a notification.
  */
 
-import type { ExtensionContext } from "@itone/fan-coding-agent";
+import type { ExtensionContext } from "@seaagents/fan-coding-agent";
 
 /**
  * Insert a recognised transcript into the TUI editor.

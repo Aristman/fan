@@ -1,5 +1,5 @@
-import type { ThinkingLevel } from "@itone/fan-agent-core";
-import type { Transport } from "@itone/fan-ai";
+import type { ThinkingLevel } from "@seaagents/fan-agent-core";
+import type { Transport } from "@seaagents/fan-ai";
 import {
 	Container,
 	getCapabilities,
@@ -10,7 +10,7 @@ import {
 	SettingsList,
 	Spacer,
 	Text,
-} from "@itone/fan-tui";
+} from "@seaagents/fan-tui";
 import { getSelectListTheme, getSettingsListTheme, theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 

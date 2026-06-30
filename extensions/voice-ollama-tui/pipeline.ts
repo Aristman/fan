@@ -16,7 +16,7 @@
  */
 
 import fs from "node:fs";
-import type { ExtensionContext } from "@itone/fan-coding-agent";
+import type { ExtensionContext } from "@seaagents/fan-coding-agent";
 import type { VoiceOllamaConfig } from "./config.js";
 import { checkDependencies } from "./dependencies.js";
 import { showRecordingOverlay, showProcessingOverlay } from "./ui-overlay.js";

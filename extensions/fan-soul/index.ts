@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionCommandContext } from "@itone/fan-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@seaagents/fan-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { Extractor } from "./extractor.js";
 import { DraftQueue } from "./drafts.js";
@@ -21,7 +21,7 @@ import {
 	escapeRegex,
 } from "./soul-files.js";
 import type { SoulFileKey, UserSectionName, MergeAction } from "./types.js";
-import type { AgentToolResult } from "@itone/fan-coding-agent";
+import type { AgentToolResult } from "@seaagents/fan-coding-agent";
 
 const extractor = new Extractor();
 const drafts = new DraftQueue();

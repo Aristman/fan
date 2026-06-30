@@ -1,4 +1,4 @@
-import { type Component, truncateToWidth, visibleWidth } from "@itone/fan-tui";
+import { type Component, truncateToWidth, visibleWidth } from "@seaagents/fan-tui";
 import type { AgentSession } from "../../../core/agent-session.js";
 import type { ReadonlyFooterDataProvider } from "../../../core/footer-data-provider.js";
 import type { ThemeColor } from "../theme/theme.js";

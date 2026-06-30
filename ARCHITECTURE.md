@@ -1,4 +1,4 @@
-# ARCHITECTURE.md — Filin Agent Next (FAN)
+# ARCHITECTURE.md — Fast Agents Network (FAN)
 
 > Comprehensive architecture reference. For quick context → [CLAUDE.md](./CLAUDE.md)
 
@@ -6,10 +6,10 @@
 
 ## Project Overview
 
-- **Name:** Filin Agent Next (FAN)
+- **Name:** Fast Agents Network (FAN)
 - **Type:** Local AI runtime-agent for developers
 - **Description:** Runs locally on user's machine, provides external API for multiple UI clients (TUI, WebView, IDEA plugin, etc.). Built on fan-coding-agent with standalone orchestrator extension (FAN Store), model management, and all current extensions/skills.
-- **Base:** Fork of itone/fan-mono (fan-coding-agent core)
+- **Base:** Fork of seaagents/fan (fan-coding-agent core)
 - **Spec:** docs/specs/spec_runtime-agent_2026-04-10.md
 
 ## Tech Stack
@@ -19,7 +19,7 @@
 | Runtime | Bun | Fast JS runtime |
 | Core | fan-ai + fan-agent-core + fan-coding-agent | Agent loop, tools, sessions, extensions |
 | TUI | fan-tui | Terminal UI (markdown, editor, autocomplete) |
-| Monorepo | npm workspaces | Consistent with fan-mono |
+| Monorepo | npm workspaces | Consistent with fan |
 | API (local) | JSON-over-stdio RPC | For TUI, IDE plugins |
 | API (remote) | Hono (REST + WebSocket) | For WebView, mobile, web clients |
 | Database | Prisma + SQLite | Sessions metadata, model settings, budgets |
@@ -143,8 +143,8 @@ detached fan RPC process with JSON-over-stdio communication.
 
 **Task widget:** Collapsible checklist above editor (Alt+T toggle), auto-hide on no active tasks
 
-**Dependencies:** @itone/fan-ai, @itone/fan-agent-core, @itone/fan-coding-agent,
-@itone/fan-tui, @sinclair/typebox
+**Dependencies:** @seaagents/fan-ai, @seaagents/fan-agent-core, @seaagents/fan-coding-agent,
+@seaagents/fan-tui, @sinclair/typebox
 
 ### packages/model-manager — NEW
 Model management layer:
@@ -421,12 +421,12 @@ Task received
 | **Auth** | API key only (no user auth) | Local runtime = single user |
 | **DB** | SQLite via Prisma | Zero-config, file-based, sessions in JSONL + metadata in SQLite |
 | **Model routing** | Rule-based presets + custom | Simple to start, extensible for power users |
-| **Monorepo** | npm workspaces | Consistent with fan-mono |
+| **Monorepo** | npm workspaces | Consistent with fan |
 | **Build** | tsup | Fast, ESM/CJS, dts |
 
 ---
 
-## Migration from fan-mono
+## Migration from fan
 
 ### Keep Unchanged
 - `packages/ai/` — LLM abstraction

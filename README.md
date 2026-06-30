@@ -1,10 +1,10 @@
-# FAN — Filin Agent Next
+# FAN — Fast Agents Network
 
 > Local AI runtime-agent for developers. Multi-provider, multi-agent, with web dashboard.
 
 ## Features
 
-- **Multi-provider AI** — OpenAI, Anthropic, Google, Groq, xAI, Mistral, Amazon Bedrock, Azure, Vertex AI, and 40+ more
+- **Multi-provider AI** — OpenAI, Anthropic, Google, Groq, xAI, Mistral, Azure, Vertex AI, and 40+ more
 - **Interactive TUI** — streaming, markdown rendering, thinking blocks, tool execution widgets
 - **Multi-agent orchestrator** — coordinator mode, 8 worker types (explore, plan, implement, verify, bug-fix, code-research, docs-impl, tests-impl), single mode, live tool call display
 - **Model management** — routing rules, fallback chains, budget tracking, per-session settings
@@ -227,4 +227,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
 ## License
 
-FNA
+Fast Agents Network

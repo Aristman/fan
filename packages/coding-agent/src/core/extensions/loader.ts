@@ -10,19 +10,19 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as _bundledStore from "@fan/store";
-import * as _bundledPiAgentCore from "@itone/fan-agent-core";
-import * as _bundledPiAi from "@itone/fan-ai";
-import * as _bundledPiAiOauth from "@itone/fan-ai/oauth";
-import type { KeyId } from "@itone/fan-tui";
-import * as _bundledPiTui from "@itone/fan-tui";
 import { createJiti } from "@mariozechner/jiti";
+import * as _bundledPiAgentCore from "@seaagents/fan-agent-core";
+import * as _bundledPiAi from "@seaagents/fan-ai";
+import * as _bundledPiAiOauth from "@seaagents/fan-ai/oauth";
+import type { KeyId } from "@seaagents/fan-tui";
+import * as _bundledPiTui from "@seaagents/fan-tui";
 // Static imports of packages that extensions may use.
 // These MUST be static so Bun bundles them into the compiled binary.
 // The virtualModules option then makes them available to extensions.
 import * as _bundledTypebox from "@sinclair/typebox";
 import { getAgentDir, isBunBinary } from "../../config.js";
 // NOTE: This import works because loader.ts exports are NOT re-exported from index.ts,
-// avoiding a circular dependency. Extensions can import from @itone/fan-coding-agent.
+// avoiding a circular dependency. Extensions can import from @seaagents/fan-coding-agent.
 import * as _bundledPiCodingAgent from "../../index.js";
 import { createEventBus, type EventBus } from "../event-bus.js";
 import type { ExecOptions } from "../exec.js";
@@ -43,11 +43,11 @@ import type {
 /** Modules available to extensions via virtualModules (for compiled Bun binary) */
 const VIRTUAL_MODULES: Record<string, unknown> = {
 	"@sinclair/typebox": _bundledTypebox,
-	"@itone/fan-agent-core": _bundledPiAgentCore,
-	"@itone/fan-tui": _bundledPiTui,
-	"@itone/fan-ai": _bundledPiAi,
-	"@itone/fan-ai/oauth": _bundledPiAiOauth,
-	"@itone/fan-coding-agent": _bundledPiCodingAgent,
+	"@seaagents/fan-agent-core": _bundledPiAgentCore,
+	"@seaagents/fan-tui": _bundledPiTui,
+	"@seaagents/fan-ai": _bundledPiAi,
+	"@seaagents/fan-ai/oauth": _bundledPiAiOauth,
+	"@seaagents/fan-coding-agent": _bundledPiCodingAgent,
 	"@fan/store": _bundledStore,
 };
 
@@ -77,11 +77,11 @@ function getAliases(): Record<string, string> {
 	};
 
 	_aliases = {
-		"@itone/fan-coding-agent": packageIndex,
-		"@itone/fan-agent-core": resolveWorkspaceOrImport("agent/dist/index.js", "@itone/fan-agent-core"),
-		"@itone/fan-tui": resolveWorkspaceOrImport("tui/dist/index.js", "@itone/fan-tui"),
-		"@itone/fan-ai": resolveWorkspaceOrImport("ai/dist/index.js", "@itone/fan-ai"),
-		"@itone/fan-ai/oauth": resolveWorkspaceOrImport("ai/dist/oauth.js", "@itone/fan-ai/oauth"),
+		"@seaagents/fan-coding-agent": packageIndex,
+		"@seaagents/fan-agent-core": resolveWorkspaceOrImport("agent/dist/index.js", "@seaagents/fan-agent-core"),
+		"@seaagents/fan-tui": resolveWorkspaceOrImport("tui/dist/index.js", "@seaagents/fan-tui"),
+		"@seaagents/fan-ai": resolveWorkspaceOrImport("ai/dist/index.js", "@seaagents/fan-ai"),
+		"@seaagents/fan-ai/oauth": resolveWorkspaceOrImport("ai/dist/oauth.js", "@seaagents/fan-ai/oauth"),
 		"@sinclair/typebox": typeboxRoot,
 	};
 

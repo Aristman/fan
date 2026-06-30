@@ -1,7 +1,7 @@
-import { complete, getModel } from "@itone/fan-ai";
-import type { ExtensionAPI, ExtensionCommandContext } from "@itone/fan-coding-agent";
-import { DynamicBorder, getMarkdownTheme } from "@itone/fan-coding-agent";
-import { Container, Markdown, matchesKey, Text } from "@itone/fan-tui";
+import { complete, getModel } from "@seaagents/fan-ai";
+import type { ExtensionAPI, ExtensionCommandContext } from "@seaagents/fan-coding-agent";
+import { DynamicBorder, getMarkdownTheme } from "@seaagents/fan-coding-agent";
+import { Container, Markdown, matchesKey, Text } from "@seaagents/fan-tui";
 
 type ContentBlock = {
 	type?: string;

@@ -1,6 +1,6 @@
-import type { TextContent } from "@itone/fan-ai";
-import type { Component } from "@itone/fan-tui";
-import { Box, Container, Markdown, type MarkdownTheme, Spacer, Text } from "@itone/fan-tui";
+import type { TextContent } from "@seaagents/fan-ai";
+import type { Component } from "@seaagents/fan-tui";
+import { Box, Container, Markdown, type MarkdownTheme, Spacer, Text } from "@seaagents/fan-tui";
 import type { MessageRenderer } from "../../../core/extensions/types.js";
 import type { CustomMessage } from "../../../core/messages.js";
 import { getMarkdownTheme, theme } from "../theme/theme.js";

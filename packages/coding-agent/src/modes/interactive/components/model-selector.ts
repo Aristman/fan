@@ -1,5 +1,14 @@
-import { type Model, modelsAreEqual } from "@itone/fan-ai";
-import { Container, type Focusable, fuzzyFilter, getKeybindings, Input, Spacer, Text, type TUI } from "@itone/fan-tui";
+import { type Model, modelsAreEqual } from "@seaagents/fan-ai";
+import {
+	Container,
+	type Focusable,
+	fuzzyFilter,
+	getKeybindings,
+	Input,
+	Spacer,
+	Text,
+	type TUI,
+} from "@seaagents/fan-tui";
 import type { ModelRegistry } from "../../../core/model-registry.js";
 import type { SettingsManager } from "../../../core/settings-manager.js";
 import { theme } from "../theme/theme.js";

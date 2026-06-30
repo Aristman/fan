@@ -1,5 +1,5 @@
-import type { AgentTool } from "@itone/fan-agent-core";
-import { Text } from "@itone/fan-tui";
+import type { AgentTool } from "@seaagents/fan-agent-core";
+import { Text } from "@seaagents/fan-tui";
 import { type Static, Type } from "@sinclair/typebox";
 import { spawnSync } from "child_process";
 import { existsSync } from "fs";

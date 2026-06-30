@@ -11,7 +11,7 @@
     "entry": "index.ts"
   },
   "peerDependencies": {
-    "@itone/fan-coding-agent": "*",
+    "@seaagents/fan-coding-agent": "*",
     "@sinclair/typebox": "*"
   },
   "devDependencies": {

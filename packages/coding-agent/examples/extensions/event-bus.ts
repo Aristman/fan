@@ -7,7 +7,7 @@
  * Usage: /emit [event-name] [data] - emit an event on the bus
  */
 
-import type { ExtensionAPI, ExtensionContext } from "@itone/fan-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@seaagents/fan-coding-agent";
 
 export default function (pi: ExtensionAPI) {
 	// Store ctx for use in event handler

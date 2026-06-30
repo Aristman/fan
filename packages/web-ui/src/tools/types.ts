@@ -1,4 +1,4 @@
-import type { ToolResultMessage } from "@itone/fan-ai";
+import type { ToolResultMessage } from "@seaagents/fan-ai";
 import type { TemplateResult } from "lit";
 
 export interface ToolRenderResult {

@@ -8,9 +8,9 @@
  * Token stats come from ctx.sessionManager/ctx.model (already accessible).
  */
 
-import type { AssistantMessage } from "@itone/fan-ai";
-import type { ExtensionAPI } from "@itone/fan-coding-agent";
-import { truncateToWidth, visibleWidth } from "@itone/fan-tui";
+import type { AssistantMessage } from "@seaagents/fan-ai";
+import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
+import { truncateToWidth, visibleWidth } from "@seaagents/fan-tui";
 
 export default function (pi: ExtensionAPI) {
 	let enabled = false;

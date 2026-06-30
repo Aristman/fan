@@ -1,4 +1,4 @@
-import { Container } from "@itone/fan-tui";
+import { Container } from "@seaagents/fan-tui";
 import { beforeAll, describe, expect, test, vi } from "vitest";
 import { InteractiveMode } from "../src/modes/interactive/interactive-mode.js";
 import { initTheme } from "../src/modes/interactive/theme/theme.js";

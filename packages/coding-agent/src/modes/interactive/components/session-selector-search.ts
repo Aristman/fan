@@ -1,4 +1,4 @@
-import { fuzzyMatch } from "@itone/fan-tui";
+import { fuzzyMatch } from "@seaagents/fan-tui";
 import type { SessionInfo } from "../../../core/session-manager.js";
 
 export type SortMode = "threaded" | "recent" | "relevance";

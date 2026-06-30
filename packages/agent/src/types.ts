@@ -9,7 +9,7 @@ import type {
 	TextContent,
 	Tool,
 	ToolResultMessage,
-} from "@itone/fan-ai";
+} from "@seaagents/fan-ai";
 import type { Static, TSchema } from "@sinclair/typebox";
 
 /**

@@ -32,7 +32,7 @@ npx tsx examples/sdk/01-minimal.ts
 ## Quick Reference
 
 ```typescript
-import { getModel } from "@itone/fan-ai";
+import { getModel } from "@seaagents/fan-ai";
 import {
   AuthStorage,
   createAgentSession,
@@ -43,7 +43,7 @@ import {
   codingTools,
   readOnlyTools,
   readTool, bashTool, editTool, writeTool,
-} from "@itone/fan-coding-agent";
+} from "@seaagents/fan-coding-agent";
 
 // Auth and models setup
 const authStorage = AuthStorage.create();

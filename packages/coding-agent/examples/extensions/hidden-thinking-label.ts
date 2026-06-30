@@ -18,7 +18,7 @@
  *   /thinking-label          Reset to the default label
  */
 
-import type { ExtensionAPI, ExtensionContext } from "@itone/fan-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@seaagents/fan-coding-agent";
 
 const DEFAULT_LABEL = "Pondering...";
 

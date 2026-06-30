@@ -9,7 +9,6 @@ import type { StreamOptions } from "../src/types.js";
 type StreamOptionsWithExtras = StreamOptions & Record<string, unknown>;
 
 import { hasAzureOpenAICredentials, resolveAzureDeploymentName } from "./azure-utils.js";
-import { hasBedrockCredentials } from "./bedrock-utils.js";
 import { resolveApiKey } from "./oauth.js";
 
 // Resolve OAuth tokens at module level (async, runs before tests)
@@ -324,17 +323,6 @@ describe("Tool Results with Images", () => {
 		});
 	});
 
-	describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock Provider (claude-sonnet-4-5)", () => {
-		const llm = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
-
-		it("should handle tool result with only image", { retry: 3, timeout: 30000 }, async () => {
-			await handleToolWithImageResult(llm);
-		});
-
-		it("should handle tool result with text and image", { retry: 3, timeout: 30000 }, async () => {
-			await handleToolWithTextAndImageResult(llm);
-		});
-	});
 
 	// =========================================================================
 	// OAuth-based providers (credentials from ~/.fan/agent/oauth.json)

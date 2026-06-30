@@ -6,7 +6,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { getAgentDir } from "@itone/fan-coding-agent";
+import { getAgentDir } from "@seaagents/fan-coding-agent";
 import type { InstalledPackage } from "./types.js";
 
 const DB_PATH = join(getAgentDir(), "store-packages.json");

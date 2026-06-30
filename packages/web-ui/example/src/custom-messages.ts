@@ -1,7 +1,7 @@
-import type { Message } from "@itone/fan-ai";
-import type { AgentMessage, MessageRenderer } from "@itone/fan-web-ui";
-import { defaultConvertToLlm, registerMessageRenderer } from "@itone/fan-web-ui";
 import { Alert } from "@mariozechner/mini-lit/dist/Alert.js";
+import type { Message } from "@seaagents/fan-ai";
+import type { AgentMessage, MessageRenderer } from "@seaagents/fan-web-ui";
+import { defaultConvertToLlm, registerMessageRenderer } from "@seaagents/fan-web-ui";
 import { html } from "lit";
 
 // ============================================================================
@@ -18,7 +18,7 @@ export interface SystemNotificationMessage {
 
 // Extend CustomAgentMessages interface via declaration merging
 // This must target fan-agent-core where CustomAgentMessages is defined
-declare module "@itone/fan-agent-core" {
+declare module "@seaagents/fan-agent-core" {
 	interface CustomAgentMessages {
 		"system-notification": SystemNotificationMessage;
 	}

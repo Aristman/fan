@@ -1,4 +1,4 @@
-import type { Model } from "@itone/fan-ai";
+import type { Model } from "@seaagents/fan-ai";
 import { Store } from "../store.js";
 import type { StoreConfig } from "../types.js";
 

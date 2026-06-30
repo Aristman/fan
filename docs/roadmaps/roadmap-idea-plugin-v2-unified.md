@@ -94,7 +94,7 @@ idea-plugin/src/main/kotlin/fan/idea/
 
 | Аспект         | ORF Plugin                    | FAN Plugin                         | Решение                   |
 |----------------|-------------------------------|------------------------------------|---------------------------|
-| Backend API    | Filin REST + GraphQL WS       | FAN REST + plain WS                | Оставляем FAN API клиент  |
+| Backend API    | FAN REST + GraphQL WS       | FAN REST + plain WS                | Оставляем FAN API клиент  |
 | Сессии         | Client-side JSON + шифрование | Server-side JSONL                  | Оставляем FAN сессии      |
 | Agent protocol | SGR (custom binary WS)        | FAN coordinator (REST + WS events) | Адаптируем типы событий   |
 | Completion     | Inline code completion        | N/A                                | Не в scope                |

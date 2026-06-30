@@ -5,9 +5,9 @@
  * Uses the subagent runner to spawn fna subprocesses.
  */
 import * as os from "node:os";
-import { StringEnum } from "@itone/fan-ai";
-import { getMarkdownTheme } from "@itone/fan-coding-agent";
-import { Container, Markdown, Spacer, Text } from "@itone/fan-tui";
+import { StringEnum } from "@seaagents/fan-ai";
+import { getMarkdownTheme } from "@seaagents/fan-coding-agent";
+import { Container, Markdown, Spacer, Text } from "@seaagents/fan-tui";
 import { Type } from "@sinclair/typebox";
 import { discoverAgents } from "./agents.js";
 import { resolveWorkerModel, resolveWorkerTemperature } from "./config.js";

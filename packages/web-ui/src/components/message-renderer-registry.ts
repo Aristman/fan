@@ -1,4 +1,4 @@
-import type { AgentMessage } from "@itone/fan-agent-core";
+import type { AgentMessage } from "@seaagents/fan-agent-core";
 import type { TemplateResult } from "lit";
 
 // Extract role type from AppMessage union

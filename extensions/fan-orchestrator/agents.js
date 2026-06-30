@@ -11,7 +11,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { getAgentDir, parseFrontmatter } from "@itone/fan-coding-agent";
+import { getAgentDir, parseFrontmatter } from "@seaagents/fan-coding-agent";
 function loadAgentsFromDir(dir, source) {
     const agents = [];
     if (!fs.existsSync(dir)) {

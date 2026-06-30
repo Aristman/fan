@@ -10,7 +10,7 @@
 С FAN 1.0.0 проект переходит на **независимое версионирование** пакетов. Каждый
 из 10 пакетов монопространства имеет собственную версию в своём `package.json`.
 Версия FAN-бинарника (исполняемый файл `fan`) равна версии пакета
-`@itone/fan-coding-agent`.
+`@seaagents/fan-coding-agent`.
 
 **Где читать версию FAN-бинарника:**
 
@@ -40,30 +40,30 @@ v1.0.1. `npm run build` больше не меняет поля `version` в `pa
 
 ### Версия FAN-бинарника
 
-Версия FAN-бинарника = версия `@itone/fan-coding-agent`. Это **единственный
+Версия FAN-бинарника = версия `@seaagents/fan-coding-agent`. Это **единственный
 пакет**, выпускающий бинарник. Изменения в других пакетах не обязаны вести к
-бампу `@itone/fan-coding-agent` — бинарник пересобирается только когда нужно
+бампу `@seaagents/fan-coding-agent` — бинарник пересобирается только когда нужно
 выпустить релизный маркер.
 
 ### Префиксы пакетов
 
 | Префикс | Назначение | Пакеты |
 |---------|-----------|--------|
-| `@itone/` | Open-source npm-пакеты (публикуются в npm) | `fan-ai`, `fan-agent-core`, `fan-tui`, `fan-coding-agent`, `fan-web-ui` |
+| `@seaagents/` | Open-source npm-пакеты (публикуются в npm) | `fan-ai`, `fan-agent-core`, `fan-tui`, `fan-coding-agent`, `fan-web-ui` |
 | `@fan/` | Проприетарные / интегрированные пакеты | `api-gateway`, `db`, `model-manager`, `store`, `dashboard`, `orchestrator` |
 
 ### Состав пакетов
 
 | Директория | npm-имя | Назначение |
 |-----------|---------|-----------|
-| `packages/ai` | `@itone/fan-ai` | Единое LLM API, 20+ провайдеров |
-| `packages/agent` | `@itone/fan-agent-core` | Абстракция агента, транспорт, цикл агента |
-| `packages/tui` | `@itone/fan-tui` | TUI-библиотека (Markdown, редактор) |
-| `packages/coding-agent` | `@itone/fan-coding-agent` | CLI-фронтенд, **производит бинарник** `fan` |
+| `packages/ai` | `@seaagents/fan-ai` | Единое LLM API, 20+ провайдеров |
+| `packages/agent` | `@seaagents/fan-agent-core` | Абстракция агента, транспорт, цикл агента |
+| `packages/tui` | `@seaagents/fan-tui` | TUI-библиотека (Markdown, редактор) |
+| `packages/coding-agent` | `@seaagents/fan-coding-agent` | CLI-фронтенд, **производит бинарник** `fan` |
 | `packages/db` | `@fan/db` | Prisma + SQLite (сессии, настройки) |
 | `packages/model-manager` | `@fan/model-manager` | Маршрутизация провайдеров, fallback-цепочки |
 | `packages/api-gateway` | `@fan/api-gateway` | HTTP/WS сервер (Hono) |
-| `packages/web-ui` | `@itone/fan-web-ui` | Веб-компоненты (Lit) |
+| `packages/web-ui` | `@seaagents/fan-web-ui` | Веб-компоненты (Lit) |
 | `packages/dashboard` | `@fan/dashboard` | Веб-панель управления (private) |
 | `packages/store` | `@fan/store` | Менеджер пакетов FAN Store |
 
@@ -95,21 +95,21 @@ v1.0.1. `npm run build` больше не меняет поля `version` в `pa
 ```bash
 # Отредактировать нужный package.json
 # Изменить поле "version" с текущей на новую
-# Пример для @itone/fan-coding-agent (он же версия FAN-бинарника):
+# Пример для @seaagents/fan-coding-agent (он же версия FAN-бинарника):
 #   "version": "0.13.2" → "1.0.0"
 ```
 
 ### Через npm version (без git-тегов)
 
 ```bash
-# Бамп только @itone/fan-coding-agent
-npm version 1.0.0 -w @itone/fan-coding-agent --no-git-tag-version
+# Бамп только @seaagents/fan-coding-agent
+npm version 1.0.0 -w @seaagents/fan-coding-agent --no-git-tag-version
 
-# Бамп только @itone/fan-ai (patch)
-npm version patch -w @itone/fan-ai --no-git-tag-version
+# Бамп только @seaagents/fan-ai (patch)
+npm version patch -w @seaagents/fan-ai --no-git-tag-version
 
-# Бамп только @itone/fan-tui (minor)
-npm version minor -w @itone/fan-tui --no-git-tag-version
+# Бамп только @seaagents/fan-tui (minor)
+npm version minor -w @seaagents/fan-tui --no-git-tag-version
 ```
 
 ### Примеры бампа
@@ -119,12 +119,12 @@ npm version minor -w @itone/fan-tui --no-git-tag-version
 | Bug fix в одном пакете | `patch` этого пакета | `0.13.2` → `0.13.3` |
 | Новая фича в одном пакете | `minor` этого пакета | `0.13.2` → `0.14.0` |
 | Breaking change в API пакета | `major` этого пакета | `0.13.2` → `1.0.0` |
-| Релизный маркер | `@itone/fan-coding-agent` | `0.13.2` → `1.0.0` |
+| Релизный маркер | `@seaagents/fan-coding-agent` | `0.13.2` → `1.0.0` |
 
 ### Важно
 
 - Версия корневого `package.json` **не участвует** в версионировании релиза
-- Версия `@itone/fan-coding-agent` бампится когда меняется сам пакет,
+- Версия `@seaagents/fan-coding-agent` бампится когда меняется сам пакет,
   или когда требуется новый релизный бинарник (даже если код не изменился)
 - Остальные пакеты бампаются только когда в них были изменения
 
@@ -237,7 +237,7 @@ sed -i "s|JSON\.parse(...)\.version|'${FAN_VERSION}'|g" \
 ### GitHub Release
 
 ```bash
-# Создать git-тег с версией @itone/fan-coding-agent
+# Создать git-тег с версией @seaagents/fan-coding-agent
 git tag v1.0.0
 git push origin v1.0.0
 
@@ -258,15 +258,15 @@ CI-пайплайн (если настроен) автоматически:
 fan-store publish
 ```
 
-### npm publish (open-source пакеты @itone/*)
+### npm publish (open-source пакеты @seaagents/*)
 
 ```bash
-# Опубликовать каждый @itone/* пакет с новой версией
-npm publish -w @itone/fan-coding-agent
-npm publish -w @itone/fan-ai
-npm publish -w @itone/fan-agent-core
-npm publish -w @itone/fan-tui
-npm publish -w @itone/fan-web-ui
+# Опубликовать каждый @seaagents/* пакет с новой версией
+npm publish -w @seaagents/fan-coding-agent
+npm publish -w @seaagents/fan-ai
+npm publish -w @seaagents/fan-agent-core
+npm publish -w @seaagents/fan-tui
+npm publish -w @seaagents/fan-web-ui
 ```
 
 Пакеты `@fan/*` (api-gateway, db, model-manager, store, dashboard) не
@@ -294,7 +294,7 @@ npm publish -w @itone/fan-web-ui
 
 ## 8. Известные ограничения
 
-- Версия FAN-бинарника = версия `@itone/fan-coding-agent`, а не сумма или
+- Версия FAN-бинарника = версия `@seaagents/fan-coding-agent`, а не сумма или
   агрегация версий всех пакетов
 - В `manifest.json` указывается только версия бинарника (одно поле `latest`)
 - Если в FAN Store публикуется пакет (расширение, навык), его версия хранится
@@ -321,7 +321,7 @@ npm test
 npm run build
 ```
 
-### Шаг 2: Обновить версию @itone/fan-coding-agent
+### Шаг 2: Обновить версию @seaagents/fan-coding-agent
 
 ```bash
 # Редактировать packages/coding-agent/package.json
@@ -373,15 +373,15 @@ fan-store publish
 ### Шаг 8: Опубликовать в npm
 
 ```bash
-# Проверить, что @itone/* пакеты имеют правильные версии
+# Проверить, что @seaagents/* пакеты имеют правильные версии
 node -e "console.log(require('./packages/coding-agent/package.json').version)"
 
 # Опубликовать
-npm publish -w @itone/fan-coding-agent
-npm publish -w @itone/fan-ai
-npm publish -w @itone/fan-agent-core
-npm publish -w @itone/fan-tui
-npm publish -w @itone/fan-web-ui
+npm publish -w @seaagents/fan-coding-agent
+npm publish -w @seaagents/fan-ai
+npm publish -w @seaagents/fan-agent-core
+npm publish -w @seaagents/fan-tui
+npm publish -w @seaagents/fan-web-ui
 ```
 
 ### Шаг 9: Проверка

@@ -20,9 +20,9 @@
     ]
   },
   "peerDependencies": {
-    "@itone/fan-ai": "*",
-    "@itone/fan-coding-agent": "*",
-    "@itone/fan-tui": "*",
+    "@seaagents/fan-ai": "*",
+    "@seaagents/fan-coding-agent": "*",
+    "@seaagents/fan-tui": "*",
     "@sinclair/typebox": "*"
   },
   "devDependencies": {

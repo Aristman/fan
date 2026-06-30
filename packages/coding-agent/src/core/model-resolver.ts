@@ -2,8 +2,8 @@
  * Model resolution, scoping, and initial selection
  */
 
-import type { ThinkingLevel } from "@itone/fan-agent-core";
-import { type Api, type KnownProvider, type Model, modelsAreEqual } from "@itone/fan-ai";
+import type { ThinkingLevel } from "@seaagents/fan-agent-core";
+import { type Api, type KnownProvider, type Model, modelsAreEqual } from "@seaagents/fan-ai";
 import chalk from "chalk";
 import { minimatch } from "minimatch";
 import { isValidThinkingLevel } from "../cli/args.js";
@@ -12,7 +12,6 @@ import type { ModelRegistry } from "./model-registry.js";
 
 /** Default model IDs for each known provider */
 export const defaultModelPerProvider: Record<KnownProvider, string> = {
-	"amazon-bedrock": "us.anthropic.claude-opus-4-6-v1",
 	anthropic: "claude-opus-4-6",
 	openai: "gpt-5.4",
 	"azure-openai-responses": "gpt-5.2",

@@ -1,4 +1,4 @@
-import type { AgentState } from "@itone/fan-agent-core";
+import type { AgentState } from "@seaagents/fan-agent-core";
 import { Store } from "../store.js";
 import type { SessionData, SessionMetadata, StoreConfig } from "../types.js";
 

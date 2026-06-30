@@ -2,8 +2,8 @@
  * List available models with optional fuzzy search
  */
 
-import type { Api, Model } from "@itone/fan-ai";
-import { fuzzyFilter } from "@itone/fan-tui";
+import type { Api, Model } from "@seaagents/fan-ai";
+import { fuzzyFilter } from "@seaagents/fan-tui";
 import type { ModelRegistry } from "../core/model-registry.js";
 
 /**

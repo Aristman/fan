@@ -1,5 +1,5 @@
-import type { AgentTool } from "@itone/fan-agent-core";
-import { Text } from "@itone/fan-tui";
+import type { AgentTool } from "@seaagents/fan-agent-core";
+import { Text } from "@seaagents/fan-tui";
 import { type Static, Type } from "@sinclair/typebox";
 import { existsSync, readdirSync, statSync } from "fs";
 import nodePath from "path";

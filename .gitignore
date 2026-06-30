@@ -34,6 +34,12 @@ Thumbs.db
 *.log
 npm-debug.log*
 
+# Test artifacts
+test_output.txt
+*_test_summary.txt
+__pycache__/
+*.pyc
+
 # Coverage
 coverage/
 

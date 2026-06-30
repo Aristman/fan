@@ -1,5 +1,5 @@
-import { Agent } from "@itone/fan-agent-core";
-import { type AssistantMessage, getModel, type Usage } from "@itone/fan-ai";
+import { Agent } from "@seaagents/fan-agent-core";
+import { type AssistantMessage, getModel, type Usage } from "@seaagents/fan-ai";
 import { describe, expect, it } from "vitest";
 import { AgentSession } from "../src/core/agent-session.js";
 import { AuthStorage } from "../src/core/auth-storage.js";

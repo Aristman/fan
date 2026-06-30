@@ -1,5 +1,5 @@
-import type { AgentTool, ThinkingLevel } from "@itone/fan-agent-core";
-import { fauxAssistantMessage, fauxToolCall, type Model } from "@itone/fan-ai";
+import type { AgentTool, ThinkingLevel } from "@seaagents/fan-agent-core";
+import { fauxAssistantMessage, fauxToolCall, type Model } from "@seaagents/fan-ai";
 import { Type } from "@sinclair/typebox";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ExtensionAPI } from "../../src/index.js";

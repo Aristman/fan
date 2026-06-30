@@ -1,6 +1,6 @@
 # FAN RPC Mode — Полное руководство разработчика
 
-> **FAN (Filin Agent Next)** — локальный AI runtime-agent для разработчиков.
+> **FAN (Fast Agents Network)** — локальный AI runtime-agent для разработчиков.
 > RPC Mode — это headless-режим работы FAN, предназначенный для встраивания AI-агента
 > в сторонние приложения (IDE-плагины, веб-интерфейсы, CI/CD-пайплайны, десктоп-приложения).
 
@@ -941,13 +941,13 @@ FAN поставляется со встроенным TypeScript-клиенто
 ### Установка
 
 ```bash
-npm install @itone/fan-coding-agent
+npm install @seaagents/fan-coding-agent
 ```
 
 ### Быстрый старт
 
 ```typescript
-import { RpcClient } from "@itone/fan-coding-agent";
+import { RpcClient } from "@seaagents/fan-coding-agent";
 
 async function main() {
   const client = new RpcClient({

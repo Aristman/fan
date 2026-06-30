@@ -1,6 +1,6 @@
-import type { AgentMessage } from "@itone/fan-agent-core";
-import type { AssistantMessage, Usage } from "@itone/fan-ai";
-import { getModel } from "@itone/fan-ai";
+import type { AgentMessage } from "@seaagents/fan-agent-core";
+import type { AssistantMessage, Usage } from "@seaagents/fan-ai";
+import { getModel } from "@seaagents/fan-ai";
 import { readFileSync } from "fs";
 import { join } from "path";
 import { beforeEach, describe, expect, it } from "vitest";

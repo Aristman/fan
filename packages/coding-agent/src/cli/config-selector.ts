@@ -2,7 +2,7 @@
  * TUI config selector for `fan config` command
  */
 
-import { ProcessTerminal, TUI } from "@itone/fan-tui";
+import { ProcessTerminal, TUI } from "@seaagents/fan-tui";
 import type { ResolvedPaths } from "../core/package-manager.js";
 import type { SettingsManager } from "../core/settings-manager.js";
 import { ConfigSelectorComponent } from "../modes/interactive/components/config-selector.js";

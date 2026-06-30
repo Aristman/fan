@@ -9,8 +9,8 @@
  *   # Then /login qwen-cli, or set QWEN_CLI_API_KEY=...
  */
 
-import type { OAuthCredentials, OAuthLoginCallbacks } from "@itone/fan-ai";
-import type { ExtensionAPI } from "@itone/fan-coding-agent";
+import type { OAuthCredentials, OAuthLoginCallbacks } from "@seaagents/fan-ai";
+import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
 
 // =============================================================================
 // Constants

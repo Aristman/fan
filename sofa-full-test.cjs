@@ -7,11 +7,11 @@ const typeboxRoot = typeboxEntry.replace(/[\\/]build[\\/]cjs[\\/]index\.js$/, ''
 const packagesRoot = path.resolve('/home/aristman/projects/fan/packages');
 
 const alias = {
-  '@itone/fan-coding-agent': path.resolve(packagesRoot, 'coding-agent/dist/index.js'),
-  '@itone/fan-agent-core': path.resolve(packagesRoot, 'agent/dist/index.js'),
-  '@itone/fan-tui': path.resolve(packagesRoot, 'tui/dist/index.js'),
-  '@itone/fan-ai': path.resolve(packagesRoot, 'ai/dist/index.js'),
-  '@itone/fan-ai/oauth': path.resolve(packagesRoot, 'ai/dist/oauth.js'),
+  '@seaagents/fan-coding-agent': path.resolve(packagesRoot, 'coding-agent/dist/index.js'),
+  '@seaagents/fan-agent-core': path.resolve(packagesRoot, 'agent/dist/index.js'),
+  '@seaagents/fan-tui': path.resolve(packagesRoot, 'tui/dist/index.js'),
+  '@seaagents/fan-ai': path.resolve(packagesRoot, 'ai/dist/index.js'),
+  '@seaagents/fan-ai/oauth': path.resolve(packagesRoot, 'ai/dist/oauth.js'),
   '@sinclair/typebox': typeboxRoot,
 };
 

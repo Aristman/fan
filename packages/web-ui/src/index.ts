@@ -1,7 +1,7 @@
 // Main chat interface
 
-export type { Agent, AgentMessage, AgentState, ThinkingLevel } from "@itone/fan-agent-core";
-export type { Model } from "@itone/fan-ai";
+export type { Agent, AgentMessage, AgentState, ThinkingLevel } from "@seaagents/fan-agent-core";
+export type { Model } from "@seaagents/fan-ai";
 export { ChatPanel } from "./ChatPanel.js";
 // Components
 export { AgentInterface } from "./components/AgentInterface.js";

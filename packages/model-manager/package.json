@@ -19,7 +19,7 @@
 	},
 	"dependencies": {
 		"@fan/db": "*",
-		"@itone/fan-ai": "*"
+		"@seaagents/fan-ai": "*"
 	},
 	"devDependencies": {
 		"shx": "^0.4.0",
