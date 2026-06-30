@@ -83,9 +83,9 @@ Write-Info "FAN (fan) version: $FAN_VERSION"
 
 # ─── Determine platforms ──────────────────────────────────────
 if ($Platform) {
-    $PLATFORMS = @($Platform)
+    $PlatformList = @($Platform)
 } else {
-    $PLATFORMS = @("darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64", "windows-x64")
+    $PlatformList = @("darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64", "windows-x64")
 }
 
 # ─── Install dependencies ─────────────────────────────────────
@@ -159,11 +159,11 @@ if (Test-Path "binaries") {
 }
 New-Item -ItemType Directory -Path "binaries" -Force | Out-Null
 
-foreach ($platform in $PLATFORMS) {
+foreach ($platform in $PlatformList) {
     New-Item -ItemType Directory -Path "binaries\$platform" -Force | Out-Null
 }
 
-foreach ($platform in $PLATFORMS) {
+foreach ($platform in $PlatformList) {
     Write-Info "Building for $platform..."
     if ($platform -eq "windows-x64") {
         bun build --compile --external koffi --no-compile-autoload-dotenv --no-compile-autoload-package-json --target="bun-$platform" ./dist/bun/cli.js --outfile "binaries/$platform/fan.exe"
@@ -176,7 +176,7 @@ foreach ($platform in $PLATFORMS) {
 Write-Info "Bundling FAN-specific assets..."
 
 # ─── Copy shared files to each platform directory ─────────────
-foreach ($platform in $PLATFORMS) {
+foreach ($platform in $PlatformList) {
     $destDir = "binaries\$platform"
 
     Copy-Item "package.json" "$destDir\" -Force
@@ -283,7 +283,7 @@ foreach ($platform in $PLATFORMS) {
 Write-Info "Creating release archives..."
 Push-Location "binaries"
 
-foreach ($platform in $PLATFORMS) {
+foreach ($platform in $PlatformList) {
     if ($platform -eq "windows-x64") {
         # Windows (zip) - use wrapper directory for consistency with Unix
         Write-Info "Creating fan-$FAN_VERSION-$platform.zip..."
@@ -301,7 +301,7 @@ foreach ($platform in $PLATFORMS) {
 
 # ─── Extract archives for easy local testing ──────────────────
 Write-Info "Extracting archives for testing..."
-foreach ($platform in $PLATFORMS) {
+foreach ($platform in $PlatformList) {
     if (Test-Path $platform) {
         Remove-Item -Recurse -Force $platform
     }
@@ -323,7 +323,7 @@ Write-Host "Archives available in packages/coding-agent/binaries/"
 Get-ChildItem -Path "binaries" -Include "*.tar.gz", "*.zip" | ForEach-Object { Write-Host "  $($_.Name)" }
 Write-Host ""
 Write-Host "Extracted directories for testing:"
-foreach ($platform in $PLATFORMS) {
+foreach ($platform in $PlatformList) {
     Write-Host "  binaries/$platform/fan"
 }
 
@@ -333,8 +333,8 @@ $releasedAt = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 
 Push-Location "binaries"
 
-$platforms = @{}
-foreach ($platform in $PLATFORMS) {
+$manifestPlatforms = @{}
+foreach ($platform in $PlatformList) {
     if ($platform -eq "windows-x64") {
         $archiveName = "fan-$FAN_VERSION-$platform.zip"
     } else {
@@ -344,7 +344,7 @@ foreach ($platform in $PLATFORMS) {
     if (Test-Path $archiveName) {
         $hash = (Get-FileHash -Path $archiveName -Algorithm SHA256).Hash.ToLowerInvariant()
         $size = (Get-Item $archiveName).Length
-        $platforms[$platform] = @{
+        $manifestPlatforms[$platform] = @{
             url  = "https://fan.sea-agents.ru/fan-store/dist/$archiveName"
             hash = "sha256:$hash"
             size = $size
@@ -356,14 +356,14 @@ $manifest = @{
     latest       = $FAN_VERSION
     releasedAt   = $releasedAt
     releaseNotes = ""
-    platforms    = $platforms
+    platforms    = $manifestPlatforms
 } | ConvertTo-Json -Depth 4
 
 $manifest | Out-File -FilePath "manifest.json" -Encoding utf8 -Force
 
-Write-Info "Manifest: $($platforms.Count) platforms, version $FAN_VERSION"
-foreach ($name in $platforms.Keys | Sort-Object) {
-    Write-Host "  $name`: $($platforms[$name].size) bytes"
+Write-Info "Manifest: $($manifestPlatforms.Count) platforms, version $FAN_VERSION"
+foreach ($name in $manifestPlatforms.Keys | Sort-Object) {
+    Write-Host "  $name`: $($manifestPlatforms[$name].size) bytes"
 }
 
 Pop-Location  # back to coding-agent (from binaries)
@@ -377,7 +377,7 @@ if (-not (Test-Path $DIST_REPO)) {
 Write-Info "Copying artifacts to $DIST_REPO\..."
 Copy-Item -Path "binaries\manifest.json" -Destination "$DIST_REPO\" -Force
 
-foreach ($platform in $PLATFORMS) {
+foreach ($platform in $PlatformList) {
     if ($platform -eq "windows-x64") {
         $archiveName = "fan-$FAN_VERSION-$platform.zip"
     } else {
