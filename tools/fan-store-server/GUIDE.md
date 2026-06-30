@@ -8,7 +8,8 @@
 
 - [Обзор](#обзор)
 - [Инструменты](#инструменты)
-  - [fan-store CLI](#fan-store-cli)
+  - [fan-store CLI (Bash / Linux / macOS)](#fan-store-cli)
+  - [fan-store.ps1 (PowerShell / Windows)](#fan-storeps1-powershell--windows)
   - [setup-vps.sh](#setup-vpssh)
 - [Серверная инфраструктура](#серверная-инфраструктура)
 - [Дистрибутивы и обновления](#дистрибутивы-и-обновления)
@@ -39,12 +40,13 @@ FAN Repo Server — это HTTP-репозиторий для дистрибуц
 
 ## Инструменты
 
-В `tools/fan-store-server/` лежат два инструмента:
+В `tools/fan-store-server/` лежат три инструмента:
 
-| Файл | Назначение |
-|------|-----------|
-| `fan-store` | CLI для управления репозиторием (add, remove, publish, serve) |
-| `setup-vps.sh` | Одноразовая настройка VPS с nginx |
+| Файл | Платформа | Назначение |
+|------|-----------|-----------|
+| `fan-store` | Bash (Linux/macOS) | CLI для управления репозиторием (add, remove, publish, serve) |
+| `fan-store.ps1` | PowerShell (Windows 10+) | PowerShell-аналог `fan-store` — те же команды, встроенные утилиты Windows |
+| `setup-vps.sh` | Bash (Ubuntu) | Одноразовая настройка VPS с nginx |
 
 ### fan-store CLI
 
@@ -150,6 +152,122 @@ REPO_URL    = https://fan.sea-agents.ru/fan-store
 5. Удаляет default site, включает fan-store, запускает nginx
 
 > **⚠️ Важно:** Текущий сервер работает **без Basic Auth** (открытый репозиторий). Конфиг в `setup-vps.sh` включает auth. Для открытого доступа нужно убрать блоки `auth_basic` из nginx-конфига или адаптировать скрипт.
+
+### fan-store.ps1 (PowerShell / Windows)
+
+Полный PowerShell-аналог bash-скрипта `fan-store` для Windows 10+/PowerShell 5.1+. Использует встроенные средства Windows — не требует установки дополнительных утилит (кроме Python для команды `serve`).
+
+```powershell
+# Запуск напрямую
+.\tools\fan-store-server\fan-store.ps1 <command> [args...]
+
+# Или добавить в PATH для удобства
+$env:Path = "$PWD\tools\fan-store-server;$env:Path"
+fan-store.ps1 list
+```
+
+#### Команды (идентичны bash-версии)
+
+```powershell
+fan-store.ps1 init [path]            # Создать новый репозиторий
+fan-store.ps1 set-url <url>          # Задать базовый URL репозитория
+fan-store.ps1 add <archive.tar.gz>   # Добавить пакет
+fan-store.ps1 remove <name>          # Удалить пакет
+fan-store.ps1 list                   # Список всех пакетов
+fan-store.ps1 info <name>            # Детали пакета
+fan-store.ps1 publish [target]       # Деплой (scp/ssh, fallback: robocopy)
+fan-store.ps1 serve [port]           # Локальный HTTP-сервер (default 8888)
+fan-store.ps1 help                   # Справка
+```
+
+Алиасы: `rm` → remove, `ls` → list, `show` → info, `push` → publish, `deploy` → publish.
+
+#### Отличия от bash-версии
+
+| Аспект | Bash (`fan-store`) | PowerShell (`fan-store.ps1`) |
+|--------|-------------------|------------------------------|
+| Распаковка `.tar.gz` | `tar -xzf` (GNU tar) | `tar -xzf` (Windows tar из BSOD/1803+) |
+| JSON парсинг | `python3 -c` heredoc | `ConvertFrom-Json` (встроен) |
+| SHA-256 | `sha256sum` | `(Get-FileHash -Algorithm SHA256).Hash` |
+| Деплой | `rsync -avz` | `scp -r` через OpenSSH, fallback `robocopy` для локальных путей |
+| HTTP-сервер | `python3 -m http.server` | `python -m http.server` (проверяет что `python` — реальный, а не Store-алиас) |
+| Путь поиска репозитория | вверх от `$PWD` | вверх от `Get-Location` |
+
+#### Используемые системные утилиты
+
+| Утилита | Назначение | Где есть |
+|---------|-----------|----------|
+| `tar.exe` | Распаковка/листинг `.tar.gz` | Windows 10 1803+ (встроен) |
+| `Get-FileHash` | SHA-256 | PowerShell 4.0+ |
+| `ConvertFrom-Json` | Парсинг `package.json` | PowerShell 3.0+ |
+| `scp.exe` / `ssh.exe` | Деплой на удалённый сервер | OpenSSH (встроен в Windows 10+) |
+| `robocopy.exe` | Локальный деплой | Windows (встроен) |
+| `python.exe` | Локальный HTTP-сервер | Установленный Python 3 |
+
+#### Типичный рабочий цикл на Windows
+
+```powershell
+# 1. Собрать архив (PowerShell + tar)
+cd packages\my-extension
+
+# Собрать структуру архива
+tar -czf "$env:TEMP\fan-my-extension-1.0.0.tar.gz" `
+  --transform='s,^\./,my-extension/,' `
+  ./src/ ./package.json ./README.md
+
+# 2. Инициализировать локальный репозиторий (один раз)
+cd $HOME\fan-store
+..\fan\tools\fan-store-server\fan-store.ps1 init
+
+# 3. Добавить пакет
+fan-store.ps1 add $env:TEMP\fan-my-extension-1.0.0.tar.gz
+
+# 4. Проверить
+fan-store.ps1 list
+fan-store.ps1 info fan-my-extension
+
+# 5. Деплой на сервер
+fan-store.ps1 publish
+# → scp -r C:\Users\User\fan-store\*  root@185.219.41.46:/opt/repos/fan-store/
+
+# Или на кастомный таргет:
+fan-store.ps1 publish user@other-host:/var/www/repo
+
+# 6. Локальный тест
+fan-store.ps1 serve 9000
+# → http://localhost:9000/index.json
+```
+
+#### Известные особенности Windows
+
+| Проблема | Решение в скрипте |
+|----------|------------------|
+| `tar.exe` интерпретирует путь `C:\...` как remote (`host:path`) | Скрипт делает `Set-Location` в директорию архива и передаёт только имя файла |
+| `Get-ChildItem -Include *.tar.gz` без wildcard в `-Path` не работает | Используется `Join-Path $dir "*"` + `-Include` |
+| `python3` в Windows — алиас Microsoft Store | Скрипт пробует `python`, `python3`, `py` и проверяет что версия запускается (не Store-stub) |
+| `rsync` отсутствует | Деплой через `scp -r` (OpenSSH); fallback `robocopy /MIR` для локальных путей |
+| Переменная `$platform` vs `$Platform` (PowerShell регистронезависим) | Внимание к именованию в `fan-store-server/release-binaries.ps1` (не путать `$platform` с `$Platform`) |
+
+#### Переменные окружения
+
+| Переменная | Назначение |
+|------------|-----------|
+| `FAN_REPO_DIR` | Путь к локальному репозиторию (ищет `index.json` вверх по дереву от текущей директории) |
+
+#### Пример вывода
+
+```powershell
+PS> fan-store.ps1 list
+
+  Repository:    fan-store
+  URL:           https://fan.sea-agents.ru/fan-store
+  Directory:     C:\Users\User\fan-store
+
+  1. fan-orchestrator@1.0.0
+     type:       extension
+     desc:       Multi-agent orchestrator...
+     hash:       sha256:6ff90442cbed...
+```
 
 ---
 
@@ -649,6 +767,17 @@ fan-store publish
 | `fan-store add` не находит name/version | Убедитесь, что `package.json` с `name` и `version` внутри архива |
 | Кешированный старый index | TTL 5 минут на клиенте. Или `rm ~/.fan/agent/store-packages.json` |
 | Офлайн не даёт установить | `FAN_OFFLINE=1` работает только с кешированными данными |
+
+### Windows-специфичные проблемы
+
+| Проблема | Решение |
+|----------|--------|
+| `tar (child): Cannot connect to C: resolve failed` | Путь содержит `C:\...` — `tar.exe` интерпретирует как `host:path`. `fan-store.ps1` обходит это через `Set-Location` в директорию архива |
+| `python3` открывает Microsoft Store | `fan-store.ps1 serve` проверяет версию и использует `python` (реальный Python из PATH), а не Store-алиас |
+| `rsync: command not found` | Используется `scp -r` (встроенный OpenSSH). Для локальных путей — `robocopy /MIR` |
+| `Get-ChildItem -Include *.tar.gz` возвращает 0 файлов | Нужен wildcard в `-Path`: `Get-ChildItem -Path "$dir\*" -Include *.tar.gz` |
+| `Cannot bind argument to parameter 'Path' because it is null` | PowerShell не нашёл репозиторий. Запускайте из директории с `index.json` или задайте `$env:FAN_REPO_DIR` |
+| `A positional parameter cannot be found` в `fan-store.ps1 add` | Исправлено в текущей версии — передача аргументов через `$Rest[0]` вместо `@Rest` |
 
 ---
 

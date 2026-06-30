@@ -69,6 +69,9 @@ Runtime: Bun · Monorepo: npm workspaces · Core: fan-ai + fan-agent-core + fan-
 - `packages/coding-agent/src/cli/init-wizard.ts` — `fan init` setup wizard
 - `packages/coding-agent/src/cli/diagnostics.ts` — `fan doctor` diagnostics module
 - `packages/coding-agent/src/cli/server-command.ts` — `fan server` lifecycle management (start/stop/status)
+- `scripts/release-binaries.sh` / `scripts/release-binaries.ps1` — release builds (Bash for Linux/macOS, PowerShell for Windows)
+- `tools/fan-store-server/` — repo-server infrastructure: `fan-store` (Bash CLI) + `fan-store.ps1` (PowerShell CLI) + `setup-vps.sh`
+- `tools/fan-store-server/GUIDE.md` — full guide for the repo server (index.json, manifest.json, archives, nginx)
 - `skills/` — 8 pre-installed skills (SKILL.md format, FAN Store source)
 
 ## Phase Progress

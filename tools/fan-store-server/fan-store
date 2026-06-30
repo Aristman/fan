@@ -15,6 +15,13 @@
 set -euo pipefail
 
 # ── Config ──────────────────────────────────────────────
+# SSH config-based alias (recommended). Configure in ~/.ssh/config:
+#   Host fan-store-server
+#       HostName 185.219.41.46
+#       User root
+#       IdentityFile ~/.ssh/fan-store-deploy
+DEFAULT_REMOTE_TARGET="fan-store-server:/opt/repos/fan-store"
+# Legacy fallback (if SSH config is not set up):
 REMOTE_HOST="root@185.219.41.46"
 REMOTE_PATH="/opt/repos/fan-store"
 REPO_URL="https://fan.sea-agents.ru/fan-store"
@@ -449,7 +456,7 @@ PYEOF
 }
 
 cmd_publish() {
-    local target="${1:-$REMOTE_HOST:$REMOTE_PATH}"
+    local target="${1:-$DEFAULT_REMOTE_TARGET}"
 
     require_repo
 
