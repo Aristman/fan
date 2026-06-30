@@ -6,8 +6,15 @@
     Builds FAN binaries for all supported platforms and creates release archives.
     For FAN v1.0.0+ with INDEPENDENT versioning (each package manages its own version).
 
+    Version scheme:
+      - FAN_VERSION   = version from root package.json (monorepo workspace root, e.g. 2.0.0)
+                         used for archive names, manifest.json, and in-binary version display
+      - CODING_AGENT_VERSION = version from packages/coding-agent/package.json (npm package,
+                                e.g. 1.0.3) embedded as @seaagents/fan-coding-agent metadata
+
     Unlike build-binaries.sh (legacy), this script:
-      - Reads version from packages/coding-agent/package.json (not root package.json)
+      - Reads FAN version from root package.json (not coding-agent/package.json)
+      - Reads npm-package version separately from packages/coding-agent/package.json
       - Does NOT synchronize versions across packages
       - Tags archives as RELEASE builds in all output messages
 
@@ -65,21 +72,36 @@ if (-not $bunPath) {
 $bunVersion = & bun --version
 Write-Info "Using bun $bunVersion"
 
-# ─── Read FAN_VERSION ─────────────────────────────────────────
+# ─── Read versions ─────────────────────────────────────────
+# FAN_VERSION — from root package.json (monorepo release version, e.g. 2.0.0)
+$rootPkg = Join-Path $RootDir "package.json"
+if (-not (Test-Path $rootPkg)) {
+    Write-Err "package.json not found at $rootPkg"
+    exit 1
+}
+$rootPkgJson = Get-Content $rootPkg -Raw | ConvertFrom-Json
+$FAN_VERSION = $rootPkgJson.version
+if (-not $FAN_VERSION) {
+    Write-Err "Could not read version from $rootPkg"
+    exit 1
+}
+
+# CODING_AGENT_VERSION — from packages/coding-agent/package.json (npm package version, e.g. 1.0.3)
 $codingAgentPkg = Join-Path $RootDir "packages\coding-agent\package.json"
 if (-not (Test-Path $codingAgentPkg)) {
     Write-Err "package.json not found at $codingAgentPkg"
     exit 1
 }
-$pkgJson = Get-Content $codingAgentPkg -Raw | ConvertFrom-Json
-$FAN_VERSION = $pkgJson.version
-if (-not $FAN_VERSION) {
+$caPkgJson = Get-Content $codingAgentPkg -Raw | ConvertFrom-Json
+$CODING_AGENT_VERSION = $caPkgJson.version
+if (-not $CODING_AGENT_VERSION) {
     Write-Err "Could not read version from $codingAgentPkg"
     exit 1
 }
 
 Write-Info "Building release binaries for FAN v1.0.0+ with independent versioning..."
 Write-Info "FAN (fan) version: $FAN_VERSION"
+Write-Info "@seaagents/fan-coding-agent version: $CODING_AGENT_VERSION"
 
 # ─── Determine platforms ──────────────────────────────────────
 if ($Platform) {

@@ -3,8 +3,15 @@
 # Build FAN (fan) RELEASE binaries for all platforms.
 # For FAN v1.0.0+ with INDEPENDENT versioning (each package manages its own version).
 #
+# Version scheme:
+#   FAN_VERSION   = version from root package.json (monorepo workspace root, e.g. 2.0.0)
+#                   used for archive names, manifest.json, and in-binary version display
+#   CODING_AGENT_VERSION = version from packages/coding-agent/package.json (npm package,
+#                          e.g. 1.0.3) embedded as @seaagents/fan-coding-agent metadata
+#
 # Unlike build-binaries.sh (legacy), this script:
-#   - Reads version from packages/coding-agent/package.json (not root package.json)
+#   - Reads FAN version from root package.json (not coding-agent/package.json)
+#   - Reads npm-package version separately from packages/coding-agent/package.json
 #   - Does NOT synchronize versions across packages (scripts/sync-version.mjs removed in v1.0.1)
 #   - Tags archives as RELEASE builds in all output messages
 #
@@ -79,10 +86,13 @@ if ! command -v bun &>/dev/null; then
 fi
 echo "==> Using bun $(bun --version)"
 
-# Read FAN_VERSION from coding-agent package.json (single source for binary version)
-FAN_VERSION=$(node -e "console.log(require('./packages/coding-agent/package.json').version)")
+# Read FAN_VERSION from root package.json (monorepo release version, e.g. 2.0.0)
+FAN_VERSION=$(node -e "console.log(require('./package.json').version)")
+# Read CODING_AGENT_VERSION from packages/coding-agent/package.json (npm package version, e.g. 1.0.3)
+CODING_AGENT_VERSION=$(node -e "console.log(require('./packages/coding-agent/package.json').version)")
 echo "==> Building release binaries for FAN v1.0.0+ with independent versioning..."
 echo "==> FAN (fan) version: ${FAN_VERSION}"
+echo "==> @seaagents/fan-coding-agent version: ${CODING_AGENT_VERSION}"
 
 # ─── Install dependencies ──────────────────────────────────────
 # bun install understands workspace:* protocol used by the monorepo.
