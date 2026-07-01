@@ -27,6 +27,40 @@ REMOTE_PATH="/opt/repos/fan-store"
 REPO_URL="https://fan.sea-agents.ru/fan-store"
 REPO_DIR=""
 
+# ── Latest-only flag ────────────────────────────────────────
+# Default: latest-only ON (only the latest version of each package)
+# Use --all or FAN_STORE_FULL_REBUILD=1 for full rebuild (all versions)
+LATEST_ONLY=1
+
+# If user explicitly wants full rebuild via env vars
+if [ "${FAN_STORE_LATEST_ONLY:-}" = "0" ] || [ "${FAN_STORE_LATEST_ONLY:-}" = "false" ]; then
+    LATEST_ONLY=0
+fi
+if [ "${FAN_STORE_FULL_REBUILD:-}" = "1" ] || [ "${FAN_STORE_FULL_REBUILD:-}" = "true" ]; then
+    LATEST_ONLY=0
+fi
+
+# ── Force upload flag ────────────────────────────────────────
+# Default: skip existing files on the server (--ignore-existing)
+# Use --force or FAN_STORE_FORCE_UPLOAD=1 to re-upload everything
+FORCE_UPLOAD=0
+
+if [ "${FAN_STORE_FORCE_UPLOAD:-}" = "1" ] || [ "${FAN_STORE_FORCE_UPLOAD:-}" = "true" ]; then
+    FORCE_UPLOAD=1
+fi
+
+# Parse --latest-only, --all, and --force from args and strip them from positional args
+ARGS=()
+for arg in "$@"; do
+    case "$arg" in
+        --latest-only) LATEST_ONLY=1 ;;
+        --all) LATEST_ONLY=0 ;;
+        --force) FORCE_UPLOAD=1 ;;
+        *) ARGS+=("$arg") ;;
+    esac
+done
+set -- "${ARGS[@]}"
+
 # ── Colors ──────────────────────────────────────────────
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -55,6 +89,49 @@ find_repo_dir() {
         dir=$(dirname "$dir")
     done
     error "Not a fan-store directory (no index.json found). Run 'fan-store init' first."
+}
+
+assert_repo_clean() {
+    require_repo
+
+    local banned=()
+
+    # 1. Корень репы — не должно быть install-скриптов
+    for name in install.ps1 install.sh manifest.json .env .env.example; do
+        if [ -e "$REPO_DIR/$name" ]; then
+            banned+=("$name")
+        fi
+    done
+
+    # 2. packages/ — не должно быть бинарников FAN
+    if [ -d "$REPO_DIR/packages" ]; then
+        for f in "$REPO_DIR/packages"/fan-*.tar.gz "$REPO_DIR/packages"/fan-*.zip; do
+            if [ -e "$f" ]; then
+                banned+=("$(basename "$f")")
+            fi
+        done
+    fi
+
+    # 3. Корень — не должно быть исходников
+    for ext in ts js tsx cjs mjs; do
+        for f in "$REPO_DIR"/*."$ext"; do
+            if [ -e "$f" ]; then
+                banned+=("$(basename "$f")")
+            fi
+        done
+    done
+
+    if [ ${#banned[@]} -gt 0 ]; then
+        echo ""
+        echo "❌ REFUSED: Repository contains files that don't belong to fan-store:" >&2
+        for name in "${banned[@]}"; do
+            echo "   - $name" >&2
+        done
+        echo ""
+        echo "This usually means the FAN binary release was copied into the store repo," >&2
+        echo "or dev files (.env, .ts, .js) leaked here. Please move them elsewhere and try again." >&2
+        exit 1
+    fi
 }
 
 require_repo() {
@@ -121,6 +198,38 @@ detect_type() {
 
 timestamp() {
     date -u +"%Y-%m-%dT%H:%M:%SZ"
+}
+
+# Validate index.json integrity
+test_index_valid() {
+    local path="$1"
+    if [ ! -f "$path" ]; then return 1; fi
+
+    # Check first non-whitespace character
+    local first
+    first=$(head -c 3 "$path" | od -An -tx1 | tr -d ' ')
+    # If starts with efbbbf (BOM), skip
+    if [ "$first" = "efbbbf" ]; then
+        first=$(head -c 4 "$path" | tail -c 1 | od -An -tx1 | tr -d ' ')
+    fi
+    # 7b is '{'
+    if [ "$first" != "7b" ]; then
+        return 1
+    fi
+
+    # Try to parse as JSON
+    if ! python3 -c "import json; json.load(open('$path'))" 2>/dev/null; then
+        return 1
+    fi
+
+    return 0
+}
+
+# Attempt to repair a corrupted index.json by running rebuild_index
+repair_index() {
+    local repo_dir="$1"
+    echo "WARNING: index.json is corrupted, running rebuild_index..." >&2
+    rebuild_index
 }
 
 # Rebuild index.json from packages/ directory
@@ -235,13 +344,40 @@ PYEOF
 )
     fi
 
-    FAN_PKG_ARRAY="$pkg_array" FAN_REPO_DIR="$REPO_DIR" FAN_REPO_URL="$REPO_URL" FAN_TS="$ts" python3 << 'PYEOF'
+    FAN_PKG_ARRAY="$pkg_array" FAN_REPO_DIR="$REPO_DIR" FAN_REPO_URL="$REPO_URL" FAN_TS="$ts" FAN_LATEST_ONLY="$LATEST_ONLY" python3 << 'PYEOF'
 import json, os, sys
 
 packages = json.loads(os.environ["FAN_PKG_ARRAY"])
 repo_dir = os.environ["FAN_REPO_DIR"]
 repo_url = os.environ["FAN_REPO_URL"]
 ts = os.environ["FAN_TS"]
+latest_only = os.environ.get("FAN_LATEST_ONLY", "0") == "1"
+
+# Apply latest-only filter: keep only the max version for each name
+if latest_only:
+    before = len(packages)
+    versions = {}
+    for p in packages:
+        cur = versions.get(p["name"])
+        if cur is None:
+            versions[p["name"]] = p
+        else:
+            # Compare semver
+            va = p["version"].split(".")
+            vb = cur["version"].split(".")
+            greater = False
+            for i in range(3):
+                na = int(va[i]) if i < len(va) and va[i].isdigit() else 0
+                nb = int(vb[i]) if i < len(vb) and vb[i].isdigit() else 0
+                if na > nb:
+                    greater = True
+                    break
+                elif na < nb:
+                    break
+            if greater:
+                versions[p["name"]] = p
+    packages = list(versions.values())
+    print(f"  Latest-only mode: {before} \u2192 {len(packages)} packages")
 
 repo_name = os.path.basename(repo_dir)
 
@@ -316,6 +452,8 @@ cmd_set_url() {
 }
 
 cmd_add() {
+    assert_repo_clean
+
     local archive="${1:-}"
     if [[ -z "$archive" ]]; then
         error "Usage: fan-store add <archive.tar.gz>"
@@ -394,6 +532,11 @@ cmd_remove() {
 cmd_list() {
     require_repo
 
+    # When --latest-only is active, rebuild index with filtering
+    if [ "$LATEST_ONLY" = "1" ]; then
+        rebuild_index
+    fi
+
     echo ""
     echo -e "  ${CYAN}Repository:${NC}   $(basename "$REPO_DIR")"
     echo -e "  ${CYAN}URL:${NC}          ${REPO_URL:-<not set>}"
@@ -455,9 +598,81 @@ print(json.dumps(pkg, indent=2))
 PYEOF
 }
 
+sync_repo_to_remote() {
+    local repo_dir="$1"
+    local remote="$2"
+    local force="$3"
+    
+    # Get local files (excluding .git, *.bak.*)
+    local local_files
+    local_files=$(find "$repo_dir" -type f -not -path '*/.git/*' ! -name '*.bak.*' | sed "s|^$repo_dir/||" | sort)
+    local local_count
+    local_count=$(echo "$local_files" | wc -l)
+    echo "Local files: $local_count"
+    
+    local server_files=""
+    if [ "$force" = "0" ]; then
+        # Get server files
+        server_files=$(ssh "$remote" "cd /opt/repos/fan-store && find . -type f -not -path './.*'" | sort)
+        local server_count
+        server_count=$(echo "$server_files" | wc -l)
+        echo "Server files: $server_count"
+    fi
+    
+    # Find what needs syncing
+    local to_sync
+    to_sync=$(comm -23 <(echo "$local_files") <(echo "$server_files" 2>/dev/null | sed 's|^\./||'))
+    
+    if [ -z "$to_sync" ]; then
+        echo "Nothing to sync — all files already on server"
+        return
+    fi
+    
+    local sync_count
+    sync_count=$(echo "$to_sync" | wc -l)
+    echo "Syncing $sync_count new files..."
+    
+    # Copy via scp
+    local copied=0
+    while IFS= read -r f; do
+        if [ -n "$f" ]; then
+            scp "$repo_dir/$f" "$remote:/opt/repos/fan-store/$f" >/dev/null 2>&1
+            if [ $? -eq 0 ]; then
+                copied=$((copied + 1))
+            fi
+        fi
+    done <<< "$to_sync"
+    
+    echo "Copied $copied / $sync_count files"
+
+    # ── index.json integrity validation ──────────────────────────────────
+    echo "Validating index.json integrity..."
+    if ! test_index_valid "$repo_dir/index.json"; then
+        echo "❌ index.json is corrupted locally!" >&2
+        repair_index "$repo_dir"
+        if test_index_valid "$repo_dir/index.json"; then
+            echo "✅ Repaired. Re-syncing to server..." >&2
+            scp "$repo_dir/index.json" "$remote:/opt/repos/fan-store/index.json"
+        else
+            echo "❌ Failed to repair. Refusing to publish." >&2
+            exit 1
+        fi
+    fi
+
+    # Verify server version
+    echo "Verifying server index.json..."
+    local server_idx
+    server_idx=$(ssh "$remote" "cat /opt/repos/fan-store/index.json" 2>/dev/null || true)
+    if ! echo "$server_idx" | grep -q "^{"; then
+        echo "❌ Server index.json missing '{'! Re-syncing..." >&2
+        scp "$repo_dir/index.json" "$remote:/opt/repos/fan-store/index.json"
+    fi
+}
+
 cmd_publish() {
     local target="${1:-$DEFAULT_REMOTE_TARGET}"
 
+    assert_repo_clean
     require_repo
 
     rebuild_index
@@ -471,17 +686,21 @@ cmd_publish() {
         info "Published to S3"
 
     elif [[ "$target" =~ ^https?:// ]]; then
-        error "HTTP publish not yet supported. Use rsync: user@host:/path"
+        error "HTTP publish not yet supported. Use SCP target: user@host:/path"
 
     else
-        if ! command -v rsync &>/dev/null; then
-            error "rsync not installed"
+        # SSH target: user@host:/path
+        local remote_host
+        remote_host=$(echo "$target" | cut -d: -f1)
+
+        if [ "$FORCE_UPLOAD" = "1" ]; then
+            dim "  scp: force upload (re-uploading all files)"
+        else
+            dim "  scp: smart sync — checking server for existing files..."
         fi
+
         info "Syncing to $target ..."
-        rsync -avz \
-            --exclude='.git/' \
-            --exclude='*.bak.*' \
-            "$REPO_DIR/" "$target/"
+        sync_repo_to_remote "$REPO_DIR" "$remote_host" "$FORCE_UPLOAD"
         info "Published to $target"
     fi
 }
@@ -501,14 +720,14 @@ cmd_help() {
     echo ""
     echo -e "${CYAN}fan-store${NC} — FAN package repository manager"
     echo ""
-    echo "Usage: fan-store <command> [args]"
+    echo "Usage: fan-store <command> [args] [--latest-only|--all|--force]"
     echo ""
     echo "Commands:"
     echo "  init [path]            Create a new repository directory"
     echo "  set-url <url>          Set repository base URL"
     echo "  add <archive.tar.gz>   Add package to repository"
     echo "  remove <name>          Remove package by name"
-    echo "  list                   List all packages"
+    echo "  list                   List all packages (latest-only by default; use --all for all versions)"
     echo "  info <name>            Show package details"
     echo "  publish [target]       Deploy to server (default: root@185.219.41.46:/var/www/html/fan-store)"
     echo "  serve [port]           Local HTTP server for testing"
@@ -517,7 +736,15 @@ cmd_help() {
     echo "Default server: root@185.219.41.46:/var/www/html/fan-store"
     echo "Default URL:    https://fan.sea-agents.ru/fan-store/"
     echo "Environment:"
-    echo "  FAN_REPO_DIR           Override repository directory"
+    echo "  FAN_REPO_DIR               Override repository directory"
+    echo "  FAN_STORE_LATEST_ONLY      Set to 0 or false to disable latest-only"
+    echo "  FAN_STORE_FULL_REBUILD     Set to 1 or true to force full rebuild (all versions)"
+    echo "  FAN_STORE_FORCE_UPLOAD     Set to 1 or true to force re-upload all files"
+    echo ""
+    echo "By default: latest-only mode (only the latest version of each package)."
+    echo "Use --all or FAN_STORE_FULL_REBUILD=1 for full rebuild (all versions)."
+    echo "By default: publish skips existing files on the server (--ignore-existing)."
+    echo "Use --force or FAN_STORE_FORCE_UPLOAD=1 to force re-upload all files."
     echo ""
 }
 

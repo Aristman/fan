@@ -1,6 +1,6 @@
 {
   "name": "fan-web-search",
-  "version": "1.7.0",
+  "version": "2.0.0",
   "description": "Multi-provider web search with automatic fallback chain (meta-search → SearXNG → Brave → Yandex → Z.AI) and web page reader for FAN",
   "keywords": [
     "fan-package",
@@ -24,7 +24,7 @@
     "type": "extension",
     "displayName": "FAN Web Search",
     "description": "Multi-provider web search with priority-based provider routing and automatic fallback chain (Yandex → Meta-search → Z.AI → SearXNG → Brave) and web page reader",
-    "version": "1.7.0",
+    "version": "2.0.0",
     "main": "index.ts",
     "author": "FAN Team",
     "tags": [

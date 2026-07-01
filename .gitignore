@@ -39,6 +39,8 @@ test_output.txt
 *_test_summary.txt
 __pycache__/
 *.pyc
+http-check.json
+*.bak
 
 # Coverage
 coverage/
