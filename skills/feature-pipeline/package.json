@@ -1,7 +1,7 @@
 {
   "name": "feature-pipeline",
-  "version": "1.0.0",
-  "description": "Полный TDD-пайплайн разработки фичи от roadmap до готового результата. Берёт roadmap, проходит по всем функциям и этапам: план → реализация → верификация (цикл до PASS) → тестирование → коммит. Финальная верификация, smoke/e2e-тесты, документация, отчёт.",
+  "version": "3.0.0",
+  "description": "Полный TDD-пайплайн разработки фичи от roadmap до готового результата. Координатор управляет через TaskCreate/TaskUpdate, каждый шаг — отдельный delegate_task. Каждая функция: implement → verify → tests-impl → verify(tests) → commit. В финале: полная верификация, smoke/e2e-тесты, документация, отчёт.",
   "type": "module",
   "keywords": ["fan-package", "fan-skill", "pipeline", "tdd", "orchestrator", "ci", "automation"],
   "author": "FAN Team",
@@ -10,10 +10,10 @@
     "name": "feature-pipeline",
     "type": "skill",
     "displayName": "Feature Pipeline",
-    "description": "Полный TDD-пайплайн разработки фичи от roadmap до готового результата",
-    "version": "1.0.0",
+    "description": "Полный TDD-пайплайн разработки фичи от roadmap до готового результата. Координатор + воркеры, control points, инкрементальный pipeline-report.",
+    "version": "3.0.0",
     "main": "SKILL.md",
     "author": "FAN Team",
-    "tags": ["pipeline", "tdd", "orchestrator", "automation", "testing", "verification"]
+    "tags": ["pipeline", "tdd", "orchestrator", "automation", "testing", "verification", "coordinator"]
   }
 }
