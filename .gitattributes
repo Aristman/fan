@@ -1,0 +1,24 @@
+# Force LF line endings for shell scripts (cross-platform pipe safety)
+*.sh text eol=lf
+
+# Force LF for other script/executable files that can be piped
+*.bash text eol=lf
+*.zsh text eol=lf
+*.ps1 text eol=lf
+Makefile text eol=lf
+Dockerfile text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.env.example text eol=lf
+
+# Binary files — no text conversion
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.svg binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.tar.gz binary
+*.zip binary
