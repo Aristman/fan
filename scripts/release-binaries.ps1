@@ -171,6 +171,19 @@ if (Test-Path $httpServerPath) {
     Write-Warn "http-server.js not found at $httpServerPath, skipping version inlining."
 }
 
+# ─── Inline version into coding-agent dist ────────────────────
+Write-Info "Inlining version v$FAN_VERSION into coding-agent dist..."
+$configPath = Join-Path $RootDir "packages\coding-agent\dist\config.js"
+if (Test-Path $configPath) {
+    $content = Get-Content $configPath -Raw
+    # Replace: export const VERSION = pkg.version;
+    $content = $content -replace "export const VERSION = pkg\.version;", "export const VERSION = '$FAN_VERSION';"
+    Set-Content -Path $configPath -Value $content -NoNewline
+    Write-Info "Coding-agent version inlined successfully."
+} else {
+    Write-Warn "config.js not found at $configPath, skipping version inlining."
+}
+
 # ─── Build FAN binaries ───────────────────────────────────────
 Write-Info "Building FAN (fan) binaries..."
 Push-Location (Join-Path $RootDir "packages\coding-agent")
