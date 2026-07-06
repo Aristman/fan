@@ -42,8 +42,10 @@ export const storeExtension: ExtensionFactory = (fan) => {
 
 	// Register shortcuts for extension browser.
 	// Alt+S is the default on Linux/Windows. On macOS, Option+S often produces
-	// a special character (ß) instead of being treated as a shortcut, so we
-	// also register Ctrl+Shift+S for macOS terminals.
+	// a special character (ß) instead of being treated as a shortcut, and
+	// Control+Shift+S may collide with terminal Control+S (XOFF). Use F3 as
+	// a reliable fallback on macOS (press Fn+F3 on MacBook if F-keys trigger
+	// system functions like Mission Control).
 	const storeShortcutHandler = (ctx: ExtensionContext) => {
 		showExtensionBrowser(ctx, db, repoClient, installer, config);
 	};
@@ -52,7 +54,7 @@ export const storeExtension: ExtensionFactory = (fan) => {
 		handler: storeShortcutHandler,
 	});
 	if (process.platform === "darwin") {
-		fan.registerShortcut("ctrl+shift+s", {
+		fan.registerShortcut("f3", {
 			description: "Browse extension repositories (macOS fallback)",
 			handler: storeShortcutHandler,
 		});

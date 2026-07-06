@@ -8,12 +8,12 @@
 
 **Решаемая задача:** управление экосистемой FAN через единый интерфейс. Вместо ручного копирования файлов в директории `extensions/`, `skills/`, `themes/`, пользователь может искать пакеты в магазине, устанавливать их одной командой и получать уведомления об обновлениях.
 
-**Где используется:** встроен в FAN как bundled extension (автоматически загружается при старте). Доступен через 5 LLM-инструментов (store_search, store_install, store_remove, store_update, store_list), slash-команду `/store` и хоткей `Alt+S` (Linux/Windows) / `Ctrl+Shift+S` (macOS) для графического браузера.
+**Где используется:** встроен в FAN как bundled extension (автоматически загружается при старте). Доступен через 5 LLM-инструментов (store_search, store_install, store_remove, store_update, store_list), slash-команду `/store` и хоткей `Alt+S` (Linux/Windows) / `F3` (macOS, Fn+F3 если система перехватывает F3) для графического браузера.
 
 **Ключевые возможности:**
 - 5 LLM инструментов: `store_search`, `store_install`, `store_remove`, `store_update`, `store_list`
 - Slash-команда `/store` для интерактивного использования
-- Хоткей `Alt+S` (Linux/Windows) / `Ctrl+Shift+S` (macOS) — графический браузер расширений
+- Хоткей `Alt+S` (Linux/Windows) / `F3` (macOS, Fn+F3 если система перехватывает F3) — графический браузер расширений
 - Multi-repo: основной репозиторий `https://fan.sea-agents.ru/fan-store/` + кастомные
 - Установка из архивов (`.tar.gz`, `.zip`) с SHA-256 верификацией
 - Self-update: FAN Store может обновлять сам себя
