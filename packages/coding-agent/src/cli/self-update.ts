@@ -8,10 +8,12 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+	chmodSync,
 	copyFileSync,
 	existsSync,
 	mkdirSync,
 	readdirSync,
+	readFileSync,
 	realpathSync,
 	renameSync,
 	rmSync,
@@ -312,12 +314,69 @@ function formatBytes(bytes: number): string {
 }
 
 // =============================================================================
+// Verification helpers
+// =============================================================================
+
+/** Read the version string from the installed package.json */
+function readInstalledVersion(installDir: string): string | undefined {
+	try {
+		const pkgPath = join(installDir, "package.json");
+		if (!existsSync(pkgPath)) return undefined;
+		const pkg = JSON.parse(readFileSync(pkgPath, "utf-8")) as { version?: string };
+		return pkg.version;
+	} catch {
+		return undefined;
+	}
+}
+
+/** Run the installed binary with --version and return the output */
+function runBinaryVersion(binaryPath: string): Promise<string | undefined> {
+	return new Promise((resolve) => {
+		const child = spawn(binaryPath, ["--version"], { stdio: ["ignore", "pipe", "ignore"] });
+		let stdout = "";
+		child.stdout?.on("data", (data: Buffer) => {
+			stdout += data.toString();
+		});
+		child.on("close", () => {
+			resolve(stdout.trim() || undefined);
+		});
+		child.on("error", () => resolve(undefined));
+	});
+}
+
+/** Verify that the installed binary reports the expected version */
+async function verifyUpdate(
+	installDir: string,
+	binaryName: string,
+	expectedVersion: string,
+): Promise<{ ok: boolean; installedPkgVersion?: string; binaryVersion?: string; error?: string }> {
+	const currentBinary = join(installDir, binaryName);
+	const installedPkgVersion = readInstalledVersion(installDir);
+	const binaryVersion = await runBinaryVersion(currentBinary);
+
+	if (binaryVersion && compareVersions(binaryVersion, expectedVersion) === 0) {
+		return { ok: true, installedPkgVersion, binaryVersion };
+	}
+
+	const errorParts: string[] = [];
+	if (!binaryVersion) {
+		errorParts.push("installed binary did not report a version");
+	} else {
+		errorParts.push(`installed binary reports ${binaryVersion}, expected ${expectedVersion}`);
+	}
+	if (installedPkgVersion && compareVersions(installedPkgVersion, expectedVersion) !== 0) {
+		errorParts.push(`package.json version is ${installedPkgVersion}`);
+	}
+
+	return { ok: false, installedPkgVersion, binaryVersion, error: errorParts.join("; ") };
+}
+
+// =============================================================================
 // performUpdate
 // =============================================================================
 
-/** Clean up leftover .old binaries from previous updates (Windows only) */
+/** Clean up leftover .old binaries from previous updates */
 export function cleanupOldBinaries(): void {
-	if (process.platform !== "win32") return;
 	try {
 		const installDir = dirname(realpathSync(process.execPath));
 		const oldBinary = join(installDir, basename(process.execPath) + ".old");
@@ -464,31 +523,60 @@ export async function performUpdate(options?: {
 			return;
 		}
 	} else {
-		// Linux/macOS: rename() atomically replaces the running binary.
-		// The kernel keeps the old inode alive for the running process;
-		// the path now points to the new binary.
+		// Linux/macOS: use a staged replacement to avoid issues with replacing a
+		// running executable in place (especially on macOS APFS with signed
+		// binaries). Process: current -> .old, new -> staging -> current.
+		const oldBinary = currentBinary + ".old";
+		const staging = join(installDir, `.fan-update-${Date.now()}`);
+
 		try {
-			renameSync(newBinary, currentBinary);
-		} catch (renameErr) {
-			// Cross-filesystem rename fails with EXDEV — copy to staging then rename
-			if ((renameErr as NodeJS.ErrnoException).code === "EXDEV") {
-				const staging = join(installDir, `.fan-update-${Date.now()}`);
-				try {
-					copyFileSync(newBinary, staging);
-					renameSync(staging, currentBinary);
-				} catch (innerErr) {
-					try {
-						rmSync(staging, { force: true });
-					} catch {
-						/* ignore */
-					}
-					throw innerErr;
-				}
-			} else {
-				throw renameErr;
+			// Remove any stale .old from a previous update
+			try {
+				unlinkSync(oldBinary);
+			} catch {
+				/* ignore */
 			}
+
+			// Move current (running) binary aside
+			try {
+				renameSync(currentBinary, oldBinary);
+			} catch (renameErr) {
+				// If the current binary path doesn't exist (shouldn't happen),
+				// continue and install fresh.
+				if ((renameErr as NodeJS.ErrnoException).code !== "ENOENT") {
+					throw renameErr;
+				}
+			}
+
+			// Stage the new binary in the install directory, then atomically swap
+			copyFileSync(newBinary, staging);
+			renameSync(staging, currentBinary);
+			chmodSync(currentBinary, 0o755);
+
+			// Try to clean up the old binary (the running process keeps its inode
+			// alive, so unlink is safe on Unix).
+			try {
+				unlinkSync(oldBinary);
+			} catch {
+				/* ignore — will be cleaned on next startup */
+			}
+		} catch (err) {
+			// Best-effort rollback: restore old binary and clean staging
+			try {
+				rmSync(staging, { force: true });
+			} catch {
+				/* ignore */
+			}
+			try {
+				if (existsSync(oldBinary)) {
+					copyFileSync(oldBinary, currentBinary);
+					chmodSync(currentBinary, 0o755);
+				}
+			} catch {
+				/* ignore */
+			}
+			throw err;
 		}
-		require("node:fs").chmodSync(currentBinary, 0o755);
 	}
 
 	// 11. Copy new assets (not locked by the running process)
@@ -505,14 +593,41 @@ export async function performUpdate(options?: {
 		}
 	}
 
-	// 12. Clean up temp + backup
+	// 12. Verify the update actually landed
+	console.log(chalk.dim("Verifying update..."));
+	const verification = await verifyUpdate(installDir, binaryName, manifest.latest);
+	if (!verification.ok) {
+		console.error(chalk.red(`Update verification failed: ${verification.error}`));
+		console.error(chalk.yellow(`  Installed to: ${installDir}`));
+		console.error(chalk.dim("  Attempting to restore from backup..."));
+		try {
+			copyFileSync(join(backupDir, binaryName), currentBinary);
+			chmodSync(currentBinary, 0o755);
+			for (const asset of UPDATE_ASSETS) {
+				const backupAsset = join(backupDir, asset);
+				if (existsSync(backupAsset)) {
+					const destAsset = join(installDir, asset);
+					if (existsSync(destAsset)) {
+						rmSync(destAsset, { recursive: true, force: true });
+					}
+					copyRecursive(backupAsset, destAsset);
+				}
+			}
+			console.error(chalk.green("Restored previous version from backup."));
+		} catch (restoreErr) {
+			console.error(chalk.red(`Restore failed: ${(restoreErr as Error).message}`));
+		}
+		throw new Error(`Update verification failed: ${verification.error}`);
+	}
+
+	// 13. Clean up temp + backup
 	try {
 		rmSync(workDir, { recursive: true, force: true });
 	} catch {
 		// Non-critical: temp files will be cleaned by OS eventually
 	}
 
-	// 13. Print result
+	// 14. Print result
 	console.log("");
 	if (process.platform === "win32") {
 		console.log(chalk.green.bold("✓ Updated successfully!"));
@@ -523,6 +638,7 @@ export async function performUpdate(options?: {
 		console.log(chalk.green.bold("✓ Update complete!"));
 		console.log(chalk.dim(`  Updated from ${chalk.white(VERSION)} to ${chalk.white(manifest.latest)}`));
 		console.log(chalk.dim(`  Installed to: ${chalk.white(installDir)}`));
+		console.log(chalk.dim("  If 'fan --version' still shows the old version, run: hash -r"));
 	}
 	console.log("");
 }
