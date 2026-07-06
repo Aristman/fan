@@ -14,7 +14,26 @@
 #
 set -euo pipefail
 
+# ── Python resolution ───────────────────────────────────
+# Prefer a working Python executable. On Windows, python3 is often a
+# Microsoft Store stub that exits with code 49. Try python, then python3,
+# then py, and keep the first one that runs.
+PYTHON_BIN=""
+for candidate in python python3 py; do
+    if command -v "$candidate" >/dev/null 2>&1; then
+        if "$candidate" -c "import sys; sys.exit(0)" >/dev/null 2>&1; then
+            PYTHON_BIN="$candidate"
+            break
+        fi
+    fi
+done
+if [ -z "$PYTHON_BIN" ]; then
+    echo "ERROR: No working Python interpreter found (tried python, python3, py)." >&2
+    exit 1
+fi
+
 # ── Config ──────────────────────────────────────────────
+
 # SSH config-based alias (recommended). Configure in ~/.ssh/config:
 #   Host fan-store-server
 #       HostName 185.219.41.46
@@ -103,9 +122,9 @@ assert_repo_clean() {
         fi
     done
 
-    # 2. packages/ — не должно быть бинарников FAN
+    # 2. packages/ — не должно быть бинарников FAN (.zip), но .tar.gz — это пакеты
     if [ -d "$REPO_DIR/packages" ]; then
-        for f in "$REPO_DIR/packages"/fan-*.tar.gz "$REPO_DIR/packages"/fan-*.zip; do
+        for f in "$REPO_DIR/packages"/fan-*.zip; do
             if [ -e "$f" ]; then
                 banned+=("$(basename "$f")")
             fi
@@ -154,7 +173,7 @@ tar_field() {
         echo ""
         return
     fi
-    tar -xzf "$archive" -O "$pkg_json_path" 2>/dev/null | python3 -c "
+    tar -xzf "$archive" -O "$pkg_json_path" 2>/dev/null | $PYTHON_BIN -c "
 import json, sys
 try:
     data = json.load(sys.stdin)
@@ -218,7 +237,7 @@ test_index_valid() {
     fi
 
     # Try to parse as JSON
-    if ! python3 -c "import json; json.load(open('$path'))" 2>/dev/null; then
+    if ! $PYTHON_BIN -c "import json; json.load(open('$path'))" 2>/dev/null; then
         return 1
     fi
 
@@ -241,7 +260,7 @@ rebuild_index() {
 
     local pkg_array="[]"
     if [[ -d "$packages_dir" ]]; then
-        pkg_array=$(FAN_PKG_DIR="$packages_dir" FAN_REPO_URL="$REPO_URL" FAN_REPO_DIR="$REPO_DIR" python3 << 'PYEOF'
+        pkg_array=$(FAN_PKG_DIR="$packages_dir" FAN_REPO_URL="$REPO_URL" FAN_REPO_DIR="$REPO_DIR" $PYTHON_BIN << 'PYEOF'
 import json, os, hashlib, glob, tarfile
 
 packages = []
@@ -344,7 +363,7 @@ PYEOF
 )
     fi
 
-    FAN_PKG_ARRAY="$pkg_array" FAN_REPO_DIR="$REPO_DIR" FAN_REPO_URL="$REPO_URL" FAN_TS="$ts" FAN_LATEST_ONLY="$LATEST_ONLY" python3 << 'PYEOF'
+    FAN_PKG_ARRAY="$pkg_array" FAN_REPO_DIR="$REPO_DIR" FAN_REPO_URL="$REPO_URL" FAN_TS="$ts" FAN_LATEST_ONLY="$LATEST_ONLY" $PYTHON_BIN << 'PYEOF'
 import json, os, sys
 
 packages = json.loads(os.environ["FAN_PKG_ARRAY"])
@@ -543,7 +562,7 @@ cmd_list() {
     echo -e "  ${CYAN}Directory:${NC}    $REPO_DIR"
     echo ""
 
-    FAN_REPO_DIR="$REPO_DIR" python3 << 'PYEOF'
+    FAN_REPO_DIR="$REPO_DIR" $PYTHON_BIN << 'PYEOF'
 import json, os, sys
 
 with open(os.path.join(os.environ["FAN_REPO_DIR"], "index.json")) as f:
@@ -581,7 +600,7 @@ cmd_info() {
 
     require_repo
 
-    FAN_REPO_DIR="$REPO_DIR" FAN_PKG_NAME="$name" python3 << 'PYEOF'
+    FAN_REPO_DIR="$REPO_DIR" FAN_PKG_NAME="$name" $PYTHON_BIN << 'PYEOF'
 import json, os, sys
 
 with open(os.path.join(os.environ["FAN_REPO_DIR"], "index.json")) as f:
@@ -605,23 +624,64 @@ sync_repo_to_remote() {
     
     # Get local files (excluding .git, *.bak.*)
     local local_files
-    local_files=$(find "$repo_dir" -type f -not -path '*/.git/*' ! -name '*.bak.*' | sed "s|^$repo_dir/||" | sort)
+    local_files=$(find "$repo_dir" -type f -not -path '*/.git/*' -not -path '*/tmp/*' ! -name '*.bak.*' | sed "s|^$repo_dir/||" | sort)
     local local_count
     local_count=$(echo "$local_files" | wc -l)
     echo "Local files: $local_count"
     
-    local server_files=""
+    # Compute local SHA-256 hashes
+    local local_hashes
+    local_hashes=$(find "$repo_dir" -type f -not -path '*/.git/*' -not -path '*/tmp/*' ! -name '*.bak.*' -exec sha256sum {} + | sed "s|$repo_dir/||")
+    
+    # Build server hash map (hash -> path) and path -> hash
+    local -A server_hash_by_path
+    local server_count=0
     if [ "$force" = "0" ]; then
-        # Get server files
-        server_files=$(ssh "$remote" "cd /opt/repos/fan-store && find . -type f -not -path './.*'" | sort)
-        local server_count
-        server_count=$(echo "$server_files" | wc -l)
+        local server_hashes
+        server_hashes=$(ssh "$remote" "cd /opt/repos/fan-store && find . -type f -not -path './.*' -exec sha256sum {} +" 2>/dev/null || true)
+        if [ -n "$server_hashes" ]; then
+            while IFS= read -r line; do
+                [[ -z "$line" ]] && continue
+                local h p
+                h=$(echo "$line" | awk '{print $1}')
+                p=$(echo "$line" | awk '{print $2}')
+                # strip leading ./ if present
+                p=${p#./}
+                server_hash_by_path["$p"]="$h"
+                server_count=$((server_count + 1))
+            done <<< "$server_hashes"
+        fi
         echo "Server files: $server_count"
     fi
     
-    # Find what needs syncing
-    local to_sync
-    to_sync=$(comm -23 <(echo "$local_files") <(echo "$server_files" 2>/dev/null | sed 's|^\./||'))
+    # Find what needs syncing: missing files or files with different hashes
+    local to_sync=""
+    while IFS= read -r f; do
+        [[ -z "$f" ]] && continue
+        if [ "$force" = "1" ]; then
+            to_sync="${to_sync}${f}
+"
+            continue
+        fi
+        local local_hash
+        local_hash=$(echo "$local_hashes" | awk -v fp="$f" '
+            {
+                # The path is everything after the first space (may contain spaces)
+                idx = index($0, " ")
+                if (idx > 0) {
+                    path = substr($0, idx + 1)
+                    if (path == fp) {
+                        print $1
+                    }
+                }
+            }
+        ')
+        local server_hash="${server_hash_by_path[$f]:-}"
+        if [ -z "$server_hash" ] || [ "$server_hash" != "$local_hash" ]; then
+            to_sync="${to_sync}${f}
+"
+        fi
+    done <<< "$local_files"
     
     if [ -z "$to_sync" ]; then
         echo "Nothing to sync — all files already on server"
@@ -629,8 +689,8 @@ sync_repo_to_remote() {
     fi
     
     local sync_count
-    sync_count=$(echo "$to_sync" | wc -l)
-    echo "Syncing $sync_count new files..."
+    sync_count=$(echo -e "$to_sync" | grep -c . || true)
+    echo "Syncing $sync_count new/changed files..."
     
     # Copy via scp
     local copied=0
@@ -641,7 +701,7 @@ sync_repo_to_remote() {
                 copied=$((copied + 1))
             fi
         fi
-    done <<< "$to_sync"
+    done <<< "$(echo -e "$to_sync")"
     
     echo "Copied $copied / $sync_count files"
 
@@ -713,7 +773,7 @@ cmd_serve() {
     dim "  Press Ctrl+C to stop"
     echo ""
     cd "$REPO_DIR"
-    python3 -m http.server "$port"
+    $PYTHON_BIN -m http.server "$port"
 }
 
 cmd_help() {

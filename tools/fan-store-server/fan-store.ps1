@@ -622,10 +622,20 @@ function Get-RepoFiles {
 
 function Get-ServerFiles {
     param([string]$Remote)
-    # Get list of files on server
-    $sshOutput = ssh $Remote "cd /opt/repos/fan-store && find . -type f -not -path './.*' | sort" 2>$null
+    # Get list of files on server with SHA-256 hashes
+    $sshOutput = ssh $Remote "cd /opt/repos/fan-store && find . -type f -not -path './.*' -exec sha256sum {} +" 2>$null
     if (-not $sshOutput) { return @() }
-    return $sshOutput
+    # Parse into hashtable: path -> hash
+    $result = @{}
+    foreach ($line in $sshOutput) {
+        $line = $line.Trim()
+        if ($line -match '^([a-f0-9]{64})\s+(.+)$') {
+            $hash = $Matches[1]
+            $path = $Matches[2].TrimStart('./')
+            $result[$path] = $hash
+        }
+    }
+    return $result
 }
 
 function Sync-RepoToRemote {
@@ -638,16 +648,24 @@ function Sync-RepoToRemote {
     $localFiles = Get-RepoFiles $RepoDir
     Write-Host "Local files: $($localFiles.Count)"
     
-    $serverFiles = @()
-    if (-not $Force) {
-        $serverFiles = Get-ServerFiles $Remote
-        Write-Host "Server files: $($serverFiles.Count)"
+    # Compute local SHA-256 hashes
+    $localHashes = @{}
+    foreach ($f in $localFiles) {
+        $localPath = Join-Path $RepoDir $f
+        $localHashes[$f] = (Get-FileHash -Path $localPath -Algorithm SHA256).Hash
     }
     
+    # Get server hashes (returns hashtable path -> hash)
+    $serverHashes = @{}
+    if (-not $Force) {
+        $serverHashes = Get-ServerFiles $Remote
+        Write-Host "Server files: $($serverHashes.Count)"
+    }
+    
+    # Build toSync: missing files or files with different hashes
     $toSync = @()
     foreach ($f in $localFiles) {
-        $rel = "./" + $f
-        if ($Force -or ($serverFiles -notcontains $rel)) {
+        if ($Force -or -not $serverHashes.ContainsKey($f) -or $serverHashes[$f] -ne $localHashes[$f]) {
             $toSync += $f
         }
     }

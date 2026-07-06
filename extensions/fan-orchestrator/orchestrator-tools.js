@@ -10,6 +10,7 @@ import { getMarkdownTheme } from "@seaagents/fan-coding-agent";
 import { Container, Markdown, Spacer, Text } from "@seaagents/fan-tui";
 import { Type } from "@sinclair/typebox";
 import { discoverAgents } from "./agents.js";
+import { classifyComplexity, formatComplexityResult, DIRECT_TASK_RULES, DELEGATE_TASK_RULES } from "./task-complexity.js";
 import { resolveWorkerModel, resolveWorkerTemperature } from "./config.js";
 import { formatUsageStats, formatToolPreview, getDisplayItems, getFinalOutput, MAX_CONCURRENCY, MAX_PARALLEL_TASKS, mapWithConcurrencyLimit, runSingleAgent, } from "./subagent-runner.js";
 import { acquireSlot, releaseSlot } from "./workers.js";
@@ -903,6 +904,74 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                 ],
                 details: undefined,
             };
+        },
+    });
+    // ---- assess_task ----
+    pi.registerTool({
+        name: "assess_task",
+        label: "Assess Task Complexity",
+        description: [
+            "Multi-level task complexity assessment for the coordinator.",
+            "Returns verdict: direct (coordinator handles it), delegate (spawn worker), or uncertain.",
+            "Level 1: keyword heuristic — fast deterministic check.",
+            "Level 2: rule-based scoring — syntactic analysis with weighted rules.",
+            "Level 3: LLM assessment — semantic analysis using a quick model call (optional).",
+            "",
+            "DIRECT criteria (coordinator does it):",
+            ...DIRECT_TASK_RULES.map(r => `  - ${r}`),
+            "",
+            "DELEGATE criteria (needs worker):",
+            ...DELEGATE_TASK_RULES.map(r => `  - ${r}`),
+        ].join("\n"),
+        parameters: Type.Object({
+            description: Type.String({ description: "Task description to assess" }),
+            levels: Type.Optional(Type.Integer({ description: "Assessment depth (1-3). 1=keywords only, 2=+rules, 3=+LLM. Default: 2", default: 2, minimum: 1, maximum: 3 })),
+        }),
+        async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+            try {
+                const levels = params.levels ?? 2;
+                const result = await classifyComplexity(params.description, {
+                    levels,
+                    taskContext: {},
+                    signal: _signal,
+                });
+                return {
+                    content: [
+                        {
+                            type: "text",
+                            text: formatComplexityResult(result),
+                        },
+                    ],
+                    details: undefined,
+                };
+            }
+            catch (e) {
+                return {
+                    content: [{ type: "text", text: `Assessment failed: ${e.message}` }],
+                    isError: true,
+                    details: undefined,
+                };
+            }
+        },
+        renderCall(args, theme) {
+            const levels = args.levels ?? 2;
+            let text = theme.fg("toolTitle", theme.bold("📊 ASSESS task"));
+            text += `\n  ${theme.fg("dim", `Levels: L1-L${levels}`)}`;
+            const preview = (args.description || "").length > 60
+                ? `${(args.description || "").slice(0, 60)}...`
+                : (args.description || "");
+            text += `\n  ${theme.fg("toolOutput", preview)}`;
+            return new Text(text, 0, 0);
+        },
+        renderResult(result, { expanded }, theme) {
+            const text = result.content[0];
+            const content = text?.type === "text" ? text.text : "(no output)";
+            if (expanded) {
+                return new Text(content, 0, 0);
+            }
+            // Extract first line as summary
+            const firstLine = content.split("\n")[0];
+            return new Text(`${firstLine}`, 0, 0);
         },
     });
     // ---- TaskCreate ----
