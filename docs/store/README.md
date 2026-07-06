@@ -91,7 +91,7 @@ FAN Store — встроенный пакетный менеджер для ус
 
 ### 9. Точка входа — `packages/store/src/store-extension.ts`
 - Регистрирует 5 LLM-инструментов
-- Регистрирует `/store` slash-команду и `Alt+S` хоткей
+- Регистрирует `/store` slash-команду и хоткей `Alt+S` (Linux/Windows) / `Ctrl+Shift+S` (macOS)
 - Жизненный цикл: `session_start` (auto-update check, статус-бар)
 - Самообновление отложенное (staged)
 
