@@ -58,6 +58,10 @@ export const storeExtension: ExtensionFactory = (fan) => {
 			description: "Browse extension repositories (macOS fallback)",
 			handler: storeShortcutHandler,
 		});
+		fan.registerShortcut("ctrl+shift+s", {
+			description: "Browse extension repositories (macOS additional)",
+			handler: storeShortcutHandler,
+		});
 	}
 
 	// Session lifecycle
