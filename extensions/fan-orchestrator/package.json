@@ -8,9 +8,9 @@
 	"fan": {
 		"name": "fan-orchestrator",
 		"type": "extension",
-		"displayName": "FAN Orchestrator v7.2.0",
-		"description": "FAN orchestrator v7.2.0 — worker reliability fix: tool-only response fallback, idle-poll detection, prevents Plan worker from returning empty output",
-		"version": "7.2.0",
+		"displayName": "FAN Orchestrator v7.3.0",
+		"description": "FAN orchestrator v7.3.0 — permission hardening: heredoc, pipes, interpreters, fork-bomb, audit log",
+		"version": "7.3.0",
 		"main": "orchestrator-extension.js",
 		"entry": "src/orchestrator-extension.ts",
 		"author": "FAN Team",
