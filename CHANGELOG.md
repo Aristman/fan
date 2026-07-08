@@ -1,5 +1,52 @@
 # Changelog
 
+## [2.2.0] - 2026-07-08
+
+### 🚀 Pipeline Mode (feature-pipeline v3.1.0)
+
+- **Рабочие артефакты pipeline** — три файла на диске, которые создаются 1 раз
+  и обновляются автоматически на каждый `TaskCreate`/`TaskUpdate`:
+  - `docs/development-plan.md` — машиночитаемый roadmap.
+  - `docs/development-log.md` — append-only журнал выполнения.
+  - `.fan/tracking/phase-status.json` — JSON state machine.
+
+- **Команда `/pipeline`** (в `fan-orchestrator` v7.4.0):
+  - `init` — интерактивная инициализация: feature-name, commit-strategy, фазы.
+  - `status` — прогресс по фазам (widget, 10 сек).
+  - `log [N]` — последние N записей из журнала.
+  - `finish` — пометить завершённым + выбор: Keep / Delete артефакты.
+  - `cancel` — деактивировать в памяти, артефакты сохраняются.
+
+- **Авто-обновление артефактов** — `fan.on("tool_result", ...)` хук:
+  на каждый `TaskCreate`/`TaskUpdate` синхронно обновляет `phase-status.json`
+  и append в `development-log.md`. Координатор не делает это вручную.
+
+- **State Recovery** — `session_start` автоматически читает
+  `.fan/tracking/phase-status.json` и восстанавливает pipeline в памяти.
+  После обрыва сессии работа продолжается с места остановки.
+
+- **Commit policy** через conventional-commits:
+  - `per-phase` — `feat(phase-N): <name> complete` после завершения фазы.
+  - `per-function` — `feat(phase-N/F-X.Y): <summary>` после завершения функции.
+  - `manual` — без автокоммитов.
+
+- **Новый модуль `pipeline-state.js`** в `extensions/fan-orchestrator/`:
+  атомарные операции (temp + rename), per-path lock Map, UTF-8, без external
+  deps.
+
+### Изменения версий
+
+- **fan** (root) — `2.1.0` → `2.2.0`.
+- **fan-orchestrator** — `7.3.0` → `7.4.0` (Pipeline Mode).
+- **feature-pipeline** skill — `3.0.0` → `3.1.0` (рабочие артефакты, commit policy).
+
+### Документация
+
+- `docs/guides/orchestrator.md` — добавлена секция «Pipeline Mode (v3.1.0)»
+  с 10 подразделами (149 строк).
+
+---
+
 ## [2.1.0] - 2026-07-08
 
 ### 🔒 Безопасность (критическое обновление)

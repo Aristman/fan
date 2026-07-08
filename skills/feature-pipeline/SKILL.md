@@ -10,10 +10,18 @@ description: >
   финальный коммит и отчёт.
   Используйте когда есть roadmap фичи и нужно автоматизировать полный цикл разработки
   с прозрачным TDD-контролем.
-compatibility: "TaskCreate, TaskUpdate, list_tasks, TaskClear, delegate_task, read, write, edit, bash, question, questionnaire"
+compatibility: "TaskCreate, TaskUpdate, list_tasks, TaskClear, delegate_task, read, write, edit, bash, question, questionnaire, pipeline"
 metadata:
   author: "FAN Team"
-  version: "3.0.0"
+  version: "3.1.0"
+  changelog: |
+    v3.1.0 (2026-07-08):
+    - Pipeline Mode: working artifacts (development-plan.md, development-log.md, phase-status.json)
+    - Integration with FAN Orchestrator `/pipeline` command
+    - Auto-update hooks on TaskCreate/TaskUpdate
+    - Mandatory commit policy (conventional-commits, per-phase/per-function/manual)
+    - Function limit increased to 30 per stage
+    - State recovery after session restart
 ---
 
 # feature-pipeline — TDD-пайплайн разработки фичи
@@ -53,12 +61,90 @@ metadata:
 
 ---
 
+## Рабочие артефакты pipeline (v3.1.0+)
+
+Каждый запуск feature-pipeline создаёт и поддерживает **3 рабочих артефакта**, которые живут на диске на время работы над фичей:
+
+| Файл | Назначение | Когда обновляется |
+|------|-----------|-------------------|
+| `docs/development-plan.md` | Roadmap с фазами, фичами, критериями приёмки | При инициализации |
+| `docs/development-log.md` | Append-only журнал выполнения | На каждый TaskUpdate через orchestrator hook |
+| `.fan/tracking/phase-status.json` | Машиночитаемый state machine | На каждый TaskUpdate через orchestrator hook |
+
+### Почему артефакты, а не только TaskCreate/TaskUpdate?
+
+| Подход | Плюсы | Минусы |
+|--------|-------|--------|
+| Только TaskCreate | Минимум дисковых операций | Потеря контекста при перезапуске сессии, нельзя передать состояние другому координатору |
+| Артефакты на диске | Документация для коллег, восстановление после обрыва, machine-readable state | Сложнее поддерживать |
+| **Гибрид (v3.1.0)** | Лучшее из двух: TaskUpdate пишет и в in-memory TaskManager, и в артефакты на диске | Чуть больше работы |
+
+### Автообновление через orchestrator
+
+В FAN Orchestrator при работающем `pipelineState` каждый TaskUpdate и TaskCreate автоматически:
+1. Обновляет `.fan/tracking/phase-status.json` (через `PipelineState.recordStatusChange`)
+2. Делает append в `development-log.md` (через `recordLogEntry`)
+
+Координатору **не нужно** явно вызывать эти методы — хуки срабатывают на каждом изменении статуса.
+
+---
+
 ## Когда использовать
 
 - Есть roadmap фичи (docs/features/<slug>/roadmap.md) и нужно реализовать всю фичу
 - Нужен автоматизированный TDD-конвейер: код → верификация → тесты → коммит
 - Требуется гарантированное качество: каждая функция верифицируется перед коммитом
 - Нужен финальный отчёт с результатами по каждой функции
+
+## Commit Policy (v3.1.0+)
+
+После каждой функции или фазы (зависит от стратегии) **обязателен** осмысленный git commit с conventional-commits форматом.
+
+### Стратегии
+
+| Стратегия | Когда коммитим | Commit message |
+|-----------|---------------|----------------|
+| `per-phase` | Когда фаза переходит в COMPLETED | `feat(phase-N): <name> complete` |
+| `per-function` | Когда функция переходит в completed | `feat(phase-N/F-X.Y): <summary>` |
+| `manual` | Никогда автоматически | — |
+
+### Формат
+
+```
+feat(phase-3): Session Management complete
+
+- fan-rust-session crate implemented
+- JSONL persistence with compaction, fork, metadata API
+- Tests: 47 passed
+- E2E: scripts/e2e/phase-3.sh → PASS
+```
+
+### Когда НЕ коммитим
+
+- На каждом черновике (только полные завершения)
+- Несколько фаз вместе (только одну!)
+- С `--no-verify` (skips хуки = обычно плохо)
+- Без `feat(` / `fix(` / `chore(` (не conventional)
+
+### Workflow
+
+```bash
+# После verify PASS + tests PASS:
+git status                                  # проверяем что нет мусора
+git add <явный список файлов>              # НЕ git add -A
+git commit -m "$(cat <<'EOF'
+feat(phase-3): Session Management complete
+
+- tests + implementation
+- coverage: 89%
+EOF
+)"
+git log -1 --format=%H  # сохраняем sha в phase-status.json
+```
+
+После `git commit` обязательно: `pipeline.recordPhaseChange({ phaseId, status: 'COMPLETED', commitSha: '<sha>' })`.
+
+---
 
 ## Когда НЕ использовать
 
@@ -67,6 +153,8 @@ metadata:
 - Есть только идея без спецификации (сначала research-spec-generator, потом feature-roadmap)
 - Не нужно ветвление и коммиты (просто правка кода)
 - Нужен полный пакет документов разработки (используйте dev-docs-pack)
+- **Не нужны персистентные артефакты** — если работа одноразовая (правка одной строчки), не включай pipeline mode, делай через обычный `delegate_task`
+- **Нет FAN Orchestrator** — v3.1.0 завязан на orchestrator. Без orchestrator остаётся v3.0 поведение (только pipeline-report.md, без авто-хуков)
 
 ---
 
@@ -153,6 +241,12 @@ read <path>
 }
 ```
 
+**Лимиты roadmap:**
+- Этапы: 3-8
+- Функций на этап: 3-30 (v3.1.0+, было 3-15 в v3.0)
+
+Для фич с большим числом фаз (>8) — разделите на дочерние roadmap.
+
 **0.2 Проверить статусы**
 
 - Если в roadmap есть уже выполненные функции (✅) — спросить, переделать или пропустить
@@ -200,6 +294,30 @@ TaskCreate(subject = "Docs: README/CHANGELOG/MANIFEST")
   а порядок определяется очередью и приоритетами; **blocks[] = [F-1.1]** на F-1.2).
 - Финальная верификация блокируется всеми функциями.
 
+⚠️ **При создании задач через `TaskCreate` ОБЯЗАТЕЛЬНО используй phaseId, иначе orchestrator не сможет группировать:**
+
+✅ Правильно:
+```
+TaskCreate(
+  subject = "F-3.1 [session]: fan-rust-session crate skeleton",
+  owner = "implement",
+)
+# orchestrator хук: inferPhaseId("F-3.1 ...") → phaseId=3
+```
+
+❌ Неправильно:
+```
+TaskCreate(
+  subject = "Create session crate",  # невозможно инферить фазу
+  owner = "implement",
+)
+```
+
+Для функций, которые не относятся к фазе (например, "Setup environment"):
+```
+TaskCreate(subject = "[Phase 0] Setup environment", owner = "implement")
+```
+
 **0.5 Создать feature-ветку**
 
 ```bash
@@ -218,39 +336,50 @@ git checkout -b feature/<slug>
 
 Если slug не определён — извлечь из пути к roadmap (директория после `docs/features/`).
 
-**0.7 Создать pipeline-report.md**
+**0.7 Создать рабочие артефакты (v3.1.0)**
 
-```markdown
-# Pipeline Report: <название фичи>
+Вместо одного `pipeline-report.md` v3.1.0 создаёт ТРИ рабочих артефакта через встроенный orchestrator mode:
 
-> **Дата:** YYYY-MM-DD HH:MM
-> **Ветка:** feature/<slug>
+#### Шаг A: Запустить `/pipeline init` в FAN Orchestrator
 
-## Сводка
-
-| Метрика | Значение |
-|---------|----------|
-| Всего функций | <N> |
-| Реализовано | 0 |
-| Провалено | 0 |
-| Коммитов | 0 |
-
-## Функции
-
-_(будет заполнено по ходу работы — по одной записи на функцию)_
-
-## Проблемы
-
-_(пусто)_
-
-## Изменённые файлы
-
-_(пусто)_
-
-## Документация
-
-_(пусто)_
+В интерактивном режиме FAN Orchestrator:
 ```
+/pipeline init
+```
+Оркестратор запросит:
+- **Feature name** (например "fan-rust port")
+- **Commit strategy**: per-phase / per-function / manual
+- **Phases** (multi-line текст):
+  ```
+  phase 0: Foundation
+    goal: workspace builds, first green cargo test
+    features: F-0.1, F-0.2
+    criteria: cargo build --workspace, cargo test --workspace
+
+  phase 1: Providers
+    goal: LLM providers via rig-core
+    features: F-1.1
+    criteria: streaming works for Anthropic/OpenAI
+  ```
+- **Slug** (kebab-case) — автоопределяется из package.json/Cargo.toml, можно переопределить
+
+#### Шаг B: Подтвердить создание артефактов
+
+Orchestrator создаёт:
+- `docs/development-plan.md`
+- `docs/development-log.md`
+- `.fan/tracking/phase-status.json`
+
+И уведомляет: `✅ Pipeline initialized. Tracking active for: <featureName>`
+
+#### Шаг C: Pipeline-report заменён на artifacts
+
+В отличие от v3.0 (где был `pipeline-report.md`), v3.1.0 не требует отдельного файла-отчёта — он распределён между:
+- `docs/development-plan.md` (что планировали)
+- `docs/development-log.md` (что фактически произошло)
+- `.fan/tracking/phase-status.json` (машинный state)
+
+При финализации (Фаза Final) координатор делает **сводный отчёт** в чате пользователю, основанный на чтении этих 3 файлов через `pipeline.getStatus()` / `getLog()` / `getPlan()`.
 
 ---
 
@@ -288,8 +417,15 @@ _(пусто)_
    - не вносят ложных срабатываний;
    - проходят на реализованном коде.
    Если FAIL — исправить через bug-fix или tests-impl (макс 2 попытки).
-8. Если выбрана стратегия с коммитами — выполнить коммит через git напрямую
-   (коммит — простая операция, не требующая воркера).
+8. **Commit policy check** (v3.1.0+):
+   - проверить `pipeline.shouldCommit(phaseId)` через `delegate_task(agent="bash", task="...")`
+     или прямой вызов в Node (если есть доступ к pipelineState)
+   - если true → выполнить git commit через bash:
+     ```bash
+     git add <явные файлы>
+     git commit -m "$(./pipeline.formatCommitMessage({ phaseId, action: 'complete', summary: '...', feature: 'F-X.Y' }))"
+     ```
+   - сохранить commit sha → `pipeline.recordPhaseChange({ phaseId, status: 'IN_PROGRESS' | 'COMPLETED', commitSha: '<sha>' })`
 9. **Обновить pipeline-report.md** инкрементальной записью по функции
    (см. формат ниже).
 10. **TaskUpdate(taskId="<UUID>", status="completed")** — пометить задачу
@@ -301,24 +437,13 @@ _(пусто)_
     → перейти к шагу 1.
     Иначе → **Финальная фаза**.
 
-### Инкрементальная запись в pipeline-report.md
+### Инкрементальная запись (v3.1.0+)
 
-После каждой функции (шаг 8 цикла) добавить в `pipeline-report.md`:
-
-```markdown
-### F-X.Y [слой]: название
-
-- **Статус:** ✅ (попытка N) | ❌ (попытки исчерпаны)
-- **Implement:** commit <sha>, файлы: <list>
-- **Verify:** PASS / FAIL — <короткое резюме>
-- **TDD-тесты:** TC-X.Y-1 ✅, TC-X.Y-2 ✅, TC-X.Y-3 ✅
-- **Критерии приёмки:** все выполнены / <что не выполнено>
-- **Tests:** <список новых test-файлов>
-- **Финальный коммит:** <sha>
-- **Заметки:** <трудности, отклонения>
-```
-
-После добавления записи — обновить сводку в начале файла.
+В v3.1.0 ручное обновление pipeline-report.md **не требуется**.
+Вся инкрементальная запись идёт через orchestrator hooks автоматически
+в `development-log.md`. Координатору не нужно вручную редактировать
+pipeline-report после каждой функции — хуки срабатывают при каждом
+TaskUpdate.
 
 ### Принципы использования воркеров
 
@@ -404,10 +529,20 @@ delegate_task(agent="tests-impl", task="Напиши тесты для F-1.1: ..
 
 Когда все этапы пройдены (все функции обработаны):
 
-#### Шаг G.0: Подготовка финального отчёта
+#### Шаг G.0: Подготовка финального отчёта (v3.1.0+)
 
-Перед G.1 убедиться, что pipeline-report.md содержит записи
-по ВСЕМ функциям. Если где-то пропуск — заполнить из task-статусов.
+В v3.1.0 сводный отчёт **не хранится в файле**, а собирается из артефактов на лету:
+
+```javascript
+const log = await pipeline.getLog();
+const plan = await pipeline.getPlan();
+const status = await pipeline.getStatus();
+
+// вывести пользователю markdown-саммари в чате
+```
+
+Если нужна стабильная копия отчёта (для передачи коллегам) — можно сгенерировать
+`docs/features/<slug>/FINAL-REPORT.md` через `delegate_task(agent="docs-impl", task="...")`.
 
 #### Шаг G.1: Полная верификация фичи
 
@@ -651,6 +786,36 @@ question({
 
 ---
 
+## State Recovery (v3.1.0+)
+
+Если координатор упал / соединение оборвалось / пользователь вернулся через день:
+
+1. FAN Orchestrator при `session_start` читает `.fan/tracking/phase-status.json`
+2. Если файл существует и валиден → pipeline восстанавливается в памяти
+3. Координатор может продолжить с места, где остановился — статусы всех задач восстановлены
+4. `TaskCreate` для уже выполненных функций НЕ создаёт дублей (оркестратор видит что фаза-0 уже COMPLETED в JSON)
+
+### Пример восстановления
+
+```bash
+# день 1: 16 фаз, завершили 0 и 1, упали на 2
+# день 2:
+fan  # запуск
+# orchestrator: "Restored pipeline: fan-rust port (16 phases, 2 complete)"
+# следующий шаг: phase 2 in_progress + delegate_task
+```
+
+### Ручное восстановление
+
+Если нужно пересоздать pipeline вручную:
+```bash
+rm .fan/tracking/phase-status.json  # удалить state
+# затем
+/pipeline init  # пересоздать с тем же slug
+```
+
+---
+
 ## Правила
 
 1. **Одна функция за раз.** Не переходи к следующей, пока текущая не завершена (✅ или ❌).
@@ -675,15 +840,18 @@ question({
     implement-воркера. Это adversarial check.
 14. **Control points обязательны.** На каждой контрольной точке — явный
     question/questionnaire пользователю перед продолжением.
-15. **Pipeline-report инкрементален.** Обновлять после КАЖДОЙ функции,
-    а не только в конце.
+15. **Pipeline-log инкрементален (v3.1.0+).** В v3.1.0 ручное обновление
+    pipeline-report заменено на автоматические записи в `development-log.md`
+    через orchestrator hooks. При использовании v3.0 поведения — продолжать
+    обновлять pipeline-report после каждой функции.
 16. **Коммиты — явная политика.** Не коммитить без согласования с
     пользователем в начале pipeline (или использовать explicitly
     согласованную стратегию).
 17. **Контекст — только метаданные.** Координатор хранит только taskIds,
     статусы, sha коммитов. Код, diff и логи тестов — в воркерах.
 18. **При прерывании — state recovery.** При новом запуске прочитать
-    статусы ☐/✅/❌/⏳ в roadmap и pipeline-report.md, продолжить
-    с первой ⏳ или ☐ функции.
+    статусы из `.fan/tracking/phase-status.json` (v3.1.0+) или
+    из roadmap и pipeline-report.md (v3.0), продолжить
+    с первой невыполненной фазы/функции.
 19. **TaskClear в конце.** После финального отчёта (G.8) — очистить
     completed/failed задачи через TaskClear().
