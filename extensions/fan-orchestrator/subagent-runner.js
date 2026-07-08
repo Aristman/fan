@@ -252,6 +252,9 @@ export function runWorker(model, temperature, agentPrompt, tools, task, stallTim
         let messageCount = 0;
         let lastText = "";
         let detectedModel = model || "";
+        let idlePolls = 0;
+        let lastSeenMessageCount = 0;
+        const MAX_IDLE_POLLS = 3;
 
         // Track tool calls extracted from worker events
         const toolCalls = [];
@@ -357,20 +360,70 @@ export function runWorker(model, temperature, agentPrompt, tools, task, stallTim
                 if (data.data.model) detectedModel = data.data.model;
                 if (data.data.isStreaming) {
                     wasStreaming = true;
+                    idlePolls = 0;
+                    lastSeenMessageCount = messageCount;
                     emitProgress("Thinking");
                     schedulePoll();
                 } else if (wasStreaming) {
+                    idlePolls = 0;
+                    lastSeenMessageCount = messageCount;
                     emitProgress("Done");
                     send({ type: "get_last_assistant_text", id: TEXT_ID });
                     setTimeout(() => { if (!resolved) finish({ text: lastText, messageCount }); }, 15_000);
                 } else {
-                    schedulePoll();
+                    // No streaming detected — use messageCount growth as activity signal
+                    if (data.data.messageCount > lastSeenMessageCount) {
+                        lastSeenMessageCount = data.data.messageCount;
+                        idlePolls = 0;
+                        schedulePoll();
+                    } else {
+                        idlePolls++;
+                        if (idlePolls >= MAX_IDLE_POLLS) {
+                            // No progress for MAX_IDLE_POLLS rounds — force finish
+                            emitProgress("Done");
+                            send({ type: "get_last_assistant_text", id: TEXT_ID });
+                            setTimeout(() => { if (!resolved) finish({ text: lastText, messageCount }); }, 15_000);
+                        } else {
+                            schedulePoll();
+                        }
+                    }
                 }
                 return;
             }
 
             if (data.type === "response" && data.id === TEXT_ID && data.success) {
                 lastText = data.data?.text ?? "";
+                
+                // If no text but tool calls were made (e.g. plan agent did research) —
+                // give the model a moment to generate a final answer after tool execution.
+                if (!lastText && toolCalls.length > 0 && !resolved) {
+                    // Schedule one more poll cycle to catch the final response
+                    setTimeout(() => {
+                        if (resolved) return;
+                        send({ type: "get_state", id: STATE_ID });
+                        // After 8s, force finish with whatever we have
+                        setTimeout(() => {
+                            if (resolved) return;
+                            if (lastText) {
+                                finish({ text: lastText, messageCount });
+                            } else if (toolCalls.length > 0) {
+                                // Build summary from tool calls
+                                const summary = toolCalls
+                                    .filter(tc => tc.preview)
+                                    .map(tc => `→ ${tc.preview}`)
+                                    .join('\n');
+                                const fallback = summary
+                                    ? `Plan agent completed research but did not generate a summary. Tool calls:\n${summary}`
+                                    : "(no output — tool calls were made but no summary generated)";
+                                finish({ text: fallback, messageCount });
+                            } else {
+                                finish({ text: lastText, messageCount });
+                            }
+                        }, 8000);
+                    }, 2000);
+                    return;
+                }
+                
                 emitProgress("Done");
                 finish({ text: lastText, messageCount });
                 return;
