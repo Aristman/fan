@@ -1,5 +1,63 @@
 # Changelog
 
+## [2.1.0] - 2026-07-08
+
+### 🔒 Безопасность (критическое обновление)
+
+- **Dangerous command detection встроен в core bash tool** — теперь проверка
+  опасных команд работает для ВСЕХ процессов FAN (координатор, воркеры, CLI,
+  RPC), а не только для оркестратора:
+  - `packages/coding-agent/src/core/security/permissions.js` — новый модуль
+    с полным набором детекторов.
+  - `packages/coding-agent/src/core/tools/bash.ts` — блокировка опасных команд
+    непосредственно перед `ops.exec()` через `reject(new Error("Blocked: ..."))`.
+  - Экспорт `isDangerousCommand` из `@seaagents/fan-coding-agent` public API.
+
+- **Расширенный набор детекторов** (heredoc, pipes, interpreters, и др.):
+  - **Heredoc** — `sh << EOF ... EOF`, `bash <<< "..."` — извлекается тело и
+    проверяется.
+  - **Pipe analysis** — `curl ... | sh`, `wget ... | bash`, `echo "rm" | bash`.
+  - **Interpreter inline** — `node -e`, `python -c`, `perl -e`, `ruby -e` — код
+    извлекается и рекурсивно проверяется.
+  - **Subshell** — `bash -lc`, `env sh -c`, `xargs sh -c`, `time bash -c`,
+    `nohup bash -c`, `sudo bash -c`.
+  - **Fork bomb** — `:(){ :|:\& };:`.
+  - **dd** — `dd ... of=/dev/sda|hd|nvme|vd|xvd`.
+  - **mv** — `mv ... /(etc|boot|usr|var|sys|proc)`.
+  - **chmod без -R** — `chmod 777 /etc` и другие критические пути.
+  - **rm через переменные** — `rm -${FLAG}f /`.
+  - **rm brace expansion** — `rm -r{f,} /`.
+  - **chmod/chown -R** — расширено на `/etc`, `/usr`, `/var`, `/boot`, `/home`.
+  - **Service whitelist** — `systemctl stop X` и `service X stop` не считаются
+    опасными (ранее любое упоминание слова "service" отключало проверку).
+
+- **Audit log** — `~/.fan/agent/audit/orchestrator.log` (JSONL):
+  - `timestamp`, `command`, `reason`, `decision` (`allow` | `block` |
+    `headless_block`), `agentType`, `workerId`.
+  - Записывается при каждом решении (Allow / Block / Headless).
+
+- **Orchestrator hook убран из пути блокировки** — теперь только audit-only:
+  - Раньше: хук оркестратора проверял → показывал UI → core тоже проверял →
+    двойная блокировка (пользователь Allow → core всё равно Block).
+  - Теперь: единая точка блокировки в core bash tool, хук только логирует.
+
+- **Init-wizard UI для dangerous commands** — в `/orchestrator init` добавлен
+  шаг редактирования списка опасных паттернов: Keep / Edit / Remove / Add new.
+
+### Тестирование
+
+- **50 тестов** в `extensions/fan-orchestrator/test/permissions.test.mjs`.
+- **26 тестов** в `packages/coding-agent/test/security/permissions.test.ts`.
+- Все тесты проходят. Build — 0 ошибок.
+
+### Изменения версий
+
+- **@seaagents/fan-coding-agent** — `2.0.2` → `2.1.0` (core security module).
+- **fan-orchestrator** — `7.2.0` → `7.3.0` (permission hardening, audit log,
+  init-wizard UI).
+
+---
+
 ## [1.0.3] - 2026-06-25
 
 ### Новое
