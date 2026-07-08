@@ -154,6 +154,159 @@ This spawns an explore worker to gather context, then a plan worker to produce a
 
 Use the `TaskList` tool to view tracked tasks. Optionally filter by status.
 
+## Pipeline Mode (v3.1.0)
+
+Pipeline Mode — это режим оркестратора для **многофазных работ по большой спеке** (например, реализация 16-фазного проекта из SPEC.md). Координатор создаёт 3 рабочих артефакта на диске и автоматически поддерживает их актуальность на каждом `TaskCreate`/`TaskUpdate`.
+
+### Когда использовать
+
+| ✅ Подходит | ❌ Не подходит |
+|-------------|--------------|
+| Реализация большой спеки (≥5 фаз) | Правка одного файла |
+| Миграция (Rust port, framework swap) | Bug-fix одной строки |
+| Сложная фича с roadmap из 10+ функций | Разовое делегирование |
+| Когда нужны осмысленные коммиты по фазам | Когда коммиты не нужны |
+| Когда работа может прерываться (state recovery) | Одноразовая быстрая задача |
+
+### Артефакты
+
+| Файл | Создаётся | Обновляется | Назначение |
+|------|-----------|-------------|------------|
+| `docs/development-plan.md` | `/pipeline init` | Один раз | Roadmap: фазы, фичи, критерии приёмки, риски, commit policy |
+| `docs/development-log.md` | `/pipeline init` | Каждый TaskUpdate | Append-only журнал: что сделано / тесты / commit / следующий шаг |
+| `.fan/tracking/phase-status.json` | `/pipeline init` | Каждый TaskUpdate | JSON state machine для автообновления и восстановления |
+
+### Команда /pipeline
+
+```bash
+/pipeline init [feature-name]
+  # Создаёт 3 артефакта. Интерактивно спрашивает:
+  # - Feature name
+  # - Commit strategy: per-phase | per-function | manual
+  # - Phases (multi-line: phase N: name + goal + features + criteria)
+  # - Slug (auto-detected из package.json/Cargo.toml)
+
+/pipeline status
+  # Показывает widget (10 сек) с прогрессом: P/C фазы, текущая фаза, последние записи
+
+/pipeline log [N]
+  # Показывает последние N записей из development-log.md (default 10)
+
+/pipeline finish
+  # Помечает pipeline как завершённый. Спрашивает: удалить артефакты или оставить?
+
+/pipeline cancel
+  # Деактивирует pipeline в памяти. Артефакты остаются на диске для истории.
+```
+
+### Commit Policy
+
+После `/pipeline init` выбирается стратегия коммитов:
+
+| Стратегия | Когда делаем commit | Conventional Commit Format |
+|-----------|--------------------|-----------------------------|
+| `per-phase` | Когда TaskUpdate → completed **последней задачи в фазе** | `feat(phase-N): <name> complete` |
+| `per-function` | Когда TaskUpdate → completed | `feat(phase-N/F-X.Y): <summary>` |
+| `manual` | Никогда автоматически | (вы сами коммитите) |
+
+**Формат commit message:**
+```
+feat(phase-3): Session Management complete
+
+- fan-rust-session crate: JSONL persistence + compaction
+- 47 unit tests passed
+- E2E: scripts/e2e/phase-3.sh → PASS
+```
+
+После commit — `pipeline.recordPhaseChange({ phaseId, status: 'COMPLETED', commitSha: '<sha>' })` сохранит SHA в `phase-status.json`.
+
+### Авто-обновление артефактов
+
+Когда pipeline активен, **каждый** `TaskCreate` и `TaskUpdate` автоматически (без явного вызова) обновляет:
+
+- `.fan/tracking/phase-status.json` — добавляется/обновляется запись `data.tasks[taskId]` со статусом, описанием, временем
+- `docs/development-log.md` — append записи `### <ISO date> — [Phase N] — <action>` с деталями
+
+Хук реализован в `fan.on("tool_result", ...)` и не требует явного вызова от координатора.
+
+**Восстановление phaseId:** координатор должен называть задачи так, чтобы можно было извлечь фазу:
+- ✅ `"F-3.1 [session]: fan-rust-session crate"` → инферится `phaseId = 3`
+- ✅ `"[Phase 3] Create session crate"` → инферится `phaseId = 3`
+- ❌ `"Create session crate"` → невозможно, phaseId = 0 (fallback)
+
+### State Recovery
+
+Если сессия оборвалась — при следующем `session_start` оркестратор:
+1. Читает `.fan/tracking/phase-status.json`
+2. Если валиден → восстанавливает pipeline в памяти
+3. Логирует: `Restored pipeline: <featureName> (<slug>), <N> phases, <M> completed`
+4. Координатор продолжает с текущей фазы (видимой из `currentPhase` в JSON)
+
+### Полный пример: реализация SPEC
+
+```bash
+# День 1
+fan
+> Реализуй полностью docs/specs/fan-rust/SPEC-v2.md
+> (координатор думает, создаёт TaskCreate на каждую из 16 фаз, блокирует зависимостями)
+> Затем: /pipeline init  ← вводит команду
+> Slug: fan-rust-port
+> Strategy: per-phase
+> Phases: (вставляет multi-line текст с 16 фазами)
+> ✅ Pipeline initialized: docs/development-plan.md, docs/development-log.md, .fan/tracking/phase-status.json
+
+# Оркестратор начинает Phase 0:
+> delegate_task(agent="implement", task="Phase 0: cargo workspace + 16 stub crates")
+> delegate_task(agent="verify", task="Phase 0 verification")
+> (verify PASS)
+> bash: git add crates/ Cargo.toml rust-toolchain.toml ...
+> bash: git commit -m "feat(phase-0): Foundation complete"
+> TaskUpdate(taskId, completed)
+> (хук автоматически: append в development-log.md + обновление JSON + commitSha в JSON)
+
+# День 1 обрыв: phase 1 не закончен
+
+# День 2
+fan
+> [FAN Pipeline] Restored pipeline: fan-rust port (fan-rust-port), 16 phases, 1 complete
+> (координатор продолжает с phase 1)
+> /pipeline status  ← увидеть прогресс
+> 1/16 complete, currentPhase: 1
+```
+
+### Связь с feature-pipeline skill v3.1.0
+
+Skill `feature-pipeline` v3.1.0 использует тот же pipeline mode:
+- `/skill:feature-pipeline` эквивалентно "Use Pipeline Mode по roadmap.md"
+- Skill автоматически делает `/pipeline init` если обнаружен FAN Orchestrator
+- Рабочие артефакты те же: plan.md, log.md, phase-status.json
+- После каждой фазы/функции skill требует commit через commit policy
+
+### Конфигурация
+
+В `packages/orchestrator/src/config.json`:
+```json
+{
+  "pipeline": {
+    "autoSuggest": true,
+    "defaultStrategy": "per-phase",
+    "suggestThreshold": 8
+  }
+}
+```
+
+Default values: `autoSuggest=true`, `defaultStrategy="per-phase"`, `suggestThreshold=8`.
+
+### Решение проблем
+
+| Проблема | Решение |
+|----------|---------|
+| Pipeline не восстанавливается после restart | Проверь что `.fan/tracking/phase-status.json` существует и валидный JSON |
+| Артефакты не обновляются | Проверь что `pipelineState` активен (`/pipeline status` покажет ERROR если нет) |
+| Коммиты не делаются | Проверь commitStrategy (не `manual`) и что git в PATH |
+| Конфликт при повторном init | Существующие артефакты сохраняются (`onConflict='append'` default) — pipeline работает с ними |
+| phaseId не инферится | Используй паттерн `F-N.M [...]` или `[Phase N]` в subject TaskCreate |
+
 ## Task Management
 
 Tasks are the coordinator's way of tracking progress. They're created with `TaskCreate`, updated with `TaskUpdate`, and viewed with `TaskList`.

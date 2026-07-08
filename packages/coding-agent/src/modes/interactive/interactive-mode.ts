@@ -8,7 +8,6 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentMessage } from "@seaagents/fan-agent-core";
-import type { ArtifactMessage, UserMessageWithAttachments } from "@seaagents/fan-web-ui";
 import type { AssistantMessage, ImageContent, Message, Model, OAuthProviderId } from "@seaagents/fan-ai";
 import type {
 	AutocompleteItem,
@@ -37,6 +36,7 @@ import {
 	TUI,
 	visibleWidth,
 } from "@seaagents/fan-tui";
+import type { ArtifactMessage, UserMessageWithAttachments } from "@seaagents/fan-web-ui";
 import { spawn, spawnSync } from "child_process";
 import { fetchManifest, UPDATE_SERVER_URL } from "../../cli/self-update.js";
 import { APP_NAME, getAgentDir, getAuthPath, getDebugLogPath, getShareViewerUrl, VERSION } from "../../config.js";

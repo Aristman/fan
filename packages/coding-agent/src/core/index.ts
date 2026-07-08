@@ -71,4 +71,5 @@ export {
 	type TurnEndEvent,
 	type TurnStartEvent,
 } from "./extensions/index.js";
+export { isDangerousCommand } from "./security/permissions.js";
 export { createSyntheticSourceInfo } from "./source-info.js";

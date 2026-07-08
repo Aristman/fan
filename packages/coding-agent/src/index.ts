@@ -184,6 +184,8 @@ export {
 	// Pre-built tools (use process.cwd())
 	readOnlyTools,
 } from "./core/sdk.js";
+// Security / dangerous command detection
+export { isDangerousCommand } from "./core/security/permissions.js";
 export {
 	type BranchSummaryEntry,
 	buildSessionContext,

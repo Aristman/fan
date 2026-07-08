@@ -1,5 +1,110 @@
 # Changelog
 
+## [2.2.0] - 2026-07-08
+
+### 🚀 Pipeline Mode (feature-pipeline v3.1.0)
+
+- **Рабочие артефакты pipeline** — три файла на диске, которые создаются 1 раз
+  и обновляются автоматически на каждый `TaskCreate`/`TaskUpdate`:
+  - `docs/development-plan.md` — машиночитаемый roadmap.
+  - `docs/development-log.md` — append-only журнал выполнения.
+  - `.fan/tracking/phase-status.json` — JSON state machine.
+
+- **Команда `/pipeline`** (в `fan-orchestrator` v7.4.0):
+  - `init` — интерактивная инициализация: feature-name, commit-strategy, фазы.
+  - `status` — прогресс по фазам (widget, 10 сек).
+  - `log [N]` — последние N записей из журнала.
+  - `finish` — пометить завершённым + выбор: Keep / Delete артефакты.
+  - `cancel` — деактивировать в памяти, артефакты сохраняются.
+
+- **Авто-обновление артефактов** — `fan.on("tool_result", ...)` хук:
+  на каждый `TaskCreate`/`TaskUpdate` синхронно обновляет `phase-status.json`
+  и append в `development-log.md`. Координатор не делает это вручную.
+
+- **State Recovery** — `session_start` автоматически читает
+  `.fan/tracking/phase-status.json` и восстанавливает pipeline в памяти.
+  После обрыва сессии работа продолжается с места остановки.
+
+- **Commit policy** через conventional-commits:
+  - `per-phase` — `feat(phase-N): <name> complete` после завершения фазы.
+  - `per-function` — `feat(phase-N/F-X.Y): <summary>` после завершения функции.
+  - `manual` — без автокоммитов.
+
+- **Новый модуль `pipeline-state.js`** в `extensions/fan-orchestrator/`:
+  атомарные операции (temp + rename), per-path lock Map, UTF-8, без external
+  deps.
+
+### Изменения версий
+
+- **fan** (root) — `2.1.0` → `2.2.0`.
+- **fan-orchestrator** — `7.3.0` → `7.4.0` (Pipeline Mode).
+- **feature-pipeline** skill — `3.0.0` → `3.1.0` (рабочие артефакты, commit policy).
+
+### Документация
+
+- `docs/guides/orchestrator.md` — добавлена секция «Pipeline Mode (v3.1.0)»
+  с 10 подразделами (149 строк).
+
+---
+
+## [2.1.0] - 2026-07-08
+
+### 🔒 Безопасность (критическое обновление)
+
+- **Dangerous command detection встроен в core bash tool** — теперь проверка
+  опасных команд работает для ВСЕХ процессов FAN (координатор, воркеры, CLI,
+  RPC), а не только для оркестратора:
+  - `packages/coding-agent/src/core/security/permissions.js` — новый модуль
+    с полным набором детекторов.
+  - `packages/coding-agent/src/core/tools/bash.ts` — блокировка опасных команд
+    непосредственно перед `ops.exec()` через `reject(new Error("Blocked: ..."))`.
+  - Экспорт `isDangerousCommand` из `@seaagents/fan-coding-agent` public API.
+
+- **Расширенный набор детекторов** (heredoc, pipes, interpreters, и др.):
+  - **Heredoc** — `sh << EOF ... EOF`, `bash <<< "..."` — извлекается тело и
+    проверяется.
+  - **Pipe analysis** — `curl ... | sh`, `wget ... | bash`, `echo "rm" | bash`.
+  - **Interpreter inline** — `node -e`, `python -c`, `perl -e`, `ruby -e` — код
+    извлекается и рекурсивно проверяется.
+  - **Subshell** — `bash -lc`, `env sh -c`, `xargs sh -c`, `time bash -c`,
+    `nohup bash -c`, `sudo bash -c`.
+  - **Fork bomb** — `:(){ :|:\& };:`.
+  - **dd** — `dd ... of=/dev/sda|hd|nvme|vd|xvd`.
+  - **mv** — `mv ... /(etc|boot|usr|var|sys|proc)`.
+  - **chmod без -R** — `chmod 777 /etc` и другие критические пути.
+  - **rm через переменные** — `rm -${FLAG}f /`.
+  - **rm brace expansion** — `rm -r{f,} /`.
+  - **chmod/chown -R** — расширено на `/etc`, `/usr`, `/var`, `/boot`, `/home`.
+  - **Service whitelist** — `systemctl stop X` и `service X stop` не считаются
+    опасными (ранее любое упоминание слова "service" отключало проверку).
+
+- **Audit log** — `~/.fan/agent/audit/orchestrator.log` (JSONL):
+  - `timestamp`, `command`, `reason`, `decision` (`allow` | `block` |
+    `headless_block`), `agentType`, `workerId`.
+  - Записывается при каждом решении (Allow / Block / Headless).
+
+- **Orchestrator hook убран из пути блокировки** — теперь только audit-only:
+  - Раньше: хук оркестратора проверял → показывал UI → core тоже проверял →
+    двойная блокировка (пользователь Allow → core всё равно Block).
+  - Теперь: единая точка блокировки в core bash tool, хук только логирует.
+
+- **Init-wizard UI для dangerous commands** — в `/orchestrator init` добавлен
+  шаг редактирования списка опасных паттернов: Keep / Edit / Remove / Add new.
+
+### Тестирование
+
+- **50 тестов** в `extensions/fan-orchestrator/test/permissions.test.mjs`.
+- **26 тестов** в `packages/coding-agent/test/security/permissions.test.ts`.
+- Все тесты проходят. Build — 0 ошибок.
+
+### Изменения версий
+
+- **@seaagents/fan-coding-agent** — `2.0.2` → `2.1.0` (core security module).
+- **fan-orchestrator** — `7.2.0` → `7.3.0` (permission hardening, audit log,
+  init-wizard UI).
+
+---
+
 ## [1.0.3] - 2026-06-25
 
 ### Новое

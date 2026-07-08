@@ -15,14 +15,18 @@
  *   /agents [scope]       — List available agents
  *   /plan [task]          — Generate implementation plan
  *   /delegate <agent> <task> — Quick delegate
+ *   /pipeline             — Pipeline mode (init/status/log/finish/cancel)
  */
 import { COORDINATOR_PROMPT, buildCoordinatorPrompt, discoverAgents } from "./agents.js";
 import { DEFAULTS, configExists, loadConfig, resolveWorkerModel, resolveWorkerTemperature, saveConfig } from "./config.js";
 import { registerOrchestratorTools } from "./orchestrator-tools.js";
 import { isDangerousCommand } from "./permissions.js";
+import { logAuditDecision } from "./audit.js";
 import { getFinalOutput, runSingleAgent } from "./subagent-runner.js";
 import { TaskManager } from "./task-manager.js";
 import { _resetRegistry, activeWorkers, genWorkerId, registerWorker, updateWorker } from "./workers.js";
+import { PipelineState } from "./pipeline-state.js";
+import * as path from "node:path";
 export const orchestratorExtension = (fan) => {
     // ---- Infrastructure setup ----
     const hasConfig = configExists();
@@ -45,6 +49,7 @@ export const orchestratorExtension = (fan) => {
     let configInitialized = hasConfig;
     let taskWidgetCollapsed = false;
     let lastCtx;
+    let pipelineState = null; // { instance, isActive } or null if not initialized
     // Cached dynamic coordinator prompt (rebuilt on session start)
     let cachedCoordinatorPrompt = COORDINATOR_PROMPT;
     // ---- Live widget timer ----
@@ -177,7 +182,7 @@ export const orchestratorExtension = (fan) => {
     fan.on("turn_end", (_event, ctx) => {
         updateTaskWidget(ctx);
     });
-    fan.on("session_start", (_event, ctx) => {
+    fan.on("session_start", async (_event, ctx) => {
         lastCtx = ctx;
         // Warn if no config
         if (!configInitialized && ctx.ui.notify) {
@@ -209,6 +214,24 @@ export const orchestratorExtension = (fan) => {
         else {
             ctx.ui.setStatus("2-orchestrator", `🎭 Orchestrator (${config.providerMode})`);
         }
+        // ---- Pipeline: auto-detect active pipeline on disk ----
+        if (!pipelineState) {
+            try {
+                const probeState = new PipelineState(ctx.cwd, { featureName: "_probe_", slug: "_probe_", phases: [] });
+                const existing = await probeState.getStatus();
+                if (existing && existing.featureName && existing.featureName !== "_probe_") {
+                    const ps = new PipelineState(ctx.cwd, {
+                        featureName: existing.featureName,
+                        slug: existing.slug,
+                        phases: existing.phases || [],
+                        commitStrategy: existing.commitStrategy || "per-phase",
+                    });
+                    pipelineState = { instance: ps, isActive: true, restored: true };
+                    console.log(`[FAN Pipeline] Restored pipeline: ${existing.featureName} (${existing.slug})`);
+                }
+            } catch { /* no pipeline on disk */ }
+        }
+
         updateTaskWidget(ctx);
         console.log("[FAN Orchestrator] Session started");
         console.log("[FAN Orchestrator] Tools: delegate_task, list_tasks, cancel_task, classify_task, TaskCreate, TaskUpdate, TaskClear");
@@ -216,7 +239,7 @@ export const orchestratorExtension = (fan) => {
             console.log("[FAN Orchestrator] Coordinator mode: ACTIVE");
         }
     });
-    fan.on("session_shutdown", (_event, ctx) => {
+    fan.on("session_shutdown", async (_event, ctx) => {
         lastCtx = ctx;
         // Abort all active workers
         const active = activeWorkers();
@@ -228,31 +251,32 @@ export const orchestratorExtension = (fan) => {
         ctx.ui.setWidget("orchestrator-tasks", undefined);
         ctx.ui.setStatus("2-orchestrator", undefined);
         const counts = taskManager.getStatusCounts();
+        // ---- Pipeline: flush on shutdown ----
+        if (pipelineState?.instance) {
+            try {
+                await pipelineState.instance.recordLogEntry({
+                    phaseId: 0,
+                    action: "session_end",
+                    content: "Session ended. Pipeline state preserved on disk.",
+                });
+            } catch (err) {
+                console.warn("[FAN Pipeline] Session shutdown log failed:", err.message);
+            }
+        }
         console.log(`[FAN Orchestrator] Session shut down. Tasks: ${JSON.stringify(counts)}`);
     });
-    // ---- Permission system ----
+    // ---- Permission system (audit only) ----
+    // Core bash tool now handles dangerous command blocking.
+    // This hook only logs all bash commands for audit purposes.
     fan.on("tool_call", async (event, ctx) => {
-        // Interactive permission check for dangerous bash commands
         if (event.toolName === "bash") {
             const cmd = event.args?.command;
             if (cmd) {
                 const reason = isDangerousCommand(cmd, config.dangerousCommands);
                 if (reason) {
-                    // Interactive mode — ask user to allow or block
-                    if (ctx.hasUI && typeof ctx.ui.select === 'function') {
-                        const choice = await ctx.ui.select(
-                            `⚠️ Dangerous command detected: ${reason}\n\nCommand: ${cmd.trim().slice(0, 120)}${cmd.trim().length > 120 ? "..." : ""}`,
-                            ['Allow', 'Block']
-                        );
-                        if (choice === 'Block' || choice === undefined) {
-                            return { block: true, reason: `⚠️ Blocked by user: ${reason}` };
-                        }
-                        // choice === 'Allow' — pass through, return empty to allow
-                        return {};
-                    } else {
-                        // Headless mode — default to blocking
-                        return { block: true, reason: `⚠️ Blocked (headless): ${reason}` };
-                    }
+                    logAuditDecision({ command: cmd, reason, decision: "block", agentType: null, workerId: null });
+                } else {
+                    logAuditDecision({ command: cmd, reason: null, decision: "allow", agentType: null, workerId: null });
                 }
             }
         }
@@ -267,6 +291,45 @@ export const orchestratorExtension = (fan) => {
             queueMicrotask(() => {
                 updateTaskWidget(ctx);
             });
+
+            // ---- Pipeline: auto-update on task changes ----
+            if (pipelineState?.instance && (event.toolName === "TaskCreate" || event.toolName === "TaskUpdate")) {
+                (async () => {
+                    try {
+                        const args = typeof event.args === "string" ? JSON.parse(event.args || "{}") : (event.args || {});
+                        const taskId = args.taskId;
+                        const description = args.description;
+                        const status = args.status; // for TaskUpdate: pending/in_progress/completed/failed
+
+                        if (taskId) {
+                            let phaseId;
+                            try {
+                                const st = await pipelineState.instance.getStatus();
+                                const inferred = inferPhaseId(description);
+                                if (inferred !== null) {
+                                    phaseId = inferred;
+                                } else if (st && st.currentPhase !== null && st.currentPhase !== undefined) {
+                                    phaseId = st.currentPhase;
+                                } else {
+                                    phaseId = 0;
+                                }
+                            } catch {
+                                phaseId = 0;
+                            }
+
+                            await pipelineState.instance.recordStatusChange({
+                                taskId,
+                                phaseId,
+                                status: status || "pending",
+                                description,
+                                result: event.toolName === "TaskUpdate" ? "updated" : "created",
+                            });
+                        }
+                    } catch (err) {
+                        console.warn("[FAN Pipeline] Status change hook failed:", err.message);
+                    }
+                })();
+            }
         }
     });
     // ---- Slash Command: /orchestrator (enhanced) ----
@@ -515,7 +578,72 @@ export const orchestratorExtension = (fan) => {
                     if (coordDefault === undefined) { cancelled(); return; }
                     const coordinatorDefault = coordDefault.startsWith("Yes");
 
-                    // 10. Build and save config
+                    // 10. Edit dangerous commands
+                    const editDangerousChoice = await ctx.ui.select("Edit dangerous commands?", [
+                        "No — keep current list",
+                        "Yes — edit list",
+                    ]);
+                    if (editDangerousChoice === undefined) { cancelled(); return; }
+                    let finalDangerousCommands;
+                    if (editDangerousChoice.startsWith("Yes")) {
+                        // Show current list and let user edit each pattern
+                        ctx.ui.setWidget("orchestrator", [
+                            "⚡ Dangerous Commands Editor",
+                            "",
+                            "For each pattern: Keep, Edit, or Remove.",
+                        ]);
+                        const currentList = config.dangerousCommands.length > 0
+                            ? [...config.dangerousCommands]
+                            : [];
+                        const editedList = [];
+                        for (let i = 0; i < currentList.length; i++) {
+                            const pattern = currentList[i];
+                            const action = await ctx.ui.select(`[${i + 1}/${currentList.length}] "${pattern}"`, [
+                                "Keep",
+                                "Edit",
+                                "Remove",
+                            ]);
+                            if (action === undefined) { cancelled(); return; }
+                            if (action === "Keep") {
+                                editedList.push(pattern);
+                            } else if (action === "Edit") {
+                                const newVal = await ctx.ui.input(`Edit pattern #${i + 1}`, pattern);
+                                if (newVal === undefined) { cancelled(); return; }
+                                if (newVal.trim()) {
+                                    editedList.push(newVal.trim());
+                                } else {
+                                    // Empty = keep original
+                                    editedList.push(pattern);
+                                }
+                            }
+                            // Remove: skip entirely
+                        }
+                        // Add new patterns
+                        let addMore = true;
+                        while (addMore) {
+                            const addChoice = await ctx.ui.select("Add new pattern?", ["Yes", "No"]);
+                            if (addChoice === undefined) { cancelled(); return; }
+                            if (addChoice === "No") {
+                                addMore = false;
+                            } else {
+                                const newPattern = await ctx.ui.input("Enter new dangerous command pattern", "");
+                                if (newPattern === undefined) { cancelled(); return; }
+                                if (newPattern.trim()) {
+                                    editedList.push(newPattern.trim());
+                                }
+                            }
+                        }
+                        finalDangerousCommands = editedList;
+                        ctx.ui.setWidget("orchestrator", [
+                            "⚡ Dangerous commands updated",
+                            `Total patterns: ${finalDangerousCommands.length}`,
+                        ]);
+                        await new Promise(r => setTimeout(r, 1000));
+                    } else {
+                        finalDangerousCommands = [...config.dangerousCommands];
+                    }
+
+                    // 11. Build and save config
                     const newConfig = {
                         cloud: { model: cloudModel || config.cloud.model, models: cloudModels },
                         local: { model: localModel || config.local.model, models: localModels },
@@ -529,7 +657,7 @@ export const orchestratorExtension = (fan) => {
                         agentTimeouts: { ...config.agentTimeouts },
                         temperature,
                         agentTemperature,
-                        dangerousCommands: [...config.dangerousCommands],
+                        dangerousCommands: finalDangerousCommands,
                     };
 
                     const saved = saveConfig(newConfig);
@@ -566,7 +694,7 @@ export const orchestratorExtension = (fan) => {
                         "  retry    — Retry last failed task",
                         "",
                         "Shortcuts: Alt+O (coordinator), Alt+T (task list)",
-                        "Commands: /plan, /tasks, /agents, /delegate",
+                        "Commands: /plan, /tasks, /agents, /delegate, /pipeline",
                     ];
                     ctx.ui.notify(lines.join("\n"));
                     return;
@@ -740,6 +868,259 @@ export const orchestratorExtension = (fan) => {
             ctx.ui.notify(lines.join("\n"));
         },
     });
+    // ---- Slash Command: /pipeline ----
+    fan.registerCommand("pipeline", {
+        description: "Pipeline Mode (Feature Pipeline v3.1.0): init/status/log/finish/cancel",
+        handler: async (args, ctx) => {
+            const parts = args.trim().split(/\s+/);
+            const sub = parts[0]?.toLowerCase() || "";
+
+            switch (sub) {
+                case "init": {
+                    // /pipeline init [feature-name]
+                    if (pipelineState?.isActive) {
+                        ctx.ui.notify("⚠️ Pipeline already active. Cancel it first with /pipeline cancel.", "warn");
+                        return;
+                    }
+
+                    // 1. Get feature name
+                    let featureName = parts.slice(1).join(" ");
+                    if (!featureName) {
+                        featureName = await ctx.ui.input("Feature name", "My Feature");
+                        if (featureName === undefined) { ctx.ui.notify("Pipeline init cancelled."); return; }
+                        featureName = featureName.trim();
+                        if (!featureName) featureName = "My Feature";
+                    }
+
+                    // 2. Commit strategy
+                    const commitStrategy = await ctx.ui.select("Commit strategy", [
+                        "per-phase — commit after each complete phase",
+                        "per-function — commit after each feature/task",
+                        "manual — no automatic commits",
+                    ]);
+                    if (commitStrategy === undefined) { ctx.ui.notify("Pipeline init cancelled."); return; }
+                    const strat = commitStrategy.startsWith("per-phase") ? "per-phase" :
+                        commitStrategy.startsWith("per-function") ? "per-function" : "manual";
+
+                    // 3. Phases input
+                    const rawPhases = await ctx.ui.input(
+                        "Phases definition (one phase per line: `phase N: name`)\n" +
+                        "Include goal, features, criteria in description.\n" +
+                        "Leave empty to create a single placeholder phase.",
+                        "phase 0: Foundation\n  goal: Set up project structure\n  features: F-0.1, F-0.2\n  criteria: Project compiles, README exists"
+                    );
+                    if (rawPhases === undefined) { ctx.ui.notify("Pipeline init cancelled."); return; }
+
+                    // 4. Parse phases
+                    let phases = [];
+                    if (rawPhases.trim()) {
+                        const lines = rawPhases.split("\n");
+                        let currentPhase = null;
+                        for (const line of lines) {
+                            const phaseMatch = line.match(/^\s*phase\s+(\d+)\s*[:\-]?\s*(.*)\s*/i);
+                            if (phaseMatch) {
+                                if (currentPhase) phases.push(currentPhase);
+                                currentPhase = {
+                                    id: parseInt(phaseMatch[1], 10),
+                                    name: phaseMatch[2]?.trim() || `Phase ${phaseMatch[1]}`,
+                                    goal: "",
+                                    features: [],
+                                    criteria: [],
+                                };
+                            } else if (currentPhase) {
+                                const goalMatch = line.match(/^\s*goal\s*[:\-]?\s*(.*)\s*/i);
+                                const featMatch = line.match(/^\s*features\s*[:\-]?\s*(.*)\s*/i);
+                                const critMatch = line.match(/^\s*criteria\s*[:\-]?\s*(.*)\s*/i);
+                                const descMatch = line.match(/^\s*description\s*[:\-]?\s*(.*)\s*/i);
+                                if (goalMatch) {
+                                    currentPhase.goal = goalMatch[1];
+                                } else if (featMatch) {
+                                    currentPhase.features = featMatch[1].split(/\s*,\s*/).filter(Boolean);
+                                } else if (critMatch) {
+                                    currentPhase.criteria = critMatch[1].split(/\s*,\s*/).filter(Boolean);
+                                } else if (descMatch) {
+                                    if (!currentPhase.goal) currentPhase.goal = descMatch[1];
+                                }
+                            }
+                        }
+                        if (currentPhase) phases.push(currentPhase);
+                    }
+
+                    // Fallback: if no phases parsed, create a single placeholder
+                    if (phases.length === 0) {
+                        phases = [{
+                            id: 0,
+                            name: "Implementation",
+                            goal: "Implement the feature",
+                            features: [],
+                            criteria: ["Feature is complete and verified"],
+                        }];
+                        ctx.ui.notify("No valid phases parsed. Created a single placeholder phase. Use the roadmap to define proper phases.", "warn");
+                    }
+
+                    // 5. Detect slug
+                    const slug = await PipelineState.detectProjectSlug(ctx.cwd);
+
+                    // 6. Create PipelineState instance
+                    try {
+                        const ps = new PipelineState(ctx.cwd, {
+                            featureName,
+                            slug,
+                            phases,
+                            commitStrategy: strat,
+                            nonBlocking: true,
+                        });
+                        await ps.ensureArtifacts();
+                        await ps.init();
+                        pipelineState = { instance: ps, isActive: true };
+                        ctx.ui.notify("✅ Pipeline initialized: docs/development-plan.md, docs/development-log.md, .fan/tracking/phase-status.json");
+                    } catch (err) {
+                        ctx.ui.notify("⚠️ Pipeline init failed: " + err.message, "error");
+                    }
+                    return;
+                }
+
+                case "status": {
+                    if (!pipelineState?.instance) {
+                        ctx.ui.notify("Pipeline not initialized. Run /pipeline init.");
+                        return;
+                    }
+                    try {
+                        const statusData = await pipelineState.instance.getStatus();
+                        if (!statusData) {
+                            ctx.ui.notify("No pipeline status file found.");
+                            return;
+                        }
+                        const lines = [
+                            "📋 Pipeline Status",
+                            "",
+                            `Feature: ${statusData.featureName || "—"}`,
+                            `Slug: ${statusData.slug || "—"}`,
+                            `Branch: ${statusData.branch || "—"}`,
+                            `Strategy: ${statusData.commitStrategy || "—"}`,
+                            `Current Phase: ${statusData.currentPhase ?? "—"}`,
+                            `Created: ${statusData.createdAt ? statusData.createdAt.slice(0, 19) : "—"}`,
+                            `Updated: ${statusData.updatedAt ? statusData.updatedAt.slice(0, 19) : "—"}`,
+                            "",
+                            "── Phases ──",
+                            ...(statusData.phases || []).map((p) =>
+                                `  [${p.status || "PENDING"}] Phase ${p.id}: ${p.name} — ${p.goal || ""}`
+                            ),
+                            "",
+                            `Overall: ${statusData.overall?.completed || 0}/${statusData.overall?.total || 0} complete`,
+                        ];
+                        ctx.ui.setWidget("orchestrator-pipeline", lines);
+                        setTimeout(() => { ctx.ui.setWidget("orchestrator-pipeline", undefined); }, 10_000);
+                    } catch (err) {
+                        ctx.ui.notify("⚠️ Failed to read pipeline status: " + err.message, "error");
+                    }
+                    return;
+                }
+
+                case "log": {
+                    if (!pipelineState?.instance) {
+                        ctx.ui.notify("Pipeline not initialized. Run /pipeline init.");
+                        return;
+                    }
+                    try {
+                        const n = parseInt(parts[1], 10) || 10;
+                        const logContent = await pipelineState.instance.getLog();
+                        if (!logContent) {
+                            ctx.ui.notify("Development log is empty.");
+                            return;
+                        }
+                        const entries = logContent.split("\n### ");
+                        const recent = entries.slice(-n).map((e, i) => i === 0 ? e : "### " + e);
+                        ctx.ui.notify(
+                            `📝 Development Log (last ${Math.min(n, entries.length)} of ${entries.length} entries):\n\n` +
+                            recent.join("\n").slice(0, 2000)
+                        );
+                    } catch (err) {
+                        ctx.ui.notify("⚠️ Failed to read log: " + err.message, "error");
+                    }
+                    return;
+                }
+
+                case "finish": {
+                    if (!pipelineState?.instance) {
+                        ctx.ui.notify("Pipeline not initialized. Run /pipeline init.");
+                        return;
+                    }
+                    try {
+                        const statusData = await pipelineState.instance.getStatus();
+                        if (statusData && !statusData.finishedAt) {
+                            // Mark as finished via status update
+                            await pipelineState.instance.recordPhaseChange({
+                                phaseId: 0,
+                                status: "COMPLETED",
+                                action: "pipeline_finish",
+                                notes: "Pipeline marked as complete by user.",
+                            });
+                            // We mark finishedAt directly in status.json via a log entry
+                            await pipelineState.instance.recordLogEntry({
+                                phaseId: statusData.currentPhase ?? 0,
+                                action: "pipeline_finish",
+                                content: "Pipeline finished. All work completed.",
+                            });
+                        }
+                        const action = await ctx.ui.select("Pipeline finished. Delete artifacts?", [
+                            "Keep — Leave artifacts on disk for history",
+                            "Delete — Remove plan, log, and status files",
+                        ]);
+                        if (action === undefined) { ctx.ui.notify("Pipeline finish cancelled."); return; }
+                        if (action.startsWith("Delete")) {
+                            try {
+                                const { rm } = await import("node:fs/promises");
+                                await rm(path.resolve(ctx.cwd, "docs", "development-plan.md")).catch(() => {});
+                                await rm(path.resolve(ctx.cwd, "docs", "development-log.md")).catch(() => {});
+                                await rm(path.resolve(ctx.cwd, ".fan", "tracking", "phase-status.json")).catch(() => {});
+                                ctx.ui.notify("🗑️ Pipeline artifacts deleted.");
+                            } catch (err) {
+                                console.warn("[FAN Pipeline] Failed to delete artifacts:", err.message);
+                            }
+                        } else {
+                            ctx.ui.notify("📁 Pipeline artifacts kept on disk.");
+                        }
+                        pipelineState = null;
+                    } catch (err) {
+                        ctx.ui.notify("⚠️ Pipeline finish failed: " + err.message, "error");
+                    }
+                    return;
+                }
+
+                case "cancel": {
+                    if (!pipelineState?.instance) {
+                        ctx.ui.notify("Pipeline not initialized. Run /pipeline init.");
+                        return;
+                    }
+                    try {
+                        await pipelineState.instance.recordLogEntry({
+                            phaseId: 0,
+                            action: "pipeline_cancel",
+                            content: "Pipeline cancelled by user. Artifacts remain on disk.",
+                        });
+                    } catch (err) {
+                        console.warn("[FAN Pipeline] Cancel log entry failed:", err.message);
+                    }
+                    pipelineState = null;
+                    ctx.ui.notify("Pipeline cancelled. Artifacts remain on disk for history.");
+                    return;
+                }
+
+                default: {
+                    ctx.ui.notify([
+                        "Pipeline Mode (Feature Pipeline v3.1.0):",
+                        "  init   — Initialize plan + log + status artifacts",
+                        "  status — Show current pipeline status",
+                        "  log    — Show development log entries",
+                        "  finish — Mark pipeline as complete",
+                        "  cancel — Deactivate without deleting artifacts",
+                    ].join("\n"));
+                }
+            }
+        },
+    });
+
     // ---- Slash Command: /delegate ----
     fan.registerCommand("delegate", {
         description: "Quick delegate a task to an agent: /delegate <agent> <task>",
@@ -763,5 +1144,21 @@ export const orchestratorExtension = (fan) => {
         },
     });
 };
+
+// ---- Pipeline Helpers ----
+
+/**
+ * Infer phase ID from a task description string.
+ * Matches patterns: "Phase X:", "phase-X", "phase X", "(phase X)", "[Phase X]".
+ *
+ * @param {string|null|undefined} subject
+ * @returns {number|null}
+ */
+function inferPhaseId(subject) {
+  if (!subject) return null;
+  const m = String(subject).match(/(?:phase[\s\-]*|Phase\s*)(\d+)/i);
+  return m ? parseInt(m[1], 10) : null;
+}
+
 export default orchestratorExtension;
 //# sourceMappingURL=orchestrator-extension.js.map
