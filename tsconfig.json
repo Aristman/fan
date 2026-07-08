@@ -23,7 +23,9 @@
 			"@fan/orchestrator": ["./packages/orchestrator/src/index.ts"],
 			"@fan/orchestrator/*": ["./packages/orchestrator/src/*"],
 			"@fan/model-manager": ["./packages/model-manager/src/index.ts"],
-			"@fan/model-manager/*": ["./packages/model-manager/src/*"]
+			"@fan/model-manager/*": ["./packages/model-manager/src/*"],
+			"@fan/store": ["./packages/store/src/index.ts"],
+			"@fan/store/*": ["./packages/store/src/*"]
 		}
 	},
 	"include": [

@@ -1,14 +1,13 @@
 import { icon } from "@mariozechner/mini-lit";
 import "@mariozechner/mini-lit/dist/MarkdownBlock.js";
 import { Button } from "@mariozechner/mini-lit/dist/Button.js";
-import type { Agent, AgentMessage, AgentTool } from "@seaagents/fan-agent-core";
+import type { Agent, AgentMessage, AgentTool, ArtifactMessage } from "@seaagents/fan-agent-core";
 import { StringEnum, type ToolCall } from "@seaagents/fan-ai";
 import { type Static, Type } from "@sinclair/typebox";
 import { html, LitElement, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { createRef, type Ref, ref } from "lit/directives/ref.js";
 import { X } from "lucide";
-import type { ArtifactMessage } from "../../components/Messages.js";
 import { ArtifactsRuntimeProvider } from "../../components/sandbox/ArtifactsRuntimeProvider.js";
 import { AttachmentsRuntimeProvider } from "../../components/sandbox/AttachmentsRuntimeProvider.js";
 import type { SandboxRuntimeProvider } from "../../components/sandbox/SandboxRuntimeProvider.js";

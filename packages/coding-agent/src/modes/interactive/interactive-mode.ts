@@ -36,7 +36,6 @@ import {
 	TUI,
 	visibleWidth,
 } from "@seaagents/fan-tui";
-import type { ArtifactMessage, UserMessageWithAttachments } from "@seaagents/fan-web-ui";
 import { spawn, spawnSync } from "child_process";
 import { fetchManifest, UPDATE_SERVER_URL } from "../../cli/self-update.js";
 import { APP_NAME, getAgentDir, getAuthPath, getDebugLogPath, getShareViewerUrl, VERSION } from "../../config.js";
@@ -2724,9 +2723,8 @@ export class InteractiveMode {
 				// Tool results, artifacts, and user-with-attachments are handled in web-ui; skip in TUI
 				break;
 			}
-			default: {
-				const _exhaustive: never = message;
-			}
+			default:
+				break;
 		}
 	}
 

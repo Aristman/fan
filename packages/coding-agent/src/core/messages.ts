@@ -5,9 +5,8 @@
  * and provides a transformer to convert them to LLM-compatible messages.
  */
 
-import type { AgentMessage } from "@seaagents/fan-agent-core";
+import type { AgentMessage, ArtifactMessage, UserMessageWithAttachments } from "@seaagents/fan-agent-core";
 import type { ImageContent, Message, TextContent } from "@seaagents/fan-ai";
-import type { ArtifactMessage, UserMessageWithAttachments } from "@seaagents/fan-web-ui";
 
 export const COMPACTION_SUMMARY_PREFIX = `The conversation history before this point was compacted into the following summary:
 

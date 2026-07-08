@@ -233,8 +233,36 @@ export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhi
  * }
  * ```
  */
+export interface MessageAttachment {
+	id: string;
+	type: "image" | "document";
+	fileName: string;
+	mimeType: string;
+	size: number;
+	content: string;
+	extractedText?: string;
+	preview?: string;
+}
+
+export interface UserMessageWithAttachments {
+	role: "user-with-attachments";
+	content: string | (TextContent | ImageContent)[];
+	timestamp: number;
+	attachments?: MessageAttachment[];
+}
+
+export interface ArtifactMessage {
+	role: "artifact";
+	action: "create" | "update" | "delete";
+	filename: string;
+	content?: string;
+	title?: string;
+	timestamp: string;
+}
+
 export interface CustomAgentMessages {
-	// Empty by default - apps extend via declaration merging
+	"user-with-attachments": UserMessageWithAttachments;
+	artifact: ArtifactMessage;
 }
 
 /**
