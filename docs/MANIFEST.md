@@ -1,5 +1,5 @@
 # Documentation Manifest
-> Last updated: 2026-06-25 (FAN 1.0.2 — models.md update)
+> Last updated: 2026-07-08 (FAN 1.0.2 — orchestrator Pipeline Mode v3.1.0 added)
 > Comprehensive index of all project documentation.
 
 ## User-Facing Documentation
@@ -14,7 +14,7 @@
 | `CHANGELOG.md` | ✅ | FAN changelog (0.2.0 → 1.0.0) |
 | `docs/guides/quick-start.md` | ✅ | Quick start stub — redirects to QUICK-START.md |
 | `docs/guides/configuration.md` | ✅ | Full settings reference |
-| `docs/guides/orchestrator.md` | ✅ | Orchestrator user guide |
+| `docs/guides/orchestrator.md` | ✅ | Orchestrator user guide (Pipeline Mode v3.1.0) |
 | `docs/guides/dashboard.md` | ✅ | Dashboard user guide |
 | `docs/guides/api-reference.md` | ✅ | REST API + WebSocket protocol reference |
 
