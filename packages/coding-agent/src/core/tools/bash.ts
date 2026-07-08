@@ -6,6 +6,7 @@ import type { AgentTool } from "@seaagents/fan-agent-core";
 import { Container, Text, truncateToWidth } from "@seaagents/fan-tui";
 import { type Static, Type } from "@sinclair/typebox";
 import { spawn } from "child_process";
+import { isDangerousCommand } from "../security/permissions.js";
 import { keyHint } from "../../modes/interactive/components/keybinding-hints.js";
 import { truncateToVisualLines } from "../../modes/interactive/components/visual-truncate.js";
 import { theme } from "../../modes/interactive/theme/theme.js";
@@ -333,6 +334,12 @@ export function createBashToolDefinition(
 						});
 					}
 				};
+
+				const danger = isDangerousCommand(spawnContext.command);
+				if (danger) {
+					reject(new Error(`Blocked: ${danger}`));
+					return;
+				}
 
 				ops.exec(spawnContext.command, spawnContext.cwd, {
 					onData: handleData,

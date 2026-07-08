@@ -1,8 +1,13 @@
 /**
  * Check whether a shell command is dangerous.
  *
- * First checks extension-specific custom patterns, then delegates to the
- * core @seaagents/fan-coding-agent implementation for all standard checks.
+ * Detection pipeline:
+ *  1. Custom patterns (configurable)
+ *  2. Pipe analysis
+ *  3. Subshell extraction
+ *  4. Heredoc extraction
+ *  5. Interpreter inline code
+ *  6. Stripped command (fallback)
  *
  * @param cmd - The raw command string to evaluate.
  * @param customPatterns - Optional list of custom dangerous command patterns.

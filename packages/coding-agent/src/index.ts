@@ -225,6 +225,8 @@ export {
 	type SkillFrontmatter,
 } from "./core/skills.js";
 export { createSyntheticSourceInfo } from "./core/source-info.js";
+// Security / dangerous command detection
+export { isDangerousCommand } from "./core/security/permissions.js";
 // Tools
 export {
 	type BashOperations,
