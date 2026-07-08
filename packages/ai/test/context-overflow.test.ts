@@ -100,6 +100,8 @@ function logResult(result: OverflowResult) {
 describe("Context overflow error handling", () => {
 	describe.skipIf(!process.env.ANTHROPIC_API_KEY)("Anthropic (API Key)", () => {
 		it("claude-3-5-haiku - should detect overflow via isContextOverflow", async () => {
+			// @ts-expect-error -- model ID removed from generated MODELS
+
 			const model = getModel("anthropic", "claude-3-5-haiku-20241022");
 			const result = await testContextOverflow(model, process.env.ANTHROPIC_API_KEY!);
 			logResult(result);
@@ -112,6 +114,8 @@ describe("Context overflow error handling", () => {
 
 	describe.skipIf(!process.env.ANTHROPIC_OAUTH_TOKEN)("Anthropic (OAuth)", () => {
 		it("claude-sonnet-4 - should detect overflow via isContextOverflow", async () => {
+			// @ts-expect-error -- model ID removed from generated MODELS
+
 			const model = getModel("anthropic", "claude-sonnet-4-20250514");
 			const result = await testContextOverflow(model, process.env.ANTHROPIC_OAUTH_TOKEN!);
 			logResult(result);
@@ -132,6 +136,8 @@ describe("Context overflow error handling", () => {
 		it.skipIf(!githubCopilotToken)(
 			"gpt-4o - should detect overflow via isContextOverflow",
 			async () => {
+				// @ts-expect-error -- model ID removed from generated MODELS
+
 				const model = getModel("github-copilot", "gpt-4o");
 				const result = await testContextOverflow(model, githubCopilotToken!);
 				logResult(result);
@@ -303,6 +309,8 @@ describe("Context overflow error handling", () => {
 
 	describe.skipIf(!process.env.XAI_API_KEY)("xAI", () => {
 		it("grok-3-fast - should detect overflow via isContextOverflow", async () => {
+			// @ts-expect-error -- model ID removed from generated MODELS
+
 			const model = getModel("xai", "grok-3-fast");
 			const result = await testContextOverflow(model, process.env.XAI_API_KEY!);
 			logResult(result);
@@ -337,6 +345,8 @@ describe("Context overflow error handling", () => {
 
 	describe.skipIf(!process.env.CEREBRAS_API_KEY)("Cerebras", () => {
 		it("qwen-3-235b - should detect overflow via isContextOverflow", async () => {
+			// @ts-expect-error -- model ID removed from generated MODELS
+
 			const model = getModel("cerebras", "qwen-3-235b-a22b-instruct-2507");
 			const result = await testContextOverflow(model, process.env.CEREBRAS_API_KEY!);
 			logResult(result);

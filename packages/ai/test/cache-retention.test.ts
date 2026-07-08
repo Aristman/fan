@@ -27,6 +27,8 @@ describe("Cache Retention (FAN_CACHE_RETENTION)", () => {
 		it.skipIf(!process.env.ANTHROPIC_API_KEY)(
 			"should use default cache TTL (no ttl field) when FAN_CACHE_RETENTION is not set",
 			async () => {
+				// @ts-expect-error -- model ID removed from generated MODELS
+
 				const model = getModel("anthropic", "claude-3-5-haiku-20241022");
 				let capturedPayload: any = null;
 
@@ -50,6 +52,8 @@ describe("Cache Retention (FAN_CACHE_RETENTION)", () => {
 
 		it.skipIf(!process.env.ANTHROPIC_API_KEY)("should use 1h cache TTL when FAN_CACHE_RETENTION=long", async () => {
 			process.env.FAN_CACHE_RETENTION = "long";
+			// @ts-expect-error -- model ID removed from generated MODELS
+
 			const model = getModel("anthropic", "claude-3-5-haiku-20241022");
 			let capturedPayload: any = null;
 
@@ -74,6 +78,8 @@ describe("Cache Retention (FAN_CACHE_RETENTION)", () => {
 			process.env.FAN_CACHE_RETENTION = "long";
 
 			// Create a model with a different baseUrl (simulating a proxy)
+			// @ts-expect-error -- model ID removed from generated MODELS
+
 			const baseModel = getModel("anthropic", "claude-3-5-haiku-20241022");
 			const proxyModel = {
 				...baseModel,
@@ -114,6 +120,8 @@ describe("Cache Retention (FAN_CACHE_RETENTION)", () => {
 		});
 
 		it("should omit cache_control when cacheRetention is none", async () => {
+			// @ts-expect-error -- model ID removed from generated MODELS
+
 			const baseModel = getModel("anthropic", "claude-3-5-haiku-20241022");
 			let capturedPayload: any = null;
 
@@ -140,6 +148,8 @@ describe("Cache Retention (FAN_CACHE_RETENTION)", () => {
 		});
 
 		it("should add cache_control to string user messages", async () => {
+			// @ts-expect-error -- model ID removed from generated MODELS
+
 			const baseModel = getModel("anthropic", "claude-3-5-haiku-20241022");
 			let capturedPayload: any = null;
 
@@ -168,6 +178,8 @@ describe("Cache Retention (FAN_CACHE_RETENTION)", () => {
 		});
 
 		it("should set 1h cache TTL when cacheRetention is long", async () => {
+			// @ts-expect-error -- model ID removed from generated MODELS
+
 			const baseModel = getModel("anthropic", "claude-3-5-haiku-20241022");
 			let capturedPayload: any = null;
 

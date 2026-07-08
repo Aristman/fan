@@ -475,6 +475,8 @@ describe("Generate E2E Tests", () => {
 	});
 
 	describe.skipIf(!process.env.ANTHROPIC_API_KEY)("Anthropic Provider (claude-3-5-haiku-20241022)", () => {
+		// @ts-expect-error -- model ID removed from generated MODELS
+
 		const model = getModel("anthropic", "claude-3-5-haiku-20241022");
 
 		it("should complete basic text generation", { retry: 3 }, async () => {
@@ -851,6 +853,8 @@ describe("Generate E2E Tests", () => {
 	// =========================================================================
 
 	describe("Anthropic OAuth Provider (claude-sonnet-4-20250514)", () => {
+		// @ts-expect-error -- model ID removed from generated MODELS
+
 		const model = getModel("anthropic", "claude-sonnet-4-20250514");
 
 		it.skipIf(!anthropicOAuthToken)("should complete basic text generation", { retry: 3 }, async () => {

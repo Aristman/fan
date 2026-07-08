@@ -352,6 +352,8 @@ describe("Tool Results with Images", () => {
 			"gpt-4o - should handle tool result with only image",
 			{ retry: 3, timeout: 30000 },
 			async () => {
+				// @ts-expect-error -- model ID removed from generated MODELS
+
 				const llm = getModel("github-copilot", "gpt-4o");
 				await handleToolWithImageResult(llm, { apiKey: githubCopilotToken });
 			},
@@ -361,6 +363,8 @@ describe("Tool Results with Images", () => {
 			"gpt-4o - should handle tool result with text and image",
 			{ retry: 3, timeout: 30000 },
 			async () => {
+				// @ts-expect-error -- model ID removed from generated MODELS
+
 				const llm = getModel("github-copilot", "gpt-4o");
 				await handleToolWithTextAndImageResult(llm, { apiKey: githubCopilotToken });
 			},

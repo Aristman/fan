@@ -9,6 +9,8 @@ import { SettingsManager } from "../src/core/settings-manager.js";
 import { createTestResourceLoader } from "./utilities.js";
 
 const reasoningModel = getModel("anthropic", "claude-sonnet-4-5")!;
+// @ts-expect-error -- model ID removed from generated MODELS
+
 const nonReasoningModel = getModel("anthropic", "claude-3-5-haiku-latest")!;
 
 function createSession({
