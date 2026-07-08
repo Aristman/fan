@@ -1,8 +1,19 @@
 #!/bin/sh
+# CRLF self-heal: if \r found in line 1, rewrite self without
+# CRLF and re-exec. This guard is CRLF-safe and pipe-safe.
+# When running from curl|bash, $0 is the shell name (e.g. bash), not a file.
+[ -f "$0" ] && command -v grep >/dev/null 2>&1 && head -1 "$0" | grep -q '\r' 2>/dev/null && {
+  echo "FAN: self-healing CRLF..." >&2
+  _fantmp=$(mktemp)
+  tr -d '\r' < "$0" > "$_fantmp" && chmod +x "$_fantmp" && exec sh "$_fantmp" "$@"
+}
+unset _fantmp
+
 #
 # FAN (fan) one-liner installer for Unix (macOS + Linux).
 # Usage:
 #   curl -fsSL https://fan.sea-agents.ru/fan-store/dist/install.sh | bash
+#   curl -sL  https://fan.sea-agents.ru/fan-store/dist/install.sh | bash   # fallback for older curl
 #
 # Environment:
 #   FAN_INSTALL_DIR  Custom data directory (default: ~/.local/share/fan)
@@ -101,6 +112,7 @@ resolve_install_dirs() {
 
 # ─── Check if already installed ────────────────────────────────
 check_existing() {
+    SHOULD_ADD_TO_PATH=true
     if [ -L "$SYMLINK_PATH" ] || [ -f "$SYMLINK_PATH" ]; then
         # Already installed (symlink or file)
         EXISTING_VERSION="$("$SYMLINK_PATH" --version 2>/dev/null || echo "unknown")"
@@ -112,7 +124,11 @@ check_existing() {
             read -r answer < /dev/tty
             case "$answer" in
                 y|Y|yes) ;;
-                *) echo "Aborted." && exit 0 ;;
+                *)
+                    echo "Aborted."
+                    SHOULD_ADD_TO_PATH=true
+                    return 1
+                    ;;
             esac
         fi
     elif [ -d "$SYMLINK_PATH" ]; then
@@ -120,6 +136,7 @@ check_existing() {
         warn "Removing old installation at ${SYMLINK_PATH}..."
         rm -rf "$SYMLINK_PATH"
     fi
+    return 0
 }
 
 # ─── Add BIN_DIR to PATH ──────────────────────────────────────
@@ -130,9 +147,9 @@ add_to_path() {
 
     SHELL_RC=""
     if [ -n "${ZSH_VERSION:-}" ] || [ "$(basename "${SHELL:-}")" = "zsh" ]; then
-        if [ -f "$HOME/.zshrc" ]; then SHELL_RC="$HOME/.zshrc"; fi
+        SHELL_RC="$HOME/.zshrc"
     fi
-    if [ -z "$SHELL_RC" ] && [ -f "$HOME/.bashrc" ]; then
+    if [ -z "$SHELL_RC" ] && [ -n "${BASH_VERSION:-}" ] || [ "$(basename "${SHELL:-}")" = "bash" ]; then
         SHELL_RC="$HOME/.bashrc"
     fi
     if [ -z "$SHELL_RC" ] && [ -f "$HOME/.profile" ]; then
@@ -140,6 +157,8 @@ add_to_path() {
     fi
 
     if [ -n "$SHELL_RC" ]; then
+        # Create file if it doesn't exist (e.g. fresh macOS zsh setup)
+        [ -f "$SHELL_RC" ] || touch "$SHELL_RC"
         echo "" >> "$SHELL_RC"
         echo "# Added by FAN installer" >> "$SHELL_RC"
         echo "export PATH=\"${BIN_DIR}:\$PATH\"" >> "$SHELL_RC"
@@ -158,7 +177,12 @@ main() {
     info "Detected platform: ${PLATFORM}"
 
     resolve_install_dirs
-    check_existing
+    if ! check_existing; then
+        add_to_path
+        info "fan is already installed. Restart your shell or run:"
+        info "  export PATH=\"${BIN_DIR}:\$PATH\""
+        exit 0
+    fi
 
     # Fetch manifest
     MANIFEST_URL="https://fan.sea-agents.ru/fan-store/dist/manifest.json"
@@ -182,6 +206,13 @@ main() {
         exit 1
     fi
 
+    # Normalize manifest: strip BOM and CRLF so POSIX tools can parse it
+    if command -v sed > /dev/null 2>&1; then
+        sed '1s/^\xef\xbb\xbf//; s/\r$//' "$MANIFEST_FILE" > "${MANIFEST_FILE}.tmp" && mv "${MANIFEST_FILE}.tmp" "$MANIFEST_FILE"
+    else
+        tr -d '\r\357\273\277' < "$MANIFEST_FILE" > "${MANIFEST_FILE}.tmp" && mv "${MANIFEST_FILE}.tmp" "$MANIFEST_FILE"
+    fi
+
     # Parse manifest
     LATEST_VERSION="$(grep '"latest"' "$MANIFEST_FILE" | head -1 | sed 's/.*"latest"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')"
     if [ -z "$LATEST_VERSION" ]; then
@@ -190,12 +221,13 @@ main() {
     fi
     info "Latest version: ${LATEST_VERSION}"
 
-    # Get platform-specific hash
+    # Get platform-specific hash (handle UTF-8 BOM and CRLF robustly)
     EXPECTED_HASH=""
     if command -v python3 >/dev/null 2>&1; then
         EXPECTED_HASH="$(python3 -c "
 import json
-with open('$MANIFEST_FILE') as f:
+import codecs
+with codecs.open('$MANIFEST_FILE', 'r', encoding='utf-8-sig') as f:
     m = json.load(f)
 p = m.get('platforms', {}).get('$PLATFORM', {})
 print(p.get('hash', ''))

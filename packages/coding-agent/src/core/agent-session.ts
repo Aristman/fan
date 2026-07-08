@@ -3052,7 +3052,7 @@ export class AgentSession {
 			}
 		}
 
-		return text.trim() || undefined;
+		return text.trim() || "";
 	}
 
 	// =========================================================================

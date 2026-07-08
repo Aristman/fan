@@ -1,49 +1,49 @@
 {
-	"name": "fan",
-	"private": true,
-	"type": "module",
-	"version": "2.0.0",
-	"workspaces": [
-		"packages/*",
-		"packages/web-ui/example",
-		"packages/coding-agent/examples/extensions/with-deps",
-		"packages/coding-agent/examples/extensions/custom-provider-anthropic",
-		"packages/coding-agent/examples/extensions/custom-provider-gitlab-duo",
-		"!packages/fan-persistent-memory",
-		"packages/coding-agent/examples/extensions/custom-provider-qwen-cli"
-	],
-	"scripts": {
-		"clean": "npm run clean --workspaces",
-		"build": "cd packages/db && npm run build && cd ../tui && npm run build && cd ../ai && npm run build && cd ../agent && npm run build && cd ../model-manager && npm run build && cd ../api-gateway && npm run build && cd ../coding-agent && npm run build && cd ../web-ui && npm run build && cd ../store && npm run build",
-		"dev": "concurrently --names \"ai,agent,coding-agent,web-ui,tui,model-manager,dashboard\" --prefix-colors \"cyan,yellow,red,green,magenta,orange,purple\" \"cd packages/ai && npm run dev\" \"cd packages/agent && npm run dev\" \"cd packages/coding-agent && npm run dev\" \"cd packages/web-ui && npm run dev\" \"cd packages/tui && npm run dev\" \"cd packages/model-manager && npm run dev\" \"cd packages/dashboard && npm run dev\"",
-		"dev:tsc": "concurrently --names \"ai,web-ui\" --prefix-colors \"cyan,green\" \"cd packages/ai && npm run dev:tsc\" \"cd packages/web-ui && npm run dev:tsc\"",
-		"check": "biome check --write --error-on-warnings . && tsgo --noEmit && npm run check:browser-smoke && cd packages/web-ui && npm run check",
-		"check:browser-smoke": "node scripts/check-browser-smoke.mjs",
-		"test": "npm run test --workspaces --if-present",
-		"prepare": "husky",
-		"build:dashboard": "cd packages/dashboard && npx vite build",
-		"dev:dashboard": "cd packages/dashboard && npx vite"
-	},
-	"devDependencies": {
-		"@biomejs/biome": "2.3.5",
-		"@types/node": "^22.10.5",
-		"@typescript/native-preview": "7.0.0-dev.20260120.1",
-		"@typescript/native-preview-linux-x64": "^7.0.0-dev.20260412.1",
-		"concurrently": "^9.2.1",
-		"husky": "^9.1.7",
-		"prisma": "^6.5.0",
-		"shx": "^0.4.0",
-		"tsx": "^4.20.3",
-		"typescript": "^5.9.2"
-	},
-	"engines": {
-		"node": ">=20.0.0"
-	},
-	"overrides": {
-		"rimraf": "6.1.2",
-		"fast-xml-parser": "5.3.8",
-		"gaxios": {
-			"rimraf": "6.1.2"
-		}
-	}
+  "name": "fan",
+  "private": true,
+  "type": "module",
+  "version": "2.0.2",
+  "workspaces": [
+    "packages/*",
+    "packages/web-ui/example",
+    "packages/coding-agent/examples/extensions/with-deps",
+    "packages/coding-agent/examples/extensions/custom-provider-anthropic",
+    "packages/coding-agent/examples/extensions/custom-provider-gitlab-duo",
+    "!packages/fan-persistent-memory",
+    "packages/coding-agent/examples/extensions/custom-provider-qwen-cli"
+  ],
+  "scripts": {
+    "clean": "npm run clean --workspaces",
+    "build": "cd packages/db && npm run build && cd ../tui && npm run build && cd ../ai && npm run build && cd ../agent && npm run build && cd ../model-manager && npm run build && cd ../api-gateway && npm run build && cd ../coding-agent && npm run build && cd ../web-ui && npm run build && cd ../store && npm run build",
+    "dev": "concurrently --names \"ai,agent,coding-agent,web-ui,tui,model-manager,dashboard\" --prefix-colors \"cyan,yellow,red,green,magenta,orange,purple\" \"cd packages/ai && npm run dev\" \"cd packages/agent && npm run dev\" \"cd packages/coding-agent && npm run dev\" \"cd packages/web-ui && npm run dev\" \"cd packages/tui && npm run dev\" \"cd packages/model-manager && npm run dev\" \"cd packages/dashboard && npm run dev\"",
+    "dev:tsc": "concurrently --names \"ai,web-ui\" --prefix-colors \"cyan,green\" \"cd packages/ai && npm run dev:tsc\" \"cd packages/web-ui && npm run dev:tsc\"",
+    "check": "biome check --write --error-on-warnings . && tsgo --noEmit && npm run check:browser-smoke && cd packages/web-ui && npm run check",
+    "check:browser-smoke": "node scripts/check-browser-smoke.mjs",
+    "test": "npm run test --workspaces --if-present",
+    "prepare": "husky",
+    "build:dashboard": "cd packages/dashboard && npx vite build",
+    "dev:dashboard": "cd packages/dashboard && npx vite"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.3.5",
+    "@types/node": "^22.10.5",
+    "@typescript/native-preview": "7.0.0-dev.20260120.1",
+    "@typescript/native-preview-linux-x64": "^7.0.0-dev.20260412.1",
+    "concurrently": "^9.2.1",
+    "husky": "^9.1.7",
+    "prisma": "^6.5.0",
+    "shx": "^0.4.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.9.2"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "overrides": {
+    "rimraf": "6.1.2",
+    "fast-xml-parser": "5.3.8",
+    "gaxios": {
+      "rimraf": "6.1.2"
+    }
+  }
 }

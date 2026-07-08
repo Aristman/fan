@@ -150,6 +150,13 @@ npm run build:dashboard
 echo "==> Inlining version v${FAN_VERSION} into api-gateway dist..."
 sed -i "s|JSON\.parse(readFileSync(join(__dirname, '\.\.', 'package\.json'), 'utf-8'))\.version|'${FAN_VERSION}'|g" packages/api-gateway/dist/http-server.js
 
+# Inline version into coding-agent dist as well. The compiled binary reads
+# package.json next to the executable at runtime; if that file is ever stale
+# (e.g. partial self-update or install), the binary should still report the
+# release version it was built with.
+echo "==> Inlining version v${FAN_VERSION} into coding-agent dist..."
+sed -i "s|export const VERSION = pkg\.version;|export const VERSION = '${FAN_VERSION}';|g" packages/coding-agent/dist/config.js
+
 echo "==> Building FAN (fan) binaries..."
 cd packages/coding-agent
 

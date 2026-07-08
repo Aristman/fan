@@ -86,6 +86,8 @@ foreach ($arg in $Rest) {
 }
 $Rest = $RestFiltered
 
+
+
 # ─── Colors ──────────────────────────────────────────────────────
 function Write-Info($msg)  { Write-Host "==> " -ForegroundColor Blue -NoNewline; Write-Host $msg -ForegroundColor White }
 function Write-Ok($msg)    { Write-Host "OK " -ForegroundColor Green -NoNewline; Write-Host $msg }
@@ -359,7 +361,9 @@ function Rebuild-Index {
     if ($LatestOnly) {
         $before = $packages.Count
         $packages = $packages | Group-Object name | ForEach-Object {
-            $_.Group | Sort-Object { [Version]$_.version } -Descending | Select-Object -First 1
+            $_.Group | Where-Object { $_.version -and $_.version -match '^\d+\.\d+\.\d+' } | Sort-Object { 
+                try { [Version]$_ } catch { [Version]'0.0.0' } 
+            } -Descending | Select-Object -First 1
         }
         Write-Host "Latest-only mode: $before → $($packages.Count) packages"
     }
@@ -610,32 +614,57 @@ function Cmd-Info {
 
 function Get-RepoFiles {
     param([string]$Path)
-    # Get list of all files recursively, relative paths
-    $files = Get-ChildItem -Path $Path -Recurse -File | Where-Object { 
-        $_.FullName -notmatch '\.git' -and
-        $_.Name -notlike '*.bak.*'
-    } | ForEach-Object {
-        $_.FullName.Substring($Path.Length + 1).Replace('\', '/')
+    # Only index.json at root + packages/*.tar.gz/.tgz/.zip
+    $files = @()
+    
+    # Root level: index.json only
+    $idx = Join-Path $Path "index.json"
+    if (Test-Path $idx) { $files += "index.json" }
+    
+    # packages/ directory: only archive files (PowerShell quirk: -Include needs wildcard in -Path)
+    $pkgDir = Join-Path $Path "packages"
+    if (Test-Path $pkgDir) {
+        $archives = Get-ChildItem -Path (Join-Path $pkgDir "*") -Include "*.tar.gz", "*.tgz", "*.zip" -File -ErrorAction SilentlyContinue
+        foreach ($f in $archives) {
+            $relative = "packages/$($f.Name)"
+            $files += $relative
+        }
     }
-    return $files
+    
+    # Sort for deterministic order
+    return ($files | Sort-Object)
 }
 
-function Get-ServerFiles {
+function Get-ServerFileNames {
     param([string]$Remote)
-    # Get list of files on server with SHA-256 hashes
-    $sshOutput = ssh $Remote "cd /opt/repos/fan-store && find . -type f -not -path './.*' -exec sha256sum {} +" 2>$null
-    if (-not $sshOutput) { return @() }
-    # Parse into hashtable: path -> hash
+    # Get list of file names on server (only .tar.gz, .tgz, .zip — excludes node_modules, etc.)
+    # Redirect stderr to null via ssh's 2>/dev/null
+    $sshOutput = ssh -o ConnectTimeout=10 -o BatchMode=yes $Remote "cd /opt/repos/fan-store && find packages -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.tgz' -o -name '*.zip' \) -printf '%f\\n' 2>/dev/null | sort" 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $sshOutput) {
+        # Fallback: try GNU find without -printf
+        $sshOutput = ssh -o ConnectTimeout=10 -o BatchMode=yes $Remote "cd /opt/repos/fan-store && find packages -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.tgz' -o -name '*.zip' \) -exec basename {} \\; 2>/dev/null | sort" 2>$null
+    }
+    if ($LASTEXITCODE -ne 0 -or -not $sshOutput) { 
+        Write-Warn "SSH connection failed while querying server packages"
+        return @() 
+    }
     $result = @{}
     foreach ($line in $sshOutput) {
         $line = $line.Trim()
-        if ($line -match '^([a-f0-9]{64})\s+(.+)$') {
-            $hash = $Matches[1]
-            $path = $Matches[2].TrimStart('./')
-            $result[$path] = $hash
-        }
+        if ($line -ne '') { $result[$line] = $true }
     }
     return $result
+}
+
+function Get-ServerIndexHash {
+    param([string]$Remote)
+    $sshOutput = ssh -o ConnectTimeout=10 -o BatchMode=yes $Remote "sha256sum /opt/repos/fan-store/index.json 2>/dev/null" 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $sshOutput) { 
+        Write-Warn "SSH connection failed while querying index.json hash"
+        return '' 
+    }
+    if ($sshOutput -match '^([a-f0-9]{64})') { return $Matches[1] }
+    return ''
 }
 
 function Sync-RepoToRemote {
@@ -646,61 +675,84 @@ function Sync-RepoToRemote {
     )
     
     $localFiles = Get-RepoFiles $RepoDir
-    Write-Host "Local files: $($localFiles.Count)"
+    Write-Host ""
+    Write-Host "Local files: $($localFiles.Count) total"
     
-    # Compute local SHA-256 hashes
-    $localHashes = @{}
-    foreach ($f in $localFiles) {
-        $localPath = Join-Path $RepoDir $f
-        $localHashes[$f] = (Get-FileHash -Path $localPath -Algorithm SHA256).Hash
-    }
+    # Compute local SHA-256 hash for index.json only
+    $localIndexPath = Join-Path $RepoDir "index.json"
+    $localIndexHash = (Get-FileHash -Path $localIndexPath -Algorithm SHA256).Hash
     
-    # Get server hashes (returns hashtable path -> hash)
-    $serverHashes = @{}
+    $serverIndexHash = ''
     if (-not $Force) {
-        $serverHashes = Get-ServerFiles $Remote
-        Write-Host "Server files: $($serverHashes.Count)"
+        $serverIndexHash = Get-ServerIndexHash $Remote
+        
+        # Get server file names (for packages/ — compare by name only)
+        $serverFileNames = Get-ServerFileNames $Remote
+        Write-Host "Server packages: $($serverFileNames.Count) files"
+        Write-Host ""
     }
     
-    # Build toSync: missing files or files with different hashes
-    $toSync = @()
+    $uploaded = 0
+    $skipped = 0
+    $changed = 0
+    $errors = 0
+    
     foreach ($f in $localFiles) {
-        if ($Force -or -not $serverHashes.ContainsKey($f) -or $serverHashes[$f] -ne $localHashes[$f]) {
-            $toSync += $f
-        }
-    }
-    
-    if ($toSync.Count -eq 0) {
-        Write-Host "Nothing to sync — all files already on server"
-        return
-    }
-    
-    Write-Host "Syncing $($toSync.Count) new/changed files..."
-    
-    $copied = 0
-    foreach ($f in $toSync) {
         $localPath = Join-Path $RepoDir $f
-        $remotePath = "$Remote`:/opt/repos/fan-store/$f"
-        & scp $localPath $remotePath 2>&1 | Out-Null
-        if ($LASTEXITCODE -eq 0) {
-            $copied++
+        $fileName = Split-Path -Leaf $f
+        
+        if ($f -eq 'index.json') {
+            # index.json: compare by hash
+            if ($Force) {
+                & scp $localPath "${Remote}:/opt/repos/fan-store/index.json" 2>$null
+                Write-Host "  index.json ... force-uploaded"
+                $uploaded++
+            } elseif ($serverIndexHash -eq '' -or $localIndexHash -ne $serverIndexHash) {
+                if ($serverIndexHash -eq '') {
+                    Write-Host "  index.json ... uploaded (not on server)"
+                } else {
+                    Write-Host "  index.json ... uploaded (hash changed)" -ForegroundColor Yellow
+                    $changed++
+                }
+                & scp $localPath "${Remote}:/opt/repos/fan-store/index.json" 2>$null
+                $uploaded++
+            } else {
+                Write-Host "  index.json ... skipped (hash matches)" -ForegroundColor DarkGray
+                $skipped++
+            }
+        } else {
+            # All other files: compare by filename only
+            if ($Force) {
+                & scp $localPath "${Remote}:/opt/repos/fan-store/$f" 2>$null
+                Write-Host "  $f ... force-uploaded"
+                $uploaded++
+            } elseif ($serverFileNames.ContainsKey($fileName)) {
+                Write-Host "  $f ... skipped (already on server)" -ForegroundColor DarkGray
+                $skipped++
+            } else {
+                Write-Host "  $f ... uploaded"
+                & scp $localPath "${Remote}:/opt/repos/fan-store/$f" 2>$null
+                $uploaded++
+            }
         }
     }
-    Write-Host "Copied $copied / $($toSync.Count) files"
+    
+    Write-Host ""
+    Write-Host "Summary: $uploaded uploaded, $skipped skipped, $changed changed, $errors failed" -ForegroundColor Green
+    Write-Host ""
     
     # ── index.json integrity validation ──────────────────────────────────────
     Write-Host "Validating index.json integrity..."
-    $idx = Join-Path $RepoDir "index.json"
-    if (-not (Test-IndexValid $idx)) {
+    if (-not (Test-IndexValid $localIndexPath)) {
         Write-Host "❌ index.json is corrupted locally!" -ForegroundColor Red
         
         # Попробовать починить через Rebuild-Index
         Repair-Index $RepoDir
         
         # Скопировать обратно
-        if (Test-IndexValid $idx) {
+        if (Test-IndexValid $localIndexPath) {
             Write-Host "✅ Repaired. Re-syncing to server..." -ForegroundColor Green
-            & scp $idx "${remote}:/opt/repos/fan-store/index.json"
+            & scp $localIndexPath "${Remote}:/opt/repos/fan-store/index.json" 2>$null
         } else {
             Write-Host "❌ Failed to repair. Refusing to publish." -ForegroundColor Red
             throw "index.json is broken"
@@ -709,10 +761,10 @@ function Sync-RepoToRemote {
     
     # Проверить серверную версию
     Write-Host "Verifying server index.json..."
-    $serverIdx = ssh $remote "cat /opt/repos/fan-store/index.json" 2>$null
-    if ($serverIdx -notmatch '^\s*\{') {
+    $serverIdx = ssh -o ConnectTimeout=10 -o BatchMode=yes $Remote "cat /opt/repos/fan-store/index.json" 2>$null
+    if ($serverIdx -notmatch '\{') {
         Write-Host "❌ Server index.json missing '{'! Re-syncing..." -ForegroundColor Red
-        & scp $idx "${remote}:/opt/repos/fan-store/index.json"
+        & scp $localIndexPath "${Remote}:/opt/repos/fan-store/index.json" 2>$null
     }
 }
 
