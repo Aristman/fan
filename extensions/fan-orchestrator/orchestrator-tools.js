@@ -25,9 +25,10 @@ const AGENT_ICONS = {
 function getAgentIcon(agentName) {
     return AGENT_ICONS[agentName] ?? "🤖";
 }
-function toWorkerType(agentName) {
-    if (agentName === "explore" || agentName === "plan" || agentName === "verify")
-        return agentName;
+function toWorkerType(agent) {
+    // readOnly агенты получают свой слот (параллельные)
+    if (agent?.readOnly) return agent.name;
+    // write-агенты (implement, bug-fix, tests-impl, docs-impl) — общий эксклюзивный слот
     return "implement";
 }
 function formatElapsedTime(startTime, endTime) {
@@ -273,10 +274,11 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                             }
                         }
                         : undefined;
-                    const workerType = toWorkerType(step.agent);
+                    const workerAgent = agents.find(a => a.name === step.agent);
+                    const workerType = toWorkerType(workerAgent);
                     await acquireSlot(workerType, config.parallelWorkers);
                     const chainWorkerId = workerLifecycle?.genWorkerId?.() ?? `w-${Date.now()}`;
-                            const chainWorkerModel = agents.find(a => a.name === step.agent)?.model || "";
+                    const chainWorkerModel = workerAgent?.model || "";
                     const chainWorkerTemperature = resolveWorkerTemperature(step.agent, config);
                     workerLifecycle?.onWorkerStart?.(chainWorkerId, step.agent, chainWorkerModel);
                     let result;
@@ -365,10 +367,11 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                     }
                 };
                 const results = await mapWithConcurrencyLimit(params.tasks, MAX_CONCURRENCY, async (t, index) => {
-                    const workerType = toWorkerType(t.agent);
+                    const parWorkerAgent = agents.find(a => a.name === t.agent);
+                    const workerType = toWorkerType(parWorkerAgent);
                     await acquireSlot(workerType, config.parallelWorkers);
                     const parWorkerId = workerLifecycle?.genWorkerId?.() ?? `w-${Date.now()}-${index}`;
-                    const parWorkerModel = agents.find(a => a.name === t.agent)?.model || "";
+                    const parWorkerModel = parWorkerAgent?.model || "";
                     const parWorkerTemperature = resolveWorkerTemperature(t.agent, config);
                     workerLifecycle?.onWorkerStart?.(parWorkerId, t.agent, parWorkerModel);
                     let result;
@@ -421,11 +424,12 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                         }
                     }
                     : undefined;
-                const workerType = toWorkerType(params.agent);
+                const workerAgent = agents.find(a => a.name === params.agent);
+                const workerType = toWorkerType(workerAgent);
                 await acquireSlot(workerType, config.parallelWorkers);
                 // Register worker for live widget display
                 const workerId = workerLifecycle?.genWorkerId?.() ?? `w-${Date.now()}`;
-                const workerModel = agents.find(a => a.name === params.agent)?.model || "";
+                const workerModel = workerAgent?.model || "";
                 const workerTemperature = resolveWorkerTemperature(params.agent, config);
                 workerLifecycle?.onWorkerStart?.(workerId, params.agent, workerModel);
                 let result;

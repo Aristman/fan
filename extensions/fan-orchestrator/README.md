@@ -1,6 +1,7 @@
-# FAN Orchestrator v7.4.0
+# FAN Orchestrator v7.5.0
 
 > Multi-agent task decomposition and coordination for FAN.
+> **v7.5.0** — Parallel read-only agents: `toWorkerType` now uses `agent.readOnly` flag instead of hardcoded whitelist. All readOnly agents (code-research, explore, plan, verify) run in parallel with independent slot pools. Write agents (implement, bug-fix, tests-impl, docs-impl) remain exclusive.
 > Pipeline Mode: `/pipeline` command, auto-update hooks, state recovery, conventional-commits policy.
 
 Портирован из pi-orchestrator с сохранением стабильной архитектуры воркеров. Расширение для FAN, добавляющее режим координатора, доску задач, 8 специализированных воркеров, систему разрешений и Pipeline Mode для многофазных проектов.
@@ -9,7 +10,8 @@
 
 - **8 специализированных воркеров** — explore, plan, implement, verify, bug-fix, code-research, tests-impl, docs-impl
 - **Pi-style RPC protocol** — JSONL over stdin/stdout, единый `stallTimer`, без жёсткого лимита выполнения
-- **Slot pool concurrency** — read-only агенты параллельно (до `parallelWorkers`), write-агенты эксклюзивно
+- **Slot pool concurrency** — read-only агенты параллельно (до `parallelWorkers`, каждый в своём пуле), write-агенты эксклюзивно
+- **🆕 v7.5.0** — `toWorkerType` uses `agent.readOnly` flag. All readOnly agents get independent parallel slot pools. No more hardcoded whitelist.
 - **Task management** — `TaskCreate`/`TaskUpdate`/`TaskClear`/`cancel_task` со статусным виджетом (`Alt+T`)
 - **Permission system** — heredoc, pipes, interpreters, fork-bomb detection, audit log (`~/.fan/agent/audit/orchestrator.log`)
 - **🆕 Pipeline Mode v3.1.0** — 3 рабочих артефакта (`development-plan.md`, `development-log.md`, `phase-status.json`), `/pipeline` command, авто-обновление через хуки на `TaskCreate`/`TaskUpdate`, state recovery после обрыва сессии
