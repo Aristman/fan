@@ -20,6 +20,7 @@ import { COORDINATOR_PROMPT, buildCoordinatorPrompt, discoverAgents } from "./ag
 import { DEFAULTS, configExists, loadConfig, resolveWorkerModel, resolveWorkerTemperature, saveConfig } from "./config.js";
 import { registerOrchestratorTools } from "./orchestrator-tools.js";
 import { isDangerousCommand } from "./permissions.js";
+import { logAuditDecision } from "./audit.js";
 import { getFinalOutput, runSingleAgent } from "./subagent-runner.js";
 import { TaskManager } from "./task-manager.js";
 import { _resetRegistry, activeWorkers, genWorkerId, registerWorker, updateWorker } from "./workers.js";
@@ -245,12 +246,15 @@ export const orchestratorExtension = (fan) => {
                             ['Allow', 'Block']
                         );
                         if (choice === 'Block' || choice === undefined) {
+                            logAuditDecision({ command: cmd, reason, decision: "block", agentType: null, workerId: null });
                             return { block: true, reason: `⚠️ Blocked by user: ${reason}` };
                         }
                         // choice === 'Allow' — pass through, return empty to allow
+                        logAuditDecision({ command: cmd, reason, decision: "allow", agentType: null, workerId: null });
                         return {};
                     } else {
                         // Headless mode — default to blocking
+                        logAuditDecision({ command: cmd, reason, decision: "headless_block", agentType: null, workerId: null });
                         return { block: true, reason: `⚠️ Blocked (headless): ${reason}` };
                     }
                 }
@@ -515,7 +519,72 @@ export const orchestratorExtension = (fan) => {
                     if (coordDefault === undefined) { cancelled(); return; }
                     const coordinatorDefault = coordDefault.startsWith("Yes");
 
-                    // 10. Build and save config
+                    // 10. Edit dangerous commands
+                    const editDangerousChoice = await ctx.ui.select("Edit dangerous commands?", [
+                        "No — keep current list",
+                        "Yes — edit list",
+                    ]);
+                    if (editDangerousChoice === undefined) { cancelled(); return; }
+                    let finalDangerousCommands;
+                    if (editDangerousChoice.startsWith("Yes")) {
+                        // Show current list and let user edit each pattern
+                        ctx.ui.setWidget("orchestrator", [
+                            "⚡ Dangerous Commands Editor",
+                            "",
+                            "For each pattern: Keep, Edit, or Remove.",
+                        ]);
+                        const currentList = config.dangerousCommands.length > 0
+                            ? [...config.dangerousCommands]
+                            : [];
+                        const editedList = [];
+                        for (let i = 0; i < currentList.length; i++) {
+                            const pattern = currentList[i];
+                            const action = await ctx.ui.select(`[${i + 1}/${currentList.length}] "${pattern}"`, [
+                                "Keep",
+                                "Edit",
+                                "Remove",
+                            ]);
+                            if (action === undefined) { cancelled(); return; }
+                            if (action === "Keep") {
+                                editedList.push(pattern);
+                            } else if (action === "Edit") {
+                                const newVal = await ctx.ui.input(`Edit pattern #${i + 1}`, pattern);
+                                if (newVal === undefined) { cancelled(); return; }
+                                if (newVal.trim()) {
+                                    editedList.push(newVal.trim());
+                                } else {
+                                    // Empty = keep original
+                                    editedList.push(pattern);
+                                }
+                            }
+                            // Remove: skip entirely
+                        }
+                        // Add new patterns
+                        let addMore = true;
+                        while (addMore) {
+                            const addChoice = await ctx.ui.select("Add new pattern?", ["Yes", "No"]);
+                            if (addChoice === undefined) { cancelled(); return; }
+                            if (addChoice === "No") {
+                                addMore = false;
+                            } else {
+                                const newPattern = await ctx.ui.input("Enter new dangerous command pattern", "");
+                                if (newPattern === undefined) { cancelled(); return; }
+                                if (newPattern.trim()) {
+                                    editedList.push(newPattern.trim());
+                                }
+                            }
+                        }
+                        finalDangerousCommands = editedList;
+                        ctx.ui.setWidget("orchestrator", [
+                            "⚡ Dangerous commands updated",
+                            `Total patterns: ${finalDangerousCommands.length}`,
+                        ]);
+                        await new Promise(r => setTimeout(r, 1000));
+                    } else {
+                        finalDangerousCommands = [...config.dangerousCommands];
+                    }
+
+                    // 11. Build and save config
                     const newConfig = {
                         cloud: { model: cloudModel || config.cloud.model, models: cloudModels },
                         local: { model: localModel || config.local.model, models: localModels },
@@ -529,7 +598,7 @@ export const orchestratorExtension = (fan) => {
                         agentTimeouts: { ...config.agentTimeouts },
                         temperature,
                         agentTemperature,
-                        dangerousCommands: [...config.dangerousCommands],
+                        dangerousCommands: finalDangerousCommands,
                     };
 
                     const saved = saveConfig(newConfig);
