@@ -215,7 +215,6 @@ describe("Tool Call Without Result Tests", () => {
 		});
 	});
 
-
 	// =========================================================================
 	// OAuth-based providers (credentials from ~/.fan/agent/oauth.json)
 	// =========================================================================

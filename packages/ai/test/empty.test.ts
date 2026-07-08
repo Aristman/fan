@@ -427,7 +427,6 @@ describe("AI Providers Empty Message Tests", () => {
 		});
 	});
 
-
 	// =========================================================================
 	// OAuth-based providers (credentials from ~/.fan/agent/oauth.json)
 	// =========================================================================

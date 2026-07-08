@@ -71,7 +71,7 @@ describe("ModelRegistry", () => {
 		writeFileSync(modelsJsonPath, JSON.stringify({ providers }));
 	}
 
-	function createProviderConfig(
+	function _createProviderConfig(
 		baseUrl: string,
 		models: Array<{ id: string; name?: string }>,
 		api: string = "anthropic-messages",
@@ -1273,7 +1273,7 @@ describe("ModelRegistry", () => {
 		test("custom provider with apiKey as literal value (not matching env var) is available as literal", () => {
 			// "literal-value" is not an env var name so resolveConfigValueUncached
 			// returns it as-is (literal fallback)
-			delete process.env["literal_api_key_value"];
+			delete process.env.literal_api_key_value;
 
 			writeRawModelsJson({
 				"custom-literal-key": {

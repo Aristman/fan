@@ -379,7 +379,7 @@ async function verifyUpdate(
 export function cleanupOldBinaries(): void {
 	try {
 		const installDir = dirname(realpathSync(process.execPath));
-		const oldBinary = join(installDir, basename(process.execPath) + ".old");
+		const oldBinary = join(installDir, `${basename(process.execPath)}.old`);
 		if (existsSync(oldBinary)) {
 			unlinkSync(oldBinary);
 		}
@@ -479,7 +479,7 @@ export async function performUpdate(options?: {
 	if (process.platform === "win32") {
 		// On Windows, we can rename a running executable (the OS keeps the file
 		// handle open by inode). This avoids needing a detached helper process.
-		const oldBinary = currentBinary + ".old";
+		const oldBinary = `${currentBinary}.old`;
 
 		// Remove any previous .old file
 		try {
@@ -526,7 +526,7 @@ export async function performUpdate(options?: {
 		// Linux/macOS: use a staged replacement to avoid issues with replacing a
 		// running executable in place (especially on macOS APFS with signed
 		// binaries). Process: current -> .old, new -> staging -> current.
-		const oldBinary = currentBinary + ".old";
+		const oldBinary = `${currentBinary}.old`;
 		const staging = join(installDir, `.fan-update-${Date.now()}`);
 
 		try {

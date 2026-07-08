@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ModelManager } from "../model-manager.js";
 import type { BudgetAlert, ModelSettingData, RoutingRuleData } from "../types.js";
 
@@ -142,8 +142,10 @@ describe("ModelManager", () => {
 			budget: { db: dbs.budgetDb },
 		});
 		// Need to trigger load
+		// biome-ignore lint/complexity/useLiteralKeys: accessing private members
 		mm.getRouter()["loaded"] = true;
 		for (const s of dbs.settings) {
+			// biome-ignore lint/complexity/useLiteralKeys: accessing private member
 			mm.getRouter()["modelSettings"].set(`${s.provider}/${s.model}`, s);
 		}
 
@@ -171,8 +173,10 @@ describe("ModelManager", () => {
 			router: { db: dbs.routerDb },
 			budget: { db: dbs.budgetDb },
 		});
+		// biome-ignore lint/complexity/useLiteralKeys: accessing private members
 		mm.getRouter()["loaded"] = true;
 		for (const s of dbs.settings) {
+			// biome-ignore lint/complexity/useLiteralKeys: accessing private member
 			mm.getRouter()["modelSettings"].set(`${s.provider}/${s.model}`, s);
 		}
 

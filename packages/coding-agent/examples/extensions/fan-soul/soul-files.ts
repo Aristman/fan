@@ -117,7 +117,7 @@ export function buildInjection(): string {
 		const max = SOUL_FILES.soul.maxChars;
 		let content = all.soul;
 		if (content.length > max) {
-			content = content.slice(0, max) + "\n\n_[truncated]_";
+			content = `${content.slice(0, max)}\n\n_[truncated]_`;
 		}
 		parts.push(content);
 	}
@@ -126,7 +126,7 @@ export function buildInjection(): string {
 		const max = SOUL_FILES.user.maxChars;
 		let content = all.user;
 		if (content.length > max) {
-			content = content.slice(0, max) + "\n\n_[truncated]_";
+			content = `${content.slice(0, max)}\n\n_[truncated]_`;
 		}
 		parts.push(content);
 	}
@@ -165,6 +165,7 @@ export function parseSections(content: string): UserSection[] {
 	const closingRegex = /<!--\s*\/section:(\w+)\s*-->/g;
 
 	let markerMatch: RegExpExecArray | null;
+	// biome-ignore lint/suspicious/noAssignInExpressions: standard regex loop pattern
 	while ((markerMatch = markerRegex.exec(content)) !== null) {
 		closingRegex.lastIndex = markerMatch.index;
 		const closingMatch = closingRegex.exec(content);
@@ -206,7 +207,7 @@ export function mergeSection(
 	if (action === "remove") {
 		const before = fullContent.slice(0, openIdx).trimEnd();
 		const after = fullContent.slice(closeIdx + closeMarker.length).trimStart();
-		return (before + "\n" + after).replace(/\n{3,}/g, "\n\n").trim();
+		return `${before}\n${after}`.replace(/\n{3,}/g, "\n\n").trim();
 	}
 
 	// Check if content already exists
@@ -219,13 +220,13 @@ export function mergeSection(
 	const heading = `\n## ${sectionName.charAt(0).toUpperCase() + sectionName.slice(1)}`;
 
 	if (action === "replace") {
-		return before + heading + "\n" + newContent + "\n" + after;
+		return `${before + heading}\n${newContent}\n${after}`;
 	}
 
 	// append
 	const existingContent = fullContent.slice(openIdx + openMarker.length, closeIdx).trim();
-	const merged = existingContent ? existingContent + "\n" + newContent : newContent;
-	return before + heading + "\n" + merged + "\n" + after;
+	const merged = existingContent ? `${existingContent}\n${newContent}` : newContent;
+	return `${before + heading}\n${merged}\n${after}`;
 }
 
 export function sectionContains(fullContent: string, sectionName: UserSectionName, content: string): boolean {
@@ -251,7 +252,7 @@ export async function writeSoulFile(key: SoulFileKey, content: string): Promise<
 
 	// Create backup
 	if (existsSync(path)) {
-		writeFileSync(path + ".bak", readFileSync(path, "utf-8"), "utf-8");
+		writeFileSync(`${path}.bak`, readFileSync(path, "utf-8"), "utf-8");
 	}
 
 	try {
@@ -332,7 +333,7 @@ export function compactUserFile(maxChars: number = SOUL_FILES.user.maxChars): st
 
 	const sections = parseSections(content);
 	const headerMatch = content.match(/^# USER.md.*?\n\n/);
-	const header = headerMatch?.[0] || "# USER.md — Operator Profile\n\n";
+	const _header = headerMatch?.[0] || "# USER.md — Operator Profile\n\n";
 
 	// Trim preferences section first (most expendable)
 	const prefs = sections.find((s) => s.name === "preferences");
@@ -344,7 +345,7 @@ export function compactUserFile(maxChars: number = SOUL_FILES.user.maxChars): st
 		let result = content;
 		result = result.replace(
 			new RegExp(
-				escapeRegex(`<!-- section:preferences -->`) + "[\\s\\S]*?" + escapeRegex(`<!-- /section:preferences -->`),
+				`${escapeRegex(`<!-- section:preferences -->`)}[\\s\\S]*?${escapeRegex(`<!-- /section:preferences -->`)}`,
 			),
 			`<!-- section:preferences -->\n## Preferences\n${newPrefs}\n<!-- /section:preferences -->`,
 		);

@@ -27,7 +27,7 @@ export class BudgetTracker {
 	/** Load budget data from DB */
 	private async load(): Promise<void> {
 		try {
-			let budgets;
+			let budgets: any[];
 			if (this.dbAdapter) {
 				budgets = await this.dbAdapter.getAllBudgets();
 			} else {

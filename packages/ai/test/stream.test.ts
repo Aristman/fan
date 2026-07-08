@@ -1175,7 +1175,6 @@ describe("Generate E2E Tests", () => {
 		});
 	});
 
-
 	// Check if ollama is installed and local LLM tests are enabled
 	let ollamaInstalled = false;
 	if (!process.env.FAN_NO_LOCAL_LLM) {

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { ProviderRouter } from "../router.js";
 import type { ModelSettingData, RoutingRuleData } from "../types.js";
 

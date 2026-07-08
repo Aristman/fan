@@ -5,7 +5,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, unlinkSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { InstalledPackage, RepoEntry, RepoIndex, RepoPackage } from "./types.js";
 
@@ -175,7 +175,7 @@ export class RepoClient {
 						allPackages.push({ ...pkg, repoName: repo.name, repoUrl: repo.url });
 					}
 				}
-			} catch (err) {
+			} catch (_err) {
 				// Skip faulty repos silently
 			}
 		}

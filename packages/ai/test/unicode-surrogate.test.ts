@@ -706,7 +706,6 @@ describe("AI Providers Unicode Surrogate Pair Tests", () => {
 		});
 	});
 
-
 	describe("OpenAI Codex Provider Unicode Handling", () => {
 		it.skipIf(!openaiCodexToken)(
 			"gpt-5.2-codex - should handle emoji in tool results",

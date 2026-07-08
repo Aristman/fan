@@ -390,7 +390,7 @@ export async function showExtensionBrowser(
 
 					// Version
 					let versionStr: string;
-					if (installed && installed.updateAvailable && installed.updateVersion) {
+					if (installed?.updateAvailable && installed.updateVersion) {
 						versionStr = theme.fg("warning", `${installed.version} → ${installed.updateVersion}`);
 					} else if (installed) {
 						versionStr = theme.fg("success", `v${displayVersion}`);

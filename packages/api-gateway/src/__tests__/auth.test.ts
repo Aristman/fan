@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Use vi.hoisted to create stable mock references that persist across getPrismaClient() calls
 const { mockClientToken, mockRandomBytes } = vi.hoisted(() => ({
@@ -26,7 +26,7 @@ vi.mock("node:crypto", () => ({
 }));
 
 // Set FAN_NO_AUTH to prevent real auth checks during tests
-process.env["FAN_NO_AUTH"] = "1";
+process.env.FAN_NO_AUTH = "1";
 
 import { generateToken, isAuthDisabled, listTokens, revokeToken, validateToken } from "../auth.js";
 
@@ -41,17 +41,17 @@ describe("Auth module", () => {
 
 	describe("isAuthDisabled", () => {
 		it("should return true when FAN_NO_AUTH=1", () => {
-			process.env["FAN_NO_AUTH"] = "1";
+			process.env.FAN_NO_AUTH = "1";
 			expect(isAuthDisabled()).toBe(true);
 		});
 
 		it("should return true when FAN_NO_AUTH=true", () => {
-			process.env["FAN_NO_AUTH"] = "true";
+			process.env.FAN_NO_AUTH = "true";
 			expect(isAuthDisabled()).toBe(true);
 		});
 
 		it("should return false when FAN_NO_AUTH is not set", () => {
-			delete process.env["FAN_NO_AUTH"];
+			delete process.env.FAN_NO_AUTH;
 			expect(isAuthDisabled()).toBe(false);
 		});
 	});

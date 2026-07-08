@@ -16,7 +16,7 @@ interface DiagnosticResult {
 
 export async function runDiagnostics(): Promise<boolean> {
 	const results: DiagnosticResult[] = [];
-	const require = createRequire(import.meta.url);
+	const _require = createRequire(import.meta.url);
 
 	// 1. Node.js version check (>= 20)
 	const nodeVersion = process.versions.node;
@@ -117,7 +117,7 @@ export async function runDiagnostics(): Promise<boolean> {
 	// 6. API keys check
 	const { providers } = getProvidersRegistry();
 	const configuredProviders: string[] = [];
-	for (const [id, meta] of Object.entries(providers)) {
+	for (const [_id, meta] of Object.entries(providers)) {
 		if (meta.envVars.some((v) => process.env[v])) {
 			configuredProviders.push(meta.displayName);
 		}

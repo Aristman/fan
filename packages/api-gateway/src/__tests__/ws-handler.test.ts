@@ -22,7 +22,7 @@ vi.mock("@fan/db", () => ({
 	}),
 }));
 
-process.env["FAN_NO_AUTH"] = "1";
+process.env.FAN_NO_AUTH = "1";
 
 describe("WebSocket Handler", () => {
 	let server: Server;

@@ -175,7 +175,7 @@ export class BudgetAlertToast extends LitElement {
         <!-- Header -->
         <div class="flex items-center justify-between mb-1.5">
             <span class="flex items-center gap-1.5 text-xs font-semibold">
-            ${icon(AlertTriangle, "w-3.5 h-3.5 " + iconColor)}
+            ${icon(AlertTriangle, `w-3.5 h-3.5 ${iconColor}`)}
             Budget Alert
           </span>
           <button

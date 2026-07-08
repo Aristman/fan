@@ -6,7 +6,6 @@ import {
 	anySoulFileExists,
 	buildInjection,
 	compactUserFile,
-	createAllMissing,
 	createFromTemplate,
 	escapeRegex,
 	fileExists,
@@ -476,7 +475,7 @@ async function updateSoul(
 		if (regex.test(result)) {
 			result = result.replace(regex, `${heading}\n${content}`);
 		} else {
-			result = result.trimEnd() + `\n\n${heading}\n${content}`;
+			result = `${result.trimEnd()}\n\n${heading}\n${content}`;
 		}
 	} else if (action === "append") {
 		if (section) {
@@ -485,10 +484,10 @@ async function updateSoul(
 			if (regex.test(result)) {
 				result = result.replace(regex, (match) => `${match}\n${content}`);
 			} else {
-				result = result.trimEnd() + `\n\n${heading}\n${content}`;
+				result = `${result.trimEnd()}\n\n${heading}\n${content}`;
 			}
 		} else {
-			result = result.trimEnd() + `\n\n${content}`;
+			result = `${result.trimEnd()}\n\n${content}`;
 		}
 	}
 

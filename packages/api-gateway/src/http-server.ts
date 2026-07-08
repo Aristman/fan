@@ -376,8 +376,8 @@ export async function startServer(
 	console.log(`[api-gateway] Server running at http://${host}:${port}`);
 	console.log(`[api-gateway] Health: http://${host}:${port}/api/health`);
 	console.log(`[api-gateway] Docs: http://${host}:${port}/api/health`);
-	if (process.env["FAN_NO_AUTH"]) {
-		console.warn(`[api-gateway] ⚠️  Auth disabled (FAN_NO_AUTH=${process.env["FAN_NO_AUTH"]})`);
+	if (process.env.FAN_NO_AUTH) {
+		console.warn(`[api-gateway] ⚠️  Auth disabled (FAN_NO_AUTH=${process.env.FAN_NO_AUTH})`);
 	}
 
 	return { port, stop };

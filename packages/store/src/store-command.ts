@@ -13,6 +13,7 @@ import type { ArchiveInstaller } from "./installer.js";
 import { ProgressOverlay } from "./progress-overlay.js";
 import type { RepoClient } from "./repo-client.js";
 import type { StoreDatabase } from "./storage.js";
+import type { InstalledPackage } from "./types.js";
 
 // ──────────────────────────────────────────────
 // /store command
@@ -178,7 +179,7 @@ Commands:
 						overlay.setMessage(detail ?? stage);
 					};
 
-					let installed;
+					let installed: InstalledPackage | undefined;
 					if (isFilePath) {
 						installed = await getInstaller().installFromArchive(source, scope, undefined, onProgress);
 					} else {

@@ -169,7 +169,7 @@ export function parseArgs(args: string[]): Args {
 			result.verbose = true;
 		} else if (arg === "--port") {
 			const portStr = args[++i];
-			if (!portStr || isNaN(Number(portStr))) {
+			if (!portStr || Number.isNaN(Number(portStr))) {
 				result.diagnostics.push({ type: "error", message: `--port requires a valid number` });
 			} else {
 				result.port = Number(portStr);

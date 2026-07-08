@@ -183,8 +183,6 @@ ajv.addSchema(ModelsConfigSchema, "ModelsConfig");
 
 type ModelsConfig = Static<typeof ModelsConfigSchema>;
 type ProviderConfig = NonNullable<ModelsConfig["providers"][string]>;
-type ModelOverrideMap = NonNullable<ProviderConfig["modelOverrides"]>;
-
 /** Provider override config (baseUrl, compat) without request auth/headers */
 interface ProviderOverride {
 	baseUrl?: string;

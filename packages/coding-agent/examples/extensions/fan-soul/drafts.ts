@@ -1,4 +1,4 @@
-import type { DraftEntry, DraftStatus, Fact } from "./types.js";
+import type { DraftEntry, Fact } from "./types.js";
 
 const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const MAX_DRAFTS = 10;
@@ -56,7 +56,7 @@ export class DraftQueue {
 
 	private autoExpire(): void {
 		const now = Date.now();
-		for (const [id, entry] of this.drafts) {
+		for (const [_id, entry] of this.drafts) {
 			if (entry.status === "pending" && entry.expiresAt <= now) {
 				entry.status = "rejected";
 			}
