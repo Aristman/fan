@@ -231,32 +231,18 @@ export const orchestratorExtension = (fan) => {
         const counts = taskManager.getStatusCounts();
         console.log(`[FAN Orchestrator] Session shut down. Tasks: ${JSON.stringify(counts)}`);
     });
-    // ---- Permission system ----
+    // ---- Permission system (audit only) ----
+    // Core bash tool now handles dangerous command blocking.
+    // This hook only logs all bash commands for audit purposes.
     fan.on("tool_call", async (event, ctx) => {
-        // Interactive permission check for dangerous bash commands
         if (event.toolName === "bash") {
             const cmd = event.args?.command;
             if (cmd) {
                 const reason = isDangerousCommand(cmd, config.dangerousCommands);
                 if (reason) {
-                    // Interactive mode — ask user to allow or block
-                    if (ctx.hasUI && typeof ctx.ui.select === 'function') {
-                        const choice = await ctx.ui.select(
-                            `⚠️ Dangerous command detected: ${reason}\n\nCommand: ${cmd.trim().slice(0, 120)}${cmd.trim().length > 120 ? "..." : ""}`,
-                            ['Allow', 'Block']
-                        );
-                        if (choice === 'Block' || choice === undefined) {
-                            logAuditDecision({ command: cmd, reason, decision: "block", agentType: null, workerId: null });
-                            return { block: true, reason: `⚠️ Blocked by user: ${reason}` };
-                        }
-                        // choice === 'Allow' — pass through, return empty to allow
-                        logAuditDecision({ command: cmd, reason, decision: "allow", agentType: null, workerId: null });
-                        return {};
-                    } else {
-                        // Headless mode — default to blocking
-                        logAuditDecision({ command: cmd, reason, decision: "headless_block", agentType: null, workerId: null });
-                        return { block: true, reason: `⚠️ Blocked (headless): ${reason}` };
-                    }
+                    logAuditDecision({ command: cmd, reason, decision: "block", agentType: null, workerId: null });
+                } else {
+                    logAuditDecision({ command: cmd, reason: null, decision: "allow", agentType: null, workerId: null });
                 }
             }
         }
