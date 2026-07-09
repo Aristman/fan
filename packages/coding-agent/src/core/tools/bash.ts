@@ -276,7 +276,7 @@ export function createBashToolDefinition(
 		parameters: bashSchema,
 		async execute(
 			_toolCallId,
-			{ command, timeout }: { command: string; timeout?: number },
+			{ command, timeout, _fanDangerouslyApproved }: { command: string; timeout?: number; _fanDangerouslyApproved?: boolean },
 			signal?: AbortSignal,
 			onUpdate?,
 			_ctx?,
@@ -335,10 +335,13 @@ export function createBashToolDefinition(
 					}
 				};
 
-				const danger = isDangerousCommand(spawnContext.command);
-				if (danger) {
-					reject(new Error(`Blocked: ${danger}`));
-					return;
+				// Skip dangerous command check when explicitly approved by user or env var is set
+				if (_fanDangerouslyApproved !== true && process.env.FAN_DANGEROUSLY_SKIP_PERMISSIONS !== "true") {
+					const danger = isDangerousCommand(spawnContext.command);
+					if (danger) {
+						reject(new Error(`Blocked: ${danger}`));
+						return;
+					}
 				}
 
 				ops.exec(spawnContext.command, spawnContext.cwd, {

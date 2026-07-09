@@ -44,6 +44,7 @@ export interface Args {
 	listModels?: string | true;
 	offline?: boolean;
 	verbose?: boolean;
+	dangerouslySkipPermissions?: boolean;
 	port?: number;
 	host?: string;
 	temperature?: number;
@@ -191,6 +192,8 @@ export function parseArgs(args: string[]): Args {
 		} else if (arg === "--_server-daemon") {
 			// Internal flag: run server in daemon mode. Consumed silently.
 			result.mode = "server";
+		} else if (arg === "--dangerously-skip-permissions") {
+			result.dangerouslySkipPermissions = true;
 		} else if (arg === "--offline") {
 			result.offline = true;
 		} else if (arg.startsWith("@")) {
@@ -286,6 +289,7 @@ ${chalk.bold("Options:")}
   --export <file>                Export session file to HTML and exit
   --list-models [search]         List available models (with optional fuzzy search)
   --verbose                      Force verbose startup (overrides quietStartup setting)
+  --dangerously-skip-permissions  Skip dangerous command checks in the bash tool
   --offline                      Disable startup network operations (same as FAN_OFFLINE=1)
   --help, -h                     Show this help
   --version, -v                  Show version number

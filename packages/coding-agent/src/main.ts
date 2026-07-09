@@ -838,6 +838,11 @@ export async function main(args: string[]) {
 		takeOverStdout();
 	}
 
+	// Propagate --dangerously-skip-permissions to subprocesses via env var
+	if (parsed.dangerouslySkipPermissions) {
+		process.env.FAN_DANGEROUSLY_SKIP_PERMISSIONS = "true";
+	}
+
 	if (parsed.version) {
 		console.log(VERSION);
 		process.exit(0);
