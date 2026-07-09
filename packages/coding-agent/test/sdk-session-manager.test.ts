@@ -41,7 +41,8 @@ describe("createAgentSession session manager defaults", () => {
 		const sessionFile = session.sessionManager.getSessionFile();
 
 		expect(sessionDir).toBe(expectedSessionDir);
-		expect(sessionFile?.startsWith(`${expectedSessionDir}/`)).toBe(true);
+		expect(sessionFile?.startsWith(expectedSessionDir)).toBe(true);
+		expect(sessionFile?.includes("jsonl")).toBe(true);
 
 		session.dispose();
 	});

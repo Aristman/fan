@@ -109,7 +109,11 @@ describe("AgentSessionRuntime characterization", () => {
 			await runtime.dispose();
 			faux.unregister();
 			if (existsSync(tempDir)) {
-				rmSync(tempDir, { recursive: true, force: true });
+				try {
+					rmSync(tempDir, { recursive: true, force: true });
+				} catch {
+					// Windows file locking may prevent immediate cleanup
+				}
 			}
 		});
 

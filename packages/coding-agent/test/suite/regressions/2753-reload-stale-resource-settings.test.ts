@@ -84,7 +84,11 @@ describe("issue #2753 reload stale resource settings", () => {
 			runtime.session.dispose();
 			faux.unregister();
 			if (existsSync(tempDir)) {
-				rmSync(tempDir, { recursive: true, force: true });
+				try {
+					rmSync(tempDir, { recursive: true, force: true });
+				} catch {
+					// Windows file locking may prevent immediate cleanup
+				}
 			}
 		});
 

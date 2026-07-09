@@ -41,6 +41,7 @@ __pycache__/
 *.pyc
 http-check.json
 *.bak
+packages/coding-agent/Temp/
 
 # Coverage
 coverage/
