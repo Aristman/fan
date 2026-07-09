@@ -1,7 +1,15 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "noEmit": true
+    "noEmit": true,
+    "paths": {
+      "@seaagents/fan-ai": ["../../packages/ai/src/index.ts"],
+      "@seaagents/fan-ai/*": ["../../packages/ai/src/*.ts"],
+      "@seaagents/fan-agent-core": ["../../packages/agent/src/index.ts"],
+      "@seaagents/fan-agent-core/*": ["../../packages/agent/src/*.ts"],
+      "@seaagents/fan-tui": ["../../packages/tui/src/index.ts"],
+      "@seaagents/fan-tui/*": ["../../packages/tui/src/*.ts"]
+    }
   },
   "include": ["src/**/*"]
 }

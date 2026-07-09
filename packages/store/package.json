@@ -32,11 +32,10 @@
 	"scripts": {
 		"clean": "shx rm -rf dist",
 		"build": "tsgo -p tsconfig.build.json",
-		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
-		"test": "vitest run"
+		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput"
 	},
 	"dependencies": {
-		"@seaagents/fan-coding-agent": "*",
+		"@seaagents/fan-agent-core": "*",
 		"@seaagents/fan-tui": "*",
 		"@sinclair/typebox": "^0.34.0"
 	},

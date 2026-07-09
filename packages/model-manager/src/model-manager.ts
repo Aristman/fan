@@ -163,8 +163,9 @@ export class ModelManager {
 	// --- Routing Management ---
 
 	async getRoutingRules(): Promise<RoutingRuleData[]> {
-		// Force load if not loaded yet
+		// Force load if not loaded yet — use bracket to access private member
 		try {
+			// biome-ignore lint/complexity/useLiteralKeys: accessing private member
 			await this.router["ensureLoaded"]();
 		} catch {
 			/* ignore */
@@ -196,6 +197,7 @@ export class ModelManager {
 
 	async getAllModelSettings(): Promise<ModelSettingData[]> {
 		try {
+			// biome-ignore lint/complexity/useLiteralKeys: accessing private member
 			await this.router["ensureLoaded"]();
 		} catch {
 			/* ignore */

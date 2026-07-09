@@ -75,7 +75,7 @@ export async function revokeToken(id: string): Promise<boolean> {
 
 /** Check if auth is disabled via environment variable */
 export function isAuthDisabled(): boolean {
-	return process.env["FAN_NO_AUTH"] === "1" || process.env["FAN_NO_AUTH"] === "true";
+	return process.env.FAN_NO_AUTH === "1" || process.env.FAN_NO_AUTH === "true";
 }
 
 /** Hono middleware for token-based authentication.

@@ -21,7 +21,7 @@ class MockWebSocket {
 	close() {
 		this.readyState = 3;
 	}
-	send(data: string) {}
+	send(_data: string) {}
 
 	// Helper to simulate server message
 	simulateMessage(data: object) {

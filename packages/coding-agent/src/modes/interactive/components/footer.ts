@@ -127,7 +127,7 @@ export class FooterComponent implements Component {
 		if (state.model && this.session.modelManager) {
 			try {
 				const budgetStatus = this.session.modelManager.getCachedBudgetStatus(state.model.provider, "daily");
-				if (budgetStatus && budgetStatus.costLimit && budgetStatus.costLimit > 0) {
+				if (budgetStatus?.costLimit && budgetStatus.costLimit > 0) {
 					const budgetStr = `💰 $${budgetStatus.costUsed.toFixed(2)}/$${budgetStatus.costLimit.toFixed(2)}`;
 					const ratio = budgetStatus.costUsed / budgetStatus.costLimit;
 					let budgetColor: ThemeColor;

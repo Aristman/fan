@@ -108,6 +108,8 @@ describe("totalTokens field", () => {
 			"claude-3-5-haiku - should return totalTokens equal to sum of components",
 			{ retry: 3, timeout: 60000 },
 			async () => {
+				// @ts-expect-error -- model ID removed from generated MODELS
+
 				const llm = getModel("anthropic", "claude-3-5-haiku-20241022");
 
 				console.log(`\nAnthropic / ${llm.id}:`);
@@ -131,6 +133,8 @@ describe("totalTokens field", () => {
 			"claude-sonnet-4 - should return totalTokens equal to sum of components",
 			{ retry: 3, timeout: 60000 },
 			async () => {
+				// @ts-expect-error -- model ID removed from generated MODELS
+
 				const llm = getModel("anthropic", "claude-sonnet-4-20250514");
 
 				console.log(`\nAnthropic OAuth / ${llm.id}:`);
@@ -245,6 +249,8 @@ describe("totalTokens field", () => {
 			"grok-3-fast - should return totalTokens equal to sum of components",
 			{ retry: 3, timeout: 60000 },
 			async () => {
+				// @ts-expect-error -- model ID removed from generated MODELS
+
 				const llm = getModel("xai", "grok-3-fast");
 
 				console.log(`\nxAI / ${llm.id}:`);
@@ -499,6 +505,8 @@ describe("totalTokens field", () => {
 			"google/gemini-2.0-flash-001 - should return totalTokens equal to sum of components",
 			{ retry: 3, timeout: 60000 },
 			async () => {
+				// @ts-expect-error -- model ID removed from generated MODELS
+
 				const llm = getModel("openrouter", "google/gemini-2.0-flash-001");
 
 				console.log(`\nOpenRouter / ${llm.id}:`);
@@ -539,6 +547,8 @@ describe("totalTokens field", () => {
 			"gpt-4o - should return totalTokens equal to sum of components",
 			{ retry: 3, timeout: 60000 },
 			async () => {
+				// @ts-expect-error -- model ID removed from generated MODELS
+
 				const llm = getModel("github-copilot", "gpt-4o");
 
 				console.log(`\nGitHub Copilot / ${llm.id}:`);
@@ -649,7 +659,6 @@ describe("totalTokens field", () => {
 			},
 		);
 	});
-
 
 	// =========================================================================
 	// OpenAI Codex (OAuth)

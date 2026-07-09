@@ -134,6 +134,8 @@ describe("Token Statistics on Abort", () => {
 	});
 
 	describe.skipIf(!process.env.XAI_API_KEY)("xAI Provider", () => {
+		// @ts-expect-error -- model ID removed from generated MODELS
+
 		const llm = getModel("xai", "grok-3-fast");
 
 		it("should include token stats when aborted mid-stream", { retry: 3, timeout: 30000 }, async () => {
@@ -150,6 +152,8 @@ describe("Token Statistics on Abort", () => {
 	});
 
 	describe.skipIf(!process.env.CEREBRAS_API_KEY)("Cerebras Provider", () => {
+		// @ts-expect-error -- model ID removed from generated MODELS
+
 		const llm = getModel("cerebras", "qwen-3-235b-a22b-instruct-2507");
 
 		it("should include token stats when aborted mid-stream", { retry: 3, timeout: 30000 }, async () => {
@@ -226,6 +230,8 @@ describe("Token Statistics on Abort", () => {
 			"gpt-4o - should include token stats when aborted mid-stream",
 			{ retry: 3, timeout: 30000 },
 			async () => {
+				// @ts-expect-error -- model ID removed from generated MODELS
+
 				const llm = getModel("github-copilot", "gpt-4o");
 				await testTokensOnAbort(llm, { apiKey: githubCopilotToken });
 			},
@@ -291,5 +297,4 @@ describe("Token Statistics on Abort", () => {
 			},
 		);
 	});
-
 });

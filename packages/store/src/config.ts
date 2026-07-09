@@ -7,7 +7,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { getAgentDir } from "@seaagents/fan-coding-agent";
+import { getAgentDir } from "@seaagents/fan-agent-core";
 import type { RepoEntry } from "./types.js";
 
 // ──────────────────────────────────────────────

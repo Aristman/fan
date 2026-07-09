@@ -123,7 +123,7 @@ export class BudgetPanel extends LitElement {
             title="Refresh budgets"
             aria-label="Refresh budgets"
           >
-            ${icon(RefreshCw, "w-3.5 h-3.5" + (this.loading ? " animate-spin" : ""))}
+            ${icon(RefreshCw, `w-3.5 h-3.5${this.loading ? " animate-spin" : ""}`)}
           </button>
         </div>
 

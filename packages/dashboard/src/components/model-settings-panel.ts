@@ -160,7 +160,7 @@ export class ModelSettingsPanel extends LitElement {
             title="Refresh model data"
             aria-label="Refresh model data"
           >
-            ${icon(RefreshCw, "w-3.5 h-3.5" + (this.loading ? " animate-spin" : ""))}
+            ${icon(RefreshCw, `w-3.5 h-3.5${this.loading ? " animate-spin" : ""}`)}
           </button>
         </div>
 
@@ -398,7 +398,7 @@ export class ModelSettingsPanel extends LitElement {
             title="Save changes"
             aria-label="Save changes"
           >
-            ${icon(Save, "w-3.5 h-3.5" + (this.saving ? " animate-pulse" : ""))}
+            ${icon(Save, `w-3.5 h-3.5${this.saving ? " animate-pulse" : ""}`)}
           </button>
           <button
             class="p-1 rounded hover:bg-red-500/20 transition-colors text-red-400 hover:text-red-300"

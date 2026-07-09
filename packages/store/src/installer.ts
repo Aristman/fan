@@ -54,7 +54,7 @@ export class ArchiveInstaller {
 	private validatePath(baseDir: string, filePath: string): string {
 		const resolved = resolve(baseDir, filePath);
 		const normalizedBase = resolve(baseDir);
-		if (!resolved.startsWith(normalizedBase + "/") && resolved !== normalizedBase) {
+		if (!resolved.startsWith(`${normalizedBase}/`) && resolved !== normalizedBase) {
 			throw new Error(`Path traversal detected: ${filePath} escapes ${baseDir}`);
 		}
 		return resolved;
@@ -369,7 +369,7 @@ export class ArchiveInstaller {
 			}
 
 			if (cleaned) {
-				await writeFile(pkgJsonPath, JSON.stringify(pkgJson, null, 2) + "\n", "utf-8");
+				await writeFile(pkgJsonPath, `${JSON.stringify(pkgJson, null, 2)}\n`, "utf-8");
 			}
 		} catch {
 			// If we can't read/parse package.json, skip cleanup and try install anyway
@@ -503,7 +503,7 @@ export class ArchiveInstaller {
 	 */
 	async installFromRepo(
 		pkg: RepoPackage,
-		repos: RepoEntry[],
+		_repos: RepoEntry[],
 		scope: "user" | "project",
 		signal?: AbortSignal,
 		onProgress?: ProgressCallback,
@@ -590,7 +590,7 @@ export class ArchiveInstaller {
 	async updateFromRepo(
 		pkg: InstalledPackage,
 		repoPkg: RepoPackage,
-		repos: RepoEntry[],
+		_repos: RepoEntry[],
 		signal?: AbortSignal,
 		onProgress?: ProgressCallback,
 	): Promise<InstalledPackage> {
@@ -842,7 +842,7 @@ export class ArchiveInstaller {
 	/**
 	 * Detect package name from extracted directory contents.
 	 */
-	private async detectName(dir: string, type: ResourceType): Promise<string> {
+	private async detectName(dir: string, _type: ResourceType): Promise<string> {
 		const pkgJsonPath = join(dir, "package.json");
 		if (existsSync(pkgJsonPath)) {
 			try {

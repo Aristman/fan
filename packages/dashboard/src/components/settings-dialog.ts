@@ -3,7 +3,7 @@
 import type { TokenInfo } from "@fan/api-gateway/types";
 import { html, LitElement, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import { Check, Copy, Key, Link, Loader2, Plus, RefreshCw, Trash2, X } from "lucide";
+import { Key, Link } from "lucide";
 import { FanApiClient } from "../api/client.js";
 
 // ---------------------------------------------------------------------------
@@ -333,7 +333,9 @@ export class SettingsDialog extends LitElement {
             id="settings-url"
             type="url"
             .value=${this.apiUrl}
-            @input=${(e: Event) => (this.apiUrl = (e.target as HTMLInputElement).value)}
+            @input=${(e: Event) => {
+					this.apiUrl = (e.target as HTMLInputElement).value;
+				}}
             placeholder="http://localhost:3456"
             class="w-full px-3 py-2 text-sm rounded-lg border border-border bg-background
                    text-foreground placeholder:text-muted-foreground
@@ -354,7 +356,9 @@ export class SettingsDialog extends LitElement {
             id="settings-token"
             type="password"
             .value=${this.token}
-            @input=${(e: Event) => (this.token = (e.target as HTMLInputElement).value)}
+            @input=${(e: Event) => {
+					this.token = (e.target as HTMLInputElement).value;
+				}}
             placeholder="••••••••••••••••"
             class="w-full px-3 py-2 text-sm rounded-lg border border-border bg-background
                    text-foreground placeholder:text-muted-foreground
@@ -453,7 +457,9 @@ export class SettingsDialog extends LitElement {
               id="new-token-name"
               type="text"
               .value=${this.newTokenName}
-              @input=${(e: Event) => (this.newTokenName = (e.target as HTMLInputElement).value)}
+              @input=${(e: Event) => {
+						this.newTokenName = (e.target as HTMLInputElement).value;
+					}}
               @keydown=${(e: KeyboardEvent) => {
 						if (e.key === "Enter") this.generateToken();
 					}}

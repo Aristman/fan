@@ -1,6 +1,14 @@
 // Main chat interface
 
-export type { Agent, AgentMessage, AgentState, ThinkingLevel } from "@seaagents/fan-agent-core";
+// Message components
+export type {
+	Agent,
+	AgentMessage,
+	AgentState,
+	ArtifactMessage,
+	ThinkingLevel,
+	UserMessageWithAttachments,
+} from "@seaagents/fan-agent-core";
 export type { Model } from "@seaagents/fan-ai";
 export { ChatPanel } from "./ChatPanel.js";
 // Components
@@ -12,8 +20,6 @@ export { ExpandableSection } from "./components/ExpandableSection.js";
 export { Input } from "./components/Input.js";
 export { MessageEditor } from "./components/MessageEditor.js";
 export { MessageList } from "./components/MessageList.js";
-// Message components
-export type { ArtifactMessage, UserMessageWithAttachments } from "./components/Messages.js";
 export {
 	AbortedMessage,
 	AssistantMessage,

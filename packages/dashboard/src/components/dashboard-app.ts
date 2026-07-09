@@ -201,23 +201,6 @@ export class DashboardApp extends LitElement {
 		this.sidebarOpen = false;
 	}
 
-	private async _handleNewSession(): Promise<void> {
-		try {
-			const res = await this.apiClient.createSession();
-			this.currentSessionId = res.id;
-			this.currentView = "chat";
-			this.dispatchEvent(
-				new CustomEvent("fan:session-created", {
-					detail: { sessionId: res.id },
-					bubbles: true,
-					composed: true,
-				}),
-			);
-		} catch (err) {
-			console.error("Failed to create session", err);
-		}
-	}
-
 	// -----------------------------------------------------------------------
 	// Render
 	// -----------------------------------------------------------------------
@@ -241,7 +224,9 @@ export class DashboardApp extends LitElement {
       <div class="border-t border-border px-3 pt-3 pb-1">
         <button
           class="text-sm text-muted-foreground hover:text-foreground w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-secondary/50 transition-colors"
-          @click=${() => (this.currentView = "budget")}
+          @click=${() => {
+					this.currentView = "budget";
+				}}
         >
           <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -254,7 +239,9 @@ export class DashboardApp extends LitElement {
       <div class="px-3 py-1">
         <button
           class="text-sm text-muted-foreground hover:text-foreground w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-secondary/50 transition-colors"
-          @click=${() => (this.currentView = "models")}
+          @click=${() => {
+					this.currentView = "models";
+				}}
         >
           <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />

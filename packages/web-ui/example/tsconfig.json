@@ -6,10 +6,14 @@
 		"moduleResolution": "bundler",
 		"paths": {
 			"*": ["./*"],
-			"@seaagents/fan-agent-core": ["../../agent/dist/index.d.ts"],
-			"@seaagents/fan-ai": ["../../ai/dist/index.d.ts"],
-			"@seaagents/fan-tui": ["../../tui/dist/index.d.ts"],
-			"@seaagents/fan-web-ui": ["../dist/index.d.ts"]
+			"@seaagents/fan-agent-core": ["../../agent/src/index.ts"],
+			"@seaagents/fan-agent-core/*": ["../../agent/src/*.ts"],
+			"@seaagents/fan-ai": ["../../ai/src/index.ts"],
+			"@seaagents/fan-ai/*": ["../../ai/src/*.ts"],
+			"@seaagents/fan-tui": ["../../tui/src/index.ts"],
+			"@seaagents/fan-tui/*": ["../../tui/src/*.ts"],
+			"@seaagents/fan-web-ui": ["../src/index.ts"],
+			"@seaagents/fan-web-ui/*": ["../src/*.ts"]
 		},
 		"strict": true,
 		"skipLibCheck": true,

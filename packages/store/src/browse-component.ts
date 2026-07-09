@@ -7,7 +7,7 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import type { ExtensionContext } from "@seaagents/fan-coding-agent";
+import type { ExtensionContext } from "@seaagents/fan-agent-core";
 import { fuzzyFilter, Input, Key, matchesKey, truncateToWidth } from "@seaagents/fan-tui";
 import type { StoreConfig } from "./config.js";
 import type { ArchiveInstaller } from "./installer.js";
@@ -390,7 +390,7 @@ export async function showExtensionBrowser(
 
 					// Version
 					let versionStr: string;
-					if (installed && installed.updateAvailable && installed.updateVersion) {
+					if (installed?.updateAvailable && installed.updateVersion) {
 						versionStr = theme.fg("warning", `${installed.version} → ${installed.updateVersion}`);
 					} else if (installed) {
 						versionStr = theme.fg("success", `v${displayVersion}`);

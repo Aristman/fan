@@ -65,7 +65,7 @@ export class FanApiClient {
 	private headers(authenticated: boolean): HeadersInit {
 		const h: HeadersInit = { Accept: "application/json" };
 		if (authenticated && this.token) {
-			h["Authorization"] = `Bearer ${this.token}`;
+			h.Authorization = `Bearer ${this.token}`;
 		}
 		return h;
 	}

@@ -2,7 +2,6 @@
 
 import { html, LitElement, nothing } from "lit";
 import { customElement, state } from "lit/decorators.js";
-import { AlertCircle, ArrowRight, Loader2, Zap } from "lucide";
 import { FanApiClient } from "../api/client.js";
 
 // ---------------------------------------------------------------------------
@@ -64,7 +63,7 @@ export class ConnectionSetup extends LitElement {
 				token: this.token,
 			});
 			// Use listSessions (authenticated) to validate both server + token
-			const sessions = await client.listSessions();
+			const _sessions = await client.listSessions();
 			// Also grab health info if possible
 			const health = await client.health();
 			this.success = true;
@@ -142,7 +141,9 @@ export class ConnectionSetup extends LitElement {
                 id="api-url"
                 type="url"
                 .value=${this.apiUrl}
-                @input=${(e: Event) => (this.apiUrl = (e.target as HTMLInputElement).value)}
+                @input=${(e: Event) => {
+							this.apiUrl = (e.target as HTMLInputElement).value;
+						}}
                 placeholder="http://localhost:3456"
                 class="w-full px-3 py-2 text-sm rounded-lg border border-border bg-background
                        text-foreground placeholder:text-muted-foreground
@@ -163,7 +164,9 @@ export class ConnectionSetup extends LitElement {
                 id="api-token"
                 type="password"
                 .value=${this.token}
-                @input=${(e: Event) => (this.token = (e.target as HTMLInputElement).value)}
+                @input=${(e: Event) => {
+							this.token = (e.target as HTMLInputElement).value;
+						}}
                 @keydown=${this.handleKeydown}
                 placeholder="Enter your API token"
                 class="w-full px-3 py-2 text-sm rounded-lg border border-border bg-background

@@ -9,13 +9,7 @@ const tsxLoader = require.resolve("tsx/esm");
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const aiEntryUrl = new URL("../src/index.ts", import.meta.url).href;
 
-const SDK_SPECIFIERS = [
-	"@anthropic-ai/sdk",
-	"openai",
-	"@google/genai",
-	"@mistralai/mistralai",
-
-] as const;
+const SDK_SPECIFIERS = ["@anthropic-ai/sdk", "openai", "@google/genai", "@mistralai/mistralai"] as const;
 
 type ProbeResult = {
 	loadedSpecifiers: string[];
@@ -92,6 +86,8 @@ describe.skip("lazy provider module loading [skip: Windows/Node 24 ESM URL schem
 
 	it("loads only the Anthropic SDK when dispatching through streamSimple", () => {
 		const result = runProbe(`
+// @ts-expect-error -- model ID removed from generated MODELS
+
 			const model = mod.getModel("anthropic", "claude-sonnet-4-20250514");
 			const context = { messages: [{ role: "user", content: "hi" }] };
 			await mod.streamSimple(model, context).result();

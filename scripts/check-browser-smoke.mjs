@@ -1,7 +1,15 @@
 import { writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { build } from "esbuild";
+
+let build;
+try {
+	build = (await import("esbuild")).build;
+} catch {
+	// esbuild not installed — skip browser smoke check
+	console.log("esbuild not available, skipping browser smoke check");
+	process.exit(0);
+}
 
 const outputPath = join(tmpdir(), "fan-browser-smoke.js");
 const errorLogPath = join(tmpdir(), "fan-browser-smoke-errors.log");

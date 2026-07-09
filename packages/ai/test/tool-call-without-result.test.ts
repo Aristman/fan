@@ -136,6 +136,8 @@ describe("Tool Call Without Result Tests", () => {
 	});
 
 	describe.skipIf(!process.env.ANTHROPIC_API_KEY)("Anthropic Provider", () => {
+		// @ts-expect-error -- model ID removed from generated MODELS
+
 		const model = getModel("anthropic", "claude-3-5-haiku-20241022");
 
 		it("should filter out tool calls without corresponding tool results", { retry: 3, timeout: 30000 }, async () => {
@@ -144,6 +146,8 @@ describe("Tool Call Without Result Tests", () => {
 	});
 
 	describe.skipIf(!process.env.XAI_API_KEY)("xAI Provider", () => {
+		// @ts-expect-error -- model ID removed from generated MODELS
+
 		const model = getModel("xai", "grok-3-fast");
 
 		it("should filter out tool calls without corresponding tool results", { retry: 3, timeout: 30000 }, async () => {
@@ -215,12 +219,13 @@ describe("Tool Call Without Result Tests", () => {
 		});
 	});
 
-
 	// =========================================================================
 	// OAuth-based providers (credentials from ~/.fan/agent/oauth.json)
 	// =========================================================================
 
 	describe("Anthropic OAuth Provider", () => {
+		// @ts-expect-error -- model ID removed from generated MODELS
+
 		const model = getModel("anthropic", "claude-3-5-haiku-20241022");
 
 		it.skipIf(!anthropicOAuthToken)(
@@ -237,6 +242,8 @@ describe("Tool Call Without Result Tests", () => {
 			"gpt-4o - should filter out tool calls without corresponding tool results",
 			{ retry: 3, timeout: 30000 },
 			async () => {
+				// @ts-expect-error -- model ID removed from generated MODELS
+
 				const model = getModel("github-copilot", "gpt-4o");
 				await testToolCallWithoutResult(model, { apiKey: githubCopilotToken });
 			},

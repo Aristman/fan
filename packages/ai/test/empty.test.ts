@@ -228,6 +228,8 @@ describe("AI Providers Empty Message Tests", () => {
 	});
 
 	describe.skipIf(!process.env.ANTHROPIC_API_KEY)("Anthropic Provider Empty Messages", () => {
+		// @ts-expect-error -- model ID removed from generated MODELS
+
 		const llm = getModel("anthropic", "claude-3-5-haiku-20241022");
 
 		it("should handle empty content array", { retry: 3, timeout: 30000 }, async () => {
@@ -248,6 +250,8 @@ describe("AI Providers Empty Message Tests", () => {
 	});
 
 	describe.skipIf(!process.env.XAI_API_KEY)("xAI Provider Empty Messages", () => {
+		// @ts-expect-error -- model ID removed from generated MODELS
+
 		const llm = getModel("xai", "grok-3");
 
 		it("should handle empty content array", { retry: 3, timeout: 30000 }, async () => {
@@ -427,12 +431,13 @@ describe("AI Providers Empty Message Tests", () => {
 		});
 	});
 
-
 	// =========================================================================
 	// OAuth-based providers (credentials from ~/.fan/agent/oauth.json)
 	// =========================================================================
 
 	describe("Anthropic OAuth Provider Empty Messages", () => {
+		// @ts-expect-error -- model ID removed from generated MODELS
+
 		const llm = getModel("anthropic", "claude-3-5-haiku-20241022");
 
 		it.skipIf(!anthropicOAuthToken)("should handle empty content array", { retry: 3, timeout: 30000 }, async () => {
@@ -465,6 +470,8 @@ describe("AI Providers Empty Message Tests", () => {
 			"gpt-4o - should handle empty content array",
 			{ retry: 3, timeout: 30000 },
 			async () => {
+				// @ts-expect-error -- model ID removed from generated MODELS
+
 				const llm = getModel("github-copilot", "gpt-4o");
 				await testEmptyMessage(llm, { apiKey: githubCopilotToken });
 			},
@@ -474,6 +481,8 @@ describe("AI Providers Empty Message Tests", () => {
 			"gpt-4o - should handle empty string content",
 			{ retry: 3, timeout: 30000 },
 			async () => {
+				// @ts-expect-error -- model ID removed from generated MODELS
+
 				const llm = getModel("github-copilot", "gpt-4o");
 				await testEmptyStringMessage(llm, { apiKey: githubCopilotToken });
 			},
@@ -483,6 +492,8 @@ describe("AI Providers Empty Message Tests", () => {
 			"gpt-4o - should handle whitespace-only content",
 			{ retry: 3, timeout: 30000 },
 			async () => {
+				// @ts-expect-error -- model ID removed from generated MODELS
+
 				const llm = getModel("github-copilot", "gpt-4o");
 				await testWhitespaceOnlyMessage(llm, { apiKey: githubCopilotToken });
 			},
@@ -492,6 +503,8 @@ describe("AI Providers Empty Message Tests", () => {
 			"gpt-4o - should handle empty assistant message in conversation",
 			{ retry: 3, timeout: 30000 },
 			async () => {
+				// @ts-expect-error -- model ID removed from generated MODELS
+
 				const llm = getModel("github-copilot", "gpt-4o");
 				await testEmptyAssistantMessage(llm, { apiKey: githubCopilotToken });
 			},

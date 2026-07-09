@@ -41,7 +41,7 @@ vi.mock("@fan/db", () => ({
 }));
 
 // Set FAN_NO_AUTH to bypass token auth in tests
-process.env["FAN_NO_AUTH"] = "1";
+process.env.FAN_NO_AUTH = "1";
 
 // Mock crypto.randomBytes for token generation in the HTTP handler's auth calls
 const mockRandomBytes = vi.fn().mockReturnValue({

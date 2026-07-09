@@ -1,3 +1,4 @@
+import type { ArtifactMessage, UserMessageWithAttachments } from "@seaagents/fan-agent-core";
 import type {
 	AssistantMessage as AssistantMessageType,
 	ImageContent,
@@ -14,30 +15,6 @@ import { formatUsage } from "../utils/format.js";
 import { i18n } from "../utils/i18n.js";
 import "./ThinkingBlock.js";
 import type { AgentTool } from "@seaagents/fan-agent-core";
-
-export type UserMessageWithAttachments = {
-	role: "user-with-attachments";
-	content: string | (TextContent | ImageContent)[];
-	timestamp: number;
-	attachments?: Attachment[];
-};
-
-// Artifact message type for session persistence
-export interface ArtifactMessage {
-	role: "artifact";
-	action: "create" | "update" | "delete";
-	filename: string;
-	content?: string;
-	title?: string;
-	timestamp: string;
-}
-
-declare module "@seaagents/fan-agent-core" {
-	interface CustomAgentMessages {
-		"user-with-attachments": UserMessageWithAttachments;
-		artifact: ArtifactMessage;
-	}
-}
 
 @customElement("user-message")
 export class UserMessage extends LitElement {

@@ -71,7 +71,7 @@ async function testImmediateAbort<TApi extends Api>(llm: Model<TApi>, options: S
 	expect(response.stopReason).toBe("aborted");
 }
 
-async function testAbortThenNewMessage<TApi extends Api>(llm: Model<TApi>, options: StreamOptionsWithExtras = {}) {
+async function _testAbortThenNewMessage<TApi extends Api>(llm: Model<TApi>, options: StreamOptionsWithExtras = {}) {
 	// First request: abort immediately before any response content arrives
 	const controller = new AbortController();
 	controller.abort();
@@ -240,5 +240,4 @@ describe("AI Providers Abort Tests", () => {
 			await testImmediateAbort(llm, { apiKey: openaiCodexToken });
 		});
 	});
-
 });

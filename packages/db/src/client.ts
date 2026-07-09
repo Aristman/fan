@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { PrismaClient } from "@prisma/client";
@@ -147,7 +147,7 @@ export function getPrismaClient(): PrismaClient {
 			process.env.DATABASE_URL = `file:${dbPath}`;
 		}
 
-		const logLevel = process.env["FAN_DB_LOG"] ?? ["error"];
+		const logLevel = process.env.FAN_DB_LOG ?? ["error"];
 		_client = new PrismaClient({
 			log: Array.isArray(logLevel)
 				? (logLevel as Array<"query" | "info" | "warn" | "error">)

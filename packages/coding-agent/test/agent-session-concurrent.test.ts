@@ -594,14 +594,19 @@ describe("AgentSession concurrent prompt guard", () => {
 
 		await session.prompt("hi");
 		await session.agent.waitForIdle();
-		await new Promise((resolve) => setTimeout(resolve, 100));
 
-		const messageEntries = sessionManager.getEntries().filter((entry) => entry.type === "message");
-		expect(messageEntries.map((entry) => entry.message.role)).toEqual([
-			"user",
-			"assistant",
-			"toolResult",
-			"assistant",
-		]);
+		// Poll for expected message entries instead of relying on a fixed timeout
+		const getMessageRoles = () =>
+			sessionManager
+				.getEntries()
+				.filter((entry) => entry.type === "message")
+				.map((entry) => entry.message.role);
+
+		const startTime = Date.now();
+		while (getMessageRoles().length < 4 && Date.now() - startTime < 5000) {
+			await new Promise((resolve) => setTimeout(resolve, 50));
+		}
+
+		expect(getMessageRoles()).toEqual(["user", "assistant", "toolResult", "assistant"]);
 	});
 });

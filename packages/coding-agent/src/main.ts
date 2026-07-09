@@ -32,6 +32,7 @@ import {
 } from "./core/agent-session-services.js";
 import { AuthStorage } from "./core/auth-storage.js";
 import { exportFromFile } from "./core/export-html/index.js";
+import type { ExtensionFactory as CodingAgentExtensionFactory } from "./core/extensions/types.js";
 import { KeybindingsManager } from "./core/keybindings.js";
 import type { ModelRegistry } from "./core/model-registry.js";
 import { resolveCliModel, resolveModelScope, type ScopedModel } from "./core/model-resolver.js";
@@ -938,7 +939,7 @@ export async function main(args: string[]) {
 				noThemes: parsed.noThemes,
 				systemPrompt: parsed.systemPrompt,
 				appendSystemPrompt: parsed.appendSystemPrompt,
-				extensionFactories: [...(parsed.noStore ? [] : [storeExtension])],
+				extensionFactories: [...(parsed.noStore ? [] : [storeExtension as unknown as CodingAgentExtensionFactory])],
 			},
 		});
 		const { settingsManager, modelRegistry, resourceLoader } = services;

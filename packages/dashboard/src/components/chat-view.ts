@@ -257,13 +257,13 @@ export class ChatView extends LitElement {
 					const contentBlocks = msg.content as Array<Record<string, unknown>> | undefined;
 					// Extract text from content blocks [{type:"thinking",...},{type:"text",text:"..."}]
 					let textContent = "";
-					let thinkingText = "";
+					let _thinkingText = "";
 					if (Array.isArray(contentBlocks)) {
 						for (const block of contentBlocks) {
 							if (block.type === "text") {
 								textContent += (block.text as string) || "";
 							} else if (block.type === "thinking") {
-								thinkingText += (block.thinking as string) || "";
+								_thinkingText += (block.thinking as string) || "";
 							}
 						}
 					}
