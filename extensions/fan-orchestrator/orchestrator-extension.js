@@ -269,7 +269,11 @@ export const orchestratorExtension = (fan) => {
     // When a dangerous command is detected, present a UI select (Allow/Block).
     // If the user allows it, set _fanDangerouslyApproved on the input so
     // the core bash tool skips the dangerous command check.
+    // If FAN_DANGEROUSLY_SKIP_PERMISSIONS is set, bypass all checks entirely.
     fan.on("tool_call", async (event, ctx) => {
+        if (process.env.FAN_DANGEROUSLY_SKIP_PERMISSIONS === "true") {
+            return {};
+        }
         if (event.toolName === "bash") {
             const cmd = event.args?.command;
             if (cmd) {
