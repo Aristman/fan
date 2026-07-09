@@ -36,7 +36,7 @@
 		"test": "vitest run"
 	},
 	"dependencies": {
-		"@seaagents/fan-coding-agent": "*",
+		"@seaagents/fan-agent-core": "*",
 		"@seaagents/fan-tui": "*",
 		"@sinclair/typebox": "^0.34.0"
 	},

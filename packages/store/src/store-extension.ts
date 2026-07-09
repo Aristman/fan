@@ -14,7 +14,7 @@
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { ExtensionContext, ExtensionFactory } from "@seaagents/fan-coding-agent";
+import type { ExtensionContext, ExtensionFactory } from "@seaagents/fan-agent-core";
 import { showExtensionBrowser } from "./browse-component.js";
 import { loadConfig } from "./config.js";
 import { ArchiveInstaller } from "./installer.js";

@@ -5,7 +5,7 @@
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { ExtensionAPI, ExtensionCommandContext } from "@seaagents/fan-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@seaagents/fan-agent-core";
 import { showExtensionBrowser } from "./browse-component.js";
 import type { StoreConfig } from "./config.js";
 import { saveConfig } from "./config.js";
