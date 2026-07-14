@@ -265,16 +265,43 @@ export const orchestratorExtension = (fan) => {
         }
         console.log(`[FAN Orchestrator] Session shut down. Tasks: ${JSON.stringify(counts)}`);
     });
-    // ---- Permission system (audit only) ----
-    // Core bash tool now handles dangerous command blocking.
-    // This hook only logs all bash commands for audit purposes.
+    // ---- Permission system: UI prompt for dangerous commands ----
+    // When a dangerous command is detected, present a UI select (Allow/Block).
+    // If the user allows it, set _fanDangerouslyApproved on the input so
+    // the core bash tool skips the dangerous command check.
+    // If FAN_DANGEROUSLY_SKIP_PERMISSIONS is set, bypass all checks entirely.
     fan.on("tool_call", async (event, ctx) => {
+        if (process.env.FAN_DANGEROUSLY_SKIP_PERMISSIONS === "true") {
+            return {};
+        }
         if (event.toolName === "bash") {
             const cmd = event.args?.command;
             if (cmd) {
                 const reason = isDangerousCommand(cmd, config.dangerousCommands);
                 if (reason) {
-                    logAuditDecision({ command: cmd, reason, decision: "block", agentType: null, workerId: null });
+                    // Check if user interaction is available
+                    if (ctx.ui && typeof ctx.ui.select === "function") {
+                        const choice = await ctx.ui.select(
+                            `⚠️ Dangerous command detected: ${cmd.slice(0, 120)}`,
+                            ["Allow", "Block"],
+                        );
+                        if (choice === "Allow") {
+                            // Mark as approved so the core bash tool skips the security check
+                            if (event.input) {
+                                event.input._fanDangerouslyApproved = true;
+                            }
+                            logAuditDecision({ command: cmd, reason, decision: "allow", agentType: null, workerId: null });
+                            return {};
+                        } else {
+                            // User chose Block or dismissed (choice is undefined)
+                            logAuditDecision({ command: cmd, reason, decision: "block", agentType: null, workerId: null });
+                            return { block: true, reason: `Blocked by user: ${reason}` };
+                        }
+                    } else {
+                        // Headless mode — no UI available, block automatically
+                        logAuditDecision({ command: cmd, reason, decision: "headless_block", agentType: null, workerId: null });
+                        return { block: true, reason: `Blocked (headless): ${reason}` };
+                    }
                 } else {
                     logAuditDecision({ command: cmd, reason: null, decision: "allow", agentType: null, workerId: null });
                 }

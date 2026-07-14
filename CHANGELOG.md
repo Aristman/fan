@@ -91,6 +91,45 @@
 - **Init-wizard UI для dangerous commands** — в `/orchestrator init` добавлен
   шаг редактирования списка опасных паттернов: Keep / Edit / Remove / Add new.
 
+### Пользовательский интерфейс для опасных команд
+
+- **CLI флаг `--dangerously-skip-permissions`** — глобальное отключение проверки
+  опасных команд для всей сессии:
+  - `packages/coding-agent/src/cli/args.ts` — парсинг флага в
+    `result.dangerouslySkipPermissions = true`.
+  - `packages/coding-agent/src/main.ts` (строка 841) — установка
+    `process.env.FAN_DANGEROUSLY_SKIP_PERMISSIONS = "true"` при старте;
+    переменная окружения прозрачно передаётся всем дочерним процессам.
+  - Предназначен для доверенных окружений (локальная dev-машина,
+    CI/CD с фиксированными скриптами).
+
+- **Интерактивное UI подтверждение** (Allow / Block) при срабатывании детектора
+  опасных команд:
+  - `extensions/fan-orchestrator/orchestrator-extension.js` (hook `tool_call`,
+    строка 270) — перехват вызова `bash`-инструмента, проверка через
+    `isDangerousCommand()` с учётом пользовательских паттернов.
+  - При наличии `ctx.ui.select` показывается диалог:
+    - **Allow** — устанавливает `event.input._fanDangerouslyApproved = true`,
+      что передаётся в core bash tool и снимает блокировку для этой конкретной
+      команды.
+    - **Block** — возвращает `{ block: true, reason }`, команда не исполняется.
+  - Механизм `_fanDangerouslyApproved`:
+    - `packages/coding-agent/src/core/tools/bash.ts` (строка 339) — guard:
+      `if (_fanDangerouslyApproved !== true && ...)` — если флаг установлен,
+      вызов `isDangerousCommand()` пропускается.
+    - Флаг живёт только на время одного вызова `bash`-инструмента, не сохраняется
+      между вызовами — каждое выполнение требует отдельного подтверждения.
+    - Если пользовательские паттерны настроены, они проверяются до UI;
+      Allow снимает блокировку и для пользовательских паттернов.
+
+- **Headless mode** — при отсутствии `ctx.ui` (нет TUI/интерактивного ввода):
+  - Команда автоматически блокируется с решением `headless_block`.
+  - Единственное исключение — флаг `--dangerously-skip-permissions`,
+    установленный до старта сессии.
+  - Все решения записываются в audit log
+    (`~/.fan/agent/audit/orchestrator.log`, JSONL) с полем `decision`:
+    `allow` | `block` | `headless_block`.
+
 ### Тестирование
 
 - **50 тестов** в `extensions/fan-orchestrator/test/permissions.test.mjs`.

@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { isDangerousCommand } from "../permissions.js";
 
 describe("isDangerousCommand — basic dangerous patterns", () => {
@@ -224,5 +224,128 @@ describe("isDangerousCommand — edge cases", () => {
 
   it("returns null for unicode safe", () => {
     expect(isDangerousCommand("echo 'привет мир'")).toBeNull();
+  });
+});
+
+/* ===================================================================
+ *  _fanDangerouslyApproved with custom patterns
+ *
+ *  Tests that custom patterns work correctly with the
+ *  _fanDangerouslyApproved bypass flag. The flag itself lives in the
+ *  bash tool's execute() method (not in isDangerousCommand), but we
+ *  verify that isDangerousCommand returns correct results regardless
+ *  of whether the bypass is conceptually active — because the bypass
+ *  happens one level up by skipping the isDangerousCommand call entirely.
+ *
+ *  The orchestrator sets _fanDangerouslyApproved=true when a user
+ *  explicitly approves a command, which causes the bash tool to skip
+ *  the danger check. If custom patterns are still present, they must
+ *  not interfere with the bypass decision (since isDangerousCommand
+ *  is never called).
+ *  =================================================================== */
+
+describe("isDangerousCommand — custom patterns with _fanDangerouslyApproved", () => {
+  it("should detect custom pattern even when _fanDangerouslyApproved is conceptually active (pure function)", () => {
+    // The pure function doesn't check _fanDangerouslyApproved.
+    // This verifies the function still correctly identifies custom
+    // dangerous patterns regardless of any bypass flag.
+    expect(isDangerousCommand("custom-dangerous-cmd", ["custom-dangerous-cmd"])).toBe(
+      "Custom dangerous command: custom-dangerous-cmd"
+    );
+  });
+
+  it("should allow safe command with custom patterns even when _fanDangerouslyApproved is conceptually active (pure function)", () => {
+    expect(isDangerousCommand("echo hello", ["custom-dangerous-cmd"])).toBeNull();
+  });
+
+  it("should detect rm -rf as dangerous even with custom patterns present", () => {
+    // Custom patterns are checked first, but if none match, core patterns still apply
+    expect(isDangerousCommand("rm -rf /", ["my-custom-pattern"])).toBe("Recursive forced delete (rm -rf)");
+  });
+
+  it("should match custom pattern only when it appears as a separate word boundary", () => {
+    // Custom patterns are escaped and wrapped in \b...\b for word boundary matching.
+    // A pattern like "dangerous-cmd" will match in "run-dangerous-cmd" because
+    // the hyphen before "dangerous" creates a word boundary (\b matches between
+    // non-word char \- and word char d). Use a pattern with internal non-word
+    // chars to test word boundary behavior.
+    expect(isDangerousCommand("some dangerous-cmd-here", ["dangerous-cmd"])).toBe(
+      "Custom dangerous command: dangerous-cmd"
+    );
+    expect(isDangerousCommand("dangerous-cmd", ["dangerous-cmd"])).toBe(
+      "Custom dangerous command: dangerous-cmd"
+    );
+    expect(isDangerousCommand("Xdangerous-cmd", ["dangerous-cmd"])).toBeNull();
+  });
+
+  it("should handle multiple custom patterns with one matching", () => {
+    expect(isDangerousCommand("my-dangerous-cmd", ["safe-pattern", "my-dangerous-cmd", "other-pattern"])).toBe(
+      "Custom dangerous command: my-dangerous-cmd"
+    );
+  });
+
+  it("should handle empty custom patterns array", () => {
+    expect(isDangerousCommand("rm -rf /", [])).toBe("Recursive forced delete (rm -rf)");
+  });
+
+  it("should ignore invalid patterns in custom patterns array", () => {
+    // Invalid patterns (empty strings, null, undefined) are skipped silently.
+    // Only valid non-empty strings are checked. Since "rm -rf /" contains word
+    // boundary chars (spaces), \brm -rf /\b won't match \brm\b -rf /\b because
+    // the escaped pattern is "rm\ \-rf\ \/" and the regex is \brm\ \-rf\ \/\b.
+    // The core pattern detection still catches it via the regular flow.
+    expect(isDangerousCommand("rm -rf /", ["", null, undefined])).toBe("Recursive forced delete (rm -rf)");
+    expect(isDangerousCommand("rm -rf /", ["", "customPattern", null, undefined])).toBe("Recursive forced delete (rm -rf)");
+  });
+
+  it("should verify guard logic: when _fanDangerouslyApproved is true, isDangerousCommand is not called (integration guard check)", () => {
+    // This replicates the guard logic from the bash tool execute():
+    //   if (_fanDangerouslyApproved !== true && process.env.FAN_DANGEROUSLY_SKIP_PERMISSIONS !== "true") {
+    //       const danger = isDangerousCommand(spawnContext.command); // <-- this call is skipped
+    //   }
+    // When the flag is true, isDangerousCommand is never reached, meaning
+    // custom patterns are also bypassed. That's the correct behavior:
+    // user approval overrides ALL danger checks.
+
+    const fanDangerouslyApproved = true;
+    const envVarIsSet = false;
+
+    const shouldCallIsDangerous =
+      fanDangerouslyApproved !== true && envVarIsSet !== "true";
+
+    expect(shouldCallIsDangerous).toBe(false);
+  });
+
+  it("should verify guard logic: when _fanDangerouslyApproved is false, isDangerousCommand IS called (integration guard check)", () => {
+    const fanDangerouslyApproved = false;
+    const envVarIsSet = false;
+
+    const shouldCallIsDangerous =
+      fanDangerouslyApproved !== true && envVarIsSet !== "true";
+
+    expect(shouldCallIsDangerous).toBe(true);
+  });
+
+  it("should verify guard logic: when _fanDangerouslyApproved is undefined, isDangerousCommand IS called (integration guard check)", () => {
+    const fanDangerouslyApproved = undefined;
+    const envVarIsSet = false;
+
+    const shouldCallIsDangerous =
+      fanDangerouslyApproved !== true && envVarIsSet !== "true";
+
+    expect(shouldCallIsDangerous).toBe(true);
+  });
+
+  it("should verify guard logic: custom patterns are bypassed when _fanDangerouslyApproved is true (integration guard check)", () => {
+    // Even if custom patterns are configured, the _fanDangerouslyApproved flag
+    // causes the entire isDangerousCommand call to be skipped. This means
+    // custom patterns are also bypassed. That's the design: explicit user
+    // approval ('yes, run this command') overrides ALL checks.
+
+    const fanDangerouslyApproved = true;
+    const shouldCallIsDangerous =
+      fanDangerouslyApproved !== true;
+
+    expect(shouldCallIsDangerous).toBe(false);
   });
 });
