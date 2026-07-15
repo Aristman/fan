@@ -191,6 +191,10 @@ export class InteractiveMode {
 	// Tool output expansion state
 	private toolOutputExpanded = false;
 
+	// Pending clipboard images for next prompt (consumed and cleared on submit)
+	private pendingImages: ImageContent[] = [];
+	private imageCounter = 0;
+
 	// Thinking block visibility state
 	private hideThinkingBlock = false;
 
@@ -648,7 +652,7 @@ export class InteractiveMode {
 		while (true) {
 			const userInput = await this.getUserInput();
 			try {
-				await this.session.prompt(userInput);
+				await this.session.prompt(userInput, { images: this.flushPendingImages() });
 			} catch (error: unknown) {
 				const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
 				this.showError(errorMessage);
@@ -2078,19 +2082,36 @@ export class InteractiveMode {
 				return;
 			}
 
-			// Write to temp file
+			// Write to temp file (keeps file on disk for tools like read that take file paths)
 			const tmpDir = os.tmpdir();
 			const ext = extensionForImageMimeType(image.mimeType) ?? "png";
 			const fileName = `fan-clipboard-${crypto.randomUUID()}.${ext}`;
 			const filePath = path.join(tmpDir, fileName);
 			fs.writeFileSync(filePath, Buffer.from(image.bytes));
 
-			// Insert file path directly
-			this.editor.insertTextAtCursor?.(filePath);
+			// Queue image attachment for the next prompt
+			this.imageCounter += 1;
+			this.pendingImages.push({
+				type: "image",
+				data: Buffer.from(image.bytes).toString("base64"),
+				mimeType: image.mimeType,
+			});
+
+			// Insert compact marker into editor at cursor
+			const marker = `[image_${this.imageCounter}]`;
+			this.editor.insertTextAtCursor?.(marker);
 			this.ui.requestRender();
 		} catch {
 			// Silently ignore clipboard errors (may not have permission, etc.)
 		}
+	}
+
+	/** Drain and return any queued clipboard image attachments. */
+	private flushPendingImages(): ImageContent[] | undefined {
+		if (this.pendingImages.length === 0) return undefined;
+		const images = this.pendingImages;
+		this.pendingImages = [];
+		return images;
 	}
 
 	private setupEditorSubmitHandler(): void {
@@ -2255,7 +2276,7 @@ export class InteractiveMode {
 				if (this.isExtensionCommand(text)) {
 					this.editor.addToHistory?.(text);
 					this.editor.setText("");
-					await this.session.prompt(text);
+					await this.session.prompt(text, { images: this.flushPendingImages() });
 				} else {
 					this.queueCompactionMessage(text, "steer");
 				}
@@ -2267,7 +2288,10 @@ export class InteractiveMode {
 			if (this.session.isStreaming) {
 				this.editor.addToHistory?.(text);
 				this.editor.setText("");
-				await this.session.prompt(text, { streamingBehavior: "steer" });
+				await this.session.prompt(text, {
+					streamingBehavior: "steer",
+					images: this.flushPendingImages(),
+				});
 				this.updatePendingMessagesDisplay();
 				this.ui.requestRender();
 				return;
@@ -2915,7 +2939,7 @@ export class InteractiveMode {
 			if (this.isExtensionCommand(text)) {
 				this.editor.addToHistory?.(text);
 				this.editor.setText("");
-				await this.session.prompt(text);
+				await this.session.prompt(text, { images: this.flushPendingImages() });
 			} else {
 				this.queueCompactionMessage(text, "followUp");
 			}
@@ -2927,7 +2951,10 @@ export class InteractiveMode {
 		if (this.session.isStreaming) {
 			this.editor.addToHistory?.(text);
 			this.editor.setText("");
-			await this.session.prompt(text, { streamingBehavior: "followUp" });
+			await this.session.prompt(text, {
+				streamingBehavior: "followUp",
+				images: this.flushPendingImages(),
+			});
 			this.updatePendingMessagesDisplay();
 			this.ui.requestRender();
 		}
