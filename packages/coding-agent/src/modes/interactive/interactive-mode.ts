@@ -191,6 +191,10 @@ export class InteractiveMode {
 	// Tool output expansion state
 	private toolOutputExpanded = false;
 
+	// Pending clipboard images for next prompt (consumed and cleared on submit)
+	private pendingImages: ImageContent[] = [];
+	private imageCounter = 0;
+
 	// Thinking block visibility state
 	private hideThinkingBlock = false;
 
@@ -482,6 +486,7 @@ export class InteractiveMode {
 			const hint = (keybinding: AppKeybinding, description: string) => keyHint(keybinding, description);
 
 			const instructions = [
+				rawKeyHint(theme.bold("alt+s"), theme.fg("accent", "Store")),
 				hint("app.interrupt", "to interrupt"),
 				hint("app.clear", "to clear"),
 				rawKeyHint(`${keyText("app.clear")} twice`, "to exit"),
@@ -647,7 +652,7 @@ export class InteractiveMode {
 		while (true) {
 			const userInput = await this.getUserInput();
 			try {
-				await this.session.prompt(userInput);
+				await this.session.prompt(userInput, { images: this.flushPendingImages() });
 			} catch (error: unknown) {
 				const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
 				this.showError(errorMessage);
@@ -1052,14 +1057,8 @@ export class InteractiveMode {
 
 			const skills = skillsResult.skills;
 			if (skills.length > 0) {
-				const groups = this.buildScopeGroups(
-					skills.map((skill) => ({ path: skill.filePath, sourceInfo: skill.sourceInfo })),
-				);
-				const skillList = this.formatScopeGroups(groups, {
-					formatPath: (item) => this.formatDisplayPath(item.path),
-					formatPackagePath: (item) => this.getShortPath(item.path, item.sourceInfo),
-				});
-				this.chatContainer.addChild(new Text(`${sectionHeader("Skills")}\n${skillList}`, 0, 0));
+				const compactSkillNames = skills.map(s => s.name).join(", ");
+				this.chatContainer.addChild(new Text(`${sectionHeader("Skills")}\n  ${compactSkillNames}`, 0, 0));
 				this.chatContainer.addChild(new Spacer(1));
 			}
 
@@ -1088,12 +1087,11 @@ export class InteractiveMode {
 				(ext) => ext.sourceInfo?.scope !== "temporary" && !ext.path.startsWith("<inline"),
 			);
 			if (userExtensions.length > 0) {
-				const groups = this.buildScopeGroups(userExtensions);
-				const extList = this.formatScopeGroups(groups, {
-					formatPath: (item) => this.formatDisplayPath(item.path),
-					formatPackagePath: (item) => this.getShortPath(item.path, item.sourceInfo),
-				});
-				this.chatContainer.addChild(new Text(`${sectionHeader("Extensions", "mdHeading")}\n${extList}`, 0, 0));
+				const compactExtNames = userExtensions.map(ext => {
+					const basename = ext.path.replace(/\\/g, "/").replace(/.*\/(fan-[^/]+|stack-overflow-[^/]+)\/.*/, "$1");
+					return basename || ext.path.split("/").pop()?.replace(/\.(ts|js)$/, "") || ext.path;
+				}).join(", ");
+				this.chatContainer.addChild(new Text(`${sectionHeader("Extensions", "mdHeading")}\n  ${compactExtNames}`, 0, 0));
 				this.chatContainer.addChild(new Spacer(1));
 			}
 
@@ -2084,19 +2082,36 @@ export class InteractiveMode {
 				return;
 			}
 
-			// Write to temp file
+			// Write to temp file (keeps file on disk for tools like read that take file paths)
 			const tmpDir = os.tmpdir();
 			const ext = extensionForImageMimeType(image.mimeType) ?? "png";
 			const fileName = `fan-clipboard-${crypto.randomUUID()}.${ext}`;
 			const filePath = path.join(tmpDir, fileName);
 			fs.writeFileSync(filePath, Buffer.from(image.bytes));
 
-			// Insert file path directly
-			this.editor.insertTextAtCursor?.(filePath);
+			// Queue image attachment for the next prompt
+			this.imageCounter += 1;
+			this.pendingImages.push({
+				type: "image",
+				data: Buffer.from(image.bytes).toString("base64"),
+				mimeType: image.mimeType,
+			});
+
+			// Insert compact marker into editor at cursor
+			const marker = `[image_${this.imageCounter}]`;
+			this.editor.insertTextAtCursor?.(marker);
 			this.ui.requestRender();
 		} catch {
 			// Silently ignore clipboard errors (may not have permission, etc.)
 		}
+	}
+
+	/** Drain and return any queued clipboard image attachments. */
+	private flushPendingImages(): ImageContent[] | undefined {
+		if (this.pendingImages.length === 0) return undefined;
+		const images = this.pendingImages;
+		this.pendingImages = [];
+		return images;
 	}
 
 	private setupEditorSubmitHandler(): void {
@@ -2261,7 +2276,7 @@ export class InteractiveMode {
 				if (this.isExtensionCommand(text)) {
 					this.editor.addToHistory?.(text);
 					this.editor.setText("");
-					await this.session.prompt(text);
+					await this.session.prompt(text, { images: this.flushPendingImages() });
 				} else {
 					this.queueCompactionMessage(text, "steer");
 				}
@@ -2273,7 +2288,10 @@ export class InteractiveMode {
 			if (this.session.isStreaming) {
 				this.editor.addToHistory?.(text);
 				this.editor.setText("");
-				await this.session.prompt(text, { streamingBehavior: "steer" });
+				await this.session.prompt(text, {
+					streamingBehavior: "steer",
+					images: this.flushPendingImages(),
+				});
 				this.updatePendingMessagesDisplay();
 				this.ui.requestRender();
 				return;
@@ -2921,7 +2939,7 @@ export class InteractiveMode {
 			if (this.isExtensionCommand(text)) {
 				this.editor.addToHistory?.(text);
 				this.editor.setText("");
-				await this.session.prompt(text);
+				await this.session.prompt(text, { images: this.flushPendingImages() });
 			} else {
 				this.queueCompactionMessage(text, "followUp");
 			}
@@ -2933,7 +2951,10 @@ export class InteractiveMode {
 		if (this.session.isStreaming) {
 			this.editor.addToHistory?.(text);
 			this.editor.setText("");
-			await this.session.prompt(text, { streamingBehavior: "followUp" });
+			await this.session.prompt(text, {
+				streamingBehavior: "followUp",
+				images: this.flushPendingImages(),
+			});
 			this.updatePendingMessagesDisplay();
 			this.ui.requestRender();
 		}

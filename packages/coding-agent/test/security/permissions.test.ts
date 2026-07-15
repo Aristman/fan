@@ -282,37 +282,27 @@ describe("isDangerousCommand — _fanDangerouslyApproved flag bypass", () => {
 		delete process.env.FAN_DANGEROUSLY_SKIP_PERMISSIONS;
 
 		// Without flag — guard is active, danger check runs
-		const shouldCheck1 =
-			true !== true && // _fanDangerouslyApproved !== true
-			process.env.FAN_DANGEROUSLY_SKIP_PERMISSIONS !== "true";
+		const shouldCheck1 = false;
 		expect(shouldCheck1).toBe(false);
 
 		// With flag false — guard is active
 		const flagFalse = false;
-		const shouldCheck2 =
-			flagFalse !== true &&
-			process.env.FAN_DANGEROUSLY_SKIP_PERMISSIONS !== "true";
+		const shouldCheck2 = !flagFalse && process.env.FAN_DANGEROUSLY_SKIP_PERMISSIONS !== "true";
 		expect(shouldCheck2).toBe(true);
 
 		// With flag true — guard is bypassed
 		const flagTrue = true;
-		const shouldCheck3 =
-			flagTrue !== true &&
-			process.env.FAN_DANGEROUSLY_SKIP_PERMISSIONS !== "true";
+		const shouldCheck3 = !flagTrue && process.env.FAN_DANGEROUSLY_SKIP_PERMISSIONS !== "true";
 		expect(shouldCheck3).toBe(false);
 
 		// With flag true and env var set — still bypassed
 		process.env.FAN_DANGEROUSLY_SKIP_PERMISSIONS = "true";
-		const shouldCheck4 =
-			flagTrue !== true &&
-			process.env.FAN_DANGEROUSLY_SKIP_PERMISSIONS !== "true";
+		const shouldCheck4 = !flagTrue && process.env.FAN_DANGEROUSLY_SKIP_PERMISSIONS !== "true";
 		expect(shouldCheck4).toBe(false);
 
 		// With flag undefined — guard is active if env var not set
 		process.env.FAN_DANGEROUSLY_SKIP_PERMISSIONS = "false";
-		const shouldCheck5 =
-			undefined !== true &&
-			process.env.FAN_DANGEROUSLY_SKIP_PERMISSIONS !== "true";
+		const shouldCheck5 = process.env.FAN_DANGEROUSLY_SKIP_PERMISSIONS !== "true";
 		expect(shouldCheck5).toBe(true);
 
 		// Restore
