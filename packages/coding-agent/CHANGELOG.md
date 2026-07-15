@@ -1,5 +1,26 @@
 # Changelog
 
+## [2.2.3] - 2026-07-15
+
+### Новое
+
+- **Paste clipboard image как `[image_N]` маркер** — `alt+v` в TUI вставляет
+  компактный маркер `[image_1]`, `[image_2]`, ... в редактор, а саму картинку
+  (base64 + mimeType) добавляет в очередь `pendingImages`. При следующем
+  `session.prompt()` картинки передаются агенту как vision content через
+  опцию `images:` — прокинуто во все 5 submit-путей (compaction,
+  streaming steer/followUp, main loop, Alt+Enter followUp).
+  (`packages/coding-agent/src/modes/interactive/interactive-mode.ts`).
+- **Компактные Skills / Extensions в startup header** — одно строка имён
+  через запятую вместо многострочного перечня путей.
+- **Новый хоткей `alt+s` Store** в startup info (жирным, акцентным цветом).
+
+### Linter
+
+- Упрощены тесты в `test/security/permissions.test.ts`.
+
+---
+
 ## [1.0.1] - 2026-06-15
 
 ### Исправления

@@ -1,5 +1,56 @@
 # Changelog
 
+## [2.2.3] - 2026-07-15
+
+### 📋 Вставка картинок из буфера (TUI)
+
+- **`alt+v` вставляет `[image_N]` вместо полного пути к файлу** — картинка из
+  буфера обмена кладётся в `os.tmpdir()` (по-прежнему доступна для `read`),
+  а в редактор вставляется компактный маркер `[image_1]`, `[image_2]`, …,
+  с монотонным счётчиком за сессию.
+- **Картинки уходят агенту напрямую как vision content** — `ImageContent`
+  очередь `pendingImages` пробрасывается в `session.prompt(text, { images })`
+  во всех 5 submit-путях (compaction, streaming steer/followUp, main loop,
+  Alt+Enter followUp). LLM получает base64 + mimeType — никаких лишних
+  `read` tool calls.
+- Поддерживаемые форматы: PNG / JPEG / WebP / GIF нативно, BMP / TIFF / и др.
+  конвертируются в PNG через `@silvia-odwyer/photon-node` (WASM).
+- Платформы: Windows / macOS / Linux (Wayland, X11) / WSL.
+- `@mariozechner/clipboard` — N-API, optionalDependency (если не установлен —
+  вставка молча игнорируется).
+
+### 🎨 Стартовая информация (TUI)
+
+- **Компактные списки Skills и Extensions** — вместо многострочного перечня
+  полных путей в startup header теперь одна строка имён через запятую:
+  ```
+  [Skills]
+    code-research, deep-dive, dev-docs-pack, feature-pipeline, feature-roadmap, idea-lab, repo-explorer, research-spec-generator
+  ```
+  Аналогично для `[Extensions]`.
+- **Новый хоткей `alt+s` Store** в начале списка — жирным шрифтом,
+  акцентным цветом. Активирует FAN Store (fan-store extension).
+
+### 🔒 Безопасность (оркестратор)
+
+- **Respect `FAN_DANGEROUSLY_SKIP_PERMISSIONS` в permission hook** — теперь
+  переменная окружения проверяется первой и UI-аппрув полностью обходится.
+  Поведение согласовано с core bash tool: обе стороны пропускают проверки
+  опасных команд при установленном флаге.
+  (`extensions/fan-orchestrator/orchestrator-extension.js`).
+
+### 🧹 Прочее
+
+- **Linter fixes** в `packages/coding-agent/test/security/permissions.test.ts` —
+  убраны избыточные проверки и упрощена структура тестов.
+
+### Изменения версий
+
+- **fan** (root) — `2.2.2` → `2.2.3`.
+- **@seaagents/fan-coding-agent** — `2.2.1` → `2.2.3`.
+
+---
+
 ## [2.2.0] - 2026-07-08
 
 ### 🚀 Pipeline Mode (feature-pipeline v3.1.0)
