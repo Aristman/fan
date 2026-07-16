@@ -27,6 +27,13 @@ export interface McpServerConfig {
 	autoRestart?: boolean;
 	allowLocal?: boolean;
 	allowPrivate?: boolean;
+	oauth?: {
+		clientId: string;
+		clientSecret?: string;
+		authorizationUrl: string;
+		tokenUrl: string;
+		scopes?: string[];
+	};
 }
 
 export interface McpConfig {
@@ -65,6 +72,13 @@ const McpServerConfigSchema = Type.Object({
 	autoRestart: Type.Optional(Type.Boolean()),
 	allowLocal: Type.Optional(Type.Boolean()),
 	allowPrivate: Type.Optional(Type.Boolean()),
+	oauth: Type.Optional(Type.Object({
+		clientId: Type.String({ minLength: 1 }),
+		clientSecret: Type.Optional(Type.String()),
+		authorizationUrl: Type.String({ minLength: 1 }),
+		tokenUrl: Type.String({ minLength: 1 }),
+		scopes: Type.Optional(Type.Array(Type.String())),
+	})),
 }, { additionalProperties: false });
 
 const McpConfigSchema = Type.Object({

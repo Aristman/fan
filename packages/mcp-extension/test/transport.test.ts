@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import {
 	createStdioTransport,
 	createHttpTransport,
+	buildHttpParams,
 	isLoopbackHostname,
 	isPrivateAddress,
 } from "../src/transport.js";
@@ -92,7 +93,7 @@ describe("isPrivateAddress", () => {
 describe("BUG-3: SSRF via loopback bypass in buildHttpParams", () => {
 	it("rejects https://127.0.0.2:8080/mcp without allowLocal", () => {
 		expect(() =>
-			createHttpTransport({
+			buildHttpParams({
 				transport: "streamable-http",
 				url: "https://127.0.0.2:8080/mcp",
 			} as any),
@@ -101,7 +102,7 @@ describe("BUG-3: SSRF via loopback bypass in buildHttpParams", () => {
 
 	it("rejects https://127.1/mcp without allowLocal", () => {
 		expect(() =>
-			createHttpTransport({
+			buildHttpParams({
 				transport: "streamable-http",
 				url: "https://127.1/mcp",
 			} as any),
@@ -110,7 +111,7 @@ describe("BUG-3: SSRF via loopback bypass in buildHttpParams", () => {
 
 	it("rejects https://127.0.0.1/mcp without allowLocal", () => {
 		expect(() =>
-			createHttpTransport({
+			buildHttpParams({
 				transport: "streamable-http",
 				url: "https://127.0.0.1/mcp",
 			} as any),
@@ -119,7 +120,7 @@ describe("BUG-3: SSRF via loopback bypass in buildHttpParams", () => {
 
 	it("accepts https://127.0.0.1/mcp with allowLocal: true", () => {
 		expect(() =>
-			createHttpTransport({
+			buildHttpParams({
 				transport: "streamable-http",
 				url: "https://127.0.0.1/mcp",
 				allowLocal: true,
@@ -129,7 +130,7 @@ describe("BUG-3: SSRF via loopback bypass in buildHttpParams", () => {
 
 	it("rejects localhost without allowLocal", () => {
 		expect(() =>
-			createHttpTransport({
+			buildHttpParams({
 				transport: "streamable-http",
 				url: "https://localhost:3000/mcp",
 			} as any),
@@ -138,7 +139,7 @@ describe("BUG-3: SSRF via loopback bypass in buildHttpParams", () => {
 
 	it("accepts https://api.example.com/mcp", () => {
 		expect(() =>
-			createHttpTransport({
+			buildHttpParams({
 				transport: "streamable-http",
 				url: "https://api.example.com/mcp",
 			} as any),
@@ -147,7 +148,7 @@ describe("BUG-3: SSRF via loopback bypass in buildHttpParams", () => {
 
 	it("rejects https://192.168.1.1/mcp by default (private network)", () => {
 		expect(() =>
-			createHttpTransport({
+			buildHttpParams({
 				transport: "streamable-http",
 				url: "https://192.168.1.1/mcp",
 			} as any),
@@ -156,7 +157,7 @@ describe("BUG-3: SSRF via loopback bypass in buildHttpParams", () => {
 
 	it("accepts https://192.168.1.1/mcp with allowPrivate: true", () => {
 		expect(() =>
-			createHttpTransport({
+			buildHttpParams({
 				transport: "streamable-http",
 				url: "https://192.168.1.1/mcp",
 				allowPrivate: true,
@@ -166,7 +167,7 @@ describe("BUG-3: SSRF via loopback bypass in buildHttpParams", () => {
 
 	it("accepts https://192.168.1.1/mcp with allowLocal: true (covers private)", () => {
 		expect(() =>
-			createHttpTransport({
+			buildHttpParams({
 				transport: "streamable-http",
 				url: "https://192.168.1.1/mcp",
 				allowLocal: true,
@@ -176,7 +177,7 @@ describe("BUG-3: SSRF via loopback bypass in buildHttpParams", () => {
 
 	it("rejects https://10.0.0.5/mcp by default (private network)", () => {
 		expect(() =>
-			createHttpTransport({
+			buildHttpParams({
 				transport: "streamable-http",
 				url: "https://10.0.0.5/mcp",
 			} as any),
@@ -261,63 +262,63 @@ describe("F-1.4: createStdioTransport", () => {
 
 describe("F-1.5: createHttpTransport", () => {
 	// TC-F1.5-1
-	it("rejects non-streamable-http transport", () => {
-		expect(() =>
+	it("rejects non-streamable-http transport", async () => {
+		await expect(
 			createHttpTransport({ transport: "stdio", command: "x" } as any),
-		).toThrow(/streamable-http/);
+		).rejects.toThrow(/streamable-http/);
 	});
 
 	// TC-F1.5-2
-	it("rejects missing url", () => {
-		expect(() =>
+	it("rejects missing url", async () => {
+		await expect(
 			createHttpTransport({ transport: "streamable-http" } as any),
-		).toThrow(/url/);
+		).rejects.toThrow(/url/);
 	});
 
 	// TC-F1.5-3
-	it("rejects http:// (not https)", () => {
-		expect(() =>
+	it("rejects http:// (not https)", async () => {
+		await expect(
 			createHttpTransport({
 				transport: "streamable-http",
 				url: "http://api.example.com/mcp",
 			} as any),
-		).toThrow(/https/);
+		).rejects.toThrow(/https/);
 	});
 
 	// TC-F1.5-4
-	it("rejects localhost without allowLocal", () => {
-		expect(() =>
+	it("rejects localhost without allowLocal", async () => {
+		await expect(
 			createHttpTransport({
 				transport: "streamable-http",
 				url: "https://localhost:3000/mcp",
 			} as any),
-		).toThrow(/allowLocal/);
+		).rejects.toThrow(/allowLocal/);
 	});
 
 	// TC-F1.5-5
-	it("accepts localhost with allowLocal: true", () => {
-		expect(() =>
+	it("accepts localhost with allowLocal: true", async () => {
+		await expect(
 			createHttpTransport({
 				transport: "streamable-http",
 				url: "https://127.0.0.1:3000/mcp",
 				allowLocal: true,
 			} as any),
-		).not.toThrow();
+		).resolves.toBeDefined();
 	});
 
 	// TC-F1.5-6
-	it("accepts https external URL", () => {
-		expect(() =>
+	it("accepts https external URL", async () => {
+		await expect(
 			createHttpTransport({
 				transport: "streamable-http",
 				url: "https://api.example.com/mcp",
 			} as any),
-		).not.toThrow();
+		).resolves.toBeDefined();
 	});
 
 	// TC-F1.5-7
-	it("resolves ${ENV} in headers", () => {
-		expect(() =>
+	it("resolves ${ENV} in headers", async () => {
+		await expect(
 			createHttpTransport(
 				{
 					transport: "streamable-http",
@@ -326,6 +327,6 @@ describe("F-1.5: createHttpTransport", () => {
 				} as any,
 				{ TEST_TOKEN: "abc" },
 			),
-		).not.toThrow();
+		).resolves.toBeDefined();
 	});
 });

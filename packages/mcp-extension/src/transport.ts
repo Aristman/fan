@@ -16,7 +16,14 @@ import {
 	type StdioServerParameters,
 } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { resolveEnvVars, type McpServerConfig } from "./config.js";
+import {
+	TokenStore,
+	ensureValidToken,
+	type OAuthToken,
+} from "./oauth.js";
 
 /**
  * Environment variables deemed safe to inherit when no custom env is provided.
@@ -200,20 +207,51 @@ export function buildHttpParams(config: McpServerConfig): URL {
 }
 
 /**
+ * Get the path to the MCP tokens file.
+ * Default: ~/.fan/agent/mcp-tokens.json
+ */
+export function getTokensPath(): string {
+	return join(homedir(), ".fan", "agent", "mcp-tokens.json");
+}
+
+/**
  * Create a StreamableHTTPClientTransport from an McpServerConfig.
  *
  * Validates the config, resolves ${ENV} references in headers,
+ * optionally acquires OAuth tokens for the server,
  * and returns a ready-to-use transport instance.
  */
-export function createHttpTransport(
+export async function createHttpTransport(
 	config: McpServerConfig,
 	envSource: Record<string, string | undefined> = process.env,
-): StreamableHTTPClientTransport {
+): Promise<StreamableHTTPClientTransport> {
 	const url = buildHttpParams(config);
 
-	const headers = config.headers
+	let accessToken: string | undefined;
+	if (config.oauth) {
+		const store = new TokenStore(getTokensPath());
+		try {
+			const token: OAuthToken = await ensureValidToken(
+				config.oauth,
+				url.hostname,
+				store,
+			);
+			accessToken = token.accessToken;
+		} catch (e) {
+			throw new TransportConfigError(
+				`OAuth required for ${url.hostname}: ${e instanceof Error ? e.message : e}`,
+			);
+		}
+	}
+
+	const headers = {
+		...config.headers,
+		...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+	} as Record<string, string> | undefined;
+
+	const resolvedHeaders = headers
 		? Object.fromEntries(
-				Object.entries(config.headers).map(([k, v]) => [
+				Object.entries(headers).map(([k, v]) => [
 					k,
 					resolveEnvVars(v, envSource),
 				]),
@@ -221,6 +259,6 @@ export function createHttpTransport(
 		: undefined;
 
 	return new StreamableHTTPClientTransport(url, {
-		requestInit: { headers },
+		requestInit: { headers: resolvedHeaders },
 	});
 }

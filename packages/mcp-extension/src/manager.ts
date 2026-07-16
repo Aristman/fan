@@ -93,7 +93,7 @@ export function createMcpClientManager(
 	/**
 	 * Build a Transport from a server config.
 	 */
-	function buildTransport(cfg: McpServerConfig): Transport {
+	async function buildTransport(cfg: McpServerConfig): Promise<Transport> {
 		if (cfg.transport === "stdio") {
 			return createStdioTransport(cfg);
 		}
@@ -290,7 +290,7 @@ export function createMcpClientManager(
 
 		let transport: Transport;
 		try {
-			transport = buildTransport(cfg);
+			transport = await buildTransport(cfg);
 		} catch (e: any) {
 			entry.status = "unavailable";
 			entry.connectError = e?.message ?? String(e);
