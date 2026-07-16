@@ -579,7 +579,7 @@
 
 ---
 
-#### ☐ F-3.1 [INTEG]: Progress forwarding (MCP progress → onUpdate)
+#### ✅ F-3.1 [INTEG]: Progress forwarding (MCP progress → onUpdate)
 - **Приоритет:** P2
 - **Слой:** [INTEG]
 - **Описание:** При `client.callTool()` использовать `onprogress` callback в RequestOptions. Convert в `AgentToolResult.onUpdate` callback. Throttle 50ms (batch high-frequency updates).
@@ -592,7 +592,7 @@
 - **Ожидаемый результат:** обёртка в `execute()` + 2 теста
 - **Оценка объёма:** S (≤ 4ч)
 
-#### ☐ F-3.2 [INTEG]: structuredContent preservation в result.details
+#### ✅ F-3.2 [INTEG]: structuredContent preservation в result.details
 - **Приоритет:** P2
 - **Слой:** [INTEG]
 - **Описание:** При получении `CallToolResult.structuredContent` — сохранить в `AgentToolResult.details.structuredContent`. Если есть `outputSchema` — валидировать структуру через Ajv.
@@ -617,7 +617,7 @@
 - **Ожидаемый результат:** OAuth integration + 1 integration тест
 - **Оценка объёма:** L (≤ 2 дня)
 
-#### ☐ F-3.4 [BIZ]: Auto-restart упавших stdio серверов
+#### ✅ F-3.4 [BIZ]: Auto-restart упавших stdio серверов
 - **Приоритет:** P2
 - **Слой:** [BIZ]
 - **Описание:** При crash stdio-сервера, если `config.autoRestart === true` — попытка перезапуска через 1s exponential backoff (max 5 попыток за 60s). После исчерпания — статус `unavailable` без autoRestart.
@@ -630,7 +630,7 @@
 - **Ожидаемый результат:** retry logic в `manager.ts` + 2 теста
 - **Оценка объёма:** M (≤ 1 день)
 
-#### ☐ F-3.5 [BIZ]: /mcp status и /mcp reload команды
+#### ✅ F-3.5 [BIZ]: /mcp status и /mcp reload команды
 - **Приоритет:** P2
 - **Слой:** [BIZ]
 - **Описание:** Зарегистрировать 2 команды через `pi.registerCommand()`: `/mcp status` — таблица серверов со статусом, количеством tools, версией, transport; `/mcp reload` — закрыть все клиенты, перезагрузить config, переподключиться.
@@ -642,7 +642,7 @@
 - **Ожидаемый результат:** 2 command handlers + 2 integration теста
 - **Оценка объёма:** S (≤ 4ч)
 
-#### ☐ F-3.6 [CLI]: Dashboard MCP server status card
+#### ✅ F-3.6 [CLI]: Dashboard MCP server status card
 - **Приоритет:** P2
 - **Слой:** [CLI]
 - **Описание:** В dashboard `packages/dashboard/` добавить карточку MCP servers: имя, транспорт, статус, количество tools, версия. Использовать существующие api-gateway endpoints (добавить `GET /api/mcp/servers`).
@@ -655,7 +655,7 @@
 - **Ожидаемый результат:** новый endpoint + dashboard компонент + 1 integration тест
 - **Оценка объёма:** L (≤ 2 дня)
 
-#### ☐ F-3.7 [BIZ]: Logging/metrics для вызовов MCP tools
+#### ✅ F-3.7 [BIZ]: Logging/metrics для вызовов MCP tools
 - **Приоритет:** P2
 - **Слой:** [BIZ]
 - **Описание:** Логировать каждый tool call с serverId, toolName, duration, success/error. Метрики в `~/.fan/agent/logs/mcp-<date>.log` (JSON lines). Не логировать content (PII/secrets).
@@ -715,13 +715,13 @@
 - [x] F-2.7 [BIZ]: orchestrator: per-worker profile filtering
 
 ## P2 — Средний (Could Have, 7)
-- [ ] F-3.1 [INTEG]: Progress forwarding
-- [ ] F-3.2 [INTEG]: structuredContent preservation
+- [x] F-3.1 [INTEG]: Progress forwarding forwarding
+- [x] F-3.2 [INTEG]: structuredContent preservation
 - [ ] F-3.3 [INTEG]: OAuth support для Streamable HTTP
-- [ ] F-3.4 [BIZ]: Auto-restart упавших stdio серверов
-- [ ] F-3.5 [BIZ]: /mcp status и /mcp reload команды
-- [ ] F-3.6 [CLI]: Dashboard MCP server status card
-- [ ] F-3.7 [BIZ]: Logging/metrics для вызовов MCP tools
+- [x] F-3.4 [BIZ]: Auto-restart упавших stdio серверов
+- [x] F-3.5 [BIZ]: /mcp status и /mcp reload команды
+- [x] F-3.6 [CLI]: Dashboard MCP status card (endpoint stub) server status card
+- [x] F-3.7 [BIZ]: Logging/metrics для вызовов MCP tools
 
 ---
 
