@@ -1,6 +1,6 @@
 {
 	"name": "@fan/mcp-extension",
-	"version": "0.1.0",
+	"version": "1.0.0",
 	"description": "MCP (Model Context Protocol) client extension for FAN — connect to external MCP servers and expose their tools to the agent",
 	"fan": {
 		"name": "fan-mcp",
@@ -17,8 +17,8 @@
 			"tools",
 			"integration"
 		],
-		"bundled": false,
-		"externalDependencies": [
+		"bundled": true,
+		"runtimeDependencies": [
 			"@modelcontextprotocol/sdk"
 		]
 	},

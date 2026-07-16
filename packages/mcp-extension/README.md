@@ -13,7 +13,7 @@ MCP (Model Context Protocol) клиент-расширение для [FAN](http
 ## Установка
 
 ```bash
-fan store install fan-mcp
+FAN включает `@fan/mcp-extension` из коробки — установка не требуется. Убедиться что extension обнаружен: `fan store list` должен показать `fan-mcp`. Если нет — `fan store install fan-mcp`.
 ```
 
 ## Быстрый старт

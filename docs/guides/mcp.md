@@ -31,7 +31,7 @@ FAN реализует **MCP-клиент** — он подключается к
 ### 1. Установите расширение
 
 ```bash
-fan store install fan-mcp
+FAN включает `@fan/mcp-extension` из коробки — установка не требуется. Убедиться что extension обнаружен: `fan store list` должен показать `fan-mcp`. Если нет — `fan store install fan-mcp`.
 ```
 
 ### 2. Настройте MCP-сервер
