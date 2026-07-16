@@ -5,7 +5,7 @@ import { checkDependencies, resetDependencyCache } from "./dependencies.js";
 import { runVoicePipeline } from "./pipeline.js";
 import { runVoiceInitWizard } from "./init-wizard.js";
 
-export default function (pi: ExtensionAPI) {
+export default function (fan: ExtensionAPI) {
   const config = loadConfig();
 
   const handler = async (ctx: any) => {
@@ -21,7 +21,7 @@ export default function (pi: ExtensionAPI) {
     }
   };
 
-  pi.registerCommand("voice", {
+  fan.registerCommand("voice", {
     description: "Start voice input (/voice) or setup wizard (/voice init).",
     handler: async (args: string, ctx: ExtensionCommandContext) => {
       const subcommand = args.trim().toLowerCase();
@@ -33,12 +33,12 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  pi.registerShortcut(config.shortcut as KeyId, {
+  fan.registerShortcut(config.shortcut as KeyId, {
     description: "Start voice input",
     handler,
   });
 
-  pi.on("session_start", async (_event, ctx) => {
+  fan.on("session_start", async (_event, ctx) => {
     const status = checkDependencies(config);
     if (!status.ok) {
       const missingList = status.missing.join(", ");
@@ -48,7 +48,7 @@ export default function (pi: ExtensionAPI) {
     }
   });
 
-  pi.on("session_shutdown", async () => {
+  fan.on("session_shutdown", async () => {
     resetDependencyCache();
   });
 }

@@ -74,7 +74,7 @@
   - Кастомное правило для `ac:structured-macro[ac:name="info|warning|note|tip"]` → blockquote
   - Функция `convertStorageToMarkdown(html: string): string`
 - [ ] Создать `tools/list-spaces.ts`:
-  - Регистрация `confluence_list_spaces` через `pi.registerTool()`
+  - Регистрация `confluence_list_spaces` через `fan.registerTool()`
   - Параметры: `limit` (default: 25)
   - Использование `client.space.getSpaces({ limit })`
   - Возврат: массив `{id, key, name, type}`

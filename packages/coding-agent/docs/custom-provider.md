@@ -1,6 +1,6 @@
 # Custom Providers
 
-Extensions can register custom model providers via `pi.registerProvider()`. This enables:
+Extensions can register custom model providers via `fan.registerProvider()`. This enables:
 
 - **Proxies** - Route requests through corporate proxies or API gateways
 - **Custom endpoints** - Use self-hosted or private model deployments
@@ -35,12 +35,12 @@ import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
 
 export default function (pi: ExtensionAPI) {
   // Override baseUrl for existing provider
-  pi.registerProvider("anthropic", {
+  fan.registerProvider("anthropic", {
     baseUrl: "https://proxy.example.com"
   });
 
   // Register new provider with models
-  pi.registerProvider("my-provider", {
+  fan.registerProvider("my-provider", {
     baseUrl: "https://api.example.com",
     apiKey: "MY_API_KEY",
     api: "openai-completions",
@@ -65,19 +65,19 @@ The simplest use case: redirect an existing provider through a proxy.
 
 ```typescript
 // All Anthropic requests now go through your proxy
-pi.registerProvider("anthropic", {
+fan.registerProvider("anthropic", {
   baseUrl: "https://proxy.example.com"
 });
 
 // Add custom headers to OpenAI requests
-pi.registerProvider("openai", {
+fan.registerProvider("openai", {
   headers: {
     "X-Custom-Header": "value"
   }
 });
 
 // Both baseUrl and headers
-pi.registerProvider("google", {
+fan.registerProvider("google", {
   baseUrl: "https://ai-gateway.corp.com/google",
   headers: {
     "X-Corp-Auth": "CORP_AUTH_TOKEN"  // env var or literal
@@ -92,7 +92,7 @@ When only `baseUrl` and/or `headers` are provided (no `models`), all existing mo
 To add a completely new provider, specify `models` along with the required configuration.
 
 ```typescript
-pi.registerProvider("my-llm", {
+fan.registerProvider("my-llm", {
   baseUrl: "https://api.my-llm.com/v1",
   apiKey: "MY_LLM_API_KEY",  // env var name or literal value
   api: "openai-completions",  // which streaming API to use
@@ -121,11 +121,11 @@ When `models` is provided, it **replaces** all existing models for that provider
 
 ## Unregister Provider
 
-Use `pi.unregisterProvider(name)` to remove a provider that was previously registered via `pi.registerProvider(name, ...)`:
+Use `fan.unregisterProvider(name)` to remove a provider that was previously registered via `fan.registerProvider(name, ...)`:
 
 ```typescript
 // Register
-pi.registerProvider("my-llm", {
+fan.registerProvider("my-llm", {
   baseUrl: "https://api.my-llm.com/v1",
   apiKey: "MY_LLM_API_KEY",
   api: "openai-completions",
@@ -143,7 +143,7 @@ pi.registerProvider("my-llm", {
 });
 
 // Later, remove it
-pi.unregisterProvider("my-llm");
+fan.unregisterProvider("my-llm");
 ```
 
 Unregistering removes that provider's dynamic models, API key fallback, OAuth provider registration, and custom stream handler registrations. Any built-in models or provider behavior that were overridden are restored.
@@ -200,7 +200,7 @@ Use `qwen-chat-template` instead for local Qwen-compatible servers that read `ch
 If your provider expects `Authorization: Bearer <key>` but doesn't use a standard API, set `authHeader: true`:
 
 ```typescript
-pi.registerProvider("custom-api", {
+fan.registerProvider("custom-api", {
   baseUrl: "https://api.example.com",
   apiKey: "MY_API_KEY",
   authHeader: true,  // adds Authorization: Bearer header
@@ -216,7 +216,7 @@ Add OAuth/SSO authentication that integrates with `/login`:
 ```typescript
 import type { OAuthCredentials, OAuthLoginCallbacks } from "@seaagents/fan-ai";
 
-pi.registerProvider("corporate-ai", {
+fan.registerProvider("corporate-ai", {
   baseUrl: "https://ai.corp.com/v1",
   api: "openai-responses",
   models: [...],
@@ -472,7 +472,7 @@ calculateCost(model, output.usage);
 Register your stream function:
 
 ```typescript
-pi.registerProvider("my-provider", {
+fan.registerProvider("my-provider", {
   baseUrl: "https://api.example.com",
   apiKey: "MY_API_KEY",
   api: "my-custom-api",

@@ -183,13 +183,19 @@ export function getFnaInvocation(args) {
     if (!_cachedInvocation) {
         const currentScript = process.argv[1];
         if (currentScript && fs.existsSync(currentScript)) {
-            _cachedInvocation = { command: process.execPath, baseArgs: [currentScript] };
+            const cmd = process.platform === "win32" && process.execPath.includes(" ")
+                ? `"${process.execPath}"`
+                : process.execPath;
+            _cachedInvocation = { command: cmd, baseArgs: [currentScript] };
         }
         else {
             const execName = path.basename(process.execPath).toLowerCase();
             const isGenericRuntime = /^(node|bun)(\.exe)?$/.test(execName);
             if (!isGenericRuntime) {
-                _cachedInvocation = { command: process.execPath, baseArgs: [] };
+                const cmd = process.platform === "win32" && process.execPath.includes(" ")
+                    ? `"${process.execPath}"`
+                    : process.execPath;
+                _cachedInvocation = { command: cmd, baseArgs: [] };
             }
             else {
                 _cachedInvocation = { command: "fan", baseArgs: [] };

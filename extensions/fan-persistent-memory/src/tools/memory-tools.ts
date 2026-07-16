@@ -24,14 +24,14 @@ const MEMORY_SCOPES = Type.Union([Type.Literal("global"), Type.Literal("project"
 // ──────────────────────────────────────────────
 
 export function registerMemoryTools(
-  pi: ExtensionAPI,
+  fan: ExtensionAPI,
   getRepos: () => { global: MemoryRepository; project: MemoryRepository | null },
   getConfig: () => MemoryConfig,
   getRetriever?: () => import("../rag/retriever.js").Retriever | null
 ) {
   // ─── memory_remember ───────────────────────
 
-  pi.registerTool({
+  fan.registerTool({
     name: "memory_remember",
     label: "Remember",
     description:
@@ -144,7 +144,7 @@ export function registerMemoryTools(
 
   // ─── memory_search ────────────────────────
 
-  pi.registerTool({
+  fan.registerTool({
     name: "memory_search",
     label: "Search Memory",
     description:
@@ -291,7 +291,7 @@ export function registerMemoryTools(
 
   // ─── memory_update ────────────────────────
 
-  pi.registerTool({
+  fan.registerTool({
     name: "memory_update",
     label: "Update Memory",
     description:
@@ -389,7 +389,7 @@ export function registerMemoryTools(
 
   // ─── memory_forget ────────────────────────
 
-  pi.registerTool({
+  fan.registerTool({
     name: "memory_forget",
     label: "Forget Memory",
     description:
@@ -422,7 +422,7 @@ export function registerMemoryTools(
 
   // ─── memory_promote ──────────────────────
 
-  pi.registerTool({
+  fan.registerTool({
     name: "memory_promote",
     label: "Promote to Global",
     description:
@@ -488,7 +488,7 @@ export function registerMemoryTools(
 
   // ─── memory_demote ───────────────────────
 
-  pi.registerTool({
+  fan.registerTool({
     name: "memory_demote",
     label: "Demote to Project",
     description: "Move a global memory to the current project's memory.",

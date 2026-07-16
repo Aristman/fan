@@ -13,13 +13,13 @@ import type { ExtensionAPI, ExtensionContext } from "@seaagents/fan-coding-agent
 
 const BRAILLE_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
-function getBaseTitle(pi: ExtensionAPI): string {
+function getBaseTitle(fan: ExtensionAPI): string {
 	const cwd = path.basename(process.cwd());
-	const session = pi.getSessionName();
+	const session = fan.getSessionName();
 	return session ? `π - ${session} - ${cwd}` : `π - ${cwd}`;
 }
 
-export default function (pi: ExtensionAPI) {
+export default function (fan: ExtensionAPI) {
 	let timer: ReturnType<typeof setInterval> | null = null;
 	let frameIndex = 0;
 
@@ -29,7 +29,7 @@ export default function (pi: ExtensionAPI) {
 			timer = null;
 		}
 		frameIndex = 0;
-		ctx.ui.setTitle(getBaseTitle(pi));
+		ctx.ui.setTitle(getBaseTitle(fan));
 	}
 
 	function startAnimation(ctx: ExtensionContext) {
@@ -37,22 +37,22 @@ export default function (pi: ExtensionAPI) {
 		timer = setInterval(() => {
 			const frame = BRAILLE_FRAMES[frameIndex % BRAILLE_FRAMES.length];
 			const cwd = path.basename(process.cwd());
-			const session = pi.getSessionName();
+			const session = fan.getSessionName();
 			const title = session ? `${frame} π - ${session} - ${cwd}` : `${frame} π - ${cwd}`;
 			ctx.ui.setTitle(title);
 			frameIndex++;
 		}, 80);
 	}
 
-	pi.on("agent_start", async (_event, ctx) => {
+	fan.on("agent_start", async (_event, ctx) => {
 		startAnimation(ctx);
 	});
 
-	pi.on("agent_end", async (_event, ctx) => {
+	fan.on("agent_end", async (_event, ctx) => {
 		stopAnimation(ctx);
 	});
 
-	pi.on("session_shutdown", async (_event, ctx) => {
+	fan.on("session_shutdown", async (_event, ctx) => {
 		stopAnimation(ctx);
 	});
 }

@@ -206,7 +206,7 @@
 - [x] Инструкции: делегируй через `delegate_task`, не делай сам
 
 #### 2.3 Task tools (LLM-callable)
-- [x] `TaskCreate` tool — register через `pi.registerTool()`, делегирует в `TaskManager`
+- [x] `TaskCreate` tool — register через `fan.registerTool()`, делегирует в `TaskManager`
 - [x] `TaskUpdate` tool — с `blocks[]` для dependencies, auto-unblock
 - [x] Обновить `TaskManager` для работы с `owner` полем
 

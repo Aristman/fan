@@ -73,14 +73,14 @@ if [ -d "$EXT_PATH" ]; then
   fi
 fi
 
-# Check 5: If directory has package.json with pi.extensions
+# Check 5: If directory has package.json with fan.extensions
 PKG_JSON="$EXT_PATH/package.json"
 if [ -f "$PKG_JSON" ]; then
   echo "  [INFO] Found package.json"
   if grep -q '"pi"' "$PKG_JSON" && grep -q '"extensions"' "$PKG_JSON"; then
-    echo "  [PASS] package.json has pi.extensions manifest"
+    echo "  [PASS] package.json has fan.extensions manifest"
   else
-    echo "WARN: package.json missing pi.extensions manifest"
+    echo "WARN: package.json missing fan.extensions manifest"
   fi
 fi
 

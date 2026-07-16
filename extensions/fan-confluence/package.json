@@ -1,7 +1,7 @@
 {
   "name": "fan-confluence",
   "private": true,
-  "version": "3.0.0",
+  "version": "3.0.1",
   "type": "module",
   "description": "Confluence Data Center integration for fan — read/write pages, search via CQL, Markdown ↔ Storage Format conversion",
   "scripts": {

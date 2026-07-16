@@ -360,7 +360,7 @@ Nathan Onn описал рабочий процесс с 38 тест-кейса�
 | Компонент | Технология | Обоснование |
 |-----------|-----------|-------------|
 | Язык | TypeScript | Стандарт для FAN extension |
-| Extension API | pi.registerCommand, pi.on, pi.registerTool | Стандартный FAN extension lifecycle |
+| Extension API | fan.registerCommand, fan.on, fan.registerTool | Стандартный FAN extension lifecycle |
 | Запуск агента | `fan --mode rpc` | Уже используется оркестратором. Каждая итерация — свежий RPC-воркер. |
 | Верификация | Verify worker (через delegate_task) или CriteriaChecker | Переиспользование существующего verify из оркестратора |
 | Память итераций | status.json на диске | Проверено Ralph Loop подходом. Не зависит от контекста. |
@@ -445,7 +445,7 @@ Nathan Onn описал рабочий процесс с 38 тест-кейса�
 
 | # | Действие | Зависимости | Срок | Статус |
 |---|----------|-------------|------|--------|
-| 1 | Изучить FAN Extension API (pi.registerCommand, pi.on, pi.registerTool) | — | 30 мин | TODO |
+| 1 | Изучить FAN Extension API (fan.registerCommand, fan.on, fan.registerTool) | — | 30 мин | TODO |
 | 2 | Создать структуру расширения: package.json, entry.ts, config | #1 | 30 мин | TODO |
 | 3 | Реализовать `/loop` команду + парсинг аргументов | #2 | 1 час | TODO |
 | 4 | Реализовать интерактивный опрос (промпт, критерии, iterations) | #3 | 1 час | TODO |

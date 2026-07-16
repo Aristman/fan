@@ -197,7 +197,7 @@ Markdown-файл с frontmatter + инструкции для LLM.
 3. Упорядочи по зависимостям:
    - Utils / types → importable модули
    - Tool definitions → registerTool
-   - Event handlers → pi.on()
+   - Event handlers → fan.on()
    - UI components → ctx.ui
    - Commands → registerCommand
    - Entry point (index.ts) → wiring everything
@@ -309,7 +309,7 @@ echo "EXIT_CODE=$?"
 - [ ] Ошибки в tools signalling через `throw new Error()` (не через return)
 - [ ] Файловые операции в tools обёрнуты в `withFileMutationQueue`
 - [ ] Event handlers не throw при normal operation
-- [ ] State properly persisted via `pi.appendEntry()` и восстанавливается в `session_start`
+- [ ] State properly persisted via `fan.appendEntry()` и восстанавливается в `session_start`
 - [ ] `renderCall` и `renderResult` возвращают Component из `@fan/fan-tui`
 - [ ] Commands: handler `async (args, ctx) => { ... }`
 
@@ -439,11 +439,11 @@ echo "EXIT_CODE=$?"
 - **Extension API:** [references/extension-api-reference.md](references/extension-api-reference.md) — полный reference с примерами кода для всех fan Extension API
 
 **Ключевые API:**
-- `pi.registerTool()` — register LLM-callable tools (parameters via `Type.Object` + `StringEnum`)
-- `pi.on(event, handler)` — subscribe to lifecycle events (`tool_call`, `session_start`, `turn_end`, etc.)
-- `pi.registerCommand()` — register slash commands with UI interaction
+- `fan.registerTool()` — register LLM-callable tools (parameters via `Type.Object` + `StringEnum`)
+- `fan.on(event, handler)` — subscribe to lifecycle events (`tool_call`, `session_start`, `turn_end`, etc.)
+- `fan.registerCommand()` — register slash commands with UI interaction
 - `ctx.ui` — `select`, `confirm`, `input`, `editor`, `notify`, `setStatus`, `setWidget`, `custom`
-- `pi.appendEntry()` / `ctx.sessionManager.getEntries()` — state persistence
+- `fan.appendEntry()` / `ctx.sessionManager.getEntries()` — state persistence
 - `withFileMutationQueue()` — safe concurrent file mutations
 
 ---

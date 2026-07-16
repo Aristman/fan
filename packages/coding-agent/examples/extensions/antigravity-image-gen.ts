@@ -350,8 +350,8 @@ async function getCredentials(ctx: {
 	return parseOAuthCredentials(apiKey);
 }
 
-export default function antigravityImageGen(pi: ExtensionAPI) {
-	pi.registerTool({
+export default function antigravityImageGen(fan: ExtensionAPI) {
+	fan.registerTool({
 		name: "generate_image",
 		label: "Generate image",
 		description:

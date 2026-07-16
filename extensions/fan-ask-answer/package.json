@@ -1,6 +1,6 @@
 {
   "name": "fan-ask-answer",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Interactive dialog with the user via TUI selection UI (question/questionnaire) and RPC select/input/confirm. Works in both TUI and RPC modes.",
   "type": "module",
   "main": "index.ts",
@@ -9,10 +9,18 @@
     "type": "extension",
     "displayName": "Ask & Answer",
     "description": "Interactive dialog with the user via TUI selection UI — question and questionnaire tools with arrow navigation, free text input, and tabbed interface. Supports mode:'all-at-once' for JSON editor (RPC).",
-    "version": "2.0.0",
+    "version": "2.0.1",
     "entry": "index.ts",
     "author": "FAN Team",
-    "tags": ["tui", "rpc", "dialog", "question", "questionnaire", "interactive", "user-input"]
+    "tags": [
+      "tui",
+      "rpc",
+      "dialog",
+      "question",
+      "questionnaire",
+      "interactive",
+      "user-input"
+    ]
   },
   "devDependencies": {
     "@sinclair/typebox": "^0.34.49",

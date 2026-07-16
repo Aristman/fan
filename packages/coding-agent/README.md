@@ -327,9 +327,9 @@ TypeScript modules that extend fan with custom tools, commands, keyboard shortcu
 
 ```typescript
 export default function (pi: ExtensionAPI) {
-  pi.registerTool({ name: "deploy", ... });
-  pi.registerCommand("stats", { ... });
-  pi.on("tool_call", async (event, ctx) => { ... });
+  fan.registerTool({ name: "deploy", ... });
+  fan.registerCommand("stats", { ... });
+  fan.on("tool_call", async (event, ctx) => { ... });
 }
 ```
 

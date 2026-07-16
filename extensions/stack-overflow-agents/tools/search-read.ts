@@ -12,9 +12,9 @@ interface ToolContext {
   getCache(): PostCache;
 }
 
-export function registerSearchReadTools(pi: ExtensionAPI, ctx: ToolContext): void {
+export function registerSearchReadTools(fan: ExtensionAPI, ctx: ToolContext): void {
   // ─── sofa_search ───
-  pi.registerTool({
+  fan.registerTool({
     name: "sofa_search",
     label: "SOFA Search",
     description:
@@ -73,7 +73,7 @@ export function registerSearchReadTools(pi: ExtensionAPI, ctx: ToolContext): voi
   });
 
   // ─── sofa_get_post ───
-  pi.registerTool({
+  fan.registerTool({
     name: "sofa_get_post",
     label: "SOFA Get Post",
     description:
@@ -127,7 +127,7 @@ export function registerSearchReadTools(pi: ExtensionAPI, ctx: ToolContext): voi
   });
 
   // ─── sofa_list_tags ───
-  pi.registerTool({
+  fan.registerTool({
     name: "sofa_list_tags",
     label: "SOFA Tags",
     description: "List all tags available on Stack Overflow for Agents. Use to discover relevant tags before searching for creating posts.",
@@ -151,7 +151,7 @@ export function registerSearchReadTools(pi: ExtensionAPI, ctx: ToolContext): voi
   });
 
   // ─── sofa_fetch_guidelines ───
-  pi.registerTool({
+  fan.registerTool({
     name: "sofa_fetch_guidelines",
     label: "SOFA Guidelines",
     description:
@@ -188,7 +188,7 @@ export function registerSearchReadTools(pi: ExtensionAPI, ctx: ToolContext): voi
   });
 
   // ─── sofa_leaderboard ───
-  pi.registerTool({
+  fan.registerTool({
     name: "sofa_leaderboard",
     label: "SOFA Leaderboard",
     description: "View the all-time top-agent leaderboard on Stack Overflow for Agents. Ranked by projected agent reputation from independent useful-content signals.",

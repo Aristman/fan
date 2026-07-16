@@ -16,7 +16,7 @@ export default function (pi: ExtensionAPI) {
 import { Type } from "@sinclair/typebox";
 import { StringEnum } from "@fan/fan-ai";
 
-pi.registerTool({
+fan.registerTool({
   name: "my_tool",                    // lowercase, underscores ok
   label: "My Tool",                   // display name
   description: "What this tool does", // shown to LLM
@@ -43,7 +43,7 @@ pi.registerTool({
 import { isToolCallEventType } from "@fan/fan-coding-agent";
 
 // Block/modify tool calls
-pi.on("tool_call", async (event, ctx) => {
+fan.on("tool_call", async (event, ctx) => {
   if (isToolCallEventType("bash", event)) {
     // event.input is mutable
     if (event.input.command?.includes("rm -rf")) {
@@ -53,27 +53,27 @@ pi.on("tool_call", async (event, ctx) => {
 });
 
 // Lifecycle events
-pi.on("session_start", async (event, ctx) => { /* event.reason: "startup"|"reload"|"new"|"resume"|"fork" */ });
-pi.on("session_shutdown", async (event, ctx) => { /* cleanup */ });
-pi.on("before_agent_start", async (event, ctx) => {
+fan.on("session_start", async (event, ctx) => { /* event.reason: "startup"|"reload"|"new"|"resume"|"fork" */ });
+fan.on("session_shutdown", async (event, ctx) => { /* cleanup */ });
+fan.on("before_agent_start", async (event, ctx) => {
   return { message: { customType: "my-ext", content: "...", display: false }, systemPrompt: event.systemPrompt + "..." };
 });
-pi.on("agent_start", async (event, ctx) => {});
-pi.on("agent_end", async (event, ctx) => { /* event.messages */ });
-pi.on("turn_start", async (event, ctx) => { /* event.turnIndex */ });
-pi.on("turn_end", async (event, ctx) => { /* event.message, event.toolResults */ });
-pi.on("context", async (event, ctx) => { return { messages: event.messages.filter(...) }; });
-pi.on("tool_result", async (event, ctx) => { return { content: [...], details: {...} }; });
+fan.on("agent_start", async (event, ctx) => {});
+fan.on("agent_end", async (event, ctx) => { /* event.messages */ });
+fan.on("turn_start", async (event, ctx) => { /* event.turnIndex */ });
+fan.on("turn_end", async (event, ctx) => { /* event.message, event.toolResults */ });
+fan.on("context", async (event, ctx) => { return { messages: event.messages.filter(...) }; });
+fan.on("tool_result", async (event, ctx) => { return { content: [...], details: {...} }; });
 
 // Event bus for inter-extension communication
-pi.events.on("my:event", (data) => {});
-pi.events.emit("my:event", { data: 42 });
+fan.events.on("my:event", (data) => {});
+fan.events.emit("my:event", { data: 42 });
 ```
 
 ## Command Registration
 
 ```typescript
-pi.registerCommand("my-cmd", {
+fan.registerCommand("my-cmd", {
   description: "What this command does",
   handler: async (args, ctx) => {
     ctx.ui.notify("Done!", "info");
@@ -117,10 +117,10 @@ const result = await ctx.ui.custom<boolean>((tui, theme, keybindings, done) => {
 
 ```typescript
 // Save
-pi.appendEntry("my-state", { count: 42 });
+fan.appendEntry("my-state", { count: 42 });
 
 // Restore
-pi.on("session_start", async (_event, ctx) => {
+fan.on("session_start", async (_event, ctx) => {
   for (const entry of ctx.sessionManager.getEntries()) {
     if (entry.type === "custom" && entry.customType === "my-state") {
       // reconstruct state from entry.data

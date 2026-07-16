@@ -37,10 +37,10 @@
 
 FAN имеет зрелое API расширений:
 
-- `pi.registerCommand()` и `pi.registerShortcut()` — для активации голосового ввода.
+- `fan.registerCommand()` и `fan.registerShortcut()` — для активации голосового ввода.
 - `ctx.ui.custom()` — для показа кастомного UI (индикатор записи, loader).
 - `ctx.ui.setEditorText()` — для вставки распознанного текста в строку ввода TUI.
-- `pi.exec()` — для запуска внешних команд (`sox`, `ffmpeg`, `whisper.cpp`).
+- `fan.exec()` — для запуска внешних команд (`sox`, `ffmpeg`, `whisper.cpp`).
 
 Пример `examples/extensions/qna.ts` демонстрирует похожий паттерн: команда → loader → LLM-вызов → `setEditorText()`.
 
@@ -48,7 +48,7 @@ FAN имеет зрелое API расширений:
 
 | Источник | Релевантность | Ключевые выводы |
 |----------|---------------|-----------------|
-| Документация FAN — Extensions (`packages/coding-agent/docs/extensions.md`) | Высокая | Расширения могут регистрировать команды, шорткаты, инструменты, взаимодействовать с TUI через `ctx.ui`, выполнять внешние команды через `pi.exec()`. |
+| Документация FAN — Extensions (`packages/coding-agent/docs/extensions.md`) | Высокая | Расширения могут регистрировать команды, шорткаты, инструменты, взаимодействовать с TUI через `ctx.ui`, выполнять внешние команды через `fan.exec()`. |
 | Пример `qna.ts` (`packages/coding-agent/examples/extensions/qna.ts`) | Высокая | Показывает паттерн: команда → кастомный UI с loader → LLM-вызов → `ctx.ui.setEditorText()`. |
 | Ollama API (`github.com/ollama/ollama/blob/main/docs/api.md`) | Высокая | Endpoint `/api/chat` принимает текстовые сообщения и поддерживает структурированный вывод (`format`). Аудио-вход в API пока не задокументирован. |
 | Ollama Audio models (`ollama.com/search?c=audio`) | Средняя | Есть модели с тегом `audio` (gemma4, nemotron3), но их страницы и API-интеграция пока ориентированы на текст/изображения; аудио-вход нестабилен. |

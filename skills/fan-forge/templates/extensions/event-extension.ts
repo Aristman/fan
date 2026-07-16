@@ -13,7 +13,7 @@ interface MyState {
 	lastEvent: string;
 }
 
-export default function (pi: ExtensionAPI) {
+export default function (fan: ExtensionAPI) {
 	let state: MyState = {
 		turnCount: 0,
 		startedAt: Date.now(),
@@ -21,7 +21,7 @@ export default function (pi: ExtensionAPI) {
 	};
 
 	// --- Restore state from session ---
-	pi.on("session_start", async (event, ctx) => {
+	fan.on("session_start", async (event, ctx) => {
 		state = { turnCount: 0, startedAt: Date.now(), lastEvent: "" };
 
 		for (const entry of ctx.sessionManager.getEntries()) {
@@ -42,7 +42,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// --- Track turns ---
-	pi.on("turn_start", async (event, ctx) => {
+	fan.on("turn_start", async (event, ctx) => {
 		state.turnCount++;
 		state.lastEvent = `turn_start:${event.turnIndex}`;
 
@@ -52,7 +52,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// --- Inject context before each agent run ---
-	pi.on("before_agent_start", async (event) => {
+	fan.on("before_agent_start", async (event) => {
 		return {
 			message: {
 				customType: "my-event-context",
@@ -63,7 +63,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// --- React to agent completion ---
-	pi.on("agent_end", async (event, ctx) => {
+	fan.on("agent_end", async (event, ctx) => {
 		const msgCount = event.messages.length;
 		if (ctx.hasUI) {
 			ctx.ui.notify(`Agent done: ${msgCount} messages`, "info");
@@ -71,12 +71,12 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// --- Clean up and persist state ---
-	pi.on("session_shutdown", async () => {
-		pi.appendEntry("my-event-state", state);
+	fan.on("session_shutdown", async () => {
+		fan.appendEntry("my-event-state", state);
 	});
 
 	// --- Context filtering ---
-	pi.on("context", async (event) => {
+	fan.on("context", async (event) => {
 		// Example: filter out stale custom messages
 		return {
 			messages: event.messages.filter((m: any) => {

@@ -10,8 +10,8 @@ import { StringEnum } from "@fan/fan-ai";
 import { Text } from "@fan/fan-tui";
 import { processItem, formatResult } from "./utils.js";
 
-export function registerTools(pi: ExtensionAPI): void {
-	pi.registerTool({
+export function registerTools(fan: ExtensionAPI): void {
+	fan.registerTool({
 		name: "my_action",
 		label: "My Action",
 		description: "Perform an action on an item",

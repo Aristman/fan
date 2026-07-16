@@ -13,7 +13,7 @@ import { checkOllamaHealth } from "./rag/embeddings.js";
 // Persistent Memory Extension
 // ──────────────────────────────────────────────
 
-export default function (pi: ExtensionAPI) {
+export default function (fan: ExtensionAPI) {
   // Load config
   const config = loadConfig();
 
@@ -71,7 +71,7 @@ export default function (pi: ExtensionAPI) {
     ollamaAvailable = available;
   });
 
-  pi.on("session_start", async (event, ctx) => {
+  fan.on("session_start", async (event, ctx) => {
     // Check Ollama health
     ctx.ui.setStatus("memory", "🧠 Memory: checking...");
     if (ollamaAvailable === undefined) {
@@ -112,7 +112,7 @@ export default function (pi: ExtensionAPI) {
 
   // ─── Context injection (RAG) ─────────────
 
-  pi.on("before_agent_start", async (event, ctx) => {
+  fan.on("before_agent_start", async (event, ctx) => {
     if (!retriever) return;
 
     try {
@@ -144,7 +144,7 @@ export default function (pi: ExtensionAPI) {
 
   // ─── Auto-extract on turn end ─────────────
 
-  pi.on("turn_end", async (_event, ctx) => {
+  fan.on("turn_end", async (_event, ctx) => {
     if (!autoExtractor || !ctx.sessionManager) return;
 
     try {
@@ -173,7 +173,7 @@ export default function (pi: ExtensionAPI) {
   // ─── Register tools ──────────────────────
 
   registerMemoryTools(
-    pi,
+    fan,
     () => ({ global: globalRepo, project: projectRepo }),
     () => config,
     () => retriever
@@ -182,14 +182,14 @@ export default function (pi: ExtensionAPI) {
   // ─── Register commands ───────────────────
 
   registerMemoryCommand(
-    pi,
+    fan,
     () => ({ global: globalDb, project: projectDb }),
     () => config
   );
 
   // ─── Cleanup on session shutdown ──────────
 
-  pi.on("session_shutdown", async () => {
+  fan.on("session_shutdown", async () => {
     try { projectDb?.close(); } catch {}
     try { globalDb?.close(); } catch {}
     projectDb = null;

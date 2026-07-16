@@ -225,11 +225,11 @@ async function collectInteractively(
 
 // ── Главный entry point ────────────────────────────────────────────────────
 
-export default function (pi: ExtensionAPI) {
+export default function (fan: ExtensionAPI) {
   const config = loadConfig();
   let activeController: LoopController | null = null;
 
-  pi.registerCommand("loop", {
+  fan.registerCommand("loop", {
     description: "🔄 Итеративное выполнение задачи до выполнения критериев приёмки",
     handler: async (args: string | undefined, ctx: ExtensionCommandContext) => {
       const rawArgs = args || "";

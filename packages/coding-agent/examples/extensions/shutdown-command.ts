@@ -8,20 +8,20 @@
 import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
 import { Type } from "@sinclair/typebox";
 
-export default function (pi: ExtensionAPI) {
-	// Register a /quit command that cleanly exits pi
-	pi.registerCommand("quit", {
-		description: "Exit pi cleanly",
+export default function (fan: ExtensionAPI) {
+	// Register a /quit command that cleanly exits fan
+	fan.registerCommand("quit", {
+		description: "Exit fan cleanly",
 		handler: async (_args, ctx) => {
 			ctx.shutdown();
 		},
 	});
 
 	// You can also create a tool that shuts down after completing work
-	pi.registerTool({
+	fan.registerTool({
 		name: "finish_and_exit",
 		label: "Finish and Exit",
-		description: "Complete a task and exit pi",
+		description: "Complete a task and exit fan",
 		parameters: Type.Object({}),
 		async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
 			// Do any final work here...
@@ -37,10 +37,10 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// You could also create a more complex tool with parameters
-	pi.registerTool({
+	fan.registerTool({
 		name: "deploy_and_exit",
 		label: "Deploy and Exit",
-		description: "Deploy the application and exit pi",
+		description: "Deploy the application and exit fan",
 		parameters: Type.Object({
 			environment: Type.String({ description: "Target environment (e.g., production, staging)" }),
 		}),
@@ -48,7 +48,7 @@ export default function (pi: ExtensionAPI) {
 			onUpdate?.({ content: [{ type: "text", text: `Deploying to ${params.environment}...` }], details: {} });
 
 			// Example deployment logic
-			// const result = await pi.exec("npm", ["run", "deploy", params.environment], { signal });
+			// const result = await fan.exec("npm", ["run", "deploy", params.environment], { signal });
 
 			// On success, request graceful shutdown
 			onUpdate?.({ content: [{ type: "text", text: "Deployment complete, exiting..." }], details: {} });

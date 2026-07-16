@@ -10,7 +10,7 @@
 import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
 import { createBashTool } from "@seaagents/fan-coding-agent";
 
-export default function (pi: ExtensionAPI) {
+export default function (fan: ExtensionAPI) {
 	const cwd = process.cwd();
 
 	const bashTool = createBashTool(cwd, {
@@ -21,7 +21,7 @@ export default function (pi: ExtensionAPI) {
 		}),
 	});
 
-	pi.registerTool({
+	fan.registerTool({
 		...bashTool,
 		execute: async (id, params, signal, onUpdate, _ctx) => {
 			return bashTool.execute(id, params, signal, onUpdate);

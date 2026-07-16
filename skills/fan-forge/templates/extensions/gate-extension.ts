@@ -8,8 +8,8 @@
 import { isToolCallEventType } from "@fan/fan-coding-agent";
 import type { ExtensionAPI } from "@fan/fan-coding-agent";
 
-export default function (pi: ExtensionAPI) {
-	pi.on("tool_call", async (event, ctx) => {
+export default function (fan: ExtensionAPI) {
+	fan.on("tool_call", async (event, ctx) => {
 		// --- Example 1: Block dangerous bash commands ---
 		if (isToolCallEventType("bash", event)) {
 			const command = event.input.command as string;

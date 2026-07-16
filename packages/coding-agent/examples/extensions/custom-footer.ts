@@ -12,10 +12,10 @@ import type { AssistantMessage } from "@seaagents/fan-ai";
 import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
 import { truncateToWidth, visibleWidth } from "@seaagents/fan-tui";
 
-export default function (pi: ExtensionAPI) {
+export default function (fan: ExtensionAPI) {
 	let enabled = false;
 
-	pi.registerCommand("footer", {
+	fan.registerCommand("footer", {
 		description: "Toggle custom footer",
 		handler: async (_args, ctx) => {
 			enabled = !enabled;

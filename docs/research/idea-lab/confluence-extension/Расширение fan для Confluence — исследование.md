@@ -61,7 +61,7 @@
 |----------|--------------|----------------|
 | [Confluence REST API v2 — Page](https://developer.atlassian.com/cloud/confluence/rest/v2/api-group-page/#api-group-page) | Высокая | Эндпоинты для CRUD операций со страницами, курсорная пагинация |
 | [Confluence REST API v2 — Space](https://developer.atlassian.com/cloud/confluence/rest/v2/api-group-space/#api-group-space) | Высокая | Эндпоинты для работы с пространствами |
-| [fan Extensions Documentation](/packages/coding-agent/docs/extensions.md) | Высокая | API расширений: `pi.registerTool()`, зависимости, lifecycle events |
+| [fan Extensions Documentation](/packages/coding-agent/docs/extensions.md) | Высокая | API расширений: `fan.registerTool()`, зависимости, lifecycle events |
 | [confluence.js — npm](https://www.npmjs.com/package/confluence.js) | Высокая | Готовый TypeScript-клиент, 2 MB, MIT, Data Center support |
 | [@atlassian-dc-mcp/confluence — npm](https://www.npmjs.com/package/@atlassian-dc-mcp/confluence) | Средняя | Подтверждает спрос, показывает подход к конвертации |
 | [@shogobg/markdown2confluence — npm](https://www.npmjs.com/package/@shogobg/markdown2confluence) | Средняя | Markdown → Storage Format, лёгкая библиотека на marked |
@@ -86,7 +86,7 @@
 
 ### Strengths (Сильные стороны) 🔵
 - **Готовый TypeScript-клиент** — `confluence.js` v2.1.0 полностью покрывает REST API Confluence (страницы, пространства, поиск, вложения). Поддерживает Data Center, MIT-лицензия, активно развивается (36 версий за время существования).
-- **Идеальное совпадение с архитектурой fan** — Extension API предоставляет `pi.registerTool()` для регистрации инструментов, вызываемых LLM. Расширение с npm-зависимостями — стандартный паттерн (пример `with-deps/`). Доступ к `ctx` (CWD, signal, session) для контекстуализации.
+- **Идеальное совпадение с архитектурой fan** — Extension API предоставляет `fan.registerTool()` для регистрации инструментов, вызываемых LLM. Расширение с npm-зависимостями — стандартный паттерн (пример `with-deps/`). Доступ к `ctx` (CWD, signal, session) для контекстуализации.
 - **Конвертация в обе стороны на проверенных библиотеках** — `turndown` для XHTML→Markdown (чтение), `marked` с кастомным рендерером или `@shogobg/markdown2confluence` для Markdown→Storage Format (запись). Оба подхода используются в production MCP-серверах.
 - **Нет аналогов для fan** — Ниша свободна, первое расширение такого типа получит преимущество первого хода и может быть опубликовано в FAN Store.
 
@@ -204,7 +204,7 @@
 | Сложная конвертация Storage Format для макросов | Высокая | Среднее | Начать с базовой поддержки (заголовки, списки, таблицы, код, ссылки), макросы — отдельная итерация |
 | Несовместимость REST API между версиями DC | Средняя | Среднее | Явно указывать поддерживаемые версии, добавить логирование версии при подключении |
 | Rate limiting со стороны Confluence DC | Средняя | Низкое | Добавить задержки между запросами, кэшировать результаты, batch-операции |
-| Большие документы вызывают таймаут | Низкая | Среднее | Streaming-ответы через `onUpdate`, настраиваемый таймаут в `pi.exec()` |
+| Большие документы вызывают таймаут | Низкая | Среднее | Streaming-ответы через `onUpdate`, настраиваемый таймаут в `fan.exec()` |
 | PAT недоступен в старых версиях DC | Низкая | Высокое | Предусмотреть fallback на Basic Auth как опцию конфигурации |
 
 ---
@@ -333,7 +333,7 @@ CONFLUENCE_DEFAULT_PARENT_ID=12345    # опционально
 
 ```typescript
 // confluence_list_spaces
-pi.registerTool({
+fan.registerTool({
   name: "confluence_list_spaces",
   label: "Confluence: List Spaces",
   description: "Список доступных пространств Confluence",
@@ -344,7 +344,7 @@ pi.registerTool({
 });
 
 // confluence_search
-pi.registerTool({
+fan.registerTool({
   name: "confluence_search",
   label: "Confluence: Search",
   description: "Поиск по страницам Confluence с использованием CQL",
@@ -356,7 +356,7 @@ pi.registerTool({
 });
 
 // confluence_create_page
-pi.registerTool({
+fan.registerTool({
   name: "confluence_create_page",
   label: "Confluence: Create Page",
   description: "Создание страницы в Confluence из Markdown-контента",
@@ -393,7 +393,7 @@ pi.registerTool({
 | PAT | Personal Access Token — персональный токен доступа для аутентификации в API |
 | MCP | Model Context Protocol — протокол для взаимодействия AI-ассистентов с внешними инструментами |
 | fan extension | TypeScript-модуль, расширяющий функциональность fan через Extension API |
-| tool | Инструмент, зарегистрированный расширением через `pi.registerTool()`, вызываемый LLM |
+| tool | Инструмент, зарегистрированный расширением через `fan.registerTool()`, вызываемый LLM |
 | турндаун | Библиотека turndown для конвертации HTML/XHTML в Markdown |
 
 ---

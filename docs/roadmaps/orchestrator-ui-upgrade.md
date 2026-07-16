@@ -360,7 +360,7 @@ export function parseVerdict(text: string): "PASS" | "FAIL" | "PARTIAL" | null {
 **Файл:** `packages/orchestrator/src/orchestrator-tools.ts`
 
 ```typescript
-pi.registerTool({
+fan.registerTool({
   name: "stop_worker",
   label: "Stop Worker",
   description: "Stop a running worker by ID.",

@@ -7,21 +7,21 @@
 import type { ExtensionAPI, ExtensionContext } from "@fan/fan-coding-agent";
 import { Text, Spacer, Container, Component } from "@fan/fan-tui";
 
-export default function (pi: ExtensionAPI) {
+export default function (fan: ExtensionAPI) {
 	// --- Status indicator in footer ---
-	pi.on("session_start", async (event, ctx) => {
+	fan.on("session_start", async (event, ctx) => {
 		if (ctx.hasUI) {
 			ctx.ui.setStatus("my-ui", "Active");
 			ctx.ui.setTitle("fan — my-ui extension");
 		}
 	});
 
-	pi.on("session_shutdown", async (_event, ctx) => {
+	fan.on("session_shutdown", async (_event, ctx) => {
 		ctx.ui.setStatus("my-ui", undefined);
 	});
 
 	// --- Widget above editor ---
-	pi.on("turn_start", async (event, ctx) => {
+	fan.on("turn_start", async (event, ctx) => {
 		if (ctx.hasUI) {
 			ctx.ui.setWidget("my-ui", [
 				ctx.ui.theme.fg("accent", `Turn ${event.turnIndex + 1}`),
@@ -30,7 +30,7 @@ export default function (pi: ExtensionAPI) {
 		}
 	});
 
-	pi.on("turn_end", async (_event, ctx) => {
+	fan.on("turn_end", async (_event, ctx) => {
 		if (ctx.hasUI) {
 			ctx.ui.setWidget("my-ui", [
 				ctx.ui.theme.fg("success", "✓ Done"),
@@ -39,7 +39,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// --- Command with custom UI dialog ---
-	pi.registerCommand("my-ui-demo", {
+	fan.registerCommand("my-ui-demo", {
 		description: "Demo custom UI components",
 		handler: async (_args, ctx) => {
 			if (!ctx.hasUI) {
