@@ -13,6 +13,22 @@ let brokerCatalog = new Map();
 let brokerInitialized = false;
 
 /**
+ * F-2.7: Agent name → permission level mapping.
+ * Key: agent name, Value: "all" | "read-only" | "none"
+ */
+const PROFILES_BY_AGENT = {
+	explore: "read-only",
+	plan: "read-only",
+	verify: "read-only",
+	"code-research": "read-only",
+	implement: "all",
+	"bug-fix": "all",
+	"tests-impl": "all",
+};
+
+const DEFAULT_LEVEL = "all";
+
+/**
  * @typedef {Object} MCPToolDescriptor
  * @property {string} id - Fully qualified tool ID (e.g. "mcp__filesystem__read_file")
  * @property {string} name - Short tool name
@@ -65,6 +81,34 @@ export const brokerHandler = {
 	},
 
 	/**
+	 * F-2.7: Resolve permission level for a given agent name.
+	 * @param {string} [agentName] - Agent identifier (e.g. "explore", "implement")
+	 * @returns {"all" | "read-only" | "none"}
+	 */
+	getPermissionLevel(agentName) {
+		return PROFILES_BY_AGENT[agentName] ?? DEFAULT_LEVEL;
+	},
+
+	/**
+	 * F-2.7: Filter MCP tool catalog by agent permission level.
+	 *
+	 * - "all": no filter, returns all tools
+	 * - "none": returns empty array
+	 * - "read-only": returns only tools with annotations.readOnly === true
+	 *
+	 * @param {import("./types.js").MCPToolDescriptor[]} tools - Full catalog array
+	 * @param {"all" | "read-only" | "none"} level - Permission level from getPermissionLevel()
+	 * @returns {import("./types.js").MCPToolDescriptor[]}
+	 */
+	filterToolsByProfile(tools, level) {
+		if (!Array.isArray(tools)) return [];
+		if (level === "none") return [];
+		if (level === "all") return tools;
+		// read-only: only tools with readOnly annotation
+		return tools.filter((t) => t.annotations?.readOnly === true);
+	},
+
+	/**
 	 * Reset internal state (for testing).
 	 */
 	_reset() {
@@ -72,3 +116,15 @@ export const brokerHandler = {
 		brokerInitialized = false;
 	},
 };
+
+/**
+ * F-2.7: Standalone wrapper for test imports (delegates to brokerHandler singleton).
+ */
+export function getPermissionLevel(agentName) {
+	return brokerHandler.getPermissionLevel(agentName);
+}
+
+export function filterToolsByProfile(tools, level) {
+	return brokerHandler.filterToolsByProfile(tools, level);
+}
+

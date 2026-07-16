@@ -13,6 +13,7 @@
 import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { brokerHandler } from "./broker-handler.js";
 export const MAX_PARALLEL_TASKS = 8;
 export const MAX_CONCURRENCY = 4;
 export function getFinalOutput(messages) {
@@ -232,7 +233,7 @@ function formatDuration(ms) {
  * Single stallTimer — reset on ANY stdout data. Worker can run indefinitely
  * as long as it's producing output. If no output for stallTimeout ms → kill.
  */
-export function runWorker(model, temperature, agentPrompt, tools, task, stallTimeout, options) {
+export function runWorker(model, temperature, agentPrompt, tools, task, stallTimeout, options, agentName) {
     const PROMPT_ID = "orch-prompt";
     const STATE_ID = "orch-state";
     const TEXT_ID = "orch-text";
@@ -242,6 +243,22 @@ export function runWorker(model, temperature, agentPrompt, tools, task, stallTim
         if (model) rpcArgs.push("--model", model);
         if (temperature != null) rpcArgs.push("--temperature", String(temperature));
         if (tools && tools.length > 0) rpcArgs.push("--tools", tools.join(","));
+
+        // F-2.7: per-worker profile filtering (MCP tools)
+        const agentProfile = agentName || "";
+        const permLevel = brokerHandler.getPermissionLevel(agentProfile);
+        let allowedMcpTools = [];
+        try {
+            const catalogTools = brokerHandler.listTools();
+            allowedMcpTools = brokerHandler.filterToolsByProfile(catalogTools, permLevel);
+        } catch (e) {
+            // broker may not be initialized — continue without remote tools
+        }
+        const remoteToolsFlag = allowedMcpTools.map((t) => t.id);
+        if (remoteToolsFlag.length > 0) {
+            rpcArgs.push("--remote-tools", remoteToolsFlag.join(","));
+        }
+
         rpcArgs.push("--no-session", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes");
         const invocation = getFnaInvocation(rpcArgs);
         const child = spawn(invocation.command, invocation.args, {
@@ -330,6 +347,22 @@ export function runWorker(model, temperature, agentPrompt, tools, task, stallTim
             if (!resolved) {
                 try { child.stdin?.write(JSON.stringify(data) + "\n"); } catch { /* ignore */ }
             }
+        }
+
+        // F-2.7: send remote_tool_catalog to worker if MCP tools were requested
+        if (allowedMcpTools.length > 0) {
+            const catalogMsg = {
+                type: "remote_tool_catalog",
+                tools: allowedMcpTools.map((t) => ({
+                    id: t.id,
+                    label: t.label,
+                    description: t.description,
+                    inputSchema: t.inputSchema,
+                    serverName: t.serverName,
+                    annotations: t.annotations,
+                })),
+            };
+            try { child.stdin?.write(JSON.stringify(catalogMsg) + "\n"); } catch { /* ignore */ }
         }
 
         function schedulePoll() {
@@ -618,7 +651,7 @@ export async function runSingleAgent(defaultCwd, agents, agentName, task, temper
     }
 
     try {
-        const result = await runWorker(model, temperature, agentPrompt, tools, task, stallTimeout, progressOptions);
+        const result = await runWorker(model, temperature, agentPrompt, tools, task, stallTimeout, progressOptions, agentName);
         lastText = result.text;
         messageCount = result.messageCount;
         const endTime = Date.now();
