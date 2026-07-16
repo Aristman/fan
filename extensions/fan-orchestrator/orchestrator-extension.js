@@ -17,6 +17,7 @@
  *   /delegate <agent> <task> — Quick delegate
  *   /pipeline             — Pipeline mode (init/status/log/finish/cancel)
  */
+import { brokerHandler } from "./broker-handler.js";
 import { COORDINATOR_PROMPT, buildCoordinatorPrompt, discoverAgents } from "./agents.js";
 import { DEFAULTS, configExists, loadConfig, resolveWorkerModel, resolveWorkerTemperature, saveConfig } from "./config.js";
 import { registerOrchestratorTools } from "./orchestrator-tools.js";
@@ -28,6 +29,9 @@ import { _resetRegistry, activeWorkers, genWorkerId, registerWorker, updateWorke
 import { PipelineState } from "./pipeline-state.js";
 import * as path from "node:path";
 export const orchestratorExtension = (fan) => {
+    // F-2.5: Subscribe to MCP catalog (fan-mcp extension emits on "mcp:catalog")
+    brokerHandler.initialize(fan);
+
     // ---- Infrastructure setup ----
     const hasConfig = configExists();
     const config = hasConfig ? loadConfig() : { ...DEFAULTS };
