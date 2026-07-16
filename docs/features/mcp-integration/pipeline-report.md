@@ -12,7 +12,28 @@
 | **Реализовано (✅)** | **30 (93.75%)** |
 | Пропущено (❌) | 2 (F-3.3 OAuth, F-1.15 stub доделка) |
 | Коммитов функциональных | **30** |
-| Коммитов chore/docs | **4** |
+| Bug-fix коммитов | **2** (01d6eb1, 1058927) |
+| Chore/docs | **5** |
+
+### Bug-fix round (post deep verify)
+
+| Issue | Severity | Status | Commit |
+|-------|----------|--------|--------|
+| BUG-1 Permission gate с пустым config → ВСЕ MCP tools блокировались | CRITICAL | ✅ Fixed | 01d6eb1 |
+| BUG-2 Server ID alias injection (Number("0e0") === 0) | HIGH | ✅ Fixed | 1058927 |
+| BUG-3 SSRF via 127.0.0.0/8 loopback range | HIGH | ✅ Fixed | 1058927 |
+| BUG-4 TC-F1.7-9 deterministic argument position bug | HIGH | ✅ Fixed | 01d6eb1 |
+| BUG-5 list_changed double-fetch (SDK autoRefresh) | CRITICAL | ✅ Fixed | 01d6eb1 |
+| BUG-6 matchGlob ReDoS regex injection | HIGH | ✅ Fixed | 1058927 |
+| BUG-7 Dead code pendingRemoteToolRequests Map | LOW | ✅ Fixed | 01d6eb1 |
+| BUG-8 filterToolsByConfig name namespace mismatch | MEDIUM | ✅ Fixed | (in same cleanup batch) |
+| BUG-9 Error messages log secrets (Bearer tokens) | LOW | ✅ Fixed | (in same cleanup batch) |
+| BUG-10 36 TS errors in test files | MEDIUM | ✅ Fixed | (in same cleanup batch) |
+
+**Re-verification после bug-fix**:
+- mcp-extension: **214/214 tests passing** (172 baseline + 42 regression)
+- TS errors: 36 → 3 (3 pre-existing в `packages/tui/src/utils.ts`, не относятся к MCP)
+- coding-agent: 8 mcp-specific tests passing
 
 ### Phase status
 
