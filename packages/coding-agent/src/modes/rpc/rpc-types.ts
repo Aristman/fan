@@ -332,6 +332,67 @@ export type RpcExtensionUIResponse =
 	| { type: "extension_ui_response"; id: string; cancelled: true };
 
 // ============================================================================
+// RPC Remote Tool (bidirectional channel for worker→parent tool proxy)
+// ============================================================================
+
+/**
+ * Child→Parent request to invoke a remote tool (e.g., MCP tool via parent-side manager).
+ * Protocol-neutral: semantics are defined by the orchestrator extension's
+ * `RemoteToolBroker` and the corresponding proxy tool registered in the worker.
+ */
+export interface RpcRemoteToolRequest {
+	type: "remote_tool_request";
+	/** Correlation id, unique per request */
+	id: string;
+	/** Normalized tool ID: e.g. "mcp__filesystem__read_file" */
+	toolId: string;
+	/** Parsed arguments (already validated by worker's local schema) */
+	args: Record<string, unknown>;
+}
+
+export interface RpcRemoteToolCancel {
+	type: "remote_tool_cancel";
+	id: string;
+}
+
+/**
+ * Parent→Child response with the tool's result. Always returned (success or error).
+ */
+export type RpcRemoteToolResponse =
+	| { type: "remote_tool_response"; id: string; content: Array<{ type: "text"; text: string } | { type: "image"; mimeType: string; data: string }>; isError: false }
+	| { type: "remote_tool_response"; id: string; content: Array<{ type: "text"; text: string }>; isError: true; errorMessage?: string };
+
+export interface RpcToolDescriptor {
+	/** Unique tool ID across all tools proxied via this channel */
+	id: string;
+	/** Human-readable label for UI */
+	label?: string;
+	/** Description for the LLM */
+	description: string;
+	/** JSON Schema for tool inputs */
+	inputSchema: Record<string, unknown>;
+	/** MCP server name (for debugging / filtering) */
+	serverName: string;
+	annotations?: {
+		readOnly?: boolean;
+		destructive?: boolean;
+		openWorld?: boolean;
+	};
+}
+
+export type RpcRemoteToolCatalog = { type: "remote_tool_catalog"; tools: RpcToolDescriptor[] };
+
+// ============================================================================
+// Discriminated unions for child→parent bidirectional messaging
+// ============================================================================
+
+/** All child→parent request types */
+export type RpcChildRequest = RpcRemoteToolRequest | RpcRemoteToolCancel | RpcExtensionUIRequest;
+
+/** All parent→child response types */
+export type RpcParentResponse = RpcRemoteToolResponse | RpcExtensionUIResponse;
+
+// ============================================================================
 // Helper type for extracting command types
 // ============================================================================
 
