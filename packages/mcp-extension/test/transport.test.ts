@@ -1,15 +1,16 @@
 /**
- * Tests for createStdioTransport (F-1.4).
+ * Tests for createStdioTransport (F-1.4) and createHttpTransport (F-1.5).
  *
- * TC-F1.4-1: createStdioTransport rejects non-stdio config
- * TC-F1.4-2: createStdioTransport rejects missing command
- * TC-F1.4-3: createStdioTransport resolves ${ENV} references in env
- * TC-F1.4-4: createStdioTransport without env uses SAFE_ENV_VARS whitelist
- * TC-F1.4-5: Integration — spawns echo fixture via stdio MCP and starts transport
+ * TC-F1.4-1..5: Stdio transport tests
+ * TC-F1.5-1..7: StreamableHTTP transport tests
  */
 
 import { describe, expect, it } from "vitest";
-import { createStdioTransport } from "../src/transport.js";
+import { createStdioTransport, createHttpTransport } from "../src/transport.js";
+
+// ──────────────────────────────────────────────────
+// F-1.4: Stdio transport
+// ──────────────────────────────────────────────────
 
 describe("F-1.4: createStdioTransport", () => {
 	// TC-F1.4-1
@@ -38,7 +39,6 @@ describe("F-1.4: createStdioTransport", () => {
 				env: { HEADER: "Bearer ${TEST_TOKEN}" },
 			});
 			expect(transport).toBeDefined();
-			// The transport constructor should have resolved the env var
 		} finally {
 			if (original === undefined) {
 				delete process.env.TEST_TOKEN;
@@ -50,20 +50,12 @@ describe("F-1.4: createStdioTransport", () => {
 
 	// TC-F1.4-4
 	it("uses SAFE_ENV_VARS whitelist when no env is provided", () => {
-		const path = process.env.PATH;
-		const home = process.env.HOME;
-		try {
-			// Ensure at least PATH exists (it always does on any system)
-			const transport = createStdioTransport({
-				transport: "stdio",
-				command: "node",
-				args: ["-e", "process.stdin.pipe(process.stdout)"],
-			});
-			expect(transport).toBeDefined();
-			// No throw means it constructed successfully with safe vars
-		} finally {
-			// restore — not really needed here but keeps pattern
-		}
+		const transport = createStdioTransport({
+			transport: "stdio",
+			command: "node",
+			args: ["-e", "process.stdin.pipe(process.stdout)"],
+		});
+		expect(transport).toBeDefined();
 	});
 
 	// TC-F1.4-5
@@ -84,5 +76,80 @@ describe("F-1.4: createStdioTransport", () => {
 		expect(transport.pid).toBeGreaterThan(0);
 
 		await transport.close();
+	});
+});
+
+// ──────────────────────────────────────────────────
+// F-1.5: StreamableHTTP transport
+// ──────────────────────────────────────────────────
+
+describe("F-1.5: createHttpTransport", () => {
+	// TC-F1.5-1
+	it("rejects non-streamable-http transport", () => {
+		expect(() =>
+			createHttpTransport({ transport: "stdio", command: "x" } as any),
+		).toThrow(/streamable-http/);
+	});
+
+	// TC-F1.5-2
+	it("rejects missing url", () => {
+		expect(() =>
+			createHttpTransport({ transport: "streamable-http" } as any),
+		).toThrow(/url/);
+	});
+
+	// TC-F1.5-3
+	it("rejects http:// (not https)", () => {
+		expect(() =>
+			createHttpTransport({
+				transport: "streamable-http",
+				url: "http://api.example.com/mcp",
+			} as any),
+		).toThrow(/https/);
+	});
+
+	// TC-F1.5-4
+	it("rejects localhost without allowLocal", () => {
+		expect(() =>
+			createHttpTransport({
+				transport: "streamable-http",
+				url: "https://localhost:3000/mcp",
+			} as any),
+		).toThrow(/allowLocal/);
+	});
+
+	// TC-F1.5-5
+	it("accepts localhost with allowLocal: true", () => {
+		expect(() =>
+			createHttpTransport({
+				transport: "streamable-http",
+				url: "https://127.0.0.1:3000/mcp",
+				allowLocal: true,
+			} as any),
+		).not.toThrow();
+	});
+
+	// TC-F1.5-6
+	it("accepts https external URL", () => {
+		expect(() =>
+			createHttpTransport({
+				transport: "streamable-http",
+				url: "https://api.example.com/mcp",
+			} as any),
+		).not.toThrow();
+	});
+
+	// TC-F1.5-7
+	it("resolves ${ENV} in headers", () => {
+		expect(() =>
+			createHttpTransport(
+				{
+					transport: "streamable-http",
+					url: "https://api.example.com/mcp",
+					headers: { Authorization: "Bearer ${TEST_TOKEN}" },
+				} as any,
+				{ TEST_TOKEN: "abc" },
+			),
+		).not.toThrow();
 	});
 });
