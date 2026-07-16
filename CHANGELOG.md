@@ -2,62 +2,62 @@
 
 ## [2.2.3] - 2026-07-16
 
-### MCP Integration (Phase 1 + Phase 2 + partial Phase 3)
+### MCP Интеграция (Phase 1 + Phase 2 + partial Phase 3)
 
-#### Added
+#### Добавлено
 
 **Core (F-1.1, F-1.2)**
-- `ExtensionAPI.unregisterTool(name)` — removes a tool from session registry
-- `ExtensionAPI.updateTool(name, def)` — replaces a registered tool
+- `ExtensionAPI.unregisterTool(name)` — удаляет инструмент из реестра сессии
+- `ExtensionAPI.updateTool(name, def)` — заменяет зарегистрированный инструмент
 
-**New package `@fan/mcp-extension` (Phase 1)**
-- MCP client integration: connect to external MCP servers via stdio or Streamable HTTP transports
-- Tool discovery via `tools/list` and dynamic catalog refresh via `notifications/tools/list_changed`
-- JSON Schema → TypeBox converter for tool input parameters
-- CallToolResult → AgentToolResult mapping with text/image content support
-- Permission gate: per-server `allowedTools`/`deniedTools` glob filtering
-- mcp.json loader with global/project merge, graceful invalid handling
-- Auto-restart on stdio crash with exponential backoff
-- `/mcp status` and `/mcp reload` slash commands
-- Logger writing to `~/.fan/agent/logs/mcp-YYYY-MM-DD.log`
-- 241 passing tests (19 test files)
+**Новый пакет `@fan/mcp-extension` (Phase 1)**
+- MCP клиентская интеграция: подключение к внешним MCP-серверам через stdio или Streamable HTTP транспорты
+- Обнаружение инструментов через `tools/list` и динамическое обновление каталога через `notifications/tools/list_changed`
+- Конвертер JSON Schema → TypeBox для параметров входных инструментов
+- Маппинг CallToolResult → AgentToolResult с поддержкой текстового/изображённого контента
+- Gate разрешений: per-server glob-фильтрация `allowedTools`/`deniedTools`
+- Загрузчик mcp.json с объединением глобального/проектного конфига, корректная обработка невалидных данных
+- Авто-перезапуск при падении stdio с экспоненциальной задержкой
+- Slash-команды `/mcp status` и `/mcp reload`
+- Логгер с записью в `~/.fan/agent/logs/mcp-YYYY-MM-DD.log`
+- 241 проходной тест (19 тестовых файлов)
 
 **Worker Proxy (Phase 2)**
-- `--remote-tools=<list>` CLI flag for worker mode
-- `RemoteProxyTool` — local proxy forwarding tool calls to parent via `remote_tool_request`
-- Generic `RpcRemoteToolRequest` / `Response` / `Cancel` / `Catalog` types (protocol-neutral)
-- `pendingRemoteToolRequests` correlation map in RPC mode
-- `EventBus` lastEvent cache (replay-on-subscribe) for late subscribers
-- `broker-handler` in orchestrator extension: subscribes to fan-mcp `mcp:catalog` and routes proxy requests
-- Per-worker profile filtering (explore/plan/verify → read-only; implement/bug-fix → all)
+- CLI-флаг `--remote-tools=<list>` для режима worker
+- `RemoteProxyTool` — локальный прокси, перенаправляющий вызовы инструментов родителю через `remote_tool_request`
+- Обобщённые типы `RpcRemoteToolRequest` / `Response` / `Cancel` / `Catalog` (протокол-нейтральные)
+- Карта корреляции `pendingRemoteToolRequests` в RPC-режиме
+- Кеш `lastEvent` на `EventBus` (replay-on-subscribe) для опоздавших подписчиков
+- `broker-handler` в расширении оркестратора: подписывается на `mcp:catalog` от fan-mcp и маршрутизирует прокси-запросы
+- Профильная фильтрация per-worker (explore/plan/verify → только чтение; implement/bug-fix → всё)
 
 **API Gateway**
-- `GET /api/mcp/servers` endpoint — returns MCP server status (stubbed data, full bridge in Phase 4)
+- Эндпоинт `GET /api/mcp/servers` — возвращает статус MCP-серверов (заглушка, полный мост в Phase 4)
 
-#### Security
+#### Безопасность
 
-- Server ID validation: `isValidServerId` rejects `Number("0e0")`-style aliases
-- Loopback hostname validation: covers 127.0.0.0/8, 0.0.0.0, IPv6 ::1
-- Private IP range rejection: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10
-- glob pattern length/wildcard limits to prevent ReDoS in matchGlob
-- Secret sanitization in logger for Bearer tokens, API keys, sk-* style keys
-- Safe env var whitelist (PATH, HOME, LANG, LC_ALL, TMPDIR, USERPROFILE only)
-- `shell: false` for stdio MCP server spawn
+- Валидация server ID: `isValidServerId` отклоняет псевдонимы вида `Number("0e0")`
+- Валидация loopback hostname: покрывает 127.0.0.0/8, 0.0.0.0, IPv6 ::1
+- Блокировка диапазонов частных IP: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10
+- Ограничение длины/количества wildcard'ов в glob-шаблонах для предотвращения ReDoS в matchGlob
+- Санитация секретов в логгере для Bearer-токенов, API-ключей, ключей вида sk-*
+- Безопасный список env-переменных (только PATH, HOME, LANG, LC_ALL, TMPDIR, USERPROFILE)
+- `shell: false` для запуска stdio MCP-серверов
 
-#### Changed
+#### Изменено
 
-- `event-bus.ts`: added lastEvent cache (~10 lines)
-- `rpc-types.ts`: added protocol-neutral remote tool types (~90 lines)
-- `rpc-mode.ts`: added correlation map (~30 lines)
-- `agent-session.ts`: added registerCustomTools method
-- `args.ts`: added --remote-tools CLI flag
-- core change footprint: ~180 lines total
+- `event-bus.ts`: добавлен кеш lastEvent (~10 строк)
+- `rpc-types.ts`: добавлены протокол-нейтральные типы удалённых инструментов (~90 строк)
+- `rpc-mode.ts`: добавлена карта корреляции (~30 строк)
+- `agent-session.ts`: добавлен метод registerCustomTools
+- `args.ts`: добавлен CLI-флаг --remote-tools
+- Общий объём изменений в core: ~180 строк
 
-#### Known limitations (Phase 4)
+#### Известные ограничения (Phase 4)
 
-- F-3.3 OAuth support: stubbed PKCE flow only — full browser flow requires manual user intervention
-- Dashboard Lit component (mcp-card): endpoint exists, UI deferred
-- F-2.4 subagent-runner.handleRemoteToolRequest still uses broker-side placeholder until fan-mcp extension exposes a module-level client manager reference
+- F-3.3 Поддержка OAuth: только заглушка PKCE — полный браузерный процесс требует ручного вмешательства пользователя
+- Lit-компонент дашборда (mcp-card): эндпоинт существует, UI отложен
+- F-2.4 subagent-runner.handleRemoteToolRequest всё ещё использует broker-side placeholder, пока fan-mcp не предоставит ссылку на менеджер клиентов на уровне модуля
 
 ---
 

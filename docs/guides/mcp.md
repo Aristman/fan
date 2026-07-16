@@ -1,42 +1,42 @@
-# MCP Integration Guide
+# Руководство по MCP интеграции
 
-> External MCP server connection for FAN.  
-> Connects FAN agents to external Model Context Protocol servers via stdio or Streamable HTTP transports.
+> Подключение внешних MCP-серверов к FAN.  
+> Подключает агентов FAN к внешним серверам Model Context Protocol через stdio или Streamable HTTP транспорты.
 
 ---
 
-## What is MCP?
+## Что такое MCP?
 
-[Model Context Protocol (MCP)](https://modelcontextprotocol.io/) is an open standard for connecting LLM agents to external tools, data sources, and APIs. MCP servers expose:
+[Model Context Protocol (MCP)](https://modelcontextprotocol.io/) — это открытый стандарт для подключения LLM-агентов к внешним инструментам, источникам данных и API. MCP-серверы предоставляют:
 
-- **Tools** — callable functions (filesystem read/write, database queries, GitHub API, etc.)
-- **Resources** — static or dynamic data (files, database records)
-- **Prompts** — reusable prompt templates
+- **Инструменты (Tools)** — вызываемые функции (чтение/запись файловой системы, запросы к БД, GitHub API и т.д.)
+- **Ресурсы (Resources)** — статические или динамические данные (файлы, записи БД)
+- **Промпты (Prompts)** — переиспользуемые шаблоны промптов
 
-FAN implements an **MCP client** — it connects to one or more MCP servers and exposes their tools as native FAN AgentTools. This means your agent can use `mcp__0__read_file` the same way it uses any built-in tool.
+FAN реализует **MCP-клиент** — он подключается к одному или нескольким MCP-серверам и предоставляет их инструменты как нативные AgentTool. Это значит, что ваш агент может использовать `mcp__0__read_file` так же, как любой встроенный инструмент.
 
-### When to use MCP
+### Когда использовать MCP
 
-| Use case | Example MCP server |
+| Сценарий | Пример MCP-сервера |
 |----------|--------------------|
-| File operations | `@modelcontextprotocol/server-filesystem` |
-| Database queries | Server exposing SQL via tools |
+| Файловые операции | `@modelcontextprotocol/server-filesystem` |
+| Запросы к базам данных | Сервер, предоставляющий SQL через инструменты |
 | GitHub API | `@modelcontextprotocol/server-github` |
-| Custom APIs | Any JSON-RPC endpoint |
+| Кастомные API | Любой JSON-RPC эндпоинт |
 
 ---
 
-## Quickstart
+## Быстрый старт
 
-### 1. Install the extension
+### 1. Установите расширение
 
 ```bash
 fan store install fan-mcp
 ```
 
-### 2. Configure an MCP server
+### 2. Настройте MCP-сервер
 
-Create `~/.fan/agent/mcp.json`:
+Создайте `~/.fan/agent/mcp.json`:
 
 ```json
 {
@@ -52,19 +52,19 @@ Create `~/.fan/agent/mcp.json`:
 }
 ```
 
-### 3. Launch FAN
+### 3. Запустите FAN
 
 ```bash
 fan
 ```
 
-On session start, the extension connects to all configured servers. Successful connection logs:
+При старте сессии расширение подключается ко всем настроенным серверам. Успешное подключение логируется:
 
 ```
 mcp: server 0 (npx) connected (5 tools)
 ```
 
-Available tools are registered as:
+Доступные инструменты регистрируются как:
 
 ```
 mcp__0__read_file
@@ -74,13 +74,13 @@ mcp__0__search_files
 mcp__0__get_file_info
 ```
 
-### 4. Check status
+### 4. Проверьте статус
 
 ```
 /mcp status
 ```
 
-Example output:
+Пример вывода:
 
 ```
  # | status       | transport        | tools
@@ -90,20 +90,18 @@ Example output:
 
 ---
 
-## Configuration
+## Конфигурация
 
-### File locations
+### Расположение файлов
 
-| Path | Scope | Behaviour |
-|------|-------|-----------|
-| `~/.fan/agent/mcp.json` | **Global** — all projects | Base server definitions |
-| `$CWD/.fan/mcp.json` | **Project-local** | Overrides global at same index, extras appended |
+| Путь | Область | Поведение |
+|------|---------|-----------|
+| `~/.fan/agent/mcp.json` | **Глобально** — все проекты | Базовые определения серверов |
+| `$CWD/.fan/mcp.json` | **Локально для проекта** | Переопределяет глобальный на том же индексе, лишние добавляются |
 
-Both files use the array form `servers: []`. The server ID corresponds to the array index (0, 1, 2, …).
+Оба файла используют форму массива `servers: []`. ID сервера соответствует индексу в массиве (0, 1, 2, …).
 
-### Global example
-
-Global + project merge example:
+### Пример глобальной + проектной конфигурации
 
 **`~/.fan/agent/mcp.json`:**
 ```json
@@ -137,29 +135,29 @@ Global + project merge example:
 }
 ```
 
-Result: server 0 is project-local (overrides global), server 1 remains global.
+Результат: сервер 0 — проектный (переопределяет глобальный), сервер 1 остаётся глобальным.
 
-### Full config reference
+### Полная таблица параметров
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `transport` | `"stdio"` \| `"streamable-http"` | — | Transport protocol |
-| `command` | string | — | (stdio) executable name or absolute path |
-| `args` | string[] | — | (stdio) command-line arguments |
-| `env` | object | safe whitelist | (stdio) environment variables (supports `${VAR}`) |
-| `url` | string | — | (http) MCP endpoint URL |
-| `headers` | object | — | (http) HTTP headers (supports `${VAR}`) |
-| `allowedTools` | string[] | `["*"]` | Glob patterns — tool must match at least one |
-| `deniedTools` | string[] | `[]` | Glob patterns — takes priority over `allowedTools` |
-| `timeout` | number | `60000` | Per-call timeout in ms (1000–300000) |
-| `autoRestart` | boolean | `false` | Auto-restart on stdio crash with exponential backoff |
-| `allowLocal` | boolean | `false` | Allow loopback URLs in streamable-http |
-| `allowPrivate` | boolean | `false` | Allow private network URLs (RFC 1918, CGNAT, link-local) |
-| `oauth` | object | — | OAuth 2.0 PKCE config (see OAuth section) |
+| Поле | Тип | По умолч. | Описание |
+|------|-----|-----------|----------|
+| `transport` | `"stdio"` \| `"streamable-http"` | — | Транспортный протокол |
+| `command` | string | — | (stdio) имя исполняемого файла или абсолютный путь |
+| `args` | string[] | — | (stdio) аргументы командной строки |
+| `env` | object | безопасный список | (stdio) переменные окружения (поддерживает `${VAR}`) |
+| `url` | string | — | (http) URL MCP-эндпоинта |
+| `headers` | object | — | (http) HTTP-заголовки (поддерживает `${VAR}`) |
+| `allowedTools` | string[] | `["*"]` | Glob-шаблоны — инструмент должен совпасть хотя бы с одним |
+| `deniedTools` | string[] | `[]` | Glob-шаблоны — приоритет выше `allowedTools` |
+| `timeout` | number | `60000` | Таймаут вызова в мс (1000–300000) |
+| `autoRestart` | boolean | `false` | Авто-перезапуск при падении stdio с экспоненциальной задержкой |
+| `allowLocal` | boolean | `false` | Разрешить loopback-адреса в streamable-http |
+| `allowPrivate` | boolean | `false` | Разрешить адреса частных сетей (RFC 1918, CGNAT, link-local) |
+| `oauth` | object | — | OAuth 2.0 PKCE конфигурация (см. раздел OAuth) |
 
-### Environment variables in config
+### Переменные окружения в конфиге
 
-`${VAR}` references are resolved from `process.env`:
+Ссылки `${VAR}` извлекаются из `process.env`:
 
 ```json
 {
@@ -172,27 +170,27 @@ Result: server 0 is project-local (overrides global), server 1 remains global.
 }
 ```
 
-If a referenced variable is undefined, a `MissingEnvVarError` is thrown at config load.
+Если указанная переменная не определена, при загрузке конфигурации выбрасывается `MissingEnvVarError`.
 
 ---
 
-## Transports
+## Транспорты
 
 ### stdio
 
-Spawns a subprocess that communicates over stdin/stdout JSON-RPC.
+Запускает подпроцесс, который общается через stdin/stdout по JSON-RPC.
 
-**When to use:**
-- Local MCP servers (npm packages, local scripts)
-- Servers that don't expose an HTTP endpoint
-- Development and testing
+**Когда использовать:**
+- Локальные MCP-серверы (npm-пакеты, локальные скрипты)
+- Серверы без HTTP-эндпоинта
+- Разработка и тестирование
 
-**Security:**
-- `shell: false` — no shell injection via `args`
-- Safe env whitelist when no custom `env` is set: `PATH`, `HOME`, `LANG`, `LC_ALL`, `TMPDIR`, `USERPROFILE`
-- `${VAR}` references resolved from `process.env`
+**Безопасность:**
+- `shell: false` — нет shell-инъекций через `args`
+- Безопасный список окружения, когда не задан кастомный `env`: `PATH`, `HOME`, `LANG`, `LC_ALL`, `TMPDIR`, `USERPROFILE`
+- Ссылки `${VAR}` извлекаются из `process.env`
 
-**Example:**
+**Пример:**
 ```json
 {
   "transport": "stdio",
@@ -207,19 +205,19 @@ Spawns a subprocess that communicates over stdin/stdout JSON-RPC.
 
 ### Streamable HTTP
 
-Connects via HTTP SSE (Server-Sent Events) using `StreamableHTTPClientTransport`.
+Подключается через HTTP SSE (Server-Sent Events) с использованием `StreamableHTTPClientTransport`.
 
-**When to use:**
-- Remote MCP servers
-- Production deployments
-- Services that already expose an HTTP API
+**Когда использовать:**
+- Удалённые MCP-серверы
+- Production-развёртывания
+- Сервисы, уже имеющие HTTP API
 
-**Security:**
-- Only `https:` protocol is allowed
-- Loopback addresses require `allowLocal: true`
-- Private network addresses require `allowPrivate: true` or `allowLocal: true`
+**Безопасность:**
+- Разрешён только протокол `https:`
+- Loopback-адреса требуют `allowLocal: true`
+- Адреса частных сетей требуют `allowPrivate: true` или `allowLocal: true`
 
-**Example:**
+**Пример:**
 ```json
 {
   "transport": "streamable-http",
@@ -232,11 +230,11 @@ Connects via HTTP SSE (Server-Sent Events) using `StreamableHTTPClientTransport`
 
 ---
 
-## Permission System
+## Система разрешений
 
 ### allowedTools / deniedTools
 
-Each server can restrict which MCP tools are exposed to the agent:
+Каждый сервер может ограничить, какие MCP-инструменты доступны агенту:
 
 ```json
 {
@@ -248,95 +246,95 @@ Each server can restrict which MCP tools are exposed to the agent:
 }
 ```
 
-**Rules:**
-1. `deniedTools` is checked first — if a tool matches any denied pattern, it's blocked.
-2. If no `allowedTools` is set, defaults to `["*"]` (all allowed except denied).
-3. Globs are simple wildcard patterns (single `*` matches any sequence).
-4. Tool names use **raw MCP names** (without `mcp__<server>__` prefix).
+**Правила:**
+1. `deniedTools` проверяется первым — если инструмент совпал с любым запрещённым шаблоном, он блокируется.
+2. Если `allowedTools` не установлен, по умолчанию `["*"]` (все разрешены, кроме запрещённых).
+3. Glob-шаблоны — простые wildcard-паттерны (один `*` совпадает с любой последовательностью).
+4. Имена инструментов используются **сырые MCP-имена** (без префикса `mcp__<server>__`).
 
-### Glob pattern safety
+### Безопасность glob-шаблонов
 
-- Maximum pattern length: 256 characters
-- Maximum wildcards per pattern: 10
-- Beyond limits, matching falls back to safe substring search (no regex)
+- Максимальная длина шаблона: 256 символов
+- Максимальное количество wildcard'ов: 10
+- При превышении лимитов используется безопасный поиск подстроки (без regex)
 
-### Per-worker profile filtering
+### Профильная фильтрация per-worker
 
-In orchestrator mode, worker agents receive MCP tools filtered by their permission profile:
+В режиме оркестратора worker-агенты получают MCP-инструменты, отфильтрованные по их профилю доступа:
 
-| Worker type | Profile | MCP access |
-|-------------|---------|------------|
-| `explore`, `plan`, `verify`, `code-research` | **read-only** | Only tools with `annotations.readOnly === true` |
-| `implement`, `bug-fix`, `tests-impl` | **all** | All tools (subject to server-level `allowedTools`/`deniedTools`) |
+| Тип worker'а | Профиль | Доступ к MCP |
+|-------------|---------|--------------|
+| `explore`, `plan`, `verify`, `code-research` | **только чтение** | Только инструменты с `annotations.readOnly === true` |
+| `implement`, `bug-fix`, `tests-impl` | **все** | Все инструменты (с учётом серверных `allowedTools`/`deniedTools`) |
 
-Workers without any profile default to **all** access.
+Worker'ы без профиля по умолчанию имеют доступ ко **всем** инструментам.
 
 ---
 
 ## Worker Proxy
 
-### Overview
+### Обзор
 
-Worker agents (subprocesses spawned by the orchestrator) do **not** load the `fan-mcp` extension. Instead, they receive MCP tools via a proxy mechanism:
+Worker-агенты (подпроцессы, запущенные оркестратором) **не** загружают расширение `fan-mcp`. Вместо этого они получают MCP-инструменты через механизм прокси:
 
 ```
-Orchestrator (parent)              Worker (subprocess)
+Оркестратор (родитель)              Worker (подпроцесс)
       │                                  │
-      │  ┌── fan-mcp extension ──┐      │
-      │  │ connects to MCP servers│      │
-      │  │ emits mcp:catalog      │      │
+      │  ┌── fan-mcp расширение ──┐      │
+      │  │ подключается к MCP     │      │
+      │  │ испускает mcp:catalog  │      │
       │  └────────┬──────────────┘      │
       │           │                      │
       │  ┌────────┴──────────────┐      │
       │  │ broker-handler.js     │      │
-      │  │ subscribes to catalog │      │
-      │  │ maintains tool map    │      │
+      │  │ подписывается на      │      │
+      │  │ catalog, хранит карту │      │
       │  └────────┬──────────────┘      │
       │           │                      │
       │  ┌────────┴──────────────┐      │
       │  │ RPC mode              │      │
       │  │ pendingRemoteToolReqs │      │
-      │  │ correlation map       │      │
+      │  │ карта корреляции      │      │
       │  └────────┬──────────────┘      │
       │           │                      │
       │     remote_tool_request  ◄────  │  RemoteProxyTool
-      │     remote_tool_response ────►  │  (--remote-tools flag)
+      │     remote_tool_response ────►  │  (флаг --remote-tools)
       │           │                      │
 ```
 
-### How to enable
+### Как включить
 
-The orchestrator automatically passes `--remote-tools` to worker agents. No manual configuration is needed.
+Оркестратор автоматически передаёт флаг `--remote-tools` worker-агентам. Ручная настройка не требуется.
 
-If you're running in custom RPC mode:
+Если вы запускаете в кастомном RPC-режиме:
 
 ```bash
 fan --mode rpc --remote-tools "mcp__0__read_file,mcp__0__write_file"
 ```
 
-### Lifecycle
+### Жизненный цикл
 
-1. **Session start**: `fan-mcp` connects to all MCP servers and registers tools.
-2. **Catalog broadcast**: `mcp:catalog` event is emitted on the EventBus.
-3. **Orchestrator subscribes**: `broker-handler.js` receives the catalog via replay-on-subscribe.
-4. **Worker spawn**: Orchestrator launches a worker with `--remote-tools=<list>`.
-5. **Worker proxy**: `RemoteProxyTool` instances forward tool calls to the parent via JSONRPC.
-6. **Broker routing**: Parent RPC mode receives the request, looks up the server/tool via `brokerHandler`, and calls the actual MCP client.
-7. **Response**: The result flows back through the same chain.
+1. **Старт сессии**: `fan-mcp` подключается ко всем MCP-серверам и регистрирует инструменты.
+2. **Catalog broadcast**: Событие `mcp:catalog` испускается на EventBus.
+3. **Оркестратор подписывается**: `broker-handler.js` получает каталог через replay-on-subscribe.
+4. **Запуск worker'а**: Оркестратор запускает worker'а с флагом `--remote-tools=<list>`.
+5. **Прокси worker'а**: `RemoteProxyTool` перенаправляет вызовы инструментов родительскому процессу через JSONRPC.
+6. **Маршрутизация broker'ом**: RPC-режим родителя получает запрос, находит сервер/инструмент через `brokerHandler` и вызывает реальный MCP-клиент.
+7. **Ответ**: Результат возвращается по той же цепочке.
 
 ---
 
-## Observability
+## Наблюдаемость
 
 ### /mcp status
 
-Displays current connection state for all servers:
+Показывает текущее состояние подключения для всех серверов:
 
 ```
 /mcp status
 ```
 
-Output:
+Вывод:
 ```
  # | status       | transport        | tools
 ---+--------------+------------------+-------
@@ -344,54 +342,54 @@ Output:
  1 | unavailable  | streamable-http  | 0 tools (connect timeout 5000ms)
 ```
 
-States: `connecting` → `connected` → `unavailable` (on crash or connect failure).
+Статусы: `connecting` → `connected` → `unavailable` (при падении или ошибке подключения).
 
 ### /mcp reload
 
-Dispose all connections, reload config from disk, and reconnect:
+Закрыть все соединения, перезагрузить конфигурацию с диска и переподключиться:
 
 ```
 /mcp reload
 ```
 
-### MCP Logs
+### MCP-логи
 
-Structured JSON-lines to `~/.fan/agent/logs/mcp-YYYY-MM-DD.log`:
+Структурированные JSON-логи в `~/.fan/agent/logs/mcp-YYYY-MM-DD.log`:
 
 ```json
 {"timestamp":"2026-07-16T12:00:00.000Z","event":"tool_call_end","serverId":"0","toolName":"read_file","durationMs":142,"status":"success"}
 ```
 
-**What's logged:**
-- `tool_call_start` — entry timestamp
-- `tool_call_end` — duration + success status
-- `tool_call_error` — duration + sanitized error message
+**Что логируется:**
+- `tool_call_start` — временная метка начала
+- `tool_call_end` — длительность + статус успеха
+- `tool_call_error` — длительность + санированное сообщение об ошибке
 
-**What's NOT logged** (never): tool arguments, response content, PII, secrets. Error messages are sanitized (Bearer tokens, API keys, `sk-*` keys redacted).
+**Что НЕ логируется** (никогда): аргументы инструментов, содержимое ответов, PII, секреты. Сообщения об ошибках санируются (Bearer-токены, API-ключи, `sk-*` ключи редактируются).
 
-### Auto-restart
+### Авто-перезапуск
 
-When `autoRestart: true` is set on a stdio server config, crashes trigger automatic reconnection with exponential backoff:
+Когда `autoRestart: true` установлен в конфиге stdio-сервера, падения вызывают автоматическое переподключение с экспоненциальной задержкой:
 
-| Attempt | Delay |
-|---------|-------|
-| 1 | 1s |
-| 2 | 2s |
-| 3 | 4s |
-| 4 | 8s |
-| 5 | 16s |
+| Попытка | Задержка |
+|---------|----------|
+| 1 | 1с |
+| 2 | 2с |
+| 3 | 4с |
+| 4 | 8с |
+| 5 | 16с |
 
-After 5 failed attempts within a 60-second window, auto-restart is permanently disabled. The counter resets after 60s without a crash.
+После 5 неудачных попыток в течение 60-секундного окна авто-перезапуск навсегда отключается. Счётчик сбрасывается через 60с без падения.
 
 ---
 
-## OAuth (Phase 4 — partial)
+## OAuth (Phase 4 — частично)
 
-### Prerequisites
+### Предварительные требования
 
-The MCP server must support OAuth 2.0 Authorization Code flow with PKCE (S256).
+MCP-сервер должен поддерживать OAuth 2.0 Authorization Code flow с PKCE (S256).
 
-### Configuration
+### Конфигурация
 
 ```json
 {
@@ -407,149 +405,149 @@ The MCP server must support OAuth 2.0 Authorization Code flow with PKCE (S256).
 }
 ```
 
-### Flow
+### Процесс
 
-1. **Session start**: The extension checks `~/.fan/agent/mcp-tokens.json` for a valid token.
-2. **Token valid** (>60s remaining): reused directly.
-3. **Token expired, has refresh token**: automatic refresh via `grant_type=refresh_token`.
-4. **No valid token**: PKCE flow initiated:
-   - A local callback server starts on `127.0.0.1` (random port).
-   - The authorization URL is printed to stderr.
-   - User opens the URL in a browser and authorizes.
-   - The callback server receives the code, exchanges it for a token.
-   - Token is saved to `~/.fan/agent/mcp-tokens.json` (mode `0o600`).
+1. **Старт сессии**: Расширение проверяет `~/.fan/agent/mcp-tokens.json` на наличие валидного токена.
+2. **Токен валиден** (>60с до истечения): используется напрямую.
+3. **Токен истёк, есть refresh token**: автоматическое обновление через `grant_type=refresh_token`.
+4. **Нет валидного токена**: запускается PKCE-процесс:
+   - Локальный callback-сервер запускается на `127.0.0.1` (случайный порт).
+   - URL авторизации выводится в stderr.
+   - Пользователь открывает URL в браузере и авторизуется.
+   - Callback-сервер получает код, обменивает его на токен.
+   - Токен сохраняется в `~/.fan/agent/mcp-tokens.json` (режим `0o600`).
 
-### Current limitations
+### Текущие ограничения
 
-- **No automatic browser opening** — the URL is printed to stderr; the user must copy-paste it manually.
-- **Token storage** uses a JSON file. Production deployments may replace with OS keychain (`libsecret`, macOS Keychain, Windows Credential Manager).
-- **Full browser flow** requires manual user intervention; headless/CI environments cannot complete OAuth without additional tooling.
-
----
-
-## Security
-
-### Threat model
-
-| Threat | Mitigation |
-|--------|-----------|
-| Malicious MCP server | `allowedTools`/`deniedTools` glob filtering per server |
-| SSRF via HTTP transport | Only `https:`, loopback/private ranges blocked by default |
-| Shell injection via stdio | `shell: false` enforced |
-| Server ID spoofing | `isValidServerId()` rejects non-decimal aliases (`0e0`, `-0`, `+1`) |
-| Secret leakage in logs | `sanitizeMessage()` redacts tokens, keys, `sk-*` patterns |
-| Environment leakage | Safe env whitelist (only 6 safe vars inherited by default) |
-| ReDoS via glob patterns | Pattern length/wildcard caps (256 chars, 10 `*`) |
-| Untrusted config files | JSON schema validation at load, graceful invalid handling |
-
-### Best practices
-
-1. **Prefer stdio** for local MCP servers — no network exposure.
-2. **Use `deniedTools`** to block destructive operations (`delete_file`, `write_*`, `rm_*`).
-3. **Set `allowLocal: false`** (default) to prevent SSRF attacks against local services.
-4. **Use environment variables** for secrets (`${GITHUB_TOKEN}`) — never hardcode tokens in `mcp.json`.
-5. **Review MCP server logs** at `~/.fan/agent/logs/mcp-*.log`.
-6. **Restrict `allowedTools`** per server — granular tool access limits blast radius.
-
-### Bug fixes
-
-Critical security fixes applied in commits `01d6eb1` and `1058927`:
-
-| Bug | Description |
-|-----|-------------|
-| BUG-1 | Permission gate created without config — empty gate, all calls blocked |
-| BUG-2 | Server ID alias injection via `Number("0e0")` coercion |
-| BUG-3 | SSRF loopback bypass — incomplete IP range coverage |
-| BUG-4 | Argument mismatch causing timeout hangs |
-| BUG-5 | `list_changed` double-fetch wasting bandwidth |
-| BUG-6 | Secret leakage in error log messages |
-| BUG-7 | Dead code cleanup |
+- **Нет автоматического открытия браузера** — URL выводится в stderr; пользователь должен скопировать его вручную.
+- **Хранение токенов** — JSON-файл. В production может быть заменён на OS keychain (`libsecret`, macOS Keychain, Windows Credential Manager).
+- **Полный браузерный процесс** требует ручного вмешательства; headless/CI-среды не могут завершить OAuth без дополнительных инструментов.
 
 ---
 
-## Troubleshooting
+## Безопасность
 
-### Server shows "unavailable"
+### Модель угроз
 
-**Check:**
-1. Can the command run outside FAN? `npx -y @modelcontextprotocol/server-filesystem .`
-2. Is the path correct? Use absolute paths for custom scripts.
-3. Is the network reachable? `curl https://api.example.com/mcp`
-4. Check `~/.fan/agent/logs/mcp-*.log` for details.
+| Угроза | Меры защиты |
+|--------|-------------|
+| Вредоносный MCP-сервер | Glob-фильтрация `allowedTools`/`deniedTools` для каждого сервера |
+| SSRF через HTTP-транспорт | Только `https:`, loopback/частные сети по умолчанию заблокированы |
+| Shell-инъекция через stdio | Принудительно `shell: false` |
+| Подделка server ID | `isValidServerId()` отклоняет недесятичные псевдонимы (`0e0`, `-0`, `+1`) |
+| Утечка секретов в логах | `sanitizeMessage()` редактирует токены, ключи, `sk-*` шаблоны |
+| Утечка переменных окружения | Безопасный список окружения (по умолчанию наследуется только 6 безопасных переменных) |
+| ReDoS через glob-шаблоны | Ограничение длины/количества wildcard'ов (256 символов, 10 `*`) |
+| Ненадёжные конфиги | JSON Schema валидация при загрузке, корректная обработка ошибок |
 
-### Tools not appearing
+### Лучшие практики
 
-**Check:**
-1. `/mcp status` — is the server `connected`?
-2. Does the server actually expose tools? `tools/list` should return non-empty.
-3. Are `allowedTools` too restrictive? Try `"allowedTools": ["*"]`.
-4. Is a stale `deniedTools` pattern blocking everything?
+1. **Предпочитайте stdio** для локальных MCP-серверов — нет сетевой экспозиции.
+2. **Используйте `deniedTools`** для блокировки деструктивных операций (`delete_file`, `write_*`, `rm_*`).
+3. **Установите `allowLocal: false`** (по умолчанию) для предотвращения SSRF-атак на локальные сервисы.
+4. **Используйте переменные окружения** для секретов (`${GITHUB_TOKEN}`) — никогда не хардкодьте токены в `mcp.json`.
+5. **Просматривайте MCP-логи** в `~/.fan/agent/logs/mcp-*.log`.
+6. **Ограничивайте `allowedTools`** для каждого сервера — гранулярный доступ уменьшает радиус взрыва.
 
-### OAuth flow doesn't complete
+### Исправления ошибок
 
-**Check:**
-1. Is the authorization URL printed to stderr? Look for `OAuth: open the following URL`.
-2. Is the redirect URI reachable? The callback server listens on `127.0.0.1` at a random port.
-3. Does the token endpoint return valid JSON? Check the response format.
-4. Is `~/.fan/agent/mcp-tokens.json` writable?
+Критические исправления безопасности в коммитах `01d6eb1` и `1058927`:
 
-### Worker can't use MCP tools
-
-**Check:**
-1. Is the `fan-mcp` extension installed and loaded?
-2. Does the orchestrator show "catalog received" in logs?
-3. Is the broker handler initialized? `/mcp status` shows connected servers.
-4. Is the worker's profile filtering too strict? Read-only workers can't call write tools.
-
-### Config changes not applied
-
-Use `/mcp reload` to reload config and reconnect. The extension reads config once on `session_start`.
+| Ошибка | Описание |
+|--------|----------|
+| BUG-1 | Gate разрешений создавался без конфигурации — пустой gate, все вызовы заблокированы |
+| BUG-2 | Инъекция псевдонима server ID через приведение `Number("0e0")` |
+| BUG-3 | SSRF обход loopback — неполное покрытие IP-диапазонов |
+| BUG-4 | Несоответствие аргументов, вызывающее зависание по таймауту |
+| BUG-5 | `list_changed` двойная загрузка, тратящая пропускную способность |
+| BUG-6 | Утечка секретов в сообщениях логов ошибок |
+| BUG-7 | Удаление мёртвого кода |
 
 ---
 
-## Package architecture
+## Устранение неполадок
+
+### Сервер показывает "unavailable"
+
+**Проверьте:**
+1. Работает ли команда вне FAN? `npx -y @modelcontextprotocol/server-filesystem .`
+2. Корректен ли путь? Используйте абсолютные пути для кастомных скриптов.
+3. Доступна ли сеть? `curl https://api.example.com/mcp`
+4. Проверьте `~/.fan/agent/logs/mcp-*.log` для деталей.
+
+### Инструменты не отображаются
+
+**Проверьте:**
+1. `/mcp status` — сервер в статусе `connected`?
+2. Действительно ли сервер предоставляет инструменты? `tools/list` должен вернуть непустой список.
+3. Не слишком ли строги `allowedTools`? Попробуйте `"allowedTools": ["*"]`.
+4. Не блокирует ли устаревший `deniedTools` всё подряд?
+
+### OAuth-процесс не завершается
+
+**Проверьте:**
+1. Выводится ли URL авторизации в stderr? Ищите `OAuth: open the following URL`.
+2. Доступен ли redirect URI? Callback-сервер слушает на `127.0.0.1` на случайном порту.
+3. Возвращает ли token endpoint валидный JSON? Проверьте формат ответа.
+4. Доступен ли `~/.fan/agent/mcp-tokens.json` для записи?
+
+### Worker не может использовать MCP-инструменты
+
+**Проверьте:**
+1. Установлено ли расширение `fan-mcp` и загружено ли оно?
+2. Показывает ли оркестратор "catalog received" в логах?
+3. Инициализирован ли broker handler? `/mcp status` показывает подключённые серверы.
+4. Не слишком ли строга профильная фильтрация worker'а? Worker'ы с read-only доступом не могут вызывать write-инструменты.
+
+### Изменения конфигурации не применяются
+
+Используйте `/mcp reload` для перезагрузки конфигурации и переподключения. Расширение читает конфиг один раз при `session_start`.
+
+---
+
+## Архитектура пакета
 
 ```
-fan-mcp extension
-  ├── src/config.ts          — Config loader, TypeBox validation, env var resolution
-  ├── src/transport.ts       — Stdio + Streamable HTTP transport factories
-  ├── src/manager.ts         — Client connection lifecycle, crash handling, auto-restart
-  ├── src/adapter.ts         — MCP tool → AgentTool converter (JSON Schema → TypeBox)
-  ├── src/executor.ts        — Tool execution with timeout + logging wrapper
-  ├── src/permissions.ts     — Permission gate (allowed/denied tools, glob matching)
-  ├── src/logger.ts          — Structured JSON-lines logger with secret sanitization
-  ├── src/oauth.ts           — OAuth 2.0 PKCE flow (verifier, challenge, token exchange)
-  ├── src/timeout.ts         — AbortController utility for call cancellation
-  └── src/index.ts           — Extension factory (lifecycle hooks, /mcp commands)
+fan-mcp расширение
+  ├── src/config.ts          — Загрузчик конфига, TypeBox валидация, разрешение env-переменных
+  ├── src/transport.ts       — Фабрики Stdio + Streamable HTTP транспортов
+  ├── src/manager.ts         — Жизненный цикл клиентских соединений, обработка падений, авто-перезапуск
+  ├── src/adapter.ts         — MCP tool → AgentTool конвертер (JSON Schema → TypeBox)
+  ├── src/executor.ts        — Выполнение инструмента с таймаутом + обёртка логирования
+  ├── src/permissions.ts     — Gate разрешений (allowed/denied tools, glob-сопоставление)
+  ├── src/logger.ts          — Структурированный JSON-lines логгер с санитацией секретов
+  ├── src/oauth.ts           — OAuth 2.0 PKCE поток (verifier, challenge, обмен токенами)
+  ├── src/timeout.ts         — Утилита AbortController для отмены вызовов
+  └── src/index.ts           — Фабрика расширения (lifecycle hooks, /mcp команды)
 
-core (outside extension)
-  ├── packages/coding-agent/src/core/event-bus.ts                    — LastEvent cache (replay-on-subscribe)
-  ├── packages/coding-agent/src/modes/rpc/rpc-types.ts               — Remote tool types (request/response/cancel/catalog)
-  ├── packages/coding-agent/src/modes/rpc/rpc-mode.ts                — pendingRemoteToolRequests correlation map
-  ├── packages/coding-agent/src/modes/rpc/remote-proxy-tool.ts       — RemoteProxyTool for worker→parent forwarding
-  ├── packages/coding-agent/src/core/agent-session.ts               — registerCustomTools method
-  └── packages/coding-agent/src/cli/args.ts                          --remote-tools CLI flag
+core (вне расширения)
+  ├── packages/coding-agent/src/core/event-bus.ts                    — LastEvent кеш (replay-on-subscribe)
+  ├── packages/coding-agent/src/modes/rpc/rpc-types.ts               — Типы удалённых инструментов (request/response/cancel/catalog)
+  ├── packages/coding-agent/src/modes/rpc/rpc-mode.ts                — Карта корреляции pendingRemoteToolRequests
+  ├── packages/coding-agent/src/modes/rpc/remote-proxy-tool.ts       — RemoteProxyTool для пересылки worker→parent
+  ├── packages/coding-agent/src/core/agent-session.ts               — Метод registerCustomTools
+  └── packages/coding-agent/src/cli/args.ts                          --remote-tools CLI-флаг
 
-orchestrator extension
-  ├── extensions/fan-orchestrator/broker-handler.js                  — Catalog subscriber, proxy tool routing
-  └── extensions/fan-orchestrator/orchestrator-extension.js          — Initializes broker handler on session start
+orchestrator расширение
+  ├── extensions/fan-orchestrator/broker-handler.js                  — Подписчик каталога, маршрутизация прокси-инструментов
+  └── extensions/fan-orchestrator/orchestrator-extension.js          — Инициализация broker handler при старте сессии
 ```
 
-### Phase status
+### Статус фаз
 
-| Phase | Features | Status |
-|-------|----------|--------|
-| **1** | MCP client core: transports, tool discovery, config, permissions, lifecycle | ✅ Complete |
-| **2** | Worker Proxy: RemoteProxyTool, broker-handler, catalog broadcast, profile filtering | ✅ Complete |
-| **3** | Auto-restart, `/mcp` commands, logging/metrics, structured content, API gateway stub | ✅ Complete |
-| **4** | OAuth (PKCE), full API gateway bridge, Dashboard MCP card | 🔶 Partial |
+| Фаза | Возможности | Статус |
+|------|-------------|--------|
+| **1** | Ядро MCP-клиента: транспорты, обнаружение инструментов, конфиг, разрешения, жизненный цикл | ✅ Завершено |
+| **2** | Worker Proxy: RemoteProxyTool, broker-handler, catalog broadcast, профильная фильтрация | ✅ Завершено |
+| **3** | Авто-перезапуск, `/mcp` команды, логирование/метрики, структурированный контент, заглушка API gateway | ✅ Завершено |
+| **4** | OAuth (PKCE), полный мост API gateway, MCP-карточка дашборда | 🔶 Частично |
 
 ---
 
-## See also
+## См. также
 
-- [Model Context Protocol specification](https://modelcontextprotocol.io/)
+- [Спецификация Model Context Protocol](https://modelcontextprotocol.io/)
 - [@modelcontextprotocol/sdk](https://github.com/modelcontextprotocol/typescript-sdk)
-- [FAN extension API docs](../docs/extensions.md)
-- [Orchestrator guide](./orchestrator.md)
-- [API reference](./api-reference.md)
+- [Документация API расширений FAN](../docs/extensions.md)
+- [Руководство по оркестратору](./orchestrator.md)
+- [Справочник API](./api-reference.md)
