@@ -534,7 +534,7 @@
 - **Ожидаемый результат:** `broker-handler.js` + 2 unit-теста
 - **Оценка объёма:** M (≤ 1 день)
 
-#### ☐ F-2.6 [API]: core: --remote-tools flag и proxy registration в worker
+#### ✅ F-2.6 (commit 9f7617e) [API]: core: --remote-tools flag и proxy registration в worker
 - **Приоритет:** P1
 - **Слой:** [API]
 - **Описание:** Добавить CLI флаг `--remote-tools=t1,t2,...`. В worker `rpc-mode.ts` при connect: прочитать catalog (через `remote_tool_catalog` message от orchestrator), создать `RemoteProxyTool` instances и добавить в `_toolRegistry`. Каждый proxy tool при `execute()` шлёт `remote_tool_request` на stdout и await'ит response.
@@ -551,7 +551,7 @@
 - **Ожидаемый результат:** +40 строк в `rpc-mode.ts` + CLI parser + 2 integration теста
 - **Оценка объёма:** L (≤ 2 дня)
 
-#### ☐ F-2.7 [BIZ]: orchestrator: per-worker profile filtering
+#### ✅ F-2.7 [BIZ]: orchestrator: per-worker profile filtering
 - **Приоритет:** P1
 - **Слой:** [BIZ]
 - **Описание:** В `subagent-runner.js` при генерации `--remote-tools` для worker применить profile-based фильтрацию: explore/plan/verify — только `readOnly` tools из MCP catalog; implement/bug-fix/tests-impl — все tools; code-research — annotated. Использовать существующую концепцию `agents.js` для определения worker type.
@@ -711,8 +711,8 @@
 - [x] F-2.3 [API]: lastEvent cache (commit 1b9f9f1) в EventBus
 - [x] F-2.4 [API]: orchestrator: remote_tool_request handler (commit e57a805) в subagent-runner
 - [x] F-2.5 [BIZ]: orchestrator: broker-handler (commit 7eaecc4) с EventBus подпиской
-- [ ] F-2.6 [API]: core: --remote-tools flag и proxy registration в worker
-- [ ] F-2.7 [BIZ]: orchestrator: per-worker profile filtering
+- [x] F-2.6 [API]: core: --remote-tools flag (commit 9f7617e) и proxy registration в worker
+- [x] F-2.7 [BIZ]: orchestrator: per-worker profile filtering
 
 ## P2 — Средний (Could Have, 7)
 - [ ] F-3.1 [INTEG]: Progress forwarding
