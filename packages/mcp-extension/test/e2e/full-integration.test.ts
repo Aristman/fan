@@ -70,7 +70,8 @@ describe("Test 1: Coordinator MCP tool call (F-1.6 + F-1.7)", () => {
     expect(entries[0].adapterClient).toBeDefined();
     if (entries[0].adapterClient) {
       const result = await entries[0].adapterClient.callTool({ name: "echo", arguments: { text: "hello world" } });
-      expect(result.content.find((c: any) => c.type === "text").text).toBe("hello world");
+      const textContent = (result.content ?? []).find((c: any) => c.type === "text") as { text: string } | undefined;
+      expect(textContent?.text).toBe("hello world");
       expect(result.isError).toBeUndefined();
     }
     const echoDef = [...registered.values()].find((d: any) => d.name.includes("echo"));
@@ -78,7 +79,8 @@ describe("Test 1: Coordinator MCP tool call (F-1.6 + F-1.7)", () => {
     expect(typeof echoDef.execute).toBe("function");
     if (echoDef) {
       const r2 = await echoDef.execute("call-1", { text: "e2e test" }, undefined, undefined, undefined);
-      expect(r2.content[0].text).toBe("e2e test");
+      const r2content = (r2.content ?? [])[0] as { text: string } | undefined;
+      expect(r2content?.text).toBe("e2e test");
     }
     await mgr.dispose();
   });
@@ -95,7 +97,8 @@ describe("Test 1: Coordinator MCP tool call (F-1.6 + F-1.7)", () => {
     await writeFile(testFilePath, "e2e test content", "utf8");
     if (entries[0].adapterClient) {
       const result = await entries[0].adapterClient.callTool({ name: "read_file", arguments: { path: testFilePath } });
-      expect(result.content.find((c: any) => c.type === "text").text).toBe("e2e test content");
+      const textContent = (result.content ?? []).find((c: any) => c.type === "text") as { text: string } | undefined;
+      expect(textContent?.text).toBe("e2e test content");
     }
     await mgr.dispose();
   });
@@ -134,7 +137,7 @@ describe("Test 1: Coordinator MCP tool call (F-1.6 + F-1.7)", () => {
   it("mapCallToolResult preserves structuredContent", async () => {
     const { mapCallToolResult } = await import("../../src/executor.js");
     const result = mapCallToolResult({ content: [{ type: "text", text: "hello" }], structuredContent: { key: "value" } });
-    expect(result.content[0].text).toBe("hello");
+    expect((result.content?.[0] as { text: string } | undefined)?.text).toBe("hello");
     expect(result.details?.structuredContent).toEqual({ key: "value" });
   });
 });
