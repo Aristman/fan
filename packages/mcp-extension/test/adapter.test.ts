@@ -300,12 +300,12 @@ describe("TC-F1.6-7: mcpToolToDefinition — execute", () => {
 
 		expect(mockCallTool).toHaveBeenCalledWith(
 			{ name: "x", arguments: { path: "/x" } },
-			{ signal: undefined },
+			expect.objectContaining({ signal: expect.any(Object) }),
 		);
 		expect(result.content[0].text).toBe("ok");
 	});
 
-	it("filters non-text mcp content blocks", async () => {
+	it("preserves text, image and fallback for unsupported mcp content", async () => {
 		const mockCallTool = vi.fn().mockResolvedValue({
 			content: [
 				{ type: "text", text: "hello" },
@@ -329,8 +329,10 @@ describe("TC-F1.6-7: mcpToolToDefinition — execute", () => {
 			undefined as any,
 		);
 
-		expect(result.content).toHaveLength(1);
+		expect(result.content).toHaveLength(3);
 		expect(result.content[0].text).toBe("hello");
+		expect(result.content[1]).toEqual({ type: "image", data: "base64...", mimeType: "image/png" });
+		expect(result.content[2].text).toContain("[Unsupported content types: audio]");
 	});
 
 	it("handles isError: true from the server", async () => {

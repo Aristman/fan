@@ -52,7 +52,7 @@
 
 ## Core seam
 
-#### ☐ F-1.1 [API]: Core: unregisterTool на ExtensionAPI
+#### ✅ F-1.1 [API]: Core: unregisterTool на ExtensionAPI
 - **Приоритет:** P0
 - **Слой:** [API]
 - **Описание:** Добавить метод `unregisterTool(name: string): void` в интерфейс `ExtensionAPI` (`packages/coding-agent/src/core/extensions/types.ts`). При вызове: удаляет tool из `extension.tools` Map + дёргает `runtime.refreshTools()` для атомарной перестройки `_toolRegistry` в `AgentSession`. Требуется для удаления MCP tools при `list_changed` / crash / graceful shutdown.
@@ -69,7 +69,7 @@
 - **Ожидаемый результат:** +15 строк в `extensions/types.ts`, +15 строк в `extensions/loader.ts`, новый unit-тест
 - **Оценка объёма:** S (≤ 4ч)
 
-#### ☐ F-1.2 [API]: Core: updateTool на ExtensionAPI
+#### ✅ F-1.2 [API]: Core: updateTool на ExtensionAPI
 - **Приоритет:** P0
 - **Слой:** [API]
 - **Описание:** Добавить метод `updateTool(name: string, tool: ToolDefinition): void` в `ExtensionAPI`. Аналогично `registerTool`, но перезаписывает существующую запись в `extension.tools` Map + вызывает `runtime.refreshTools()`. Используется при `list_changed` для обновления схемы/описания существующих MCP tools.
@@ -94,7 +94,7 @@
 
 ## Packaging & lifecycle
 
-#### ☐ F-1.3 [CLI]: FAN Store extension packaging
+#### ✅ F-1.3 [CLI]: FAN Store extension packaging
 - **Приоритет:** P0
 - **Слой:** [CLI]
 - **Описание:** Создать пакет `packages/mcp-extension/` (или external repo) с манифестом `package.json`, где `"fan":{"extensions":["dist/index.js"]}`. Extension factory экспортируется как default — `createMcpExtension(pi: ExtensionAPI)`. Обеспечить компилируемость через tsgo в Bun-compatible bundle. Подготовить tar.gz для FAN Store.
@@ -159,7 +159,7 @@
 
 ## Tools API
 
-#### ☐ F-1.6 [INTEG]: tools/list discovery и ToolDefinition mapping
+#### ✅ F-1.6 [INTEG]: tools/list discovery и ToolDefinition mapping
 - **Приоритет:** P0
 - **Слой:** [INTEG]
 - **Описание:** В `adapter.ts` реализовать `mcpToolToDefinition(serverId, mcpTool, client): ToolDefinition`. Преобразует JSON Schema `inputSchema` → TypeBox через `jsonSchemaToTypeBox()` (с graceful fallback на `Type.Any()` для неподдерживаемых конструкций). Имя `mcpTool.name` нормализуется как `mcp__<serverId>__<mcpTool.name>`. Description — через `mcpTool.description`. `execute()` вызывает `client.callTool({name, arguments: parsedArgs}, undefined, {signal})` с AbortSignal. Результат маппится в `AgentToolResult`.
@@ -181,7 +181,7 @@
 - **Ожидаемый результат:** `adapter.ts` — `mcpToolToDefinition()` + `jsonSchemaToTypeBox()`; ≥ 10 unit-тестов
 - **Оценка объёма:** L (≤ 2 дня)
 
-#### ☐ F-1.7 [INTEG]: tools/call execution и result mapping
+#### ✅ F-1.7 [INTEG]: tools/call execution и result mapping
 - **Приоритет:** P0
 - **Слой:** [INTEG]
 - **Описание:** Реализовать `executeMcpCall(client, toolName, args, signal): Promise<AgentToolResult>` — вызывает `client.callTool()`, маппит `CallToolResult.content[]` в `AgentToolResult.content`. Поддержать text/image content. `CallToolResult.isError` → `AgentToolResult.isError`. `structuredContent` → `details.structuredContent`. Неподдерживаемые типы контента (audio, resource_link) → text fallback.
@@ -232,7 +232,7 @@
 - **Ожидаемый результат:** `config.ts` — функция `loadMcpConfig()` + 4 unit-теста
 - **Оценка объёма:** M (≤ 1 день)
 
-#### ☐ F-1.9 [BIZ]: allowedTools/deniedTools filtering
+#### ✅ F-1.9 [BIZ]: allowedTools/deniedTools filtering
 - **Приоритет:** P0
 - **Слой:** [BIZ]
 - **Описание:** В `permissions.ts` реализовать `filterTools(tools, config): FilteredTools` — применяет glob patterns `allowedTools`/`deniedTools` к нормализованным именам (`mcp__server__tool`). `["*"]` = все. `deniedTools` имеет приоритет над `allowedTools`. Используется при `tools/list` для фильтрации до `registerTool()`.
@@ -271,7 +271,7 @@
 - **Ожидаемый результат:** handler в `index.ts` + 2 unit/integration-теста
 - **Оценка объёма:** S (≤ 4ч)
 
-#### ☐ F-1.11 [DATA]: ${ENV_VAR} resolution в mcp.json
+#### ✅ F-1.11 [DATA]: ${ENV_VAR} resolution в mcp.json
 - **Приоритет:** P0
 - **Слой:** [DATA]
 - **Описание:** Реализовать `resolveEnvVars(value: string, env: NodeJS.ProcessEnv): string` — заменяет `${VAR}` на значение из `env`. Если `VAR` не существует — throw `MissingEnvVarError(name)`. Возвращает строку с разрешёнными переменными. Использовать regex `/\$\{([A-Z_][A-Z0-9_]*)\}/g`.
@@ -686,17 +686,17 @@
 # Полный чеклист по приоритетам
 
 ## P0 — Критические (18)
-- [ ] F-1.1 [API]: Core: unregisterTool на ExtensionAPI
-- [ ] F-1.2 [API]: Core: updateTool на ExtensionAPI
-- [ ] F-1.3 [CLI]: FAN Store extension packaging
+- [x] F-1.1 [API]: Core: unregisterTool (commit 428539d) на ExtensionAPI
+- [x] F-1.2 [API]: Core: updateTool (commit 428539d) на ExtensionAPI
+- [x] F-1.3 [CLI]: FAN Store extension packaging (commit 3fa4083)
 - [ ] F-1.4 [INTEG]: StdioClientTransport integration
-- [ ] F-1.5 [INTEG]: StreamableHTTPClientTransport integration
-- [ ] F-1.6 [INTEG]: tools/list discovery и ToolDefinition mapping
-- [ ] F-1.7 [INTEG]: tools/call execution и result mapping
+- [x] F-1.5 [INTEG]: StreamableHTTPClientTransport (commit 6ce6125) integration
+- [x] F-1.6 [INTEG]: tools/list (commit da7957e) discovery и ToolDefinition mapping
+- [x] F-1.7 [INTEG]: tools/call (commit 0c4d3e2) execution и result mapping
 - [ ] F-1.8 [DATA]: mcp.json loader и global/project merge
-- [ ] F-1.9 [BIZ]: allowedTools/deniedTools filtering
+- [x] F-1.9 [BIZ]: allowedTools/deniedTools filtering (commit 4704aaa)
 - [ ] F-1.10 [BIZ]: tool_call permission gate
-- [ ] F-1.11 [DATA]: ${ENV_VAR} resolution в mcp.json
+- [x] F-1.11 [DATA]: ${ENV_VAR} resolution (commit 4f58166) в mcp.json
 - [ ] F-1.12 [INTEG]: AbortSignal → MCP cancel propagation
 - [ ] F-1.13 [BIZ]: Per-call и per-server timeouts
 - [ ] F-1.14 [BIZ]: Graceful shutdown с cleanup stdio процессов
