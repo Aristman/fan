@@ -8,8 +8,8 @@
 import type { ExtensionAPI } from "@fan/fan-coding-agent";
 import { Text } from "@fan/fan-tui";
 
-export default function (pi: ExtensionAPI) {
-	pi.registerCommand("my-cmd", {
+export default function (fan: ExtensionAPI) {
+	fan.registerCommand("my-cmd", {
 		description: "What this command does",
 		handler: async (args, ctx) => {
 			// Example: parse arguments
@@ -61,7 +61,7 @@ export default function (pi: ExtensionAPI) {
 
 	// Optional: register a keyboard shortcut for the command
 	// import { Key } from "@fan/fan-tui";
-	// pi.registerShortcut(Key.ctrlAlt("m"), {
+	// fan.registerShortcut(Key.ctrlAlt("m"), {
 	//   description: "Trigger my-cmd",
 	//   handler: async (ctx) => { /* same logic */ },
 	// });

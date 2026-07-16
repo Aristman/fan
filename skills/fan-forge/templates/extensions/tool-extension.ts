@@ -10,8 +10,8 @@ import { Type } from "@sinclair/typebox";
 import { StringEnum } from "@fan/fan-ai";
 import { Text } from "@fan/fan-tui";
 
-export default function (pi: ExtensionAPI) {
-	pi.registerTool({
+export default function (fan: ExtensionAPI) {
+	fan.registerTool({
 		name: "my_tool",
 		label: "My Tool",
 		description:

@@ -6,7 +6,7 @@
  * Setup:
  *   1. Add dependencies to package.json
  *   2. Run `npm install` in the extension directory
- *   3. pi auto-discovers from package.json "pi.extensions" field
+ *   3. pi auto-discovers from package.json "fan.extensions" field
  *
  * Structure:
  *   my-extension/
@@ -23,14 +23,14 @@ import { StringEnum } from "@fan/fan-ai";
 // Third-party import (from package.json dependencies)
 import { z } from "zod";
 
-export default function (pi: ExtensionAPI) {
+export default function (fan: ExtensionAPI) {
 	// Example: use zod for validation alongside TypeBox schemas
 	const itemSchema = z.object({
 		name: z.string().min(1),
 		value: z.number().optional(),
 	});
 
-	pi.registerTool({
+	fan.registerTool({
 		name: "my_validated_tool",
 		label: "My Validated Tool",
 		description: "Tool with Zod validation on top of TypeBox parameters",

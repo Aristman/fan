@@ -2,7 +2,7 @@
 
 **Skill для создания расширений и навыков fan из описания на естественном языке.**
 
-Проектирует, реализует, тестирует и деплоит extensions (.ts) и skills (SKILL.md) прямо в работающий экземпляр pi. 7-фазный pipeline — от идеи до работающего артефакта с hot-reload.
+Проектирует, реализует, тестирует и деплоит extensions (.ts) и skills (SKILL.md) прямо в работающий экземпляр fan. 7-фазный pipeline — от идеи до работающего артефакта с hot-reload.
 
 ---
 
@@ -220,9 +220,9 @@ bash ~/.fan/agent/skills/fan-forge/scripts/test-load-extension.sh <path>
 ```typescript
 import type { ExtensionAPI } from "@fan/fan-coding-agent";
 export default function (pi: ExtensionAPI) {
-  pi.registerTool({ ... });
-  pi.on("event", (event, ctx) => { ... });
-  pi.registerCommand("name", { ... });
+  fan.registerTool({ ... });
+  fan.on("event", (event, ctx) => { ... });
+  fan.registerCommand("name", { ... });
 }
 ```
 
