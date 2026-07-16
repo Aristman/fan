@@ -445,6 +445,13 @@ export function runWorker(model, temperature, agentPrompt, tools, task, stallTim
                 }
             }
 
+            // F-2.4: Handle remote tool invocations from worker (MCP proxy)
+            if (data.type === "remote_tool_request") {
+                const { id, toolId, args } = data;
+                handleRemoteToolRequest(id, toolId, args);
+                return;
+            }
+
             // Fill in preview when tool actually starts executing (args are complete)
             if (data.type === "tool_execution_start") {
                 const existing = toolCalls.find(tc => tc.name === data.toolName && tc.preview === "");
@@ -471,6 +478,29 @@ export function runWorker(model, temperature, agentPrompt, tools, task, stallTim
             }
             setTimeout(() => { if (!resolved) finish({ text: lastText, messageCount }); }, 2000);
         });
+
+        function handleRemoteToolRequest(id, toolId, args) {
+            // Placeholder: returns echo response. Will be replaced by broker-handler in F-2.5.
+            // Real broker will look up MCP tools catalog and invoke via fan-mcp extension.
+            try {
+                const response = {
+                    type: "remote_tool_response",
+                    id,
+                    content: [{ type: "text", text: `[F-2.4 stub] Would call ${toolId} with ${JSON.stringify(args)}` }],
+                    isError: false,
+                };
+                send(response);
+            } catch (err) {
+                const response = {
+                    type: "remote_tool_response",
+                    id,
+                    content: [{ type: "text", text: `[F-2.4 stub] Error: ${err.message}` }],
+                    isError: true,
+                    errorMessage: err.message,
+                };
+                send(response);
+            }
+        }
 
         // Initial 500ms delay before sending prompt
         setTimeout(() => {
