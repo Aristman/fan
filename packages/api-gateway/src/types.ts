@@ -166,6 +166,31 @@ export interface RevokeTokenResponse {
 }
 
 // ============================================================================
+// MCP (Model Context Protocol) Types
+// ============================================================================
+
+/** Status of a single MCP server for dashboard display */
+export interface McpServerStatus {
+    index: number;
+    name: string;             // serverId из mcp.json или индекс
+    status: "connecting" | "connected" | "unavailable";
+    transport: "stdio" | "streamable-http";
+    toolCount: number;
+    toolNames: string[];
+    serverInfo?: { name: string; version: string };
+    connectError?: string;
+    lastUpdated: string;       // ISO 8601
+}
+
+/** Response shape for GET /api/mcp/servers */
+export interface ApiMcpStatusResponse {
+    servers: McpServerStatus[];
+    totalConnected: number;
+    totalUnavailable: number;
+    lastUpdate: string;
+}
+
+// ============================================================================
 // WebSocket Event Types
 // ============================================================================
 
