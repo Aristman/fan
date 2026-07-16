@@ -21,13 +21,14 @@ function buildTestExtension() {
 
 	const extension: Extension = {
 		path: "/virtual/ext.ts",
-		sourceInfo: { kind: "local", path: "/virtual/ext.ts", displayName: "test-ext" },
+		resolvedPath: "/virtual/ext.ts",
+		sourceInfo: { path: "/virtual/ext.ts", source: "test-ext", scope: "temporary" as const, origin: "top-level" as const },
 		handlers: new Map(),
 		tools: new Map(),
 		commands: new Map(),
 		flags: new Map(),
 		shortcuts: new Map(),
-		providers: new Map(),
+		messageRenderers: new Map(),
 	};
 
 	const api: ExtensionAPI = createExtensionAPI(extension, runtime, "/virtual", eventBus);
@@ -38,8 +39,8 @@ describe("F-1.1: unregisterTool", () => {
 	it("removes a previously registered tool from the registry", () => {
 		const { api, refreshSpy, extension } = buildTestExtension();
 
-		api.registerTool({ name: "toolA", description: "A", parameters: {} as any, execute: async () => ({ content: [] }) });
-		api.registerTool({ name: "toolB", description: "B", parameters: {} as any, execute: async () => ({ content: [] }) });
+		api.registerTool({ name: "toolA", label: "toolA", description: "A", parameters: {} as any, execute: async () => ({ content: [], details: {} }) });
+		api.registerTool({ name: "toolB", label: "toolB", description: "B", parameters: {} as any, execute: async () => ({ content: [], details: {} }) });
 		expect(extension.tools.has("toolA")).toBe(true);
 		expect(extension.tools.has("toolB")).toBe(true);
 		expect(refreshSpy).toHaveBeenCalledTimes(2);
@@ -61,16 +62,18 @@ describe("F-1.2: updateTool", () => {
 
 		api.registerTool({
 			name: "read_file",
+			label: "read_file",
 			description: "old description",
 			parameters: {} as any,
-			execute: async () => ({ content: [] }),
+			execute: async () => ({ content: [], details: {} }),
 		});
 
 		const newDef = {
 			name: "read_file",
+			label: "read_file",
 			description: "new description",
 			parameters: {} as any,
-			execute: async () => ({ content: [{ type: "text" as const, text: "updated" }] }),
+			execute: async () => ({ content: [{ type: "text" as const, text: "updated" }], details: {} }),
 		};
 		api.updateTool("read_file", newDef);
 
@@ -83,9 +86,10 @@ describe("F-1.2: updateTool", () => {
 
 		const def = {
 			name: "fresh_tool",
+			label: "fresh_tool",
 			description: "fresh",
 			parameters: {} as any,
-			execute: async () => ({ content: [] }),
+			execute: async () => ({ content: [], details: {} }),
 		};
 		api.updateTool("fresh_tool", def);
 

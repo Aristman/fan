@@ -82,6 +82,56 @@ export async function writeLog(
 }
 
 // ──────────────────────────────────────────────────
+// Secret sanitization
+// ──────────────────────────────────────────────────
+
+const SECRET_PATTERNS: { pattern: RegExp; format: (match: string) => string }[] = [
+	{
+		pattern: /Bearer\s+[\w\-._~+/]+=*/gi,
+		format: (m) => {
+			const prefix = m.match(/^[Bb]earer\s+/)?.[0] ?? "";
+			return `${prefix}***REDACTED***`;
+		},
+	},
+	{ // Long hex/base64 strings that look like API keys
+		pattern: /\b[A-Za-z0-9]{32,}\b/g,
+		format: () => "***REDACTED***",
+	},
+	{
+		pattern: /api[_-]?key[=:]\s*[\w\-]+/gi,
+		format: (m) => {
+			const prefix = m.match(/^([a-zA-Z0-9\-_]+)[=:]/i)?.[1] ?? "apikey";
+			const sep = m.match(/[=:]/)?.[0] ?? "=";
+			return `${prefix}${sep}***REDACTED***`;
+		},
+	},
+	{
+		pattern: /token[=:]\s*[\w\-]+/gi,
+		format: (m) => {
+			const prefix = m.match(/^([a-zA-Z0-9\-_]+)[=:]/i)?.[1] ?? "token";
+			const sep = m.match(/[=:]/)?.[0] ?? "=";
+			return `${prefix}${sep}***REDACTED***`;
+		},
+	},
+	{
+		pattern: /sk-[a-zA-Z0-9]{20,}/g,
+		format: () => "sk-***REDACTED***",
+	},
+];
+
+/**
+ * Sanitize a message string by redacting known secret patterns.
+ * Non-matching text is returned unchanged.
+ */
+function sanitizeMessage(msg: string): string {
+	let result = msg;
+	for (const { pattern, format } of SECRET_PATTERNS) {
+		result = result.replace(pattern, format);
+	}
+	return result;
+}
+
+// ──────────────────────────────────────────────────
 // Wrapper
 // ──────────────────────────────────────────────────
 
@@ -139,7 +189,7 @@ export async function withLogging<T>(
 				toolName,
 				durationMs: Date.now() - start,
 				status: "error",
-				errorMessage: e instanceof Error ? e.message : String(e),
+				errorMessage: sanitizeMessage(e instanceof Error ? e.message : String(e)),
 			},
 			logDirArg,
 		);

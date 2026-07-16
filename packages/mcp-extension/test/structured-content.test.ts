@@ -26,7 +26,7 @@ describe("F-3.2: structuredContent preservation", () => {
 	it("structuredContent null not preserved (same as undefined omission)", () => {
 		const result = mapCallToolResult({
 			content: [{ type: "text", text: "ok" }],
-			structuredContent: null,
+			structuredContent: null as unknown as Record<string, unknown>,
 		});
 		// null != null is false, so the key is omitted (same as undefined).
 		expect(result.details).toBeDefined();

@@ -6,7 +6,183 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { createStdioTransport, createHttpTransport } from "../src/transport.js";
+import {
+	createStdioTransport,
+	createHttpTransport,
+	isLoopbackHostname,
+	isPrivateAddress,
+} from "../src/transport.js";
+
+// ──────────────────────────────────────────────────
+// BUG-3: Loopback bypass prevention
+// ──────────────────────────────────────────────────
+
+describe("isLoopbackHostname", () => {
+	it("localhost is loopback", () => {
+		expect(isLoopbackHostname("localhost")).toBe(true);
+	});
+
+	it("127.0.0.1 is loopback", () => {
+		expect(isLoopbackHostname("127.0.0.1")).toBe(true);
+	});
+
+	it("::1 is loopback", () => {
+		expect(isLoopbackHostname("::1")).toBe(true);
+	});
+
+	it("127.0.0.2 is loopback (127.0.0.0/8)", () => {
+		expect(isLoopbackHostname("127.0.0.2")).toBe(true);
+	});
+
+	it("127.1 is loopback (127.0.0.0/8 shorthand)", () => {
+		expect(isLoopbackHostname("127.1")).toBe(true);
+	});
+
+	it("127.255.255.255 is loopback (127.0.0.0/8)", () => {
+		expect(isLoopbackHostname("127.255.255.255")).toBe(true);
+	});
+
+	it("0.0.0.0 is loopback", () => {
+		expect(isLoopbackHostname("0.0.0.0")).toBe(true);
+	});
+
+	it("external hostname is not loopback", () => {
+		expect(isLoopbackHostname("api.example.com")).toBe(false);
+	});
+
+	it("public IP is not loopback", () => {
+		expect(isLoopbackHostname("8.8.8.8")).toBe(false);
+	});
+});
+
+describe("isPrivateAddress", () => {
+	it("10.0.0.1 is private", () => {
+		expect(isPrivateAddress("10.0.0.1")).toBe(true);
+	});
+
+	it("172.16.0.1 is private", () => {
+		expect(isPrivateAddress("172.16.0.1")).toBe(true);
+	});
+
+	it("172.31.255.255 is private", () => {
+		expect(isPrivateAddress("172.31.255.255")).toBe(true);
+	});
+
+	it("172.32.0.1 is not private (outside 172.16.0.0/12)", () => {
+		expect(isPrivateAddress("172.32.0.1")).toBe(false);
+	});
+
+	it("192.168.1.1 is private", () => {
+		expect(isPrivateAddress("192.168.1.1")).toBe(true);
+	});
+
+	it("192.169.1.1 is not private", () => {
+		expect(isPrivateAddress("192.169.1.1")).toBe(false);
+	});
+
+	it("8.8.8.8 is not private", () => {
+		expect(isPrivateAddress("8.8.8.8")).toBe(false);
+	});
+
+	it("hostname is not private (not an IP)", () => {
+		expect(isPrivateAddress("internal.corp")).toBe(false);
+	});
+});
+
+describe("BUG-3: SSRF via loopback bypass in buildHttpParams", () => {
+	it("rejects https://127.0.0.2:8080/mcp without allowLocal", () => {
+		expect(() =>
+			createHttpTransport({
+				transport: "streamable-http",
+				url: "https://127.0.0.2:8080/mcp",
+			} as any),
+		).toThrow(/allowLocal/);
+	});
+
+	it("rejects https://127.1/mcp without allowLocal", () => {
+		expect(() =>
+			createHttpTransport({
+				transport: "streamable-http",
+				url: "https://127.1/mcp",
+			} as any),
+		).toThrow(/allowLocal/);
+	});
+
+	it("rejects https://127.0.0.1/mcp without allowLocal", () => {
+		expect(() =>
+			createHttpTransport({
+				transport: "streamable-http",
+				url: "https://127.0.0.1/mcp",
+			} as any),
+		).toThrow(/allowLocal/);
+	});
+
+	it("accepts https://127.0.0.1/mcp with allowLocal: true", () => {
+		expect(() =>
+			createHttpTransport({
+				transport: "streamable-http",
+				url: "https://127.0.0.1/mcp",
+				allowLocal: true,
+			} as any),
+		).not.toThrow();
+	});
+
+	it("rejects localhost without allowLocal", () => {
+		expect(() =>
+			createHttpTransport({
+				transport: "streamable-http",
+				url: "https://localhost:3000/mcp",
+			} as any),
+		).toThrow(/allowLocal/);
+	});
+
+	it("accepts https://api.example.com/mcp", () => {
+		expect(() =>
+			createHttpTransport({
+				transport: "streamable-http",
+				url: "https://api.example.com/mcp",
+			} as any),
+		).not.toThrow();
+	});
+
+	it("rejects https://192.168.1.1/mcp by default (private network)", () => {
+		expect(() =>
+			createHttpTransport({
+				transport: "streamable-http",
+				url: "https://192.168.1.1/mcp",
+			} as any),
+		).toThrow(/private network/);
+	});
+
+	it("accepts https://192.168.1.1/mcp with allowPrivate: true", () => {
+		expect(() =>
+			createHttpTransport({
+				transport: "streamable-http",
+				url: "https://192.168.1.1/mcp",
+				allowPrivate: true,
+			} as any),
+		).not.toThrow();
+	});
+
+	it("accepts https://192.168.1.1/mcp with allowLocal: true (covers private)", () => {
+		expect(() =>
+			createHttpTransport({
+				transport: "streamable-http",
+				url: "https://192.168.1.1/mcp",
+				allowLocal: true,
+			} as any),
+		).not.toThrow();
+	});
+
+	it("rejects https://10.0.0.5/mcp by default (private network)", () => {
+		expect(() =>
+			createHttpTransport({
+				transport: "streamable-http",
+				url: "https://10.0.0.5/mcp",
+			} as any),
+		).toThrow(/private network/);
+	});
+});
 
 // ──────────────────────────────────────────────────
 // F-1.4: Stdio transport

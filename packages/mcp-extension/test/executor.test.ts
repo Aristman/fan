@@ -125,7 +125,7 @@ describe("TC-F1.7-3: isError passthrough", () => {
 			isError: true,
 		});
 
-		expect(result.content[0].text).toBe("error message");
+		expect(result.content[0]).toHaveProperty("text", "error message");
 		expect(result.details.isError).toBe(true);
 	});
 });
@@ -157,7 +157,7 @@ describe("TC-F1.7-4: structuredContent preservation", () => {
 			structuredContent: { code: 400 },
 		});
 
-		expect(result.content[0].text).toBe("error");
+		expect(result.content[0]).toHaveProperty("text", "error");
 		expect(result.details.isError).toBe(true);
 		expect(result.details.structuredContent).toEqual({ code: 400 });
 	});

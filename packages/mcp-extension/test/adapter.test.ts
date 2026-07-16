@@ -302,7 +302,7 @@ describe("TC-F1.6-7: mcpToolToDefinition — execute", () => {
 			{ name: "x", arguments: { path: "/x" } },
 			expect.objectContaining({ signal: expect.any(Object) }),
 		);
-		expect(result.content[0].text).toBe("ok");
+		expect(result.content[0]).toHaveProperty("text", "ok");
 	});
 
 	it("preserves text, image and fallback for unsupported mcp content", async () => {
@@ -330,9 +330,10 @@ describe("TC-F1.6-7: mcpToolToDefinition — execute", () => {
 		);
 
 		expect(result.content).toHaveLength(3);
-		expect(result.content[0].text).toBe("hello");
+		expect(result.content[0]).toHaveProperty("text", "hello");
 		expect(result.content[1]).toEqual({ type: "image", data: "base64...", mimeType: "image/png" });
-		expect(result.content[2].text).toContain("[Unsupported content types: audio]");
+		expect(result.content[2]).toHaveProperty("text");
+		expect((result.content[2] as any).text).toContain("[Unsupported content types: audio]");
 	});
 
 	it("handles isError: true from the server", async () => {
@@ -355,6 +356,6 @@ describe("TC-F1.6-7: mcpToolToDefinition — execute", () => {
 			undefined as any,
 		);
 
-		expect(result.content[0].text).toBe("Error: permission denied");
+		expect(result.content[0]).toHaveProperty("text", "Error: permission denied");
 	});
 });

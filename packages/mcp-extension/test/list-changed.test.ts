@@ -20,7 +20,7 @@ function makeFakePi() {
 	const unregistered: string[] = [];
 	const updated: string[] = [];
 
-	const api: Partial<ExtensionAPI> = {
+	const api: Record<string, any> = {
 		registerTool: vi.fn((def: any) => {
 			registered.set(def.name, def);
 		}) as any,
@@ -62,7 +62,7 @@ function makeFakePi() {
 		unregisterProvider: vi.fn() as any,
 	};
 
-	return { api: api as ExtensionAPI, registered, unregistered, updated };
+	return { api: api as any as ExtensionAPI, registered, unregistered, updated };
 }
 
 function makeEmptyGate() {

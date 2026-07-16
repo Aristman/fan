@@ -185,7 +185,7 @@ export function mcpToolToDefinition(
 			_toolCallId: string,
 			params: any,
 			signal?: AbortSignal,
-			_onUpdate?: any,
+			onUpdate?: any,
 			_ctx?: ExtensionContext,
 		) => {
 			return withLogging(
@@ -197,6 +197,7 @@ export function mcpToolToDefinition(
 						mcpTool.name,
 						params as Record<string, unknown>,
 						signal,
+						onUpdate,
 					),
 			);
 		},

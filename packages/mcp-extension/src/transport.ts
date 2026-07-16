@@ -99,7 +99,48 @@ export class TransportConfigError extends Error {
 	}
 }
 
-const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1"]);
+/**
+ * Check if a hostname is a loopback address (127.0.0.0/8, ::1, localhost, 0.0.0.0).
+ * Handles full IPv4 (4 octets), shorthand (2 or 3 octets like 127.1, 127.0.1),
+ * and known hostname aliases.
+ */
+export function isLoopbackHostname(hostname: string): boolean {
+	const LOOPBACK_SET = new Set(["localhost", "127.0.0.1", "::1"]);
+	if (LOOPBACK_SET.has(hostname)) return true;
+	if (hostname === "0.0.0.0" || hostname === "0") return true;
+	// Parse dotted decimal: support 2-4 octet forms like 127.1 (shorthand for 127.0.0.1)
+	const ipMatch = /^(\d+)(?:\.(\d+)(?:\.(\d+)(?:\.(\d+))?)?)?$/.exec(hostname);
+	if (ipMatch) {
+		const a = Number(ipMatch[1]);
+		if (a === 127) return true;
+		// 0.x.x.x is also treated as loopback on some systems
+		if (a === 0) return true;
+	}
+	return false;
+}
+
+/**
+ * Check if a hostname is a private network address.
+ * RFC 1918: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+ * Also includes 169.254.0.0/16 (link-local) and 100.64.0.0/10 (CGNAT).
+ */
+export function isPrivateAddress(hostname: string): boolean {
+	const ipMatch = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(hostname);
+	if (!ipMatch) return false;
+	const a = Number(ipMatch[1]);
+	const b = Number(ipMatch[2]);
+	// 10.0.0.0/8
+	if (a === 10) return true;
+	// 172.16.0.0/12
+	if (a === 172 && b >= 16 && b <= 31) return true;
+	// 192.168.0.0/16
+	if (a === 192 && b === 168) return true;
+	// 169.254.0.0/16 (link-local)
+	if (a === 169 && b === 254) return true;
+	// 100.64.0.0/10 (CGNAT)
+	if (a === 100 && b >= 64 && b <= 127) return true;
+	return false;
+}
 
 /**
  * Build and validate URL parameters for a StreamableHTTP transport config.
@@ -110,6 +151,7 @@ const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1"]);
  * - url must be a valid URL
  * - url must use https: protocol
  * - loopback addresses require allowLocal: true
+ * - private network addresses require allowPrivate: true (or allowLocal: true)
  */
 export function buildHttpParams(config: McpServerConfig): URL {
 	if (config.transport !== "streamable-http") {
@@ -132,12 +174,19 @@ export function buildHttpParams(config: McpServerConfig): URL {
 		);
 	}
 
-	if (
-		!config.allowLocal &&
-		LOOPBACK_HOSTNAMES.has(url.hostname)
-	) {
+	if (!config.allowLocal && isLoopbackHostname(url.hostname)) {
 		throw new TransportConfigError(
 			`createHttpTransport: loopback URL "${config.url}" requires allowLocal: true`,
+		);
+	}
+
+	if (
+		!config.allowLocal &&
+		!config.allowPrivate &&
+		isPrivateAddress(url.hostname)
+	) {
+		throw new TransportConfigError(
+			`createHttpTransport: private network URL "${config.url}" requires allowPrivate: true or allowLocal: true`,
 		);
 	}
 

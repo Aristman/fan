@@ -9,6 +9,11 @@ import { isAbsolute, join, resolve } from "node:path";
 import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 
+/**
+ * allowedTools and deniedTools use RAW MCP tool names (without "mcp__<server>__" prefix).
+ * Example: { allowedTools: ["read_file", "list_*"] } denies "delete_file" implicitly.
+ * Use globs like "filesystem_*" to match across servers or "read_*" to match prefix.
+ */
 export interface McpServerConfig {
 	transport: "stdio" | "streamable-http";
 	command?: string;
@@ -21,6 +26,7 @@ export interface McpServerConfig {
 	timeout?: number;
 	autoRestart?: boolean;
 	allowLocal?: boolean;
+	allowPrivate?: boolean;
 }
 
 export interface McpConfig {
@@ -58,6 +64,7 @@ const McpServerConfigSchema = Type.Object({
 	timeout: Type.Optional(Type.Integer({ minimum: 1000, maximum: 300_000 })),
 	autoRestart: Type.Optional(Type.Boolean()),
 	allowLocal: Type.Optional(Type.Boolean()),
+	allowPrivate: Type.Optional(Type.Boolean()),
 }, { additionalProperties: false });
 
 const McpConfigSchema = Type.Object({

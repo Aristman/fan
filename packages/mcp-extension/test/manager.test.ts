@@ -26,7 +26,7 @@ function makeFakePi() {
 	const unregistered: string[] = [];
 	const events: string[] = [];
 
-	const api: Partial<ExtensionAPI> = {
+	const api: Record<string, any> = {
 		registerTool: vi.fn((def: any) => {
 			registered.set(def.name, def);
 		}),
@@ -69,7 +69,7 @@ function makeFakePi() {
 	};
 
 	return {
-		api: api as ExtensionAPI,
+		api: api as any as ExtensionAPI,
 		registered,
 		unregistered,
 		events,
@@ -249,12 +249,12 @@ describe("F-1.17: integration — real stdio server crash", () => {
 			const entry = entries[0];
 			const transport = entry.transport;
 			expect(transport).toBeDefined();
-			if (transport && transport.onclose) {
-				transport.onclose();
+			if (transport) {
+				transport.onclose?.();
 			}
 
 			// After onclose, all tools should be unregistered
-			if (api.unregisterTool && entry.toolNames.length > 0) {
+			if (entry.toolNames.length > 0) {
 				for (const toolName of entry.toolNames) {
 					expect(registered.has(toolName)).toBe(false);
 				}

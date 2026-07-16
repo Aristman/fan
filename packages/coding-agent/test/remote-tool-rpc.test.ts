@@ -121,6 +121,6 @@ describe("F-2.2: pendingRemoteToolRequests correlation map", () => {
 
 		const result = await promise;
 		expect(result.isError).toBe(true);
-		expect(result.content[0].text).toContain("timeout");
+		expect((result.content[0] as any).text).toContain("timeout");
 	});
 });

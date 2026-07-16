@@ -13,6 +13,14 @@ import type { McpServerConfig } from "./config.js";
 const MCP_TOOL_RE = /^mcp__([^_]+(?:_[^_]+)*?)__(.+)$/;
 
 /**
+ * Validate that a server ID is a non-negative integer decimal string.
+ * Prevents Number() coercion aliases like "0e0", "-0", "+1", "  ".
+ */
+export function isValidServerId(id: string): boolean {
+	return /^\d+$/.test(id);
+}
+
+/**
  * Parse an MCP-normalized tool name into its server ID and tool name components.
  * Returns null if the name is not in MCP namespace format.
  */
@@ -35,8 +43,12 @@ export interface PermissionGate {
  * 2. Look up the server config by array index (the server ID is the index as a string).
  * 3. If the server is not found in config, block defensively.
  * 4. Check deniedTools globs first and block if any match.
- * 5. Check allowedTools globs and block if no match (defaulting to ["*"]).
+ * 5. Check allowedTools globs and block if no match (defaulting to ["*"]). *
  * 6. Non-MCP tool names pass through unmodified.
+ *
+ * Note: allowedTools/deniedTools use RAW tool names (without "mcp__<server>__" prefix).
+ * Example: { deniedTools: ["delete_file"] } matches the tool name "delete_file" parsed
+ * from the full name "mcp__0__delete_file".
  */
 export function createPermissionGate(serverConfigs: McpServerConfig[] = []): PermissionGate {
 	const byIndex = new Map<number, McpServerConfig>();
@@ -47,13 +59,16 @@ export function createPermissionGate(serverConfigs: McpServerConfig[] = []): Per
 			if (!("toolName" in event)) return {};
 			const parsed = parseMcpToolName(event.toolName);
 			if (!parsed) return {};
+			if (!isValidServerId(parsed.serverId)) {
+				return { block: true, reason: `Invalid server ID format: "${parsed.serverId}"` };
+			}
 			const cfg = byIndex.get(Number(parsed.serverId));
 			if (!cfg) {
 				// Server not registered in config — defensive block
 				return { block: true, reason: `MCP server id "${parsed.serverId}" not found in mcp.json` };
 			}
 			const denied = cfg.deniedTools ?? [];
-			const matchDenied = denied.some((pattern) => matchGlob(event.toolName, pattern));
+			const matchDenied = denied.some((pattern) => matchGlob(parsed.tool, pattern));
 			if (matchDenied) {
 				return {
 					block: true,
@@ -61,7 +76,7 @@ export function createPermissionGate(serverConfigs: McpServerConfig[] = []): Per
 				};
 			}
 			const allowed = cfg.allowedTools ?? ["*"];
-			const matchAllowed = allowed.some((pattern) => matchGlob(event.toolName, pattern));
+			const matchAllowed = allowed.some((pattern) => matchGlob(parsed.tool, pattern));
 			if (!matchAllowed) {
 				return {
 					block: true,
@@ -83,17 +98,41 @@ export function filterToolsByConfig<T extends { name: string }>(
 ): T[] {
 	const allowed = config.allowedTools ?? ["*"];
 	const denied = config.deniedTools ?? [];
+	for (const t of tools) {
+		if (t.name.includes("__") && !t.name.startsWith("mcp__")) {
+			console.warn(
+				`filterToolsByConfig: tool name "${t.name}" contains "__" — ` +
+				`did you mean just "${t.name.split("__").pop()}"? ` +
+				`(allowedTools/deniedTools use RAW tool names without mcp__ prefix)`,
+			);
+		}
+	}
 	return tools.filter((t) => {
-		const fullName = t.name;
-		if (denied.some((pattern) => matchGlob(fullName, pattern))) return false;
+		const rawName = t.name;
+		if (denied.some((pattern) => matchGlob(rawName, pattern))) return false;
 		if (allowed.includes("*")) return true;
-		return allowed.some((pattern) => matchGlob(fullName, pattern));
+		return allowed.some((pattern) => matchGlob(rawName, pattern));
 	});
 }
 
+const MAX_GLOB_PATTERN_LENGTH = 256;
+const MAX_GLOB_ASTERISKS = 10;
+
 function matchGlob(name: string, pattern: string): boolean {
+	if (pattern.length > MAX_GLOB_PATTERN_LENGTH) {
+		console.warn(`matchGlob: pattern exceeds max length`);
+		return false;
+	}
 	if (pattern === "*") return true;
 	if (!pattern.includes("*")) return name === pattern;
+
+	// Count asterisks — too many wildcards can cause ReDoS via catastrophic backtracking
+	const asteriskCount = (pattern.match(/\*/g) ?? []).length;
+	if (asteriskCount > MAX_GLOB_ASTERISKS) {
+		// Convert to safe (non-regex) matching: split by "*" and verify each part is a substring
+		return pattern.split("*").every((part) => part === "" || name.includes(part));
+	}
+
 	const regex = new RegExp("^" + pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$");
 	return regex.test(name);
 }

@@ -123,7 +123,7 @@ describe("F-3.5: /mcp command", () => {
 		mcpExtension(api);
 
 		// Fire session_start — without any server config, it should be a no-op
-		const sessionStartHandler = handlers.get("session_start")?.[0];
+		const sessionStartHandler = handlers.get("session_start")![0];
 		expect(sessionStartHandler).toBeDefined();
 		await sessionStartHandler();
 
@@ -150,7 +150,7 @@ describe("F-3.5: /mcp command", () => {
 		//
 		// Instead, we rely on the fact that _entries() returns [] when null,
 		// which is tested above. This test verifies the handler is wired.
-		const sessionStartHandler = handlers.get("session_start")?.[0];
+		const sessionStartHandler = handlers.get("session_start")![0];
 		await sessionStartHandler();
 
 		const cmd = getRegisteredCommand()!;
@@ -169,7 +169,7 @@ describe("F-3.5: /mcp command", () => {
 		mcpExtension(api);
 
 		// session_start with no config — should set currentManager to null
-		const sessionStartHandler = handlers.get("session_start")?.[0];
+		const sessionStartHandler = handlers.get("session_start")![0];
 		await sessionStartHandler();
 
 		const cmd = getRegisteredCommand()!;
@@ -201,7 +201,7 @@ describe("F-3.5: /mcp command", () => {
 		const { api, handlers } = makeFakeApi();
 		mcpExtension(api);
 
-		const sessionShutdownHandler = handlers.get("session_shutdown")?.[0];
+		const sessionShutdownHandler = handlers.get("session_shutdown")![0];
 		expect(sessionShutdownHandler).toBeDefined();
 		// Should resolve without error even when no manager exists
 		await expect(sessionShutdownHandler()).resolves.toBeUndefined();
