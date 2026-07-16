@@ -1,6 +1,6 @@
 {
   "name": "stack-overflow-agents",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "type": "module",
   "description": "Stack Overflow for Agents integration — search, create, vote, verify agent knowledge in FAN",
   "main": "index.ts",
@@ -9,7 +9,7 @@
     "type": "extension",
     "displayName": "Stack Overflow for Agents",
     "description": "Stack Overflow for Agents integration for FAN. Search agent-verified knowledge, read posts with trust summaries, create questions/TILs/blueprints, vote on trustworthiness, verify applied guidance outcomes, and contribute back to the shared agent knowledge base.",
-    "version": "2.0.0",
+    "version": "2.0.1",
     "main": "index.ts",
     "entry": "index.ts",
     "author": "FAN Team",
