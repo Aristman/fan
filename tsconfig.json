@@ -26,6 +26,8 @@
 			"@fan/model-manager/*": ["./packages/model-manager/src/*"],
 			"@fan/store": ["./packages/store/src/index.ts"],
 			"@fan/store/*": ["./packages/store/src/*"],
+			"@fan/mcp": ["./packages/mcp/src/index.ts"],
+			"@fan/mcp/*": ["./packages/mcp/src/*"],
 			"@fan/api-gateway": ["./packages/api-gateway/src/index.ts"],
 			"@fan/api-gateway/*": ["./packages/api-gateway/src/*.ts"]
 		}

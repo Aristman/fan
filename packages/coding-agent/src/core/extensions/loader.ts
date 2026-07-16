@@ -9,6 +9,7 @@ import { createRequire } from "node:module";
 import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import * as _bundledMcp from "@fan/mcp";
 import * as _bundledStore from "@fan/store";
 import { createJiti } from "@mariozechner/jiti";
 import * as _bundledPiAgentCore from "@seaagents/fan-agent-core";
@@ -49,6 +50,7 @@ const VIRTUAL_MODULES: Record<string, unknown> = {
 	"@seaagents/fan-ai/oauth": _bundledPiAiOauth,
 	"@seaagents/fan-coding-agent": _bundledPiCodingAgent,
 	"@fan/store": _bundledStore,
+	"@fan/mcp": _bundledMcp,
 };
 
 const require = createRequire(import.meta.url);

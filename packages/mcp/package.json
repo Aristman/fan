@@ -1,5 +1,5 @@
 {
-	"name": "@fan/mcp-extension",
+	"name": "@fan/mcp",
 	"version": "1.0.0",
 	"description": "MCP (Model Context Protocol) client extension for FAN — connect to external MCP servers and expose their tools to the agent",
 	"fan": {
