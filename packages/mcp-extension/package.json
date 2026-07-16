@@ -1,0 +1,50 @@
+{
+	"name": "@fan/mcp-extension",
+	"version": "0.1.0",
+	"description": "MCP (Model Context Protocol) client extension for FAN — connect to external MCP servers and expose their tools to the agent",
+	"fan": {
+		"name": "fan-mcp",
+		"type": "extension",
+		"displayName": "MCP Integration",
+		"description": "Connect FAN to external Model Context Protocol servers. Tools are exposed as native FAN AgentTools.",
+		"version": "0.1.0",
+		"main": "dist/index.js",
+		"entry": "src/index.ts",
+		"author": "FAN Team",
+		"tags": [
+			"mcp",
+			"model-context-protocol",
+			"tools",
+			"integration"
+		],
+		"bundled": false,
+		"externalDependencies": [
+			"@modelcontextprotocol/sdk"
+		]
+	},
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"scripts": {
+		"clean": "shx rm -rf dist",
+		"build": "tsgo -p tsconfig.build.json",
+		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
+		"test": "vitest --run",
+		"typecheck": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@modelcontextprotocol/sdk": "^1.29.0",
+		"@seaagents/fan-agent-core": "*",
+		"@sinclair/typebox": "^0.34.0"
+	},
+	"devDependencies": {
+		"shx": "^0.4.0",
+		"vitest": "^3.2.4"
+	}
+}
