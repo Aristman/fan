@@ -31,6 +31,26 @@ const DISPOSE_TIMEOUT_MS = 5_000;
 const LIST_CHANGED_DEBOUNCE_MS = 500;
 
 /**
+ * Maximum auto-restart backoff attempts (F-3.4).
+ */
+export const MAX_RESTART_ATTEMPTS = 5;
+
+/**
+ * Auto-restart backoff window in milliseconds (F-3.4).
+ * After this much time since the first crash, the attempt counter resets.
+ */
+export const RESTART_WINDOW_MS = 60_000;
+
+/**
+ * Calculate exponential backoff delay for auto-restart (F-3.4).
+ *
+ * Returns: 1s, 2s, 4s, 8s, 16s (capped at 16_000 ms).
+ */
+export function backoffDelay(attempt: number): number {
+	return Math.min(1000 * Math.pow(2, attempt - 1), 16_000);
+}
+
+/**
  * Internal state for a single MCP server connection.
  */
 interface ServerEntry {
@@ -43,6 +63,10 @@ interface ServerEntry {
 	connectError?: string;
 	/** AdapterClient used to call tools on this server. */
 	adapterClient?: AdapterClient;
+	/** Number of restart attempts since last crash (resets after success or 60s window). */
+	restartAttempts?: number;
+	/** Timestamp of the first crash in the current backoff window. */
+	firstCrashAt?: number;
 }
 
 export interface McpClientManager {
@@ -83,6 +107,11 @@ export function createMcpClientManager(
 	 *
 	 * F-1.17: Sets status to "unavailable" and unregisters all tools
 	 * that were registered for this server via pi.unregisterTool().
+	 *
+	 * F-3.4: If config.autoRestart is true, attempts to reconnect
+	 * the server with exponential backoff (1s, 2s, 4s, 8s, 16s)
+	 * up to 5 attempts within a 60-second window. After 5 failures
+	 * autoRestart is disabled permanently.
 	 */
 	function handleCrash(entry: ServerEntry): void {
 		if (entry.status !== "connected") {
@@ -100,6 +129,68 @@ export function createMcpClientManager(
 			}
 		}
 		entry.toolNames = [];
+
+		// ── Auto-restart (F-3.4) ────────────────────────────────
+
+		if (!entry.config.autoRestart) return;
+
+		// Initialize counters on first crash
+		if (entry.restartAttempts === undefined) entry.restartAttempts = 0;
+		if (entry.firstCrashAt === undefined) entry.firstCrashAt = Date.now();
+
+		entry.restartAttempts++;
+
+		// Check if 60s window has passed since first crash — reset counters
+		if (Date.now() - entry.firstCrashAt > RESTART_WINDOW_MS) {
+			entry.restartAttempts = 1;
+			entry.firstCrashAt = Date.now();
+		}
+
+		if (entry.restartAttempts > MAX_RESTART_ATTEMPTS) {
+			console.warn(
+				`mcp: server ${entry.index} auto-restart exhausted after ${entry.restartAttempts} attempts, disabling`,
+			);
+			entry.config = { ...entry.config, autoRestart: false };
+			return;
+		}
+
+		const delayMs = backoffDelay(entry.restartAttempts);
+		console.info(
+			`mcp: server ${entry.index} auto-restart attempt ${entry.restartAttempts}/${MAX_RESTART_ATTEMPTS} in ${delayMs}ms`,
+		);
+
+		setTimeout(() => {
+			connectOne(entry.index, entry.config).then((newEntry) => {
+				// Merge fields from the new connection back into the existing entry.
+				// The new entry already has tools registered via connectOne.
+				Object.assign(entry, {
+					client: newEntry.client,
+					transport: newEntry.transport,
+					status: newEntry.status,
+					toolNames: newEntry.toolNames,
+					connectError: newEntry.connectError,
+					adapterClient: newEntry.adapterClient,
+				});
+
+				if (newEntry.status === "connected") {
+					// Success — tools already re-registered by connectOne.
+					// Reset backoff counters.
+					entry.restartAttempts = 0;
+					entry.firstCrashAt = undefined;
+					console.info(
+						`mcp: server ${entry.index} auto-restart successful`,
+					);
+				} else {
+					console.warn(
+						`mcp: server ${entry.index} auto-restart attempt ${entry.restartAttempts} failed: ${newEntry.connectError ?? "unknown"}`,
+					);
+				}
+			}).catch((e) => {
+				console.warn(
+					`mcp: server ${entry.index} auto-restart attempt ${entry.restartAttempts} threw: ${e instanceof Error ? e.message : String(e)}`,
+				);
+			});
+		}, delayMs);
 	}
 
 	// ── list_changed atomic refresh (F-1.15) ───────────────────────
