@@ -4,6 +4,8 @@
  * forwards tool calls to the FAN agent loop via the ExtensionAPI.
  *
  * F-1.14: Graceful shutdown — closes all clients and transports within 5s.
+ * F-1.15: list_changed — subscribes to notifications/tools/list_changed with
+ *         500ms debounce and atomic diff-based refresh.
  * F-1.16: Unavailable server handling — spawn fail / connect timeout marks
  *         a server as "unavailable" while other servers proceed.
  * F-1.17: Crash handling — transport.onclose unregisters all tools for that
@@ -25,6 +27,9 @@ const CONNECT_TIMEOUT_MS = 5_000;
 /** Total budget for dispose() cleanup across all servers. */
 const DISPOSE_TIMEOUT_MS = 5_000;
 
+/** Default debounce for list_changed notifications. */
+const LIST_CHANGED_DEBOUNCE_MS = 500;
+
 /**
  * Internal state for a single MCP server connection.
  */
@@ -36,6 +41,8 @@ interface ServerEntry {
 	status: "connecting" | "connected" | "unavailable";
 	toolNames: string[];
 	connectError?: string;
+	/** AdapterClient used to call tools on this server. */
+	adapterClient?: AdapterClient;
 }
 
 export interface McpClientManager {
@@ -95,6 +102,80 @@ export function createMcpClientManager(
 		entry.toolNames = [];
 	}
 
+	// ── list_changed atomic refresh (F-1.15) ───────────────────────
+
+	/**
+	 * Atomically refresh the tool registry for a server after a list_changed
+	 * notification.
+	 *
+	 * 1. Re-fetches tools from the MCP server via listTools().
+	 * 2. Filters through permission gate config.
+	 * 3. Computes diff (add/remove/update) against current toolNames.
+	 * 4. Applies changes atomically: unregister old → register/update new.
+	 */
+	async function refreshServerTools(entry: ServerEntry): Promise<void> {
+		if (!entry.client || entry.status !== "connected") {
+			return;
+		}
+
+		const client = entry.client;
+		const adapterClient = entry.adapterClient;
+		if (!adapterClient) {
+			return;
+		}
+
+		try {
+			const toolsResult = await client.listTools();
+			const filtered = filterToolsByConfig(
+				toolsResult.tools as any,
+				entry.config,
+			);
+
+			const newToolNames = new Set<string>();
+			const newDefs: Array<{ name: string; def: any }> = [];
+			const serverId = String(entry.index);
+
+			for (const mcpTool of filtered) {
+				const name = mcpToolToDefinition(
+					serverId,
+					mcpTool as any,
+					adapterClient,
+				);
+				newToolNames.add(name.name);
+				newDefs.push({ name: name.name, def: name });
+			}
+
+			// Build old set for O(1) lookup
+			const oldToolSet = new Set(entry.toolNames);
+
+			// Remove tools that no longer exist
+			for (const oldName of entry.toolNames) {
+				if (!newToolNames.has(oldName)) {
+					pi.unregisterTool(oldName);
+				}
+			}
+
+			// Add new tools / update changed tools
+			for (const { name, def } of newDefs) {
+				if (oldToolSet.has(name)) {
+					pi.updateTool(name, def);
+				} else {
+					pi.registerTool(def);
+				}
+			}
+
+			entry.toolNames = [...newToolNames];
+
+			console.info(
+				`mcp: server ${serverId} tools refreshed (${newToolNames.size} tools)`,
+			);
+		} catch (e: any) {
+			console.warn(
+				`mcp: server ${entry.index} list_changed refresh failed: ${e?.message ?? String(e)}`,
+			);
+		}
+	}
+
 	// ── Connect one server ────────────────────────────────────────
 
 	/**
@@ -113,6 +194,7 @@ export function createMcpClientManager(
 			transport: null,
 			status: "connecting",
 			toolNames: [],
+			adapterClient: undefined,
 		};
 
 		let transport: Transport;
@@ -138,9 +220,35 @@ export function createMcpClientManager(
 			);
 		};
 
+		// F-1.15: Set up list_changed subscription with 500ms debounce.
+		// The SDK's built-in listChanged support handles the debounce,
+		// auto-refresh (calls listTools()), and passes results to onChanged.
 		const client = new Client(
 			{ name: "fan-mcp", version: "0.1.0" },
-			{ capabilities: {} },
+			{
+				capabilities: {},
+				listChanged: {
+					tools: {
+						autoRefresh: true,
+						debounceMs: LIST_CHANGED_DEBOUNCE_MS,
+						onChanged: (_error: Error | null, tools: any[] | null) => {
+							// tools is already fetched by SDK (autoRefresh=true).
+							// We do our own diff/register cycle via refreshServerTools
+							// which also calls listTools() to get filtered results.
+							// The SDK's auto-fetch is used for its side effect of
+							// refreshing cached metadata; our actual registry update
+							// uses refreshServerTools which re-fetches with filtering.
+							if (entry.status === "connected") {
+								refreshServerTools(entry).catch((e) =>
+									console.warn(
+										`mcp: refreshServerTools failed for server ${index}: ${e?.message ?? String(e)}`,
+									),
+								);
+							}
+						},
+					},
+				},
+			},
 		);
 		entry.client = client;
 
@@ -164,7 +272,8 @@ export function createMcpClientManager(
 				cfg,
 			);
 
-			// Register each tool with the FAN extension API
+			// Create adapter client and store on entry so refreshServerTools
+			// can use it for diff-based registry updates (F-1.15).
 			const adapterClient: AdapterClient = {
 				callTool: (args, options) =>
 					client.callTool(
@@ -173,6 +282,7 @@ export function createMcpClientManager(
 						options as any, // RequestOptions with signal
 					) as any,
 			};
+			entry.adapterClient = adapterClient;
 
 			for (const mcpTool of filtered) {
 				const serverId = String(index);
