@@ -1,5 +1,66 @@
 # Changelog
 
+## [2.2.3] - 2026-07-16
+
+### MCP Integration (Phase 1 + Phase 2 + partial Phase 3)
+
+#### Added
+
+**Core (F-1.1, F-1.2)**
+- `ExtensionAPI.unregisterTool(name)` — removes a tool from session registry
+- `ExtensionAPI.updateTool(name, def)` — replaces a registered tool
+
+**New package `@fan/mcp-extension` (Phase 1)**
+- MCP client integration: connect to external MCP servers via stdio or Streamable HTTP transports
+- Tool discovery via `tools/list` and dynamic catalog refresh via `notifications/tools/list_changed`
+- JSON Schema → TypeBox converter for tool input parameters
+- CallToolResult → AgentToolResult mapping with text/image content support
+- Permission gate: per-server `allowedTools`/`deniedTools` glob filtering
+- mcp.json loader with global/project merge, graceful invalid handling
+- Auto-restart on stdio crash with exponential backoff
+- `/mcp status` and `/mcp reload` slash commands
+- Logger writing to `~/.fan/agent/logs/mcp-YYYY-MM-DD.log`
+- 241 passing tests (19 test files)
+
+**Worker Proxy (Phase 2)**
+- `--remote-tools=<list>` CLI flag for worker mode
+- `RemoteProxyTool` — local proxy forwarding tool calls to parent via `remote_tool_request`
+- Generic `RpcRemoteToolRequest` / `Response` / `Cancel` / `Catalog` types (protocol-neutral)
+- `pendingRemoteToolRequests` correlation map in RPC mode
+- `EventBus` lastEvent cache (replay-on-subscribe) for late subscribers
+- `broker-handler` in orchestrator extension: subscribes to fan-mcp `mcp:catalog` and routes proxy requests
+- Per-worker profile filtering (explore/plan/verify → read-only; implement/bug-fix → all)
+
+**API Gateway**
+- `GET /api/mcp/servers` endpoint — returns MCP server status (stubbed data, full bridge in Phase 4)
+
+#### Security
+
+- Server ID validation: `isValidServerId` rejects `Number("0e0")`-style aliases
+- Loopback hostname validation: covers 127.0.0.0/8, 0.0.0.0, IPv6 ::1
+- Private IP range rejection: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10
+- glob pattern length/wildcard limits to prevent ReDoS in matchGlob
+- Secret sanitization in logger for Bearer tokens, API keys, sk-* style keys
+- Safe env var whitelist (PATH, HOME, LANG, LC_ALL, TMPDIR, USERPROFILE only)
+- `shell: false` for stdio MCP server spawn
+
+#### Changed
+
+- `event-bus.ts`: added lastEvent cache (~10 lines)
+- `rpc-types.ts`: added protocol-neutral remote tool types (~90 lines)
+- `rpc-mode.ts`: added correlation map (~30 lines)
+- `agent-session.ts`: added registerCustomTools method
+- `args.ts`: added --remote-tools CLI flag
+- core change footprint: ~180 lines total
+
+#### Known limitations (Phase 4)
+
+- F-3.3 OAuth support: stubbed PKCE flow only — full browser flow requires manual user intervention
+- Dashboard Lit component (mcp-card): endpoint exists, UI deferred
+- F-2.4 subagent-runner.handleRemoteToolRequest still uses broker-side placeholder until fan-mcp extension exposes a module-level client manager reference
+
+---
+
 ## [2.2.3] - 2026-07-15
 
 ### 📋 Вставка картинок из буфера (TUI)

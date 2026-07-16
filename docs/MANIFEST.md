@@ -1,5 +1,5 @@
 # Documentation Manifest
-> Last updated: 2026-07-08 (FAN 1.0.2 — orchestrator Pipeline Mode v3.1.0 added)
+> Last updated: 2026-07-16 (MCP Integration v0.1.0 added)
 > Comprehensive index of all project documentation.
 
 ## User-Facing Documentation
@@ -11,12 +11,14 @@
 | `SETUP.md` | ✅ | Полное руководство по настройке |
 | `MIGRATION.md` | ✅ | Migration from upstream fan/pi |
 | `CONTRIBUTING.md` | ✅ | Contribution guidelines |
-| `CHANGELOG.md` | ✅ | FAN changelog (0.2.0 → 1.0.0) |
+| `CHANGELOG.md` | ✅ | FAN changelog (0.2.0 → MCP Integration 2026-07-16) |
 | `docs/guides/quick-start.md` | ✅ | Quick start stub — redirects to QUICK-START.md |
 | `docs/guides/configuration.md` | ✅ | Full settings reference |
 | `docs/guides/orchestrator.md` | ✅ | Orchestrator user guide (Pipeline Mode v3.1.0) |
 | `docs/guides/dashboard.md` | ✅ | Dashboard user guide |
 | `docs/guides/api-reference.md` | ✅ | REST API + WebSocket protocol reference |
+| `docs/guides/mcp.md` | ✅ | MCP integration guide — transports, config, OAuth, Worker Proxy, security |
+| `packages/mcp-extension/README.md` | ✅ | @fan/mcp-extension — MCP client extension (241 tests, Phases 1–3) |
 
 ## Architecture & Specifications
 | File | Status | Description |

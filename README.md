@@ -14,6 +14,7 @@
 - **Session persistence** — JSONL (single source of truth) + SQLite metadata
 - **CLI tools** — `fan init` setup wizard, `fan doctor` diagnostics, `fan server` daemon management
 - **Cross-platform** — Windows, Linux, macOS. Pre-built binaries via CI/CD
+- **MCP Integration** — Connect to external [Model Context Protocol](https://modelcontextprotocol.io/) servers (filesystem, github, postgres, etc.) via stdio or HTTP transports with per-server permission filtering and worker proxy support. See [docs/guides/mcp.md](./docs/guides/mcp.md).
 
 ## Quick Start
 
