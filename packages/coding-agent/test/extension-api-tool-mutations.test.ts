@@ -4,9 +4,9 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
-import { createExtensionAPI, createExtensionRuntime } from "../src/core/extensions/loader.js";
-import type { ExtensionAPI, Extension } from "../src/core/extensions/types.js";
 import { createEventBus } from "../src/core/event-bus.js";
+import { createExtensionAPI, createExtensionRuntime } from "../src/core/extensions/loader.js";
+import type { Extension, ExtensionAPI } from "../src/core/extensions/types.js";
 
 /**
  * Builds a minimal extension skeleton plus its ExtensionAPI. The extension is
@@ -22,7 +22,12 @@ function buildTestExtension() {
 	const extension: Extension = {
 		path: "/virtual/ext.ts",
 		resolvedPath: "/virtual/ext.ts",
-		sourceInfo: { path: "/virtual/ext.ts", source: "test-ext", scope: "temporary" as const, origin: "top-level" as const },
+		sourceInfo: {
+			path: "/virtual/ext.ts",
+			source: "test-ext",
+			scope: "temporary" as const,
+			origin: "top-level" as const,
+		},
 		handlers: new Map(),
 		tools: new Map(),
 		commands: new Map(),
@@ -39,8 +44,20 @@ describe("F-1.1: unregisterTool", () => {
 	it("removes a previously registered tool from the registry", () => {
 		const { api, refreshSpy, extension } = buildTestExtension();
 
-		api.registerTool({ name: "toolA", label: "toolA", description: "A", parameters: {} as any, execute: async () => ({ content: [], details: {} }) });
-		api.registerTool({ name: "toolB", label: "toolB", description: "B", parameters: {} as any, execute: async () => ({ content: [], details: {} }) });
+		api.registerTool({
+			name: "toolA",
+			label: "toolA",
+			description: "A",
+			parameters: {} as any,
+			execute: async () => ({ content: [], details: {} }),
+		});
+		api.registerTool({
+			name: "toolB",
+			label: "toolB",
+			description: "B",
+			parameters: {} as any,
+			execute: async () => ({ content: [], details: {} }),
+		});
 		expect(extension.tools.has("toolA")).toBe(true);
 		expect(extension.tools.has("toolB")).toBe(true);
 		expect(refreshSpy).toHaveBeenCalledTimes(2);

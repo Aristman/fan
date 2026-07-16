@@ -115,7 +115,9 @@ export interface McpCallResult {
  * isError is placed in details.isError (AgentToolResult has no top-level isError).
  * structuredContent, if present, is surfaced as details.structuredContent.
  */
-export function mapCallToolResult(result: McpCallResult): AgentToolResult<{ isError?: boolean; structuredContent?: Record<string, unknown> }> {
+export function mapCallToolResult(
+	result: McpCallResult,
+): AgentToolResult<{ isError?: boolean; structuredContent?: Record<string, unknown> }> {
 	const content: (TextContent | ImageContent)[] = [];
 	const unsupported: string[] = [];
 
@@ -172,7 +174,10 @@ export function mapCallToolResult(result: McpCallResult): AgentToolResult<{ isEr
 export async function executeMcpTool(
 	callTool: (
 		args: { name: string; arguments: Record<string, unknown> },
-		options?: { signal?: AbortSignal; onprogress?: (progress: { progress: number; total?: number; message?: string }) => void },
+		options?: {
+			signal?: AbortSignal;
+			onprogress?: (progress: { progress: number; total?: number; message?: string }) => void;
+		},
 	) => Promise<McpCallResult>,
 	name: string,
 	args: Record<string, unknown>,
@@ -181,9 +186,7 @@ export async function executeMcpTool(
 	timeoutMs: number = 60_000,
 ): Promise<AgentToolResult<{ isError?: boolean; structuredContent?: Record<string, unknown> }>> {
 	const timeoutController = new AbortController();
-	const linkedSignal = signal
-		? linkSignals([signal, timeoutController.signal])
-		: timeoutController.signal;
+	const linkedSignal = signal ? linkSignals([signal, timeoutController.signal]) : timeoutController.signal;
 
 	const timer = setTimeout(() => {
 		timeoutController.abort(new Error("MCP tool call timed out"));
@@ -191,19 +194,19 @@ export async function executeMcpTool(
 
 	// Build throttled progress handler if onUpdate is provided
 	const throttledUpdate = onUpdate
-		? throttleProgress(
-				(data: { progress: number; total?: number; message?: string }) => {
-					const text = data.message
-						? `[progress ${data.progress}${data.total !== undefined ? `/${data.total}` : ""}] ${data.message}`
-						: `[progress ${data.progress}${data.total !== undefined ? `/${data.total}` : ""}]`;
-					onUpdate({ type: "text", text });
-				},
-				50,
-			)
+		? throttleProgress((data: { progress: number; total?: number; message?: string }) => {
+				const text = data.message
+					? `[progress ${data.progress}${data.total !== undefined ? `/${data.total}` : ""}] ${data.message}`
+					: `[progress ${data.progress}${data.total !== undefined ? `/${data.total}` : ""}]`;
+				onUpdate({ type: "text", text });
+			}, 50)
 		: undefined;
 
 	try {
-		const options: { signal?: AbortSignal; onprogress?: (progress: { progress: number; total?: number; message?: string }) => void } = { signal: linkedSignal };
+		const options: {
+			signal?: AbortSignal;
+			onprogress?: (progress: { progress: number; total?: number; message?: string }) => void;
+		} = { signal: linkedSignal };
 		if (throttledUpdate) {
 			options.onprogress = throttledUpdate;
 		}

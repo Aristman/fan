@@ -16,10 +16,10 @@
  */
 
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionFactory } from "@seaagents/fan-coding-agent";
-import { createMcpConfigLoader } from "./config.js";
 import type { ConfigLoader } from "./config.js";
-import { createMcpClientManager } from "./manager.js";
+import { createMcpConfigLoader } from "./config.js";
 import type { McpClientManager } from "./manager.js";
+import { createMcpClientManager } from "./manager.js";
 import { createPermissionGate } from "./permissions.js";
 
 // Module-scope reference to the current session's manager.
@@ -77,10 +77,7 @@ async function mcpCommandHandler(
 		const msg = await reloadMcp(configLoader);
 		_ctx.ui.notify(msg, "info");
 	} else {
-		_ctx.ui.notify(
-			`Unknown subcommand: ${subcommand}. Use 'status' or 'reload'.`,
-			"warning",
-		);
+		_ctx.ui.notify(`Unknown subcommand: ${subcommand}. Use 'status' or 'reload'.`, "warning");
 	}
 }
 

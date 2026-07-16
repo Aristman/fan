@@ -7,9 +7,9 @@
 
 import { describe, expect, it } from "vitest";
 import {
-	createStdioTransport,
-	createHttpTransport,
 	buildHttpParams,
+	createHttpTransport,
+	createStdioTransport,
 	isLoopbackHostname,
 	isPrivateAddress,
 } from "../src/transport.js";
@@ -192,16 +192,12 @@ describe("BUG-3: SSRF via loopback bypass in buildHttpParams", () => {
 describe("F-1.4: createStdioTransport", () => {
 	// TC-F1.4-1
 	it("throws when transport is not 'stdio'", () => {
-		expect(() =>
-			createStdioTransport({ transport: "streamable-http" } as any),
-		).toThrow(/stdio/);
+		expect(() => createStdioTransport({ transport: "streamable-http" } as any)).toThrow(/stdio/);
 	});
 
 	// TC-F1.4-2
 	it("throws when command is missing", () => {
-		expect(() => createStdioTransport({ transport: "stdio" } as any)).toThrow(
-			/command/,
-		);
+		expect(() => createStdioTransport({ transport: "stdio" } as any)).toThrow(/command/);
 	});
 
 	// TC-F1.4-3
@@ -237,10 +233,7 @@ describe("F-1.4: createStdioTransport", () => {
 
 	// TC-F1.4-5
 	it("spawns a process via stdio and starts the transport (integration)", async () => {
-		const fixturePath = new URL(
-			"./fixtures/stdio-server.mjs",
-			import.meta.url,
-		).pathname.replace(/^\/([A-Z]:)/, "$1");
+		const fixturePath = new URL("./fixtures/stdio-server.mjs", import.meta.url).pathname.replace(/^\/([A-Z]:)/, "$1");
 
 		const transport = createStdioTransport({
 			transport: "stdio",
@@ -263,16 +256,12 @@ describe("F-1.4: createStdioTransport", () => {
 describe("F-1.5: createHttpTransport", () => {
 	// TC-F1.5-1
 	it("rejects non-streamable-http transport", async () => {
-		await expect(
-			createHttpTransport({ transport: "stdio", command: "x" } as any),
-		).rejects.toThrow(/streamable-http/);
+		await expect(createHttpTransport({ transport: "stdio", command: "x" } as any)).rejects.toThrow(/streamable-http/);
 	});
 
 	// TC-F1.5-2
 	it("rejects missing url", async () => {
-		await expect(
-			createHttpTransport({ transport: "streamable-http" } as any),
-		).rejects.toThrow(/url/);
+		await expect(createHttpTransport({ transport: "streamable-http" } as any)).rejects.toThrow(/url/);
 	});
 
 	// TC-F1.5-3

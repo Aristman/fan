@@ -4,9 +4,9 @@
  * Tests the slash command registration and basic behavior.
  */
 
+import type { ExtensionAPI, ExtensionCommandContext } from "@seaagents/fan-coding-agent";
 import { describe, expect, it, vi } from "vitest";
 import { mcpExtension } from "../src/index.js";
-import type { ExtensionAPI, ExtensionCommandContext } from "@seaagents/fan-coding-agent";
 
 /**
  * Create a minimal fake ExtensionAPI for testing.
@@ -133,10 +133,7 @@ describe("F-3.5: /mcp command", () => {
 		const ctx = makeFakeCtx();
 		await cmd!.options.handler("status", ctx);
 
-		expect(ctx.ui.notify).toHaveBeenCalledWith(
-			"No MCP servers configured.",
-			"info",
-		);
+		expect(ctx.ui.notify).toHaveBeenCalledWith("No MCP servers configured.", "info");
 	});
 
 	it("/mcp status shows server info when servers are connected", async () => {
@@ -158,10 +155,7 @@ describe("F-3.5: /mcp command", () => {
 		await cmd.options.handler("status", ctx);
 
 		// Fallback text from the handler for empty entries — already checked via notify
-		expect(ctx.ui.notify).toHaveBeenCalledWith(
-			"No MCP servers configured.",
-			"info",
-		);
+		expect(ctx.ui.notify).toHaveBeenCalledWith("No MCP servers configured.", "info");
 	});
 
 	it("/mcp reload disposes and reloads", async () => {
@@ -177,10 +171,7 @@ describe("F-3.5: /mcp command", () => {
 		await cmd.options.handler("reload", ctx);
 
 		// Reload falls back to loading config and shows result
-		expect(ctx.ui.notify).toHaveBeenCalledWith(
-			expect.stringContaining("Reloaded:"),
-			"info",
-		);
+		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("Reloaded:"), "info");
 	});
 
 	it("/mcp <unknown> shows warning for invalid subcommand", async () => {
@@ -191,10 +182,7 @@ describe("F-3.5: /mcp command", () => {
 		const ctx = makeFakeCtx();
 		await cmd.options.handler("foobar", ctx);
 
-		expect(ctx.ui.notify).toHaveBeenCalledWith(
-			expect.stringContaining("Unknown subcommand"),
-			"warning",
-		);
+		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("Unknown subcommand"), "warning");
 	});
 
 	it("session_shutdown disposes the manager", async () => {

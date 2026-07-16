@@ -8,21 +8,12 @@ describe("F-1.13: withTimeout", () => {
 	});
 
 	it("throws TimeoutError after timeout", async () => {
-		await expect(
-			withTimeout(
-				new Promise((r) => setTimeout(() => r("late"), 500)),
-				50,
-			),
-		).rejects.toThrow(TimeoutError);
+		await expect(withTimeout(new Promise((r) => setTimeout(() => r("late"), 500)), 50)).rejects.toThrow(TimeoutError);
 	});
 
 	it("rejects when external signal aborts", async () => {
 		const controller = new AbortController();
-		const promise = withTimeout(
-			new Promise((r) => setTimeout(() => r("late"), 1000)),
-			5000,
-			controller.signal,
-		);
+		const promise = withTimeout(new Promise((r) => setTimeout(() => r("late"), 1000)), 5000, controller.signal);
 		setTimeout(() => controller.abort(new Error("manual abort")), 50);
 		await expect(promise).rejects.toThrow(/manual abort/);
 	});
@@ -30,24 +21,17 @@ describe("F-1.13: withTimeout", () => {
 	it("rejects immediately if signal already aborted", async () => {
 		const controller = new AbortController();
 		controller.abort(new Error("pre-aborted"));
-		await expect(
-			withTimeout(Promise.resolve("late"), 100, controller.signal),
-		).rejects.toThrow(/pre-aborted/);
+		await expect(withTimeout(Promise.resolve("late"), 100, controller.signal)).rejects.toThrow(/pre-aborted/);
 	});
 
 	it("passes through promise rejection", async () => {
 		const err = new Error("original failure");
-		await expect(
-			withTimeout(Promise.reject(err), 1000),
-		).rejects.toThrow("original failure");
+		await expect(withTimeout(Promise.reject(err), 1000)).rejects.toThrow("original failure");
 	});
 
 	it("TimeoutError has ms in message", async () => {
 		try {
-			await withTimeout(
-				new Promise((r) => setTimeout(() => r("x"), 500)),
-				30,
-			);
+			await withTimeout(new Promise((r) => setTimeout(() => r("x"), 500)), 30);
 			expect.fail("should have thrown");
 		} catch (e: unknown) {
 			expect(e).toBeInstanceOf(TimeoutError);

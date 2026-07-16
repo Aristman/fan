@@ -125,7 +125,10 @@ export function parseArgs(args: string[]): Args {
 			}
 			result.tools = validTools;
 		} else if (arg === "--remote-tools" && i + 1 < args.length) {
-			result.remoteTools = args[++i].split(",").map((s) => s.trim()).filter(Boolean);
+			result.remoteTools = args[++i]
+				.split(",")
+				.map((s) => s.trim())
+				.filter(Boolean);
 		} else if (arg === "--thinking" && i + 1 < args.length) {
 			const level = args[++i];
 			if (isValidThinkingLevel(level)) {

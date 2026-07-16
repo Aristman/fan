@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
-import { throttleProgress, executeMcpTool } from "../src/executor.js";
+import { executeMcpTool, throttleProgress } from "../src/executor.js";
 
 // ──────────────────────────────────────────────────
 // throttleProgress helper
@@ -69,12 +69,15 @@ describe("throttleProgress", () => {
 
 describe("executeMcpTool progress forwarding", () => {
 	it("passes onprogress option to callTool when onUpdate is provided", async () => {
-		const onprogressCalls: Array<{ progress: number; total?: number; message?: string }> = [];
+		const _onprogressCalls: Array<{ progress: number; total?: number; message?: string }> = [];
 
 		const fakeClient = vi.fn().mockImplementation(
 			(
 				_args: { name: string; arguments: Record<string, unknown> },
-				opts?: { signal?: AbortSignal; onprogress?: (p: { progress: number; total?: number; message?: string }) => void },
+				opts?: {
+					signal?: AbortSignal;
+					onprogress?: (p: { progress: number; total?: number; message?: string }) => void;
+				},
 			) => {
 				// Simulate MCP progress notifications
 				if (opts?.onprogress) {
@@ -107,7 +110,10 @@ describe("executeMcpTool progress forwarding", () => {
 		const fakeClient = vi.fn().mockImplementation(
 			(
 				_args: { name: string; arguments: Record<string, unknown> },
-				opts?: { signal?: AbortSignal; onprogress?: (p: { progress: number; total?: number; message?: string }) => void },
+				opts?: {
+					signal?: AbortSignal;
+					onprogress?: (p: { progress: number; total?: number; message?: string }) => void;
+				},
 			) => {
 				if (opts?.onprogress) {
 					opts.onprogress({ progress: 1, total: 5, message: "analyzing" });
@@ -141,12 +147,7 @@ describe("executeMcpTool progress forwarding", () => {
 			content: [{ type: "text", text: "done" }],
 		});
 
-		await executeMcpTool(
-			(args, opts) => fakeClient(args, opts) as any,
-			"test_tool",
-			{},
-			undefined,
-		);
+		await executeMcpTool((args, opts) => fakeClient(args, opts) as any, "test_tool", {}, undefined);
 
 		const callArgs = fakeClient.mock.calls[0];
 		expect(callArgs[1].onprogress).toBeUndefined();

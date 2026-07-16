@@ -29,11 +29,7 @@ describe("F-1.9: filterToolsByConfig", () => {
 
 	it("prefix glob allowedTools", () => {
 		const out = filterToolsByConfig(sampleTools, { allowedTools: ["mcp__fs__*"] });
-		expect(out.map((t) => t.name)).toEqual([
-			"mcp__fs__read_file",
-			"mcp__fs__write_file",
-			"mcp__fs__list_directory",
-		]);
+		expect(out.map((t) => t.name)).toEqual(["mcp__fs__read_file", "mcp__fs__write_file", "mcp__fs__list_directory"]);
 	});
 
 	it("deniedTools takes priority over allowedTools", () => {

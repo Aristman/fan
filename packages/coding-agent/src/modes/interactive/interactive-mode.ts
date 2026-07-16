@@ -1057,7 +1057,7 @@ export class InteractiveMode {
 
 			const skills = skillsResult.skills;
 			if (skills.length > 0) {
-				const compactSkillNames = skills.map(s => s.name).join(", ");
+				const compactSkillNames = skills.map((s) => s.name).join(", ");
 				this.chatContainer.addChild(new Text(`${sectionHeader("Skills")}\n  ${compactSkillNames}`, 0, 0));
 				this.chatContainer.addChild(new Spacer(1));
 			}
@@ -1087,11 +1087,24 @@ export class InteractiveMode {
 				(ext) => ext.sourceInfo?.scope !== "temporary" && !ext.path.startsWith("<inline"),
 			);
 			if (userExtensions.length > 0) {
-				const compactExtNames = userExtensions.map(ext => {
-					const basename = ext.path.replace(/\\/g, "/").replace(/.*\/(fan-[^/]+|stack-overflow-[^/]+)\/.*/, "$1");
-					return basename || ext.path.split("/").pop()?.replace(/\.(ts|js)$/, "") || ext.path;
-				}).join(", ");
-				this.chatContainer.addChild(new Text(`${sectionHeader("Extensions", "mdHeading")}\n  ${compactExtNames}`, 0, 0));
+				const compactExtNames = userExtensions
+					.map((ext) => {
+						const basename = ext.path
+							.replace(/\\/g, "/")
+							.replace(/.*\/(fan-[^/]+|stack-overflow-[^/]+)\/.*/, "$1");
+						return (
+							basename ||
+							ext.path
+								.split("/")
+								.pop()
+								?.replace(/\.(ts|js)$/, "") ||
+							ext.path
+						);
+					})
+					.join(", ");
+				this.chatContainer.addChild(
+					new Text(`${sectionHeader("Extensions", "mdHeading")}\n  ${compactExtNames}`, 0, 0),
+				);
 				this.chatContainer.addChild(new Spacer(1));
 			}
 

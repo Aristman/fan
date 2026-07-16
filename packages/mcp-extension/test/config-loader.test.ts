@@ -12,12 +12,12 @@
  *   TC-F1.8-6: extra project servers beyond global length
  */
 
-import { mkdir, writeFile } from "node:fs/promises";
-import { join, dirname } from "node:path";
-import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { readConfigs, ConfigValidationError } from "../src/config.js";
+import { ConfigValidationError, readConfigs } from "../src/config.js";
 
 // ──────────────────── Helpers ────────────────────
 
@@ -57,10 +57,7 @@ describe("F-1.8: mcp.json loader", () => {
 	describe("TC-F1.8-1: no config files", () => {
 		it("returns empty config when both files are missing", async () => {
 			const dir = await makeTempDir();
-			const result = await readConfigs(
-				join(dir, "no-such-global.json"),
-				join(dir, "no-such-project.json"),
-			);
+			const result = await readConfigs(join(dir, "no-such-global.json"), join(dir, "no-such-project.json"));
 			expect(result.servers).toEqual([]);
 		});
 

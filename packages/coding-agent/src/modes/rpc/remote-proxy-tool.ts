@@ -19,7 +19,12 @@ export type RpcOutputFn = (obj: object) => void;
 
 /** Promise registrar for awaiting remote_tool_response. */
 export interface RemoteToolPendingRegistry {
-	register(id: string, resolve: (r: RpcRemoteToolResponse) => void, reject: (e: Error) => void, timeoutMs: number): void;
+	register(
+		id: string,
+		resolve: (r: RpcRemoteToolResponse) => void,
+		reject: (e: Error) => void,
+		timeoutMs: number,
+	): void;
 	resolve(id: string, response: RpcRemoteToolResponse): boolean;
 }
 
@@ -30,10 +35,7 @@ export interface RemoteProxyToolDeps {
 	timeoutMs?: number;
 }
 
-export function createRemoteProxyTool(
-	descriptor: RpcToolDescriptor,
-	deps: RemoteProxyToolDeps,
-): ToolDefinition {
+export function createRemoteProxyTool(descriptor: RpcToolDescriptor, deps: RemoteProxyToolDeps): ToolDefinition {
 	const { output, pendingRegistry } = deps;
 	const timeoutMs = deps.timeoutMs ?? 60_000;
 
@@ -52,10 +54,10 @@ export function createRemoteProxyTool(
 			const id = crypto.randomUUID();
 
 			return new Promise((resolve, reject) => {
-				let aborted = false;
+				let _aborted = false;
 
 				const onAbort = () => {
-					aborted = true;
+					_aborted = true;
 					const reason = signal?.reason;
 					if (reason) {
 						try {
@@ -68,7 +70,7 @@ export function createRemoteProxyTool(
 					}
 				};
 
-				if (signal && signal.aborted) {
+				if (signal?.aborted) {
 					// Pre-aborted — reject immediately, no need to emit cancel since request was never sent
 					reject(signal.reason ?? new Error("Aborted"));
 					return;

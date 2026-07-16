@@ -5,7 +5,7 @@
  * plus a structure smoke test for the manager integration.
  */
 
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { describe, expect, it } from "vitest";
 
 // ── Pure backoff arithmetic tests ───────────────────────────────────
 
@@ -14,23 +14,20 @@ describe("F-3.4: backoffDelay arithmetic", () => {
 		const attempts = [1, 2, 3, 4, 5];
 		const expected = [1000, 2000, 4000, 8000, 16000];
 		for (let i = 0; i < attempts.length; i++) {
-			const delay = Math.min(
-				1000 * Math.pow(2, attempts[i] - 1),
-				16_000,
-			);
+			const delay = Math.min(1000 * 2 ** (attempts[i] - 1), 16_000);
 			expect(delay).toBe(expected[i]);
 		}
 	});
 
 	it("delay is capped at 16_000 ms", () => {
 		// attempt 6 would be 32_000 without cap
-		const delay = Math.min(1000 * Math.pow(2, 6 - 1), 16_000);
+		const delay = Math.min(1000 * 2 ** (6 - 1), 16_000);
 		expect(delay).toBe(16_000);
 	});
 
 	it("attempt 0 should return 500ms (half of 1s) — edge case", () => {
 		// Not used in practice, but verify the formula behaves
-		const delay = Math.min(1000 * Math.pow(2, 0 - 1), 16_000);
+		const delay = Math.min(1000 * 2 ** (0 - 1), 16_000);
 		expect(delay).toBe(500);
 	});
 });
@@ -72,13 +69,13 @@ describe("F-3.4: max attempts logic", () => {
 	});
 
 	it("after 5 failures, autoRestart should be disabled", () => {
-		let attempts = 6; // over limit
+		const attempts = 6; // over limit
 		const shouldDisable = attempts > 5;
 		expect(shouldDisable).toBe(true);
 	});
 
 	it("at 5 failures, autoRestart should not yet be disabled", () => {
-		let attempts = 5;
+		const attempts = 5;
 		const shouldDisable = attempts > 5;
 		expect(shouldDisable).toBe(false);
 	});

@@ -1,18 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type {
-	RpcRemoteToolRequest,
-	RpcRemoteToolResponse,
-	RpcChildRequest,
-} from "../src/modes/rpc/rpc-types.js";
+import type { RpcRemoteToolResponse } from "../src/modes/rpc/rpc-types.js";
 
 // Mirror the correlation map pattern from rpc-mode.ts (without spinning RPC mode).
 // We test the data structure, not the actual stdin/stdout loop.
 
 function makeCorrelationMap() {
-	return new Map<
-		string,
-		{ resolve: (v: RpcRemoteToolResponse) => void; reject: (e: Error) => void }
-	>();
+	return new Map<string, { resolve: (v: RpcRemoteToolResponse) => void; reject: (e: Error) => void }>();
 }
 
 function registerRequest(
@@ -97,10 +90,7 @@ describe("F-2.2: pendingRemoteToolRequests correlation map", () => {
 		map.delete("inv-1");
 		pend1.resolve(r1);
 
-		await Promise.all([
-			expect(p1).resolves.toEqual(r1),
-			expect(p2).resolves.toEqual(r2),
-		]);
+		await Promise.all([expect(p1).resolves.toEqual(r1), expect(p2).resolves.toEqual(r2)]);
 		expect(map.size).toBe(0);
 	});
 

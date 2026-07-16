@@ -12,14 +12,13 @@
  *         server and aborts pending calls.
  */
 
-import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
+import { type AdapterClient, mcpToolToDefinition } from "./adapter.js";
 import type { McpConfig, McpServerConfig } from "./config.js";
-import { createStdioTransport } from "./transport.js";
-import { createHttpTransport } from "./transport.js";
-import { mcpToolToDefinition, type AdapterClient } from "./adapter.js";
 import { filterToolsByConfig, type PermissionGate } from "./permissions.js";
+import { createHttpTransport, createStdioTransport } from "./transport.js";
 
 /** Connect timeout per server (initialize phase). */
 const CONNECT_TIMEOUT_MS = 5_000;
@@ -47,7 +46,7 @@ export const RESTART_WINDOW_MS = 60_000;
  * Returns: 1s, 2s, 4s, 8s, 16s (capped at 16_000 ms).
  */
 export function backoffDelay(attempt: number): number {
-	return Math.min(1000 * Math.pow(2, attempt - 1), 16_000);
+	return Math.min(1000 * 2 ** (attempt - 1), 16_000);
 }
 
 /**
@@ -82,10 +81,7 @@ export interface McpClientManager {
  * @param fan - Extension API for tool registration/unregistration
  * @param permissions - Permission gate for tool call filtering
  */
-export function createMcpClientManager(
-	fan: ExtensionAPI,
-	permissions: PermissionGate,
-): McpClientManager {
+export function createMcpClientManager(fan: ExtensionAPI, _permissions: PermissionGate): McpClientManager {
 	const entries: ServerEntry[] = [];
 
 	// ── Transport factory ──────────────────────────────────────────
@@ -160,36 +156,36 @@ export function createMcpClientManager(
 		);
 
 		setTimeout(() => {
-			connectOne(entry.index, entry.config).then((newEntry) => {
-				// Merge fields from the new connection back into the existing entry.
-				// The new entry already has tools registered via connectOne.
-				Object.assign(entry, {
-					client: newEntry.client,
-					transport: newEntry.transport,
-					status: newEntry.status,
-					toolNames: newEntry.toolNames,
-					connectError: newEntry.connectError,
-					adapterClient: newEntry.adapterClient,
-				});
+			connectOne(entry.index, entry.config)
+				.then((newEntry) => {
+					// Merge fields from the new connection back into the existing entry.
+					// The new entry already has tools registered via connectOne.
+					Object.assign(entry, {
+						client: newEntry.client,
+						transport: newEntry.transport,
+						status: newEntry.status,
+						toolNames: newEntry.toolNames,
+						connectError: newEntry.connectError,
+						adapterClient: newEntry.adapterClient,
+					});
 
-				if (newEntry.status === "connected") {
-					// Success — tools already re-registered by connectOne.
-					// Reset backoff counters.
-					entry.restartAttempts = 0;
-					entry.firstCrashAt = undefined;
-					console.info(
-						`mcp: server ${entry.index} auto-restart successful`,
-					);
-				} else {
+					if (newEntry.status === "connected") {
+						// Success — tools already re-registered by connectOne.
+						// Reset backoff counters.
+						entry.restartAttempts = 0;
+						entry.firstCrashAt = undefined;
+						console.info(`mcp: server ${entry.index} auto-restart successful`);
+					} else {
+						console.warn(
+							`mcp: server ${entry.index} auto-restart attempt ${entry.restartAttempts} failed: ${newEntry.connectError ?? "unknown"}`,
+						);
+					}
+				})
+				.catch((e) => {
 					console.warn(
-						`mcp: server ${entry.index} auto-restart attempt ${entry.restartAttempts} failed: ${newEntry.connectError ?? "unknown"}`,
+						`mcp: server ${entry.index} auto-restart attempt ${entry.restartAttempts} threw: ${e instanceof Error ? e.message : String(e)}`,
 					);
-				}
-			}).catch((e) => {
-				console.warn(
-					`mcp: server ${entry.index} auto-restart attempt ${entry.restartAttempts} threw: ${e instanceof Error ? e.message : String(e)}`,
-				);
-			});
+				});
 		}, delayMs);
 	}
 
@@ -217,21 +213,14 @@ export function createMcpClientManager(
 
 		try {
 			const toolsResult = await client.listTools();
-			const filtered = filterToolsByConfig(
-				toolsResult.tools as any,
-				entry.config,
-			);
+			const filtered = filterToolsByConfig(toolsResult.tools as any, entry.config);
 
 			const newToolNames = new Set<string>();
 			const newDefs: Array<{ name: string; def: any }> = [];
 			const serverId = String(entry.index);
 
 			for (const mcpTool of filtered) {
-				const name = mcpToolToDefinition(
-					serverId,
-					mcpTool as any,
-					adapterClient,
-				);
+				const name = mcpToolToDefinition(serverId, mcpTool as any, adapterClient);
 				newToolNames.add(name.name);
 				newDefs.push({ name: name.name, def: name });
 			}
@@ -257,13 +246,9 @@ export function createMcpClientManager(
 
 			entry.toolNames = [...newToolNames];
 
-			console.info(
-				`mcp: server ${serverId} tools refreshed (${newToolNames.size} tools)`,
-			);
+			console.info(`mcp: server ${serverId} tools refreshed (${newToolNames.size} tools)`);
 		} catch (e: any) {
-			console.warn(
-				`mcp: server ${entry.index} list_changed refresh failed: ${e?.message ?? String(e)}`,
-			);
+			console.warn(`mcp: server ${entry.index} list_changed refresh failed: ${e?.message ?? String(e)}`);
 		}
 	}
 
@@ -274,10 +259,7 @@ export function createMcpClientManager(
 	 * the ServerEntry. If connect fails (spawn error, timeout, etc.)
 	 * the entry is marked "unavailable" with connectError set.
 	 */
-	async function connectOne(
-		index: number,
-		cfg: McpServerConfig,
-	): Promise<ServerEntry> {
+	async function connectOne(index: number, cfg: McpServerConfig): Promise<ServerEntry> {
 		const entry: ServerEntry = {
 			index,
 			config: cfg,
@@ -294,9 +276,7 @@ export function createMcpClientManager(
 		} catch (e: any) {
 			entry.status = "unavailable";
 			entry.connectError = e?.message ?? String(e);
-			console.warn(
-				`mcp: server ${index} config error: ${entry.connectError}`,
-			);
+			console.warn(`mcp: server ${index} config error: ${entry.connectError}`);
 			return entry;
 		}
 		entry.transport = transport;
@@ -306,9 +286,7 @@ export function createMcpClientManager(
 			handleCrash(entry);
 		};
 		transport.onerror = (error: Error) => {
-			console.warn(
-				`mcp: server ${index} transport error: ${error.message}`,
-			);
+			console.warn(`mcp: server ${index} transport error: ${error.message}`);
 		};
 
 		// F-1.15: Set up list_changed subscription with 500ms debounce.
@@ -344,10 +322,7 @@ export function createMcpClientManager(
 			// client.connect() calls transport.start() internally
 			const connectPromise = client.connect(transport);
 			const timeout = new Promise<never>((_, reject) =>
-				setTimeout(
-					() => reject(new Error(`connect timeout ${CONNECT_TIMEOUT_MS}ms`)),
-					CONNECT_TIMEOUT_MS,
-				),
+				setTimeout(() => reject(new Error(`connect timeout ${CONNECT_TIMEOUT_MS}ms`)), CONNECT_TIMEOUT_MS),
 			);
 			await Promise.race([connectPromise, timeout]);
 
@@ -355,10 +330,7 @@ export function createMcpClientManager(
 			const toolsResult = await client.listTools();
 
 			// Filter tools via permission gate config
-			const filtered = filterToolsByConfig(
-				toolsResult.tools as any,
-				cfg,
-			);
+			const filtered = filterToolsByConfig(toolsResult.tools as any, cfg);
 
 			// Create adapter client and store on entry so refreshServerTools
 			// can use it for diff-based registry updates (F-1.15).
@@ -374,11 +346,7 @@ export function createMcpClientManager(
 
 			for (const mcpTool of filtered) {
 				const serverId = String(index);
-				const def = mcpToolToDefinition(
-					serverId,
-					mcpTool as any,
-					adapterClient,
-				);
+				const def = mcpToolToDefinition(serverId, mcpTool as any, adapterClient);
 				fan.registerTool(def as any);
 				entry.toolNames.push(def.name);
 			}
@@ -387,9 +355,7 @@ export function createMcpClientManager(
 		} catch (e: any) {
 			entry.status = "unavailable";
 			entry.connectError = e?.message ?? String(e);
-			console.warn(
-				`mcp: server ${index} unavailable: ${entry.connectError}`,
-			);
+			console.warn(`mcp: server ${index} unavailable: ${entry.connectError}`);
 
 			// Ensure transport is closed on failure
 			try {
@@ -424,9 +390,7 @@ export function createMcpClientManager(
 			}
 
 			// Emit catalog event if at least one server connected
-			const connected = entries.filter(
-				(e) => e.status === "connected",
-			).length;
+			const connected = entries.filter((e) => e.status === "connected").length;
 			if (connected > 0) {
 				fan.events.emit("mcp:catalog", { servers: entries });
 			}
@@ -462,14 +426,9 @@ export function createMcpClientManager(
 				}
 			});
 
-			const timeoutPromise = new Promise<void>((resolve) =>
-				setTimeout(() => resolve(), DISPOSE_TIMEOUT_MS),
-			);
+			const timeoutPromise = new Promise<void>((resolve) => setTimeout(() => resolve(), DISPOSE_TIMEOUT_MS));
 
-			await Promise.race([
-				Promise.allSettled(closePromises),
-				timeoutPromise,
-			]);
+			await Promise.race([Promise.allSettled(closePromises), timeoutPromise]);
 
 			const elapsed = Date.now() - startTime;
 			if (elapsed >= DISPOSE_TIMEOUT_MS) {

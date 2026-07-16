@@ -10,10 +10,8 @@
  * - mcpToolToDefinition(serverId, mcpTool, client) — full ToolDefinition wrapper
  */
 
-import { Type, type TSchema } from "@sinclair/typebox";
-import type { ExtensionContext } from "@seaagents/fan-coding-agent";
-import type { ToolDefinition } from "@seaagents/fan-coding-agent";
-import type { AgentToolResult } from "@seaagents/fan-agent-core";
+import type { ExtensionContext, ToolDefinition } from "@seaagents/fan-coding-agent";
+import { type TSchema, Type } from "@sinclair/typebox";
 import { executeMcpTool } from "./executor.js";
 import { withLogging } from "./logger.js";
 
@@ -42,21 +40,15 @@ export function jsonSchemaToTypeBox(schema: any): TSchema {
 
 	// Unsupported constructs — fall back gracefully
 	if (schema.$ref) {
-		console.warn(
-			`jsonSchemaToTypeBox: $ref not supported (${schema.$ref}), using Type.Any()`,
-		);
+		console.warn(`jsonSchemaToTypeBox: $ref not supported (${schema.$ref}), using Type.Any()`);
 		return Type.Any();
 	}
 	if (schema.oneOf) {
-		console.warn(
-			`jsonSchemaToTypeBox: oneOf not supported, using Type.Any()`,
-		);
+		console.warn(`jsonSchemaToTypeBox: oneOf not supported, using Type.Any()`);
 		return Type.Any();
 	}
 	if (schema.anyOf) {
-		console.warn(
-			`jsonSchemaToTypeBox: anyOf not supported, using Type.Any()`,
-		);
+		console.warn(`jsonSchemaToTypeBox: anyOf not supported, using Type.Any()`);
 		return Type.Any();
 	}
 
@@ -87,9 +79,7 @@ export function jsonSchemaToTypeBox(schema: any): TSchema {
 				return Type.Literal(v);
 			}
 			// Fallback for null, objects, etc.
-			console.warn(
-				`jsonSchemaToTypeBox: unsupported enum value type (${typeof v}), skipping literal`,
-			);
+			console.warn(`jsonSchemaToTypeBox: unsupported enum value type (${typeof v}), skipping literal`);
 			return Type.String();
 		});
 		return Type.Union(literals as [TSchema, ...TSchema[]]);
@@ -188,17 +178,14 @@ export function mcpToolToDefinition(
 			onUpdate?: any,
 			_ctx?: ExtensionContext,
 		) => {
-			return withLogging(
-				serverId,
-				mcpTool.name,
-				() =>
-					executeMcpTool(
-						(args, opts) => client.callTool(args, opts),
-						mcpTool.name,
-						params as Record<string, unknown>,
-						signal,
-						onUpdate,
-					),
+			return withLogging(serverId, mcpTool.name, () =>
+				executeMcpTool(
+					(args, opts) => client.callTool(args, opts),
+					mcpTool.name,
+					params as Record<string, unknown>,
+					signal,
+					onUpdate,
+				),
 			);
 		},
 	};

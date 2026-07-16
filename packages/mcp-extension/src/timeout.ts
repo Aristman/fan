@@ -26,11 +26,7 @@ export class TimeoutError extends Error {
  * @throws {TimeoutError} If `ms` milliseconds elapse before `promise` settles
  * @throws {any} The reason of `signal` if it is aborted before timeout
  */
-export async function withTimeout<T>(
-	promise: Promise<T>,
-	ms: number,
-	signal?: AbortSignal,
-): Promise<T> {
+export async function withTimeout<T>(promise: Promise<T>, ms: number, signal?: AbortSignal): Promise<T> {
 	let timer: ReturnType<typeof setTimeout> | undefined;
 
 	return new Promise<T>((resolve, reject) => {

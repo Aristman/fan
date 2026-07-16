@@ -11,13 +11,10 @@
  *               F-1.7 (executeMcpTool), F-1.8 (loadMcpConfig), F-1.10 (PermissionGate)
  */
 
-import { describe, expect, it, vi } from "vitest";
 import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
+import { describe, expect, it, vi } from "vitest";
+import { createMcpClientManager } from "../src/manager.js";
 import type { PermissionGate } from "../src/permissions.js";
-import {
-	createMcpClientManager,
-	type McpClientManager,
-} from "../src/manager.js";
 
 // ── Test helpers ────────────────────────────────────────────────────
 
@@ -37,7 +34,7 @@ function makeFakePi() {
 		updateTool: vi.fn(),
 		on: vi.fn(),
 		events: {
-			emit(channel: string, data: unknown) {
+			emit(channel: string, _data: unknown) {
 				events.push(channel);
 			},
 			on: vi.fn() as any,
@@ -84,7 +81,7 @@ function makePermissiveGate(): PermissionGate {
 }
 
 /** Minimal server config for a command that should fail to spawn. */
-function failConfig(index: number = 0) {
+function failConfig(_index: number = 0) {
 	return {
 		transport: "stdio" as const,
 		command: "nonexistent-command-that-will-fail",
@@ -214,10 +211,10 @@ describe("F-1.17: integration — real stdio server crash", () => {
 		"spawns fixture server, verifies tools registered, then simulates crash via onclose",
 		{ timeout: 15_000 },
 		async () => {
-			const fixturePath = new URL(
-				"./fixtures/stdio-server.mjs",
-				import.meta.url,
-			).pathname.replace(/^\/([A-Z]:)/, "$1");
+			const fixturePath = new URL("./fixtures/stdio-server.mjs", import.meta.url).pathname.replace(
+				/^\/([A-Z]:)/,
+				"$1",
+			);
 
 			const { api, registered } = makeFakePi();
 			const mgr = createMcpClientManager(api, makePermissiveGate());
@@ -237,9 +234,7 @@ describe("F-1.17: integration — real stdio server crash", () => {
 				// The fixture server may not be fully compliant enough for
 				// listTools to work (the echo fixture doesn't respond to
 				// tools/list). Skip in that case.
-				console.warn(
-					"mcp-test: stdio fixture server unavailable (expected if fixture doesn't support listTools)",
-				);
+				console.warn("mcp-test: stdio fixture server unavailable (expected if fixture doesn't support listTools)");
 				return;
 			}
 

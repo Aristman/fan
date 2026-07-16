@@ -276,7 +276,11 @@ export function createBashToolDefinition(
 		parameters: bashSchema,
 		async execute(
 			_toolCallId,
-			{ command, timeout, _fanDangerouslyApproved }: { command: string; timeout?: number; _fanDangerouslyApproved?: boolean },
+			{
+				command,
+				timeout,
+				_fanDangerouslyApproved,
+			}: { command: string; timeout?: number; _fanDangerouslyApproved?: boolean },
 			signal?: AbortSignal,
 			onUpdate?,
 			_ctx?,

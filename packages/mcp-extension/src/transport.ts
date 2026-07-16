@@ -11,31 +11,17 @@
  *        and resolves ${ENV} references in config.headers.
  */
 
-import {
-	StdioClientTransport,
-	type StdioServerParameters,
-} from "@modelcontextprotocol/sdk/client/stdio.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { resolveEnvVars, type McpServerConfig } from "./config.js";
-import {
-	TokenStore,
-	ensureValidToken,
-	type OAuthToken,
-} from "./oauth.js";
+import { StdioClientTransport, type StdioServerParameters } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { type McpServerConfig, resolveEnvVars } from "./config.js";
+import { ensureValidToken, type OAuthToken, TokenStore } from "./oauth.js";
 
 /**
  * Environment variables deemed safe to inherit when no custom env is provided.
  */
-export const SAFE_ENV_VARS = [
-	"PATH",
-	"HOME",
-	"LANG",
-	"LC_ALL",
-	"TMPDIR",
-	"USERPROFILE",
-] as const;
+export const SAFE_ENV_VARS = ["PATH", "HOME", "LANG", "LC_ALL", "TMPDIR", "USERPROFILE"] as const;
 
 /**
  * Build the StdioServerParameters object from an McpServerConfig.
@@ -47,29 +33,15 @@ export function buildStdioParams(
 	envSource: Record<string, string | undefined> = process.env,
 ): StdioServerParameters {
 	if (config.transport !== "stdio") {
-		throw new Error(
-			`createStdioTransport: expected transport "stdio", got "${config.transport}"`,
-		);
+		throw new Error(`createStdioTransport: expected transport "stdio", got "${config.transport}"`);
 	}
 	if (!config.command) {
-		throw new Error(
-			`createStdioTransport: "command" is required for stdio transport`,
-		);
+		throw new Error(`createStdioTransport: "command" is required for stdio transport`);
 	}
 
 	const env: Record<string, string> = config.env
-		? Object.fromEntries(
-				Object.entries(config.env).map(([k, v]) => [
-					k,
-					resolveEnvVars(v, envSource),
-				]),
-			)
-		: Object.fromEntries(
-				SAFE_ENV_VARS.filter((k) => envSource[k] !== undefined).map((k) => [
-					k,
-					envSource[k]!,
-				]),
-			);
+		? Object.fromEntries(Object.entries(config.env).map(([k, v]) => [k, resolveEnvVars(v, envSource)]))
+		: Object.fromEntries(SAFE_ENV_VARS.filter((k) => envSource[k] !== undefined).map((k) => [k, envSource[k]!]));
 
 	return {
 		command: config.command,
@@ -167,40 +139,28 @@ export function buildHttpParams(config: McpServerConfig): URL {
 		);
 	}
 	if (!config.url) {
-		throw new TransportConfigError(
-			`createHttpTransport: "url" is required for streamable-http transport`,
-		);
+		throw new TransportConfigError(`createHttpTransport: "url" is required for streamable-http transport`);
 	}
 
 	let url: URL;
 	try {
 		url = new URL(config.url);
 	} catch {
-		throw new TransportConfigError(
-			`createHttpTransport: invalid URL "${config.url}"`,
-		);
+		throw new TransportConfigError(`createHttpTransport: invalid URL "${config.url}"`);
 	}
 
 	if (!config.allowLocal && isLoopbackHostname(url.hostname)) {
-		throw new TransportConfigError(
-			`createHttpTransport: loopback URL "${config.url}" requires allowLocal: true`,
-		);
+		throw new TransportConfigError(`createHttpTransport: loopback URL "${config.url}" requires allowLocal: true`);
 	}
 
-	if (
-		!config.allowLocal &&
-		!config.allowPrivate &&
-		isPrivateAddress(url.hostname)
-	) {
+	if (!config.allowLocal && !config.allowPrivate && isPrivateAddress(url.hostname)) {
 		throw new TransportConfigError(
 			`createHttpTransport: private network URL "${config.url}" requires allowPrivate: true or allowLocal: true`,
 		);
 	}
 
 	if (url.protocol !== "https:") {
-		throw new TransportConfigError(
-			`createHttpTransport: only https URLs allowed, got "${url.protocol}"`,
-		);
+		throw new TransportConfigError(`createHttpTransport: only https URLs allowed, got "${url.protocol}"`);
 	}
 
 	return url;
@@ -231,16 +191,10 @@ export async function createHttpTransport(
 	if (config.oauth) {
 		const store = new TokenStore(getTokensPath());
 		try {
-			const token: OAuthToken = await ensureValidToken(
-				config.oauth,
-				url.hostname,
-				store,
-			);
+			const token: OAuthToken = await ensureValidToken(config.oauth, url.hostname, store);
 			accessToken = token.accessToken;
 		} catch (e) {
-			throw new TransportConfigError(
-				`OAuth required for ${url.hostname}: ${e instanceof Error ? e.message : e}`,
-			);
+			throw new TransportConfigError(`OAuth required for ${url.hostname}: ${e instanceof Error ? e.message : e}`);
 		}
 	}
 
@@ -250,12 +204,7 @@ export async function createHttpTransport(
 	} as Record<string, string> | undefined;
 
 	const resolvedHeaders = headers
-		? Object.fromEntries(
-				Object.entries(headers).map(([k, v]) => [
-					k,
-					resolveEnvVars(v, envSource),
-				]),
-			)
+		? Object.fromEntries(Object.entries(headers).map(([k, v]) => [k, resolveEnvVars(v, envSource)]))
 		: undefined;
 
 	return new StreamableHTTPClientTransport(url, {

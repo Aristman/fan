@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type {
-	RpcRemoteToolRequest,
-	RpcRemoteToolResponse,
 	RpcRemoteToolCancel,
 	RpcRemoteToolCatalog,
+	RpcRemoteToolRequest,
+	RpcRemoteToolResponse,
 	RpcToolDescriptor,
 } from "../src/modes/rpc/rpc-types.js";
 

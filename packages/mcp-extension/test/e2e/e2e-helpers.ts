@@ -10,14 +10,14 @@
  * - fixtureToUrl() — resolves fixture path for import.meta.url
  */
 
-import { mkdir, mkdtemp } from "node:fs/promises";
-import { join, dirname } from "node:path";
-import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
-import { vi } from "vitest";
+import { mkdir } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
-import type { PermissionGate } from "../../src/permissions.js";
+import { vi } from "vitest";
 import type { McpConfig } from "../../src/config.js";
+import type { PermissionGate } from "../../src/permissions.js";
 
 /**
  * Resolve the absolute path to a fixture script relative to this file.
@@ -41,10 +41,7 @@ export async function createTempDir(): Promise<string> {
 /**
  * Create a full McpConfig with a single stdio server running a fixture.
  */
-export function buildTestConfig(
-	fixtureName: string,
-	overrides: Record<string, unknown> = {},
-): McpConfig {
+export function buildTestConfig(fixtureName: string, overrides: Record<string, unknown> = {}): McpConfig {
 	const fixturePath = getFixturePath(fixtureName);
 	return {
 		servers: [
@@ -95,7 +92,7 @@ export function makeFakePi() {
 		}),
 		on: vi.fn(),
 		events: {
-			emit(channel: string, data: unknown) {
+			emit(channel: string, _data: unknown) {
 				events.push(channel);
 			},
 			on: vi.fn(),
@@ -147,10 +144,7 @@ export function makePermissiveGate(): PermissionGate {
 /**
  * Create a PermissionGate that blocks access to specified patterns.
  */
-export function makeRestrictiveGate(
-	deniedTools: string[],
-	allowedTools: string[] = ["*"],
-): PermissionGate {
+export function makeRestrictiveGate(deniedTools: string[], allowedTools: string[] = ["*"]): PermissionGate {
 	let currentDenied = [...deniedTools];
 	let currentAllowed = [...allowedTools];
 	return {
@@ -161,18 +155,23 @@ export function makeRestrictiveGate(
 			const match = fullName.match(/^mcp__(\d+)__(.+)$/);
 			if (!match) return {};
 			const tool = match[2];
-			if (currentDenied.some((d) => {
-				if (d === tool) return true;
-				if (d.endsWith("*") && tool.startsWith(d.slice(0, -1))) return true;
-				return false;
-			})) {
+			if (
+				currentDenied.some((d) => {
+					if (d === tool) return true;
+					if (d.endsWith("*") && tool.startsWith(d.slice(0, -1))) return true;
+					return false;
+				})
+			) {
 				return { block: true, reason: `Tool ${tool} denied` };
 			}
-			if (!currentAllowed.includes("*") && !currentAllowed.some((a) => {
-				if (a === tool) return true;
-				if (a.endsWith("*") && tool.startsWith(a.slice(0, -1))) return true;
-				return false;
-			})) {
+			if (
+				!currentAllowed.includes("*") &&
+				!currentAllowed.some((a) => {
+					if (a === tool) return true;
+					if (a.endsWith("*") && tool.startsWith(a.slice(0, -1))) return true;
+					return false;
+				})
+			) {
 				return { block: true, reason: `Tool ${tool} not in allowlist` };
 			}
 			return {};

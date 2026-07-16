@@ -15,8 +15,8 @@
  */
 
 import { createHash, randomBytes } from "node:crypto";
-import { createServer } from "node:http";
 import type { Server } from "node:http";
+import { createServer } from "node:http";
 
 // ──────────────────────────────────────────────────
 // Error
@@ -111,15 +111,17 @@ export function parseWwwAuthenticate(
 
 	const params: Record<string, string> = {};
 	const regex = /(\w+)="([^"]*)"/g;
-	let match;
-	while ((match = regex.exec(trimmed)) !== null) {
+	let match: RegExpExecArray | null;
+	while (true) {
+		match = regex.exec(trimmed);
+		if (match === null) break;
 		params[match[1].toLowerCase()] = match[2];
 	}
 
 	return {
 		realm: params.realm,
 		error: params.error,
-		errorDescription: params["error_description"],
+		errorDescription: params.error_description,
 		scope: params.scope,
 	};
 }
@@ -234,8 +236,7 @@ export function createCallbackServer(
 			const addr = server.address() as { port: number };
 			resolve({
 				url: `http://127.0.0.1:${addr.port}/callback`,
-				close: () =>
-					new Promise<void>((res) => server.close(() => res())),
+				close: () => new Promise<void>((res) => server.close(() => res())),
 			});
 		});
 
@@ -281,9 +282,7 @@ export async function exchangeCodeForToken(
 
 	if (!response.ok) {
 		const text = await response.text();
-		throw new OAuthError(
-			`Token exchange failed: ${response.status} ${text}`,
-		);
+		throw new OAuthError(`Token exchange failed: ${response.status} ${text}`);
 	}
 
 	const data = (await response.json()) as AuthorizationCodeTokenResponse;
@@ -416,10 +415,8 @@ export async function ensureValidToken(
 			);
 			await tokenStore.save(serverId, refreshed);
 			return refreshed;
-		} catch (e) {
-			console.warn(
-				"OAuth: token refresh failed, starting full auth flow",
-			);
+		} catch (_e) {
+			console.warn("OAuth: token refresh failed, starting full auth flow");
 		}
 	}
 
@@ -450,11 +447,7 @@ export async function ensureValidToken(
 		codeChallenge,
 	});
 
-	console.warn(
-		`OAuth: open the following URL in a browser to authorize:\n${authUrl}`,
-	);
+	console.warn(`OAuth: open the following URL in a browser to authorize:\n${authUrl}`);
 
-	throw new OAuthError(
-		`OAuth flow requires manual authorization. Open in browser: ${authUrl}`,
-	);
+	throw new OAuthError(`OAuth flow requires manual authorization. Open in browser: ${authUrl}`);
 }

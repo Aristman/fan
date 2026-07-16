@@ -7,11 +7,11 @@
  * - withLogging: success logging, error logging with rethrow
  */
 
-import { describe, expect, it } from "vitest";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { formatLogEntry, writeLog, withLogging } from "../src/logger.js";
+import { describe, expect, it } from "vitest";
+import { formatLogEntry, withLogging, writeLog } from "../src/logger.js";
 
 // ──────────────────────────────────────────────────
 // TC-F3.7-1: formatLogEntry — whitelist serialization
@@ -125,21 +125,13 @@ describe("F-3.7: writeLog", () => {
 			);
 		}
 		const today = new Date().toISOString().slice(0, 10);
-		const content = await fs.readFile(
-			path.join(tempDir, `mcp-${today}.log`),
-			"utf8",
-		);
+		const content = await fs.readFile(path.join(tempDir, `mcp-${today}.log`), "utf8");
 		expect(content.split("\n").filter(Boolean)).toHaveLength(3);
 	});
 
 	it("handles write failure gracefully (no throw)", async () => {
 		tempDir = await freshDir();
-		const invalidDir = path.join(
-			tempDir,
-			"nonexistent",
-			"deeply",
-			"nested",
-		);
+		const invalidDir = path.join(tempDir, "nonexistent", "deeply", "nested");
 		const entry = {
 			timestamp: new Date().toISOString(),
 			event: "tool_call_start" as const,
@@ -154,18 +146,13 @@ describe("F-3.7: writeLog", () => {
 // ──────────────────────────────────────────────────
 
 describe("F-3.7: withLogging", () => {
-	async function readDailyLog(
-		dir: string,
-		date?: string,
-	): Promise<string> {
+	async function readDailyLog(dir: string, date?: string): Promise<string> {
 		const today = date ?? new Date().toISOString().slice(0, 10);
 		return fs.readFile(path.join(dir, `mcp-${today}.log`), "utf8");
 	}
 
 	it("logs success event with duration", async () => {
-		const tempDir = await fs.mkdtemp(
-			path.join(os.tmpdir(), "mcp-log-test-"),
-		);
+		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "mcp-log-test-"));
 		await withLogging(
 			"fs",
 			"read_file",
@@ -185,9 +172,7 @@ describe("F-3.7: withLogging", () => {
 	});
 
 	it("logs error event and rethrows", async () => {
-		const tempDir = await fs.mkdtemp(
-			path.join(os.tmpdir(), "mcp-log-test-"),
-		);
+		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "mcp-log-test-"));
 		await expect(
 			withLogging(
 				"fs",
@@ -207,9 +192,7 @@ describe("F-3.7: withLogging", () => {
 	});
 
 	it("logs start event before execution", async () => {
-		const tempDir = await fs.mkdtemp(
-			path.join(os.tmpdir(), "mcp-log-test-"),
-		);
+		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "mcp-log-test-"));
 		let started = false;
 		await withLogging(
 			"db",

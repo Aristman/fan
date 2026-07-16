@@ -73,7 +73,9 @@ describe("F-2.3: EventBus lastEvent cache (replay-on-subscribe)", () => {
 	it("handler errors during replay don't break subscription", async () => {
 		const bus = createEventBus();
 		bus.emit("err", { crash: true });
-		const badHandler = vi.fn(async () => { throw new Error("handler boom"); });
+		const badHandler = vi.fn(async () => {
+			throw new Error("handler boom");
+		});
 		bus.on("err", badHandler);
 		await new Promise((r) => setTimeout(r, 10));
 		expect(badHandler).toHaveBeenCalled();

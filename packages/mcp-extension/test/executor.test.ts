@@ -13,7 +13,7 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
-import { mapCallToolResult, executeMcpTool } from "../src/executor.js";
+import { executeMcpTool, mapCallToolResult } from "../src/executor.js";
 
 // ──────────────────────────────────────────────────
 // TC-F1.7-1: text content
@@ -206,10 +206,7 @@ describe("TC-F1.7-5: unsupported content type", () => {
 describe("TC-F1.7-6: mixed content", () => {
 	it("text + resource_link → text + fallback", () => {
 		const result = mapCallToolResult({
-			content: [
-				{ type: "text", text: "ok" },
-				{ type: "resource_link" },
-			],
+			content: [{ type: "text", text: "ok" }, { type: "resource_link" }],
 		});
 
 		expect(result.content).toHaveLength(2);
@@ -242,10 +239,7 @@ describe("TC-F1.7-6: mixed content", () => {
 
 	it("multiple unsupported types listed together", () => {
 		const result = mapCallToolResult({
-			content: [
-				{ type: "audio" },
-				{ type: "resource_link" },
-			],
+			content: [{ type: "audio" }, { type: "resource_link" }],
 		});
 
 		expect(result.content).toHaveLength(1);
@@ -362,7 +356,7 @@ describe("TC-F1.7-9: executeMcpTool error handling", () => {
 		// Simulate an MCP client that respects the abort signal
 		const fakeClient = vi.fn().mockImplementation(
 			(_args: any, opts?: { signal?: AbortSignal }) =>
-				new Promise((resolve, reject) => {
+				new Promise((_resolve, reject) => {
 					const signal = opts?.signal;
 					if (signal?.aborted) {
 						reject(signal.reason instanceof Error ? signal.reason : new Error(String(signal.reason)));

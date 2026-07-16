@@ -7,8 +7,8 @@
  */
 
 import { appendFile, mkdir } from "node:fs/promises";
-import { join } from "node:path";
 import { homedir } from "node:os";
+import { join } from "node:path";
 
 const LOG_DIR = join(homedir(), ".fan", "agent", "logs");
 
@@ -63,11 +63,8 @@ export function formatLogEntry(entry: LogEntry): string {
  * @param entry - structured log entry to write
  * @param logDir - directory for log files (default: ~/.fan/agent/logs)
  */
-export async function writeLog(
-	entry: LogEntry,
-	logDir: string = LOG_DIR,
-): Promise<void> {
-	const line = formatLogEntry(entry) + "\n";
+export async function writeLog(entry: LogEntry, logDir: string = LOG_DIR): Promise<void> {
+	const line = `${formatLogEntry(entry)}\n`;
 	const today = entry.timestamp.slice(0, 10); // YYYY-MM-DD
 	const path = join(logDir, `mcp-${today}.log`);
 	try {
@@ -75,9 +72,7 @@ export async function writeLog(
 		await appendFile(path, line, "utf8");
 	} catch (e) {
 		// Log write failure should never break tool execution.
-		console.warn(
-			`mcp-logger: failed to write log: ${e instanceof Error ? e.message : e}`,
-		);
+		console.warn(`mcp-logger: failed to write log: ${e instanceof Error ? e.message : e}`);
 	}
 }
 
@@ -93,12 +88,13 @@ const SECRET_PATTERNS: { pattern: RegExp; format: (match: string) => string }[] 
 			return `${prefix}***REDACTED***`;
 		},
 	},
-	{ // Long hex/base64 strings that look like API keys
+	{
+		// Long hex/base64 strings that look like API keys
 		pattern: /\b[A-Za-z0-9]{32,}\b/g,
 		format: () => "***REDACTED***",
 	},
 	{
-		pattern: /api[_-]?key[=:]\s*[\w\-]+/gi,
+		pattern: /api[_-]?key[=:]\s*[\w-]+/gi,
 		format: (m) => {
 			const prefix = m.match(/^([a-zA-Z0-9\-_]+)[=:]/i)?.[1] ?? "apikey";
 			const sep = m.match(/[=:]/)?.[0] ?? "=";
@@ -106,7 +102,7 @@ const SECRET_PATTERNS: { pattern: RegExp; format: (match: string) => string }[] 
 		},
 	},
 	{
-		pattern: /token[=:]\s*[\w\-]+/gi,
+		pattern: /token[=:]\s*[\w-]+/gi,
 		format: (m) => {
 			const prefix = m.match(/^([a-zA-Z0-9\-_]+)[=:]/i)?.[1] ?? "token";
 			const sep = m.match(/[=:]/)?.[0] ?? "=";

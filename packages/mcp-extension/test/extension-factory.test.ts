@@ -6,8 +6,8 @@
  * are configured.
  */
 
-import { describe, expect, it, vi } from "vitest";
 import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
+import { describe, expect, it, vi } from "vitest";
 import { mcpExtension } from "../src/index.js";
 
 function makeFakeApi() {

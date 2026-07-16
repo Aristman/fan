@@ -8,11 +8,11 @@
  * tools/call, giving the abort signal plenty of time to fire.
  */
 
-import { describe, expect, it } from "vitest";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { describe, expect, it } from "vitest";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -22,18 +22,11 @@ describe("F-1.12: AbortSignal → MCP cancel propagation", () => {
 			command: process.execPath, // node
 			args: [path.join(__dirname, "fixtures", "slow-server.mjs")],
 		});
-		const client = new Client(
-			{ name: "test", version: "0.0.1" },
-			{ capabilities: {} as any },
-		);
+		const client = new Client({ name: "test", version: "0.0.1" }, { capabilities: {} as any });
 		await client.connect(transport);
 
 		const controller = new AbortController();
-		const promise = client.callTool(
-			{ name: "slow_op", arguments: {} },
-			undefined,
-			{ signal: controller.signal },
-		);
+		const promise = client.callTool({ name: "slow_op", arguments: {} }, undefined, { signal: controller.signal });
 
 		// Abort well before the 5s server response
 		setTimeout(() => controller.abort(), 100);

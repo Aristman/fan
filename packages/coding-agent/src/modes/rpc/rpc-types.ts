@@ -359,8 +359,19 @@ export interface RpcRemoteToolCancel {
  * Parent→Child response with the tool's result. Always returned (success or error).
  */
 export type RpcRemoteToolResponse =
-	| { type: "remote_tool_response"; id: string; content: Array<{ type: "text"; text: string } | { type: "image"; mimeType: string; data: string }>; isError: false }
-	| { type: "remote_tool_response"; id: string; content: Array<{ type: "text"; text: string }>; isError: true; errorMessage?: string };
+	| {
+			type: "remote_tool_response";
+			id: string;
+			content: Array<{ type: "text"; text: string } | { type: "image"; mimeType: string; data: string }>;
+			isError: false;
+	  }
+	| {
+			type: "remote_tool_response";
+			id: string;
+			content: Array<{ type: "text"; text: string }>;
+			isError: true;
+			errorMessage?: string;
+	  };
 
 export interface RpcToolDescriptor {
 	/** Unique tool ID across all tools proxied via this channel */

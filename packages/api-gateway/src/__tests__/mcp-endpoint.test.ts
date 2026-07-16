@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 // Use vi.hoisted to create stable mock references
 const { mockClientToken } = vi.hoisted(() => ({
@@ -10,7 +10,7 @@ const { mockClientToken } = vi.hoisted(() => ({
 	},
 }));
 
-const mockModelManager = {
+const _mockModelManager = {
 	getAllModelSettings: vi.fn().mockResolvedValue([]),
 	setModelSetting: vi.fn().mockResolvedValue(undefined),
 	getModelSetting: vi.fn().mockReturnValue(null),
@@ -51,7 +51,7 @@ vi.mock("node:crypto", () => ({
 	randomBytes: mockRandomBytes,
 }));
 
-import type { McpServerStatus, ApiMcpStatusResponse } from "../types.js";
+import type { ApiMcpStatusResponse, McpServerStatus } from "../types.js";
 
 describe("F-3.6: McpServerStatus types", () => {
 	it("McpServerStatus has all required fields", () => {
@@ -140,10 +140,7 @@ describe("F-3.6: GET /api/mcp/servers endpoint", () => {
 		// Use the real ModelManager mock (already set up via vi.mock)
 		const { ModelManager } = await import("@fan/model-manager");
 
-		const app = await createApp(
-			new (ModelManager as any)(),
-			mockSessionAdapter as any,
-		);
+		const app = await createApp(new (ModelManager as any)(), mockSessionAdapter as any);
 
 		const res = await app.request("/api/mcp/servers");
 		expect(res.status).toBe(200);
@@ -164,10 +161,7 @@ describe("F-3.6: GET /api/mcp/servers endpoint", () => {
 		const { createApp } = await import("../http-server.js");
 		const { ModelManager } = await import("@fan/model-manager");
 
-		const app = await createApp(
-			new (ModelManager as any)(),
-			mockSessionAdapter as any,
-		);
+		const app = await createApp(new (ModelManager as any)(), mockSessionAdapter as any);
 
 		const res = await app.request("/api/mcp/servers");
 		const body = (await res.json()) as ApiMcpStatusResponse;

@@ -9,10 +9,10 @@
  * Uses real files in temporary directories for isolation.
  */
 
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadMcpConfig } from "../src/config.js";
 
 describe("F-1.18: invalid mcp.json handling", () => {
@@ -55,10 +55,7 @@ describe("F-1.18: invalid mcp.json handling", () => {
 
 		// Project invalid — unknown transport
 		await fs.mkdir(path.join(cwd, ".fan"), { recursive: true });
-		await fs.writeFile(
-			path.join(cwd, ".fan/mcp.json"),
-			JSON.stringify({ servers: [{ transport: "unknown" }] }),
-		);
+		await fs.writeFile(path.join(cwd, ".fan/mcp.json"), JSON.stringify({ servers: [{ transport: "unknown" }] }));
 
 		const config = await loadMcpConfig(cwd);
 		expect(config.servers.length).toBeGreaterThanOrEqual(1);

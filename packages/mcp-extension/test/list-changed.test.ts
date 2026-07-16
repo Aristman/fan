@@ -8,9 +8,8 @@
  *               F-1.1 (registerTool), F-1.2 (unregisterTool, updateTool)
  */
 
+import type { ExtensionAPI, ToolDefinition } from "@seaagents/fan-coding-agent";
 import { describe, expect, it, vi } from "vitest";
-import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
-import type { ToolDefinition } from "@seaagents/fan-coding-agent";
 import { createMcpClientManager } from "../src/manager.js";
 
 // ── Test helpers ────────────────────────────────────────────────────
@@ -107,82 +106,78 @@ describe("F-1.15: list_changed atomic refresh", () => {
 		// (empty connect is a valid test for basic correctness)
 	});
 
-	it("TC-F1.15-2: integration with notify-server fixture", {
-		timeout: 8_000,
-		retry: 1,
-	}, async () => {
-		const fixturePath = new URL(
-			"./fixtures/notify-server.mjs",
-			import.meta.url,
-		).pathname.replace(/^\/([A-Z]:)/, "$1");
-
-		const { api, registered, unregistered, updated } = makeFakePi();
-		const mgr = createMcpClientManager(api, makeEmptyGate());
-
-		await mgr.connectAll({
-			servers: [
-				{
-					transport: "stdio",
-					command: "node",
-					args: [fixturePath],
-				},
-			],
-		});
-
-		const entries = mgr._entries();
-
-		if (entries.length === 0 || entries[0].status !== "connected") {
-			// The notify-server may not have responded to listTools yet
-			// or the capabilities mismatch. Skip test.
-			console.warn(
-				"notify-server fixture unavailable (server may not support listTools)",
+	it(
+		"TC-F1.15-2: integration with notify-server fixture",
+		{
+			timeout: 8_000,
+			retry: 1,
+		},
+		async () => {
+			const fixturePath = new URL("./fixtures/notify-server.mjs", import.meta.url).pathname.replace(
+				/^\/([A-Z]:)/,
+				"$1",
 			);
-			return;
-		}
 
-		// After connect, initial tools should be registered
-		const entry = entries[0];
-		expect(entry.status).toBe("connected");
+			const { api, registered, unregistered, updated } = makeFakePi();
+			const mgr = createMcpClientManager(api, makeEmptyGate());
 
-		// Should have registered 2 initial tools
-		const initialToolKeys = [...registered.keys()];
-		expect(initialToolKeys).toContain("mcp__0__greet");
-		expect(initialToolKeys).toContain("mcp__0__math_add");
+			await mgr.connectAll({
+				servers: [
+					{
+						transport: "stdio",
+						command: "node",
+						args: [fixturePath],
+					},
+				],
+			});
 
-		// The notify-server sends a list_changed notification after 1s.
-		// After debounce (500ms), the SDK auto-refreshes, and our
-		// onChanged handler calls refreshServerTools.
-		//
-		// We wait up to 2.5s for the refresh to complete.
-		await new Promise((resolve) => setTimeout(resolve, 2200));
+			const entries = mgr._entries();
 
-		// After refresh, math_add should be removed, weather added, greet updated
-		// Wait a bit longer for the notification + debounce + refresh to complete
-		await new Promise((resolve) => setTimeout(resolve, 2000));
+			if (entries.length === 0 || entries[0].status !== "connected") {
+				// The notify-server may not have responded to listTools yet
+				// or the capabilities mismatch. Skip test.
+				console.warn("notify-server fixture unavailable (server may not support listTools)");
+				return;
+			}
 
-		const registeredKeys = [...registered.keys()];
-		const greetKey = registeredKeys.find((k) =>
-			k.includes("greet"),
-		);
-		const mathKey = registeredKeys.find((k) =>
-			k.includes("math_add"),
-		);
-		const weatherKey = registeredKeys.find((k) =>
-			k.includes("weather"),
-		);
+			// After connect, initial tools should be registered
+			const entry = entries[0];
+			expect(entry.status).toBe("connected");
 
-		// math_add was removed in second listTools response
-		expect(mathKey).toBeUndefined();
+			// Should have registered 2 initial tools
+			const initialToolKeys = [...registered.keys()];
+			expect(initialToolKeys).toContain("mcp__0__greet");
+			expect(initialToolKeys).toContain("mcp__0__math_add");
 
-		// greet was updated (should still exist)
-		expect(greetKey).toBeDefined();
+			// The notify-server sends a list_changed notification after 1s.
+			// After debounce (500ms), the SDK auto-refreshes, and our
+			// onChanged handler calls refreshServerTools.
+			//
+			// We wait up to 2.5s for the refresh to complete.
+			await new Promise((resolve) => setTimeout(resolve, 2200));
 
-		// weather was added
-		expect(weatherKey).toBeDefined();
+			// After refresh, math_add should be removed, weather added, greet updated
+			// Wait a bit longer for the notification + debounce + refresh to complete
+			await new Promise((resolve) => setTimeout(resolve, 2000));
 
-		// Cleanup
-		await mgr.dispose();
-	});
+			const registeredKeys = [...registered.keys()];
+			const greetKey = registeredKeys.find((k) => k.includes("greet"));
+			const mathKey = registeredKeys.find((k) => k.includes("math_add"));
+			const weatherKey = registeredKeys.find((k) => k.includes("weather"));
+
+			// math_add was removed in second listTools response
+			expect(mathKey).toBeUndefined();
+
+			// greet was updated (should still exist)
+			expect(greetKey).toBeDefined();
+
+			// weather was added
+			expect(weatherKey).toBeDefined();
+
+			// Cleanup
+			await mgr.dispose();
+		},
+	);
 
 	it("TC-F1.15-3: debounce skips repeated calls within 500ms window", async () => {
 		// The SDK's built-in listChanged handler does the debounce.

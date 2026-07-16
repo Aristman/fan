@@ -11,13 +11,7 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
-import {
-	jsonSchemaToTypeBox,
-	normalizeToolName,
-	mcpToolToDefinition,
-	type McpToolDescriptor,
-	type AdapterClient,
-} from "../src/adapter.js";
+import { type AdapterClient, jsonSchemaToTypeBox, mcpToolToDefinition, normalizeToolName } from "../src/adapter.js";
 
 // ──────────────────────────────────────────────────
 // TC-F1.6-1: jsonSchemaToTypeBox — object
@@ -156,9 +150,7 @@ describe("TC-F1.6-4: jsonSchemaToTypeBox — $ref fallback", () => {
 
 			// Type.Any() produces no type property
 			expect((result as any).type).toBeUndefined();
-			expect(spy).toHaveBeenCalledWith(
-				expect.stringMatching(/\$ref/),
-			);
+			expect(spy).toHaveBeenCalledWith(expect.stringMatching(/\$ref/));
 		} finally {
 			spy.mockRestore();
 		}
@@ -168,16 +160,11 @@ describe("TC-F1.6-4: jsonSchemaToTypeBox — $ref fallback", () => {
 		const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
 		try {
 			const result = jsonSchemaToTypeBox({
-				oneOf: [
-					{ type: "string" },
-					{ type: "integer" },
-				],
+				oneOf: [{ type: "string" }, { type: "integer" }],
 			});
 
 			expect((result as any).type).toBeUndefined();
-			expect(spy).toHaveBeenCalledWith(
-				expect.stringMatching(/oneOf/),
-			);
+			expect(spy).toHaveBeenCalledWith(expect.stringMatching(/oneOf/));
 		} finally {
 			spy.mockRestore();
 		}
@@ -187,16 +174,11 @@ describe("TC-F1.6-4: jsonSchemaToTypeBox — $ref fallback", () => {
 		const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
 		try {
 			const result = jsonSchemaToTypeBox({
-				anyOf: [
-					{ type: "string" },
-					{ type: "number" },
-				],
+				anyOf: [{ type: "string" }, { type: "number" }],
 			});
 
 			expect((result as any).type).toBeUndefined();
-			expect(spy).toHaveBeenCalledWith(
-				expect.stringMatching(/anyOf/),
-			);
+			expect(spy).toHaveBeenCalledWith(expect.stringMatching(/anyOf/));
 		} finally {
 			spy.mockRestore();
 		}
@@ -210,12 +192,8 @@ describe("TC-F1.6-4: jsonSchemaToTypeBox — $ref fallback", () => {
 describe("TC-F1.6-5: normalizeToolName", () => {
 	it("produces mcp__<serverId>__<toolName>", () => {
 		expect(normalizeToolName("fs", "read_file")).toBe("mcp__fs__read_file");
-		expect(normalizeToolName("github", "search_repositories")).toBe(
-			"mcp__github__search_repositories",
-		);
-		expect(normalizeToolName("filesystem", "list_directory")).toBe(
-			"mcp__filesystem__list_directory",
-		);
+		expect(normalizeToolName("github", "search_repositories")).toBe("mcp__github__search_repositories");
+		expect(normalizeToolName("filesystem", "list_directory")).toBe("mcp__filesystem__list_directory");
 	});
 });
 
@@ -226,15 +204,19 @@ describe("TC-F1.6-5: normalizeToolName", () => {
 describe("TC-F1.6-6: mcpToolToDefinition — metadata", () => {
 	it("normalizes the tool name", () => {
 		const fakeClient: AdapterClient = { callTool: vi.fn() };
-		const def = mcpToolToDefinition("filesystem", {
-			name: "read_file",
-			description: "Read a file from disk",
-			inputSchema: {
-				type: "object",
-				properties: { path: { type: "string" } },
-				required: ["path"],
+		const def = mcpToolToDefinition(
+			"filesystem",
+			{
+				name: "read_file",
+				description: "Read a file from disk",
+				inputSchema: {
+					type: "object",
+					properties: { path: { type: "string" } },
+					required: ["path"],
+				},
 			},
-		}, fakeClient);
+			fakeClient,
+		);
 
 		expect(def.name).toBe("mcp__filesystem__read_file");
 		expect(def.description).toBe("Read a file from disk");
@@ -243,28 +225,36 @@ describe("TC-F1.6-6: mcpToolToDefinition — metadata", () => {
 
 	it("uses fallback description when not provided", () => {
 		const fakeClient: AdapterClient = { callTool: vi.fn() };
-		const def = mcpToolToDefinition("fs", {
-			name: "x",
-			inputSchema: {},
-		}, fakeClient);
+		const def = mcpToolToDefinition(
+			"fs",
+			{
+				name: "x",
+				inputSchema: {},
+			},
+			fakeClient,
+		);
 
 		expect(def.description).toBe("MCP tool x from server fs");
 	});
 
 	it("converts inputSchema to TypeBox parameters", () => {
 		const fakeClient: AdapterClient = { callTool: vi.fn() };
-		const def = mcpToolToDefinition("fs", {
-			name: "write_file",
-			description: "Write content to a file",
-			inputSchema: {
-				type: "object",
-				properties: {
-					path: { type: "string" },
-					content: { type: "string" },
+		const def = mcpToolToDefinition(
+			"fs",
+			{
+				name: "write_file",
+				description: "Write content to a file",
+				inputSchema: {
+					type: "object",
+					properties: {
+						path: { type: "string" },
+						content: { type: "string" },
+					},
+					required: ["path", "content"],
 				},
-				required: ["path", "content"],
 			},
-		}, fakeClient);
+			fakeClient,
+		);
 
 		expect((def.parameters as any).type).toBe("object");
 		expect((def.parameters as any).properties.path.type).toBe("string");
@@ -285,18 +275,16 @@ describe("TC-F1.6-7: mcpToolToDefinition — execute", () => {
 		});
 
 		const fakeClient: AdapterClient = { callTool: mockCallTool };
-		const def = mcpToolToDefinition("fs", {
-			name: "x",
-			inputSchema: {},
-		}, fakeClient);
-
-		const result = await def.execute(
-			"call-1",
-			{ path: "/x" },
-			undefined,
-			undefined,
-			undefined as any,
+		const def = mcpToolToDefinition(
+			"fs",
+			{
+				name: "x",
+				inputSchema: {},
+			},
+			fakeClient,
 		);
+
+		const result = await def.execute("call-1", { path: "/x" }, undefined, undefined, undefined as any);
 
 		expect(mockCallTool).toHaveBeenCalledWith(
 			{ name: "x", arguments: { path: "/x" } },
@@ -316,18 +304,16 @@ describe("TC-F1.6-7: mcpToolToDefinition — execute", () => {
 		});
 
 		const fakeClient: AdapterClient = { callTool: mockCallTool };
-		const def = mcpToolToDefinition("fs", {
-			name: "x",
-			inputSchema: {},
-		}, fakeClient);
-
-		const result = await def.execute(
-			"call-2",
-			{},
-			undefined,
-			undefined,
-			undefined as any,
+		const def = mcpToolToDefinition(
+			"fs",
+			{
+				name: "x",
+				inputSchema: {},
+			},
+			fakeClient,
 		);
+
+		const result = await def.execute("call-2", {}, undefined, undefined, undefined as any);
 
 		expect(result.content).toHaveLength(3);
 		expect(result.content[0]).toHaveProperty("text", "hello");
@@ -343,18 +329,16 @@ describe("TC-F1.6-7: mcpToolToDefinition — execute", () => {
 		});
 
 		const fakeClient: AdapterClient = { callTool: mockCallTool };
-		const def = mcpToolToDefinition("fs", {
-			name: "x",
-			inputSchema: {},
-		}, fakeClient);
-
-		const result = await def.execute(
-			"call-3",
-			{},
-			undefined,
-			undefined,
-			undefined as any,
+		const def = mcpToolToDefinition(
+			"fs",
+			{
+				name: "x",
+				inputSchema: {},
+			},
+			fakeClient,
 		);
+
+		const result = await def.execute("call-3", {}, undefined, undefined, undefined as any);
 
 		expect(result.content[0]).toHaveProperty("text", "Error: permission denied");
 	});

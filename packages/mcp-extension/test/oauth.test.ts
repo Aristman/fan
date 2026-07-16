@@ -11,13 +11,13 @@
 
 import { describe, expect, it, vi } from "vitest";
 import {
-	generateCodeVerifier,
-	generateCodeChallenge,
-	generateState,
-	parseWwwAuthenticate,
 	buildAuthorizationUrl,
 	exchangeCodeForToken,
+	generateCodeChallenge,
+	generateCodeVerifier,
+	generateState,
 	OAuthError,
+	parseWwwAuthenticate,
 	TokenStore,
 } from "../src/oauth.js";
 
@@ -44,9 +44,7 @@ describe("F-3.3: PKCE utilities", () => {
 	});
 
 	it("generateCodeChallenge is deterministic", () => {
-		expect(generateCodeChallenge("test")).toBe(
-			generateCodeChallenge("test"),
-		);
+		expect(generateCodeChallenge("test")).toBe(generateCodeChallenge("test"));
 	});
 
 	it("generateCodeChallenge differs for different inputs", () => {
@@ -75,17 +73,13 @@ describe("F-3.3: parseWwwAuthenticate", () => {
 	});
 
 	it("parses Bearer with error and error_description", () => {
-		const parsed = parseWwwAuthenticate(
-			'Bearer realm="x", error="invalid_token", error_description="Token expired"',
-		);
+		const parsed = parseWwwAuthenticate('Bearer realm="x", error="invalid_token", error_description="Token expired"');
 		expect(parsed?.error).toBe("invalid_token");
 		expect(parsed?.errorDescription).toBe("Token expired");
 	});
 
 	it("parses Bearer with scope", () => {
-		const parsed = parseWwwAuthenticate(
-			'Bearer realm="x", scope="read write"',
-		);
+		const parsed = parseWwwAuthenticate('Bearer realm="x", scope="read write"');
 		expect(parsed?.scope).toBe("read write");
 	});
 
@@ -120,9 +114,7 @@ describe("F-3.3: buildAuthorizationUrl", () => {
 
 		expect(url).toContain("response_type=code");
 		expect(url).toContain("client_id=client-abc");
-		expect(url).toContain(
-			"redirect_uri=http%3A%2F%2Flocalhost%3A9000%2Fcallback",
-		);
+		expect(url).toContain("redirect_uri=http%3A%2F%2Flocalhost%3A9000%2Fcallback");
 		expect(url).toContain("state=state-xyz");
 		expect(url).toContain("code_challenge=challenge-123");
 		expect(url).toContain("code_challenge_method=S256");
@@ -268,15 +260,9 @@ describe("F-3.3: exchangeCodeForToken", () => {
 		(globalThis as any).fetch = fakeFetch;
 
 		try {
-			await expect(
-				exchangeCodeForToken(
-					"url",
-					"id",
-					"code",
-					"verifier",
-					"redirect",
-				),
-			).rejects.toThrow(/Token exchange failed/);
+			await expect(exchangeCodeForToken("url", "id", "code", "verifier", "redirect")).rejects.toThrow(
+				/Token exchange failed/,
+			);
 		} finally {
 			(globalThis as any).fetch = origFetch;
 		}
@@ -293,15 +279,9 @@ describe("F-3.3: exchangeCodeForToken", () => {
 		(globalThis as any).fetch = fakeFetch;
 
 		try {
-			await expect(
-				exchangeCodeForToken(
-					"url",
-					"id",
-					"code",
-					"verifier",
-					"redirect",
-				),
-			).rejects.toBeInstanceOf(OAuthError);
+			await expect(exchangeCodeForToken("url", "id", "code", "verifier", "redirect")).rejects.toBeInstanceOf(
+				OAuthError,
+			);
 		} finally {
 			(globalThis as any).fetch = origFetch;
 		}

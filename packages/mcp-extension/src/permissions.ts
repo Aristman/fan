@@ -52,7 +52,9 @@ export interface PermissionGate {
  */
 export function createPermissionGate(serverConfigs: McpServerConfig[] = []): PermissionGate {
 	const byIndex = new Map<number, McpServerConfig>();
-	serverConfigs.forEach((cfg, i) => byIndex.set(i, cfg));
+	for (let i = 0; i < serverConfigs.length; i++) {
+		byIndex.set(i, serverConfigs[i]);
+	}
 
 	return {
 		gate(event: ToolCallEvent): ToolCallEventResult {
@@ -87,7 +89,9 @@ export function createPermissionGate(serverConfigs: McpServerConfig[] = []): Per
 		},
 		updateConfig(servers: McpServerConfig[]): void {
 			byIndex.clear();
-			servers.forEach((cfg, i) => byIndex.set(i, cfg));
+			for (let i = 0; i < servers.length; i++) {
+				byIndex.set(i, servers[i]);
+			}
 		},
 	};
 }
@@ -102,8 +106,8 @@ export function filterToolsByConfig<T extends { name: string }>(
 		if (t.name.includes("__") && !t.name.startsWith("mcp__")) {
 			console.warn(
 				`filterToolsByConfig: tool name "${t.name}" contains "__" — ` +
-				`did you mean just "${t.name.split("__").pop()}"? ` +
-				`(allowedTools/deniedTools use RAW tool names without mcp__ prefix)`,
+					`did you mean just "${t.name.split("__").pop()}"? ` +
+					`(allowedTools/deniedTools use RAW tool names without mcp__ prefix)`,
 			);
 		}
 	}
@@ -133,6 +137,6 @@ function matchGlob(name: string, pattern: string): boolean {
 		return pattern.split("*").every((part) => part === "" || name.includes(part));
 	}
 
-	const regex = new RegExp("^" + pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$");
+	const regex = new RegExp(`^${pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")}$`);
 	return regex.test(name);
 }

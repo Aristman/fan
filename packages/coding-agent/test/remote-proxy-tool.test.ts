@@ -1,18 +1,25 @@
 import { describe, expect, it, vi } from "vitest";
 import { createRemoteProxyTool, type RemoteToolPendingRegistry } from "../src/modes/rpc/remote-proxy-tool.js";
-import type { RpcToolDescriptor, RpcRemoteToolRequest } from "../src/modes/rpc/rpc-types.js";
+import type { RpcRemoteToolRequest, RpcToolDescriptor } from "../src/modes/rpc/rpc-types.js";
 
 function makeRegistry(): { registry: RemoteToolPendingRegistry; resolve: (id: string, r: any) => void } {
 	const map = new Map<string, any>();
 	const resolve = (id: string, r: any) => {
 		const e = map.get(id);
-		if (e) { map.delete(id); e.resolve(r); return true; }
+		if (e) {
+			map.delete(id);
+			e.resolve(r);
+			return true;
+		}
 		return false;
 	};
 	return {
 		registry: {
 			register(id, r, rj, timeoutMs) {
-				const timer = setTimeout(() => { map.delete(id); rj(new Error("timeout")); }, timeoutMs) as any;
+				const timer = setTimeout(() => {
+					map.delete(id);
+					rj(new Error("timeout"));
+				}, timeoutMs) as any;
 				map.set(id, { resolve: r, reject: rj, timer });
 			},
 			resolve,
@@ -65,12 +72,16 @@ describe("F-2.6: createRemoteProxyTool", () => {
 		expect(sentMsg.id).toBeDefined();
 
 		// Simulate parent response
-		setTimeout(() => resolve(sentMsg.id, {
-			type: "remote_tool_response",
-			id: sentMsg.id,
-			content: [{ type: "text", text: "file contents" }],
-			isError: false,
-		}), 50);
+		setTimeout(
+			() =>
+				resolve(sentMsg.id, {
+					type: "remote_tool_response",
+					id: sentMsg.id,
+					content: [{ type: "text", text: "file contents" }],
+					isError: false,
+				}),
+			50,
+		);
 
 		const result = await promise;
 		expect((result as any).content[0].text).toBe("file contents");

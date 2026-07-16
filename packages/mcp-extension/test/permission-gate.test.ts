@@ -2,9 +2,9 @@
  * Tests for createPermissionGate and parseMcpToolName (F-1.10).
  */
 
+import type { ToolCallEvent } from "@seaagents/fan-coding-agent";
 import { describe, expect, it } from "vitest";
 import { createPermissionGate, isValidServerId, parseMcpToolName } from "../src/permissions.js";
-import type { ToolCallEvent } from "@seaagents/fan-coding-agent";
 
 function makeEvent(toolName: string, input: unknown = {}): ToolCallEvent {
 	return { type: "tool_call", toolCallId: "id1", toolName, input } as any;
@@ -113,7 +113,7 @@ describe("BUG-2: Server ID alias injection via gate()", () => {
 // ──────────────────────────────────────────────────
 
 describe("BUG-6: matchGlob ReDoS protection (tested via gate)", () => {
-	const configs = [
+	const _configs = [
 		{
 			transport: "stdio" as const,
 			command: "x",
@@ -123,7 +123,7 @@ describe("BUG-6: matchGlob ReDoS protection (tested via gate)", () => {
 	];
 
 	it("rejects pattern exceeding MAX_GLOB_PATTERN_LENGTH (>256)", () => {
-		const longPattern = "mcp__" + "a".repeat(260) + "__tool";
+		const longPattern = `mcp__${"a".repeat(260)}__tool`;
 		// Should not throw and should not match
 		const gate = createPermissionGate([
 			{

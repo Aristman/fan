@@ -59,34 +59,45 @@ export interface ConfigLoader {
 	load(): Promise<McpConfig>;
 }
 
-const McpServerConfigSchema = Type.Object({
-	transport: Type.Union([Type.Literal("stdio"), Type.Literal("streamable-http")]),
-	command: Type.Optional(Type.String({ minLength: 1 })),
-	args: Type.Optional(Type.Array(Type.String())),
-	env: Type.Optional(Type.Record(Type.String(), Type.String())),
-	url: Type.Optional(Type.String({ minLength: 1 })),
-	headers: Type.Optional(Type.Record(Type.String(), Type.String())),
-	allowedTools: Type.Optional(Type.Array(Type.String())),
-	deniedTools: Type.Optional(Type.Array(Type.String())),
-	timeout: Type.Optional(Type.Integer({ minimum: 1000, maximum: 300_000 })),
-	autoRestart: Type.Optional(Type.Boolean()),
-	allowLocal: Type.Optional(Type.Boolean()),
-	allowPrivate: Type.Optional(Type.Boolean()),
-	oauth: Type.Optional(Type.Object({
-		clientId: Type.String({ minLength: 1 }),
-		clientSecret: Type.Optional(Type.String()),
-		authorizationUrl: Type.String({ minLength: 1 }),
-		tokenUrl: Type.String({ minLength: 1 }),
-		scopes: Type.Optional(Type.Array(Type.String())),
-	})),
-}, { additionalProperties: false });
+const McpServerConfigSchema = Type.Object(
+	{
+		transport: Type.Union([Type.Literal("stdio"), Type.Literal("streamable-http")]),
+		command: Type.Optional(Type.String({ minLength: 1 })),
+		args: Type.Optional(Type.Array(Type.String())),
+		env: Type.Optional(Type.Record(Type.String(), Type.String())),
+		url: Type.Optional(Type.String({ minLength: 1 })),
+		headers: Type.Optional(Type.Record(Type.String(), Type.String())),
+		allowedTools: Type.Optional(Type.Array(Type.String())),
+		deniedTools: Type.Optional(Type.Array(Type.String())),
+		timeout: Type.Optional(Type.Integer({ minimum: 1000, maximum: 300_000 })),
+		autoRestart: Type.Optional(Type.Boolean()),
+		allowLocal: Type.Optional(Type.Boolean()),
+		allowPrivate: Type.Optional(Type.Boolean()),
+		oauth: Type.Optional(
+			Type.Object({
+				clientId: Type.String({ minLength: 1 }),
+				clientSecret: Type.Optional(Type.String()),
+				authorizationUrl: Type.String({ minLength: 1 }),
+				tokenUrl: Type.String({ minLength: 1 }),
+				scopes: Type.Optional(Type.Array(Type.String())),
+			}),
+		),
+	},
+	{ additionalProperties: false },
+);
 
-const McpConfigSchema = Type.Object({
-	servers: Type.Array(McpServerConfigSchema),
-}, { additionalProperties: false });
+const McpConfigSchema = Type.Object(
+	{
+		servers: Type.Array(McpServerConfigSchema),
+	},
+	{ additionalProperties: false },
+);
 
 export class ConfigValidationError extends Error {
-	constructor(message: string, public readonly path?: string) {
+	constructor(
+		message: string,
+		public readonly path?: string,
+	) {
 		super(path ? `${message} (at ${path})` : message);
 		this.name = "ConfigValidationError";
 	}
@@ -133,10 +144,7 @@ function mergeConfigs(global: McpConfig, project: McpConfig): McpConfig {
  * produce a console.warn and are skipped (graceful degradation).
  * exposed for testing; use loadMcpConfig for simple usage.
  */
-export async function readConfigs(
-	globalPath: string | undefined,
-	projectPath: string | undefined,
-): Promise<McpConfig> {
+export async function readConfigs(globalPath: string | undefined, projectPath: string | undefined): Promise<McpConfig> {
 	const [globalRaw, projectRaw] = await Promise.all([
 		globalPath ? readJsonFile(globalPath) : undefined,
 		projectPath ? readJsonFile(projectPath) : undefined,
@@ -173,9 +181,7 @@ export function createMcpConfigLoader(cwd: string = process.cwd()): ConfigLoader
 	return {
 		async load(): Promise<McpConfig> {
 			const globalPath = join(homedir(), ".fan", "agent", "mcp.json");
-			const projectPath = isAbsolute(cwd)
-				? join(cwd, ".fan", "mcp.json")
-				: join(resolve(cwd), ".fan", "mcp.json");
+			const projectPath = isAbsolute(cwd) ? join(cwd, ".fan", "mcp.json") : join(resolve(cwd), ".fan", "mcp.json");
 
 			return readConfigs(globalPath, projectPath);
 		},
