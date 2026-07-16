@@ -210,7 +210,7 @@
 
 ## Configuration
 
-#### ☐ F-1.8 [DATA]: mcp.json loader и global/project merge
+#### ✅ F-1.8 (commit 2043d41) [DATA]: mcp.json loader и global/project merge
 - **Приоритет:** P0
 - **Слой:** [DATA]
 - **Описание:** Реализовать `loadMcpConfig(cwd: string): Promise<McpConfig>` — читает global `~/.fan/agent/mcp.json` и project `${cwd}/.fan/mcp.json`, мерджит по `serverId` (project выигрывает для primitive полей, deep merge для объектов). Валидация схемы через TypeBox-валидатор. Если оба файла отсутствуют — пустой конфиг. Если невалидный JSON — warning + пропуск файла.
@@ -253,7 +253,7 @@
 
 ## Permissions & cancel
 
-#### ☐ F-1.10 [BIZ]: tool_call permission gate
+#### ✅ F-1.10 (commit 666c5f4) [BIZ]: tool_call permission gate
 - **Приоритет:** P0
 - **Слой:** [BIZ]
 - **Описание:** В extension factory зарегистрировать `pi.on("tool_call", handler)`. Handler проверяет: если `toolName` соответствует `mcp__<serverId>__<tool>` и в runtime config `permissions.serverId.deny` есть этот tool — вернуть `{block: true, reason: "..."}`. Иначе — ничего. Использовать существующий паттерн из `permission-gate.ts`.
@@ -294,7 +294,7 @@
 
 ## Reliability
 
-#### ☐ F-1.12 [INTEG]: AbortSignal → MCP cancel propagation
+#### ✅ F-1.12 (commit d4a233b) [INTEG]: AbortSignal → MCP cancel propagation
 - **Приоритет:** P0
 - **Слой:** [INTEG]
 - **Описание:** В `execute()` MCP ToolDefinition: при получении FAN `signal` — прерывать in-flight `client.callTool({...}, undefined, { signal })`. MCP SDK прокидывает cancellation в сервер. Если tool вызван с уже aborted signal → бросить `AbortError` немедленно.
@@ -312,7 +312,7 @@
 - **Ожидаемый результат:** обёртка `execute()` + 1 integration тест
 - **Оценка объёма:** S (≤ 4ч)
 
-#### ☐ F-1.13 [BIZ]: Per-call и per-server timeouts
+#### ✅ F-1.13 (commit abb5959) [BIZ]: Per-call и per-server timeouts
 - **Приоритет:** P0
 - **Слой:** [BIZ]
 - **Описание:** Реализовать обёртку `withTimeout(promise, ms, signal): Promise<T>` — race между promise, setTimeout-reject и signal. Применить к `client.callTool()` с `config.timeout ?? 60000`. Возвращать tool error, не throw exception.
@@ -330,7 +330,7 @@
 - **Ожидаемый результат:** утилита `withTimeout()` в `adapter.ts` + 3 unit-теста
 - **Оценка объёма:** S (≤ 4ч)
 
-#### ☐ F-1.14 [BIZ]: Graceful shutdown с cleanup stdio процессов
+#### ✅ F-1.14 (commit 2f464db) [BIZ]: Graceful shutdown с cleanup stdio процессов
 - **Приоритет:** P0
 - **Слой:** [BIZ]
 - **Описание:** В `pi.on("session_shutdown")` handler: для каждого stdio MCP-сервера — закрыть `client`, дёрнуть `transport.close()`. StdioClientTransport делает graceful shutdown (stdin.end → SIGTERM через 2s → SIGKILL через 2s). Дождаться завершения всех cleanup-тасков в течение 5s (не больше).
@@ -352,7 +352,7 @@
 
 ## Dynamic updates
 
-#### ☐ F-1.15 [INTEG]: list_changed atomic catalog refresh
+#### ✅ F-1.15 (commit 3a1811c) [INTEG]: list_changed atomic catalog refresh
 - **Приоритет:** P0
 - **Слой:** [INTEG]
 - **Описание:** Подписаться на `notifications/tools/list_changed` в MCP `Client`. При получении: debounce 500ms (множественные уведомления от сервера склеиваются), затем `client.listTools()` заново, diff со старым, для каждого изменения — `registerTool/unregisterTool/updateTool` через API из F-1.1/F-1.2. Атомарность: `_refreshToolRegistry` перестраивает registry за один проход.
@@ -376,7 +376,7 @@
 
 ## Error handling
 
-#### ☐ F-1.16 [BIZ]: Graceful unavailable server (spawn fail / timeout на initialize)
+#### ✅ F-1.16 (commit 2f464db) [BIZ]: Graceful unavailable server (spawn fail / timeout на initialize)
 - **Приоритет:** P0
 - **Слой:** [BIZ]
 - **Описание:** Если `client.connect()` бросает (spawn fail, timeout 5s на initialize) — сервер помечается как `unavailable` с `connectError`. Остальные серверы продолжают подключаться. Флаг `unavailable` → tools не регистрируются; `/mcp status` показывает статус.
@@ -394,7 +394,7 @@
 - **Ожидаемый результат:** error handling в `manager.ts` + 2 unit/integration-теста
 - **Оценка объёма:** S (≤ 4ч)
 
-#### ☐ F-1.17 [BIZ]: stdio server crash → tools removed
+#### ✅ F-1.17 (commit 2f464db) [BIZ]: stdio server crash → tools removed
 - **Приоритет:** P0
 - **Слой:** [BIZ]
 - **Описание:** При обнаружении `client.transport.onclose` или `stderr` указывающего на crash — пометить сервер `unavailable`, дёрнуть `unregisterTool` для всех его tools (через F-1.1). Pending in-flight calls получают `isError:true` через signal abort.
@@ -412,7 +412,7 @@
 - **Ожидаемый результат:** crash handler в `manager.ts` + 1 integration тест
 - **Оценка объёма:** S (≤ 4ч)
 
-#### ☐ F-1.18 [DATA]: Invalid mcp.json graceful skip + warning
+#### ✅ F-1.18 (commit d4a233b) [DATA]: Invalid mcp.json graceful skip + warning
 - **Приоритет:** P0
 - **Слой:** [DATA]
 - **Описание:** Если файл mcp.json содержит невалидный JSON или не проходит TypeBox-валидацию — `console.warn("Invalid mcp.json at <path>: <error>")`, файл пропускается (как будто отсутствует). Другой файл (global/project) используется, если валиден.
@@ -442,7 +442,7 @@
 
 ## Core RPC extensions
 
-#### ☐ F-2.1 [API]: Generic remote_tool_request/response types в rpc-types.ts
+#### ✅ F-2.1 (commit f139369) [API]: Generic remote_tool_request/response types в rpc-types.ts
 - **Приоритет:** P1
 - **Слой:** [API]
 - **Описание:** Добавить в discriminated union `RpcCommand`/`RpcResponse` типы: `RpcRemoteToolRequest`, `RpcRemoteToolResponse`, `RpcRemoteToolCancel`, `RpcRemoteToolCatalog`. Эти типы — protocol-neutral, не содержат MCP-специфики. Используются для bidirectional tool proxy между worker и parent.
@@ -459,7 +459,7 @@
 - **Ожидаемый результат:** +20 строк в `rpc-types.ts`
 - **Оценка объёма:** S (≤ 4ч)
 
-#### ☐ F-2.2 [API]: Generic correlation map в rpc-mode.ts
+#### ✅ F-2.2 (commit baff7d7) [API]: Generic correlation map в rpc-mode.ts
 - **Приоритет:** P1
 - **Слой:** [API]
 - **Описание:** Добавить `pendingRemoteToolRequests: Map<string, DeferredPromise>` в `rpc-mode.ts` (по образцу `pendingExtensionRequests`). Хендлер `remote_tool_response` на входе: lookup в map по id → `resolve(result)`. Cleanup: reject promise при timeout 60s.
@@ -477,7 +477,7 @@
 - **Ожидаемый результат:** +30 строк в `rpc-mode.ts` + 3 unit-теста
 - **Оценка объёма:** M (≤ 1 день)
 
-#### ☐ F-2.3 [API]: lastEvent cache в EventBus (replay-on-subscribe)
+#### ✅ F-2.3 (commit 1b9f9f1) [API]: lastEvent cache в EventBus (replay-on-subscribe)
 - **Приоритет:** P1
 - **Слой:** [API]
 - **Описание:** Расширить `EventBus` (`event-bus.ts`) полем `lastEvents: Map<string, unknown>`. При `emit(channel, data)` — сохранить `data` в `lastEvents.set(channel, data)`. При `on(channel, handler)` — если `lastEvents.has(channel)` → сразу вызвать `handler(lastEvents.get(channel))` перед подпиской. Generic ~10 строк, не MCP-специфично.
@@ -499,7 +499,7 @@
 
 ## Orchestrator extension (WorkerProxy)
 
-#### ☐ F-2.4 [API]: orchestrator: remote_tool_request handler в subagent-runner
+#### ✅ F-2.4 (commit e57a805) [API]: orchestrator: remote_tool_request handler в subagent-runner
 - **Приоритет:** P1
 - **Слой:** [API]
 - **Описание:** В `subagent-runner.js` добавить ветку в `handleMessage(data)`: `case "remote_tool_request"` → lookup broker для {id, toolId, args}, выполнить через MCP extension (call `mcpManager.callTool(...)`), записать в `child.stdin` JSON-строку `{type: "remote_tool_response", id, content, isError}`.
@@ -517,7 +517,7 @@
 - **Ожидаемый результат:** +25 строк в `subagent-runner.js` + 1 integration тест
 - **Оценка объёма:** M (≤ 1 день)
 
-#### ☐ F-2.5 [BIZ]: orchestrator: broker-handler с EventBus подпиской
+#### ✅ F-2.5 (commit 7eaecc4) [BIZ]: orchestrator: broker-handler с EventBus подпиской
 - **Приоритет:** P1
 - **Слой:** [BIZ]
 - **Описание:** Создать модуль `broker-handler.js` в orchestrator extension. На `session_start` подписаться на `pi.events.on("mcp:catalog", ...)`. Сохранять нормализованный catalog для routing tool calls. Поддерживать фильтрацию по worker profile (`allowedTools` для worker type).
@@ -693,24 +693,24 @@
 - [x] F-1.5 [INTEG]: StreamableHTTPClientTransport (commit 6ce6125) integration
 - [x] F-1.6 [INTEG]: tools/list (commit da7957e) discovery и ToolDefinition mapping
 - [x] F-1.7 [INTEG]: tools/call (commit 0c4d3e2) execution и result mapping
-- [ ] F-1.8 [DATA]: mcp.json loader и global/project merge
+- [x] F-1.8 [DATA]: mcp.json loader (commit 2043d41) и global/project merge
 - [x] F-1.9 [BIZ]: allowedTools/deniedTools filtering (commit 4704aaa)
-- [ ] F-1.10 [BIZ]: tool_call permission gate
+- [x] F-1.10 [BIZ]: tool_call permission gate (commit 666c5f4)
 - [x] F-1.11 [DATA]: ${ENV_VAR} resolution (commit 4f58166) в mcp.json
-- [ ] F-1.12 [INTEG]: AbortSignal → MCP cancel propagation
-- [ ] F-1.13 [BIZ]: Per-call и per-server timeouts
-- [ ] F-1.14 [BIZ]: Graceful shutdown с cleanup stdio процессов
-- [ ] F-1.15 [INTEG]: list_changed atomic catalog refresh
-- [ ] F-1.16 [BIZ]: Graceful unavailable server
-- [ ] F-1.17 [BIZ]: stdio server crash → tools removed
-- [ ] F-1.18 [DATA]: Invalid mcp.json graceful skip + warning
+- [x] F-1.12 [INTEG]: AbortSignal (commit d4a233b) → MCP cancel propagation
+- [x] F-1.13 [BIZ]: Per-call (commit abb5959) и per-server timeouts
+- [x] F-1.14 [BIZ]: Graceful shutdown (commit 2f464db) с cleanup stdio процессов
+- [x] F-1.15 [INTEG]: list_changed (commit 3a1811c) atomic catalog refresh
+- [x] F-1.16 [BIZ]: Graceful unavailable (commit 2f464db) server
+- [x] F-1.17 [BIZ]: stdio server crash (commit 2f464db) → tools removed
+- [x] F-1.18 [DATA]: Invalid mcp.json (commit d4a233b) graceful skip + warning
 
 ## P1 — Высокий (Should Have, 7)
-- [ ] F-2.1 [API]: Generic remote_tool_request/response types в rpc-types.ts
-- [ ] F-2.2 [API]: Generic correlation map в rpc-mode.ts
-- [ ] F-2.3 [API]: lastEvent cache в EventBus
-- [ ] F-2.4 [API]: orchestrator: remote_tool_request handler в subagent-runner
-- [ ] F-2.5 [BIZ]: orchestrator: broker-handler с EventBus подпиской
+- [x] F-2.1 [API]: Generic remote_tool (commit f139369)_request/response types в rpc-types.ts
+- [x] F-2.2 [API]: Generic correlation map (commit baff7d7) в rpc-mode.ts
+- [x] F-2.3 [API]: lastEvent cache (commit 1b9f9f1) в EventBus
+- [x] F-2.4 [API]: orchestrator: remote_tool_request handler (commit e57a805) в subagent-runner
+- [x] F-2.5 [BIZ]: orchestrator: broker-handler (commit 7eaecc4) с EventBus подпиской
 - [ ] F-2.6 [API]: core: --remote-tools flag и proxy registration в worker
 - [ ] F-2.7 [BIZ]: orchestrator: per-worker profile filtering
 
