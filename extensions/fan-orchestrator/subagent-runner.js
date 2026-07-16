@@ -513,26 +513,31 @@ export function runWorker(model, temperature, agentPrompt, tools, task, stallTim
         });
 
         function handleRemoteToolRequest(id, toolId, args) {
-            // Placeholder: returns echo response. Will be replaced by broker-handler in F-2.5.
-            // Real broker will look up MCP tools catalog and invoke via fan-mcp extension.
-            try {
-                const response = {
-                    type: "remote_tool_response",
-                    id,
-                    content: [{ type: "text", text: `[F-2.4 stub] Would call ${toolId} with ${JSON.stringify(args)}` }],
-                    isError: false,
-                };
-                send(response);
-            } catch (err) {
-                const response = {
-                    type: "remote_tool_response",
-                    id,
-                    content: [{ type: "text", text: `[F-2.4 stub] Error: ${err.message}` }],
-                    isError: true,
-                    errorMessage: err.message,
-                };
-                send(response);
-            }
+            // F-2.4 FIX: Route through brokerHandler.invokeTool → registered handler.
+            // The handler is set by orchestrator-extension at init.
+            (async () => {
+                try {
+                    const result = await brokerHandler.handleRemoteToolInvocation(toolId, args);
+                    send(JSON.stringify({
+                        type: "remote_tool_response",
+                        id,
+                        content: result.content,
+                        isError: result.isError,
+                        errorMessage: result.isError && typeof result.content[0]?.text === "string"
+                            ? result.content[0].text
+                            : undefined,
+                    }) + "\n");
+                } catch (e) {
+                    const message = e instanceof Error ? e.message : String(e);
+                    send(JSON.stringify({
+                        type: "remote_tool_response",
+                        id,
+                        content: [{ type: "text", text: `Broker error: ${message}` }],
+                        isError: true,
+                        errorMessage: message,
+                    }) + "\n");
+                }
+            })();
         }
 
         // Initial 500ms delay before sending prompt

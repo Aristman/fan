@@ -13,6 +13,13 @@ let brokerCatalog = new Map();
 let brokerInitialized = false;
 
 /**
+ * F-2.4 FIX: External callback for actual MCP tool invocation.
+ * Set by orchestrator-extension at init. Routes to fan-mcp client.
+ * @type {((serverId: string, toolName: string, args: object) => Promise<{content: Array<{type: string, text: string}>, isError?: boolean}>) | null}
+ */
+let toolCallHandler = null;
+
+/**
  * F-2.7: Agent name → permission level mapping.
  * Key: agent name, Value: "all" | "read-only" | "none"
  */
@@ -109,11 +116,73 @@ export const brokerHandler = {
 	},
 
 	/**
+	 * Set the callback for actual MCP tool invocations.
+	 * Called once during orchestrator extension init.
+	 * @param {(serverId: string, toolName: string, args: object) => Promise<{content: Array<{type: string, text: string}>, isError?: boolean}>} handler
+	 */
+	setToolCallHandler(handler) {
+		toolCallHandler = handler;
+	},
+
+	/**
+	 * Get the current tool call handler (for testing/debugging).
+	 * @returns {typeof toolCallHandler}
+	 */
+	getToolCallHandler() {
+		return toolCallHandler;
+	},
+
+	/**
+	 * F-2.4 FIX: Look up tool in catalog, route to MCP client via registered handler.
+	 * @param {string} toolId - Fully qualified tool ID (e.g. "mcp__filesystem__read_file")
+	 * @param {object} args - Tool arguments
+	 * @returns {Promise<{content: Array<{type: string, text: string}>, isError?: boolean}>}
+	 */
+	async invokeTool(toolId, args) {
+		if (!toolCallHandler) {
+			throw new Error(`No MCP tool handler registered (broker not initialized)`);
+		}
+		const descriptor = brokerCatalog.get(toolId);
+		if (!descriptor) {
+			throw new Error(`Tool "${toolId}" not found in MCP catalog`);
+		}
+		// descriptor.id = "mcp__<serverId>__<toolName>"
+		// Extract serverId and toolName from the fully-qualified ID
+		const match = /^mcp__([^_]+(?:_[^_]+)*?)__(.+)$/.exec(toolId);
+		if (!match) throw new Error(`Invalid tool ID format: ${toolId}`);
+		const [, serverId, toolName] = match;
+		return toolCallHandler(serverId, toolName, args);
+	},
+
+	/**
+	 * F-2.4 FIX: Safe wrapper for subagent-runner to call directly.
+	 * Returns a properly shaped remote_tool_response payload.
+	 * @param {string} toolId
+	 * @param {object} args
+	 * @returns {Promise<{content: Array<{type: string, text: string}>, isError: boolean}>}
+	 */
+	async handleRemoteToolInvocation(toolId, args) {
+		try {
+			const result = await this.invokeTool(toolId, args);
+			return {
+				content: result.content ?? [{ type: "text", text: "" }],
+				isError: false,
+			};
+		} catch (e) {
+			return {
+				content: [{ type: "text", text: e instanceof Error ? e.message : String(e) }],
+				isError: true,
+			};
+		}
+	},
+
+	/**
 	 * Reset internal state (for testing).
 	 */
 	_reset() {
 		brokerCatalog = new Map();
 		brokerInitialized = false;
+		toolCallHandler = null;
 	},
 };
 
