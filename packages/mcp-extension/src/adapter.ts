@@ -15,6 +15,7 @@ import type { ExtensionContext } from "@seaagents/fan-coding-agent";
 import type { ToolDefinition } from "@seaagents/fan-coding-agent";
 import type { AgentToolResult } from "@seaagents/fan-agent-core";
 import { executeMcpTool } from "./executor.js";
+import { withLogging } from "./logger.js";
 
 // ──────────────────────────────────────────────────
 // JSON Schema → TypeBox
@@ -187,11 +188,16 @@ export function mcpToolToDefinition(
 			_onUpdate?: any,
 			_ctx?: ExtensionContext,
 		) => {
-			return executeMcpTool(
-				(args, opts) => client.callTool(args, opts),
+			return withLogging(
+				serverId,
 				mcpTool.name,
-				params as Record<string, unknown>,
-				signal,
+				() =>
+					executeMcpTool(
+						(args, opts) => client.callTool(args, opts),
+						mcpTool.name,
+						params as Record<string, unknown>,
+						signal,
+					),
 			);
 		},
 	};
