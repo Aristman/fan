@@ -11,11 +11,27 @@ export interface EventBusController extends EventBus {
 
 export function createEventBus(): EventBusController {
 	const emitter = new EventEmitter();
+	const lastEvents = new Map<string, unknown>();
+
 	return {
 		emit: (channel, data) => {
+			lastEvents.set(channel, data);
 			emitter.emit(channel, data);
 		},
 		on: (channel, handler) => {
+			if (lastEvents.has(channel)) {
+				const cached = lastEvents.get(channel);
+				Promise.resolve()
+					.then(async () => {
+						try {
+							await handler(cached);
+						} catch (err) {
+							console.error(`Event handler error (${channel}, replay):`, err);
+						}
+					})
+					.catch(() => {});
+			}
+
 			const safeHandler = async (data: unknown) => {
 				try {
 					await handler(data);
@@ -24,10 +40,13 @@ export function createEventBus(): EventBusController {
 				}
 			};
 			emitter.on(channel, safeHandler);
-			return () => emitter.off(channel, safeHandler);
+			return () => {
+				emitter.off(channel, safeHandler);
+			};
 		},
 		clear: () => {
 			emitter.removeAllListeners();
+			lastEvents.clear();
 		},
 	};
 }
