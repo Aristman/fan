@@ -10,7 +10,20 @@
  * - executeMcpTool(callTool, name, args, signal, timeoutMs) — execute + map + timeout
  */
 
-import type { AgentToolResult, TextContent, ImageContent } from "@seaagents/fan-agent-core";
+import type { AgentToolResult } from "@seaagents/fan-agent-core";
+
+// Local content type definitions (matching @seaagents/fan-ai TextContent/ImageContent).
+// Defined locally to avoid pulling @seaagents/fan-ai runtime into the extension.
+export interface TextContent {
+	type: "text";
+	text: string;
+}
+
+export interface ImageContent {
+	type: "image";
+	mimeType: string;
+	data: string;
+}
 
 // ──────────────────────────────────────────────────
 // Structural types (SDK-independent, avoids coupling)
