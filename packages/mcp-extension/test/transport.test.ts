@@ -201,6 +201,7 @@ describe("F-1.4: createStdioTransport", () => {
 	});
 
 	// TC-F1.4-3
+	// biome-ignore lint/suspicious/noTemplateCurlyInString: test description with literal ${ENV}
 	it("resolves ${ENV} references in config.env", () => {
 		const original = process.env.TEST_TOKEN;
 		process.env.TEST_TOKEN = "secret";
@@ -209,6 +210,7 @@ describe("F-1.4: createStdioTransport", () => {
 				transport: "stdio",
 				command: "node",
 				args: ["-e", "process.stdin.pipe(process.stdout)"],
+				// biome-ignore lint/suspicious/noTemplateCurlyInString: literal test input
 				env: { HEADER: "Bearer ${TEST_TOKEN}" },
 			});
 			expect(transport).toBeDefined();
@@ -306,12 +308,14 @@ describe("F-1.5: createHttpTransport", () => {
 	});
 
 	// TC-F1.5-7
+	// biome-ignore lint/suspicious/noTemplateCurlyInString: test description with literal ${ENV}
 	it("resolves ${ENV} in headers", async () => {
 		await expect(
 			createHttpTransport(
 				{
 					transport: "streamable-http",
 					url: "https://api.example.com/mcp",
+					// biome-ignore lint/suspicious/noTemplateCurlyInString: literal test input
 					headers: { Authorization: "Bearer ${TEST_TOKEN}" },
 				} as any,
 				{ TEST_TOKEN: "abc" },

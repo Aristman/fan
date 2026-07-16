@@ -13,6 +13,7 @@ import { mcpExtension } from "../src/index.js";
  * Captures registerCommand calls and session lifecycle callbacks.
  */
 function makeFakeApi() {
+	// biome-ignore lint/complexity/noBannedTypes: test mock for event handlers
 	const handlers = new Map<string, Function[]>();
 	const events = { emit: vi.fn(), on: vi.fn() };
 	const tools: string[] = [];
@@ -52,6 +53,7 @@ function makeFakeApi() {
 		pendingProviderRegistrations: [],
 		registerProvider: vi.fn(),
 		unregisterProvider: vi.fn(),
+		// biome-ignore lint/complexity/noBannedTypes: generic handler mock
 		on: vi.fn().mockImplementation((event: string, handler: Function) => {
 			const list = handlers.get(event) ?? [];
 			list.push(handler);

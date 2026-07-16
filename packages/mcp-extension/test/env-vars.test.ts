@@ -7,10 +7,12 @@ import { MissingEnvVarError, resolveEnvVars } from "../src/config.js";
 
 describe("F-1.11: resolveEnvVars", () => {
 	it("resolves a single placeholder", () => {
+		// biome-ignore lint/suspicious/noTemplateCurlyInString: literal test input for resolveEnvVars
 		expect(resolveEnvVars("Bearer ${TOKEN}", { TOKEN: "abc" })).toBe("Bearer abc");
 	});
 
 	it("resolves multiple placeholders", () => {
+		// biome-ignore lint/suspicious/noTemplateCurlyInString: literal test input for resolveEnvVars
 		expect(resolveEnvVars("https://${HOST}:${PORT}/api", { HOST: "example.com", PORT: "8080" })).toBe(
 			"https://example.com:8080/api",
 		);
@@ -21,16 +23,20 @@ describe("F-1.11: resolveEnvVars", () => {
 	});
 
 	it("throws MissingEnvVarError on missing variable", () => {
+		// biome-ignore lint/suspicious/noTemplateCurlyInString: literal test input for resolveEnvVars
 		expect(() => resolveEnvVars("Bearer ${GITHUB_TOKEN}", {})).toThrow(MissingEnvVarError);
+		// biome-ignore lint/suspicious/noTemplateCurlyInString: literal test input for resolveEnvVars
 		expect(() => resolveEnvVars("Bearer ${GITHUB_TOKEN}", {})).toThrow(/GITHUB_TOKEN/);
 	});
 
 	it("does not match placeholder-like text inside larger identifiers", () => {
 		// ${lowercase} should not match — only uppercase + underscore
+		// biome-ignore lint/suspicious/noTemplateCurlyInString: literal test input for resolveEnvVars
 		expect(resolveEnvVars("${lowercase}", { lowercase: "x" })).toBe("${lowercase}");
 	});
 
 	it("throws when the missing variable is among several", () => {
+		// biome-ignore lint/suspicious/noTemplateCurlyInString: literal test input for resolveEnvVars
 		expect(() => resolveEnvVars("${A}/${B}/${C}", { A: "1", C: "3" })).toThrow(MissingEnvVarError);
 	});
 });

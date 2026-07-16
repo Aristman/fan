@@ -92,7 +92,7 @@ function failConfig(_index: number = 0) {
 
 describe("F-1.16: unavailable server — other servers continue", () => {
 	it("marks server unavailable when spawn command is missing", async () => {
-		const { api, registered } = makeFakePi();
+		const { api } = makeFakePi();
 		const pm = makePermissiveGate();
 		const mgr = createMcpClientManager(api, pm);
 
@@ -109,7 +109,7 @@ describe("F-1.16: unavailable server — other servers continue", () => {
 	});
 
 	it("isolates failures — one unavailable server does not prevent others", async () => {
-		const { api, registered } = makeFakePi();
+		const { api } = makeFakePi();
 		const pm = makePermissiveGate();
 		const mgr = createMcpClientManager(api, pm);
 
@@ -175,7 +175,7 @@ describe("F-1.14: dispose() closes all transports", () => {
 
 describe("F-1.17: stdio server crash → tools removed", () => {
 	it("simulates crash via transport.onclose (tools registered then removed)", async () => {
-		const { api, registered, unregistered } = makeFakePi();
+		const { api } = makeFakePi();
 		const mgr = createMcpClientManager(api, makePermissiveGate());
 
 		// We can't easily spawn a real server and kill it in a unit test,

@@ -95,7 +95,7 @@ function makeEmptyGate() {
 
 describe("F-1.15: list_changed atomic refresh", () => {
 	it("TC-F1.15-1: refreshServerTools adds a new tool via registerTool", async () => {
-		const { api, registered, unregistered, updated } = makeFakePi();
+		const { api } = makeFakePi();
 		const mgr = createMcpClientManager(api, makeEmptyGate());
 
 		await mgr.connectAll({ servers: [] });
@@ -118,7 +118,7 @@ describe("F-1.15: list_changed atomic refresh", () => {
 				"$1",
 			);
 
-			const { api, registered, unregistered, updated } = makeFakePi();
+			const { api, registered } = makeFakePi();
 			const mgr = createMcpClientManager(api, makeEmptyGate());
 
 			await mgr.connectAll({

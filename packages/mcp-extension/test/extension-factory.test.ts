@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from "vitest";
 import { mcpExtension } from "../src/index.js";
 
 function makeFakeApi() {
+	// biome-ignore lint/complexity/noBannedTypes: test mock for event handlers
 	const handlers = new Map<string, Function[]>();
 	const events = { emit: vi.fn(), on: vi.fn() };
 	const api: ExtensionAPI = {
