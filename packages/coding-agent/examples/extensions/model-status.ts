@@ -9,8 +9,8 @@
 
 import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
 
-export default function (pi: ExtensionAPI) {
-	pi.on("model_select", async (event, ctx) => {
+export default function (fan: ExtensionAPI) {
+	fan.on("model_select", async (event, ctx) => {
 		const { model, previousModel, source } = event;
 
 		// Format model identifiers

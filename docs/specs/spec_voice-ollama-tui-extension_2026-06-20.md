@@ -221,7 +221,7 @@
 
 ### 5.3 Интеграции
 
-- **FAN Extension API**: `pi.registerCommand()`, `pi.registerShortcut()`, `ctx.ui.custom()`, `ctx.ui.setEditorText()`, `pi.exec()`.
+- **FAN Extension API**: `fan.registerCommand()`, `fan.registerShortcut()`, `ctx.ui.custom()`, `ctx.ui.setEditorText()`, `fan.exec()`.
 - **whisper.cpp CLI**: Вызов `whisper-cli -m <model> -l <lang> -f <audio> -nt`.
 - **Ollama API**:
   - `GET /api/tags` — список моделей.

@@ -9,9 +9,9 @@ import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
 import { Type } from "@sinclair/typebox";
 import ms from "ms";
 
-export default function (pi: ExtensionAPI) {
+export default function (fan: ExtensionAPI) {
 	// Register a tool that uses ms
-	pi.registerTool({
+	fan.registerTool({
 		name: "parse_duration",
 		label: "Parse Duration",
 		description: "Parse a human-readable duration string (e.g., '2 days', '1h', '5m') to milliseconds",

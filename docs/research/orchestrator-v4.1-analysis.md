@@ -120,19 +120,19 @@ sequenceDiagram
 
 | Событие/Хук | Место в коде | Назначение |
 |---|---|---|
-| `pi.registerShortcut("alt+o")` | строка 86-107 | Toggle coordinator mode |
-| `pi.registerShortcut("alt+t")` | строка 109-114 | Toggle task widget collapse |
-| `pi.on("before_agent_start")` | строка 117-124 | Inject coordinator prompt |
-| `pi.on("turn_end")` | строка 127-129 | Update task widget |
-| `pi.on("session_start")` | строка 131-164 | Build prompt, restore UI |
-| `pi.on("session_shutdown")` | строка 166-180 | Abort workers, cleanup |
-| `pi.on("tool_call")` | строка 183-206 | Dangerous bash interception |
-| `pi.on("tool_result")` | строка 209-219 | Widget update after Task ops |
-| `pi.registerCommand("orchestrator")` | строка 222+ | /orchestrator (10 subcommands) |
-| `pi.registerCommand("plan")` | строка 515+ | /plan with approval flow |
-| `pi.registerCommand("tasks")` | строка 671+ | /tasks |
-| `pi.registerCommand("agents")` | строка 694+ | /agents |
-| `pi.registerCommand("delegate")` | строка 718+ | /delegate |
+| `fan.registerShortcut("alt+o")` | строка 86-107 | Toggle coordinator mode |
+| `fan.registerShortcut("alt+t")` | строка 109-114 | Toggle task widget collapse |
+| `fan.on("before_agent_start")` | строка 117-124 | Inject coordinator prompt |
+| `fan.on("turn_end")` | строка 127-129 | Update task widget |
+| `fan.on("session_start")` | строка 131-164 | Build prompt, restore UI |
+| `fan.on("session_shutdown")` | строка 166-180 | Abort workers, cleanup |
+| `fan.on("tool_call")` | строка 183-206 | Dangerous bash interception |
+| `fan.on("tool_result")` | строка 209-219 | Widget update after Task ops |
+| `fan.registerCommand("orchestrator")` | строка 222+ | /orchestrator (10 subcommands) |
+| `fan.registerCommand("plan")` | строка 515+ | /plan with approval flow |
+| `fan.registerCommand("tasks")` | строка 671+ | /tasks |
+| `fan.registerCommand("agents")` | строка 694+ | /agents |
+| `fan.registerCommand("delegate")` | строка 718+ | /delegate |
 
 ### Жизненный цикл сессии
 

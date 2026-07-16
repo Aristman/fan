@@ -130,8 +130,8 @@ Extensions add tools, commands, and lifecycle hooks. See `packages/coding-agent/
 import type {ExtensionAPI} from "@seaagents/fan-coding-agent";
 import {Type} from "@seaagents/fan-ai";
 
-export default function (pi: ExtensionAPI) {
-    pi.registerTool({
+export default function (fan: ExtensionAPI) {
+    fan.registerTool({
         name: "my_tool",
         label: "My Tool",
         description: "What the tool does",
@@ -143,7 +143,7 @@ export default function (pi: ExtensionAPI) {
         },
     });
 
-    pi.registerCommand("hello", {
+    fan.registerCommand("hello", {
         description: "Say hello",
         handler: async (_args, ctx) => ctx.ui.notify("Hello!", "info"),
     });
@@ -153,7 +153,7 @@ export default function (pi: ExtensionAPI) {
 2. Test locally: `cd packages/coding-agent && npm start -- --extension path/to/my-extension.ts`
 3. For extensions with dependencies, create a subdirectory with its own `package.json` (see `with-deps/`).
 
-Key API: `pi.registerTool()`, `pi.registerCommand()`, `pi.on("hook", handler)`, `ctx.ui.notify()`, `ctx.ui.confirm()`
+Key API: `fan.registerTool()`, `fan.registerCommand()`, `fan.on("hook", handler)`, `ctx.ui.notify()`, `ctx.ui.confirm()`
 
 ---
 

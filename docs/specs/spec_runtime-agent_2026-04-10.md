@@ -450,7 +450,7 @@ model ClientToken {
 - [x] Регистрация `/plan <task description>` slash command
 - [x] Spawn explore worker с PLANNING_PROMPT → генерация плана
 - [x] `approveOrRevise()` — интерактивный UI select (✅ Approve / ✏️ Revise / ❌ Reject)
-- [x] On Approve: auto-enable coordinator, inject approved plan в conversation через `pi.sendUserMessage`
+- [x] On Approve: auto-enable coordinator, inject approved plan в conversation через `fan.sendUserMessage`
 - [x] On Revise: `ctx.ui.input()` для feedback → re-run с revision
 - [x] Live progress widget во время планирования (статус, tool calls, elapsed time)
 - [x] Timer в status bar пока worker работает

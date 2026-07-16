@@ -27,12 +27,12 @@ import type { BashToolDetails, EditToolDetails, ExtensionAPI, ReadToolDetails } 
 import { createBashTool, createEditTool, createReadTool, createWriteTool } from "@seaagents/fan-coding-agent";
 import { Text } from "@seaagents/fan-tui";
 
-export default function (pi: ExtensionAPI) {
+export default function (fan: ExtensionAPI) {
 	const cwd = process.cwd();
 
 	// --- Read tool: show path and line count ---
 	const originalRead = createReadTool(cwd);
-	pi.registerTool({
+	fan.registerTool({
 		name: "read",
 		label: "read",
 		description: originalRead.description,
@@ -91,7 +91,7 @@ export default function (pi: ExtensionAPI) {
 
 	// --- Bash tool: show command and exit code ---
 	const originalBash = createBashTool(cwd);
-	pi.registerTool({
+	fan.registerTool({
 		name: "bash",
 		label: "bash",
 		description: originalBash.description,
@@ -150,7 +150,7 @@ export default function (pi: ExtensionAPI) {
 
 	// --- Edit tool: show path and diff stats ---
 	const originalEdit = createEditTool(cwd);
-	pi.registerTool({
+	fan.registerTool({
 		name: "edit",
 		label: "edit",
 		description: originalEdit.description,
@@ -214,7 +214,7 @@ export default function (pi: ExtensionAPI) {
 
 	// --- Write tool: show path and size ---
 	const originalWrite = createWriteTool(cwd);
-	pi.registerTool({
+	fan.registerTool({
 		name: "write",
 		label: "write",
 		description: originalWrite.description,

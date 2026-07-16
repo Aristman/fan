@@ -11,8 +11,8 @@
  */
 import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
 
-export default function (pi: ExtensionAPI) {
-	pi.on("input", async (event, ctx) => {
+export default function (fan: ExtensionAPI) {
+	fan.on("input", async (event, ctx) => {
 		// Source-based logic: skip processing for extension-injected messages
 		if (event.source === "extension") {
 			return { action: "continue" };
