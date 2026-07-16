@@ -1029,6 +1029,26 @@ export interface ExtensionAPI {
 		tool: ToolDefinition<TParams, TDetails, TState>,
 	): void;
 
+	/**
+	 * Unregister a previously registered tool. Triggers an atomic refresh of the
+	 * session tool registry. No-op if the tool does not exist.
+	 *
+	 * Added in MCP integration (Phase 1, F-1.1).
+	 */
+	unregisterTool(name: string): void;
+
+	/**
+	 * Replace an existing tool definition, or register it if not present. Triggers
+	 * an atomic refresh of the session tool registry. Used by MCP extensions to
+	 * apply `tools/list_changed` notifications.
+	 *
+	 * Added in MCP integration (Phase 1, F-1.2).
+	 */
+	updateTool<TParams extends TSchema = TSchema, TDetails = unknown, TState = any>(
+		name: string,
+		tool: ToolDefinition<TParams, TDetails, TState>,
+	): void;
+
 	// =========================================================================
 	// Command, Shortcut, Flag Registration
 	// =========================================================================

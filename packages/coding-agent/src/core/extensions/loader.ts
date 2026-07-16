@@ -160,7 +160,7 @@ export function createExtensionRuntime(): ExtensionRuntime {
  * Registration methods write to the extension object.
  * Action methods delegate to the shared runtime.
  */
-function createExtensionAPI(
+export function createExtensionAPI(
 	extension: Extension,
 	runtime: ExtensionRuntime,
 	cwd: string,
@@ -176,6 +176,20 @@ function createExtensionAPI(
 
 		registerTool(tool: ToolDefinition): void {
 			extension.tools.set(tool.name, {
+				definition: tool,
+				sourceInfo: extension.sourceInfo,
+			});
+			runtime.refreshTools();
+		},
+
+		unregisterTool(name: string): void {
+			if (extension.tools.delete(name)) {
+				runtime.refreshTools();
+			}
+		},
+
+		updateTool(name: string, tool: ToolDefinition): void {
+			extension.tools.set(name, {
 				definition: tool,
 				sourceInfo: extension.sourceInfo,
 			});
