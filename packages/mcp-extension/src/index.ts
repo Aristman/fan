@@ -95,6 +95,7 @@ export const mcpExtension: ExtensionFactory = (pi: ExtensionAPI) => {
 
 	pi.on("session_start", async () => {
 		const config = await configLoader.load();
+		permissions.updateConfig(config.servers);
 		if (config.servers.length === 0) {
 			currentManager = null;
 			return; // No servers configured — silent no-op

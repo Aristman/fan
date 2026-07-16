@@ -312,23 +312,20 @@ export function createMcpClientManager(
 		};
 
 		// F-1.15: Set up list_changed subscription with 500ms debounce.
-		// The SDK's built-in listChanged support handles the debounce,
-		// auto-refresh (calls listTools()), and passes results to onChanged.
+		// autoRefresh is disabled — we handle the diff/register cycle ourselves
+		// via refreshServerTools which calls listTools() with permission filtering.
+		// Enabling autoRefresh would cause a double-fetch (SDK + ours).
 		const client = new Client(
 			{ name: "fan-mcp", version: "0.1.0" },
 			{
 				capabilities: {},
 				listChanged: {
 					tools: {
-						autoRefresh: true,
+						autoRefresh: false,
 						debounceMs: LIST_CHANGED_DEBOUNCE_MS,
-						onChanged: (_error: Error | null, tools: any[] | null) => {
-							// tools is already fetched by SDK (autoRefresh=true).
-							// We do our own diff/register cycle via refreshServerTools
-							// which also calls listTools() to get filtered results.
-							// The SDK's auto-fetch is used for its side effect of
-							// refreshing cached metadata; our actual registry update
-							// uses refreshServerTools which re-fetches with filtering.
+						onChanged: (_error: Error | null, _tools: any[] | null) => {
+							// We ignore the SDK-provided tools and do our own
+							// filtered refresh via refreshServerTools.
 							if (entry.status === "connected") {
 								refreshServerTools(entry).catch((e) =>
 									console.warn(

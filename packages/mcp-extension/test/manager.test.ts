@@ -79,6 +79,7 @@ function makeFakePi() {
 function makePermissiveGate(): PermissionGate {
 	return {
 		gate: () => ({}),
+		updateConfig: () => {},
 	};
 }
 

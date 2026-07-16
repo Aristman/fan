@@ -83,12 +83,6 @@ export async function runRpcMode(
 		{ resolve: (value: any) => void; reject: (error: Error) => void }
 	>();
 
-	// Pending remote tool invocations waiting for parent response (F-2.2)
-	const pendingRemoteToolRequests = new Map<
-		string,
-		{ resolve: (value: RpcRemoteToolResponse) => void; reject: (error: Error) => void }
-	>();
-
 	// RemoteProxyTool pending registry for awaiting remote_tool_response (F-2.6)
 	const remoteToolPendingRegistry: RemoteToolPendingRegistry = (() => {
 		const map = new Map<

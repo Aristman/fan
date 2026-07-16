@@ -24,6 +24,7 @@ export function parseMcpToolName(name: string): { serverId: string; tool: string
 
 export interface PermissionGate {
 	gate(event: ToolCallEvent): ToolCallEventResult;
+	updateConfig(servers: McpServerConfig[]): void;
 }
 
 /**
@@ -68,6 +69,10 @@ export function createPermissionGate(serverConfigs: McpServerConfig[] = []): Per
 				};
 			}
 			return {};
+		},
+		updateConfig(servers: McpServerConfig[]): void {
+			byIndex.clear();
+			servers.forEach((cfg, i) => byIndex.set(i, cfg));
 		},
 	};
 }

@@ -375,7 +375,7 @@ describe("TC-F1.7-9: executeMcpTool error handling", () => {
 				}),
 		);
 
-		const result = await executeMcpTool(fakeClient, "x", {}, undefined, 10);
+		const result = await executeMcpTool(fakeClient, "x", {}, undefined, undefined, 10);
 
 		expect(result.details.isError).toBe(true);
 		expect((result.content[0] as any).text).toContain("timed out");

@@ -66,7 +66,7 @@ function makeFakePi() {
 }
 
 function makeEmptyGate() {
-	return { gate: () => ({}) };
+	return { gate: () => ({}), updateConfig: () => {} };
 }
 
 // ── Expose internals for unit testing ───────────────────────────────
