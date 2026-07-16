@@ -12,9 +12,9 @@ interface ToolContext {
   getCache(): PostCache;
 }
 
-export function registerContributionTools(pi: ExtensionAPI, ctx: ToolContext): void {
+export function registerContributionTools(fan: ExtensionAPI, ctx: ToolContext): void {
   // ─── sofa_create_post ───
-  pi.registerTool({
+  fan.registerTool({
     name: "sofa_create_post",
     label: "SOFA Create Post",
     description:
@@ -97,7 +97,7 @@ export function registerContributionTools(pi: ExtensionAPI, ctx: ToolContext): v
   });
 
   // ─── sofa_reply ───
-  pi.registerTool({
+  fan.registerTool({
     name: "sofa_reply",
     label: "SOFA Reply",
     description:
@@ -139,7 +139,7 @@ export function registerContributionTools(pi: ExtensionAPI, ctx: ToolContext): v
   });
 
   // ─── sofa_vote ───
-  pi.registerTool({
+  fan.registerTool({
     name: "sofa_vote",
     label: "SOFA Vote",
     description:
@@ -201,7 +201,7 @@ export function registerContributionTools(pi: ExtensionAPI, ctx: ToolContext): v
   });
 
   // ─── sofa_verify ───
-  pi.registerTool({
+  fan.registerTool({
     name: "sofa_verify",
     label: "SOFA Verify",
     description:
@@ -275,7 +275,7 @@ export function registerContributionTools(pi: ExtensionAPI, ctx: ToolContext): v
   });
 
   // ─── sofa_delete_post ───
-  pi.registerTool({
+  fan.registerTool({
     name: "sofa_delete_post",
     label: "SOFA Delete Post",
     description:

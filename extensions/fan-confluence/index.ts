@@ -33,7 +33,7 @@ function cacheClear(): void {
 
 // ── Extension ───────────────────────────────────────────────
 
-export default function (pi: ExtensionAPI) {
+export default function (fan: ExtensionAPI) {
   let _config: ConfluenceConfig | null = null;
   let _client: ConfluenceClient | null = null;
   let _initError: string | null = null;
@@ -54,7 +54,7 @@ export default function (pi: ExtensionAPI) {
     }
   }
 
-  pi.on("session_start", async () => {
+  fan.on("session_start", async () => {
     cacheClear();
     try {
       _config = await loadConfig();
@@ -65,7 +65,7 @@ export default function (pi: ExtensionAPI) {
     }
   });
 
-  pi.on("session_shutdown", async () => {
+  fan.on("session_shutdown", async () => {
     _client = null;
     _config = null;
     cacheClear();
@@ -73,7 +73,7 @@ export default function (pi: ExtensionAPI) {
 
   // ── Single unified tool ──────────────────────────────────
 
-  pi.registerTool({
+  fan.registerTool({
     name: "fan_confluence",
     label: "Confluence",
     description:
@@ -130,7 +130,7 @@ export default function (pi: ExtensionAPI) {
 
   // ── Slash command ─────────────────────────────────────────
 
-  pi.registerCommand("confluence", {
+  fan.registerCommand("confluence", {
     description: "Confluence integration — init, status",
     getArgumentCompletions: (prefix: string) => {
       const cmds = ["init", "status"];

@@ -81,7 +81,7 @@ export class AutoExtractor {
 
   /**
    * Analyze conversation via LLM to extract facts.
-   * Uses pi.sendUserMessage to trigger a lightweight analysis.
+   * Uses fan.sendUserMessage to trigger a lightweight analysis.
    */
   private async analyzeConversation(
     ctx: ExtensionContext,

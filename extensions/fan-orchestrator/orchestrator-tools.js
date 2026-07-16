@@ -144,7 +144,7 @@ function classifyTaskByDescription(description) {
 /**
  * Register all orchestrator tools with the extension API.
  */
-export function registerOrchestratorTools(pi, taskManager, config, workerLifecycle) {
+export function registerOrchestratorTools(fan, taskManager, config, workerLifecycle) {
     // ---- delegate_task ----
     const TaskItem = Type.Object({
         agent: Type.String({ description: "Name of the agent to invoke" }),
@@ -169,7 +169,7 @@ export function registerOrchestratorTools(pi, taskManager, config, workerLifecyc
         confirmProjectAgents: Type.Optional(Type.Boolean({ description: "Prompt before running project-local agents. Default: true.", default: true })),
         cwd: Type.Optional(Type.String({ description: "Working directory for the agent process (single mode)" })),
     });
-    pi.registerTool({
+    fan.registerTool({
         name: "delegate_task",
         label: "Delegate Task",
         description: [
@@ -821,7 +821,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
         },
     });
     // ---- list_tasks ----
-    pi.registerTool({
+    fan.registerTool({
         name: "list_tasks",
         label: "List Tasks",
         description: "List orchestrator tasks. Optionally filter by status.",
@@ -862,7 +862,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
         },
     });
     // ---- cancel_task ----
-    pi.registerTool({
+    fan.registerTool({
         name: "cancel_task",
         label: "Cancel Task",
         description: "Cancel a running or pending orchestrator task.",
@@ -887,7 +887,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
         },
     });
     // ---- classify_task ----
-    pi.registerTool({
+    fan.registerTool({
         name: "classify_task",
         label: "Classify Task",
         description: "Classify a task description to determine the best worker type (explore, plan, implement, verify).",
@@ -911,7 +911,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
         },
     });
     // ---- assess_task ----
-    pi.registerTool({
+    fan.registerTool({
         name: "assess_task",
         label: "Assess Task Complexity",
         description: [
@@ -979,7 +979,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
         },
     });
     // ---- TaskCreate ----
-    pi.registerTool({
+    fan.registerTool({
         name: "TaskCreate",
         label: "Create Task",
         description: "Create a tracked task for decomposition. Tasks can block each other via blocks[].",
@@ -1016,7 +1016,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
             }
         },
     });
-    pi.registerTool({
+    fan.registerTool({
         name: "TaskUpdate",
         label: "Update Task",
         description: "Update a task's status. REQUIRED parameter: status. Optional: subject, description, blocks. Completing a task auto-unblocks dependents. Do NOT call this repeatedly with the same status — if the task is already in the target status, move on to the next step.",
@@ -1091,7 +1091,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
         },
     });
     // ---- TaskClear ----
-    pi.registerTool({
+    fan.registerTool({
         name: "TaskClear",
         label: "Clear Completed Tasks",
         description: "Remove all completed and failed tasks from the task list. Call this after your final report when all work is done.",
@@ -1113,7 +1113,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
         },
     });
     // ---- stop_worker ----
-    pi.registerTool({
+    fan.registerTool({
         name: "stop_worker",
         label: "Stop Worker",
         description: "Stop a running or spawning worker by its ID.",

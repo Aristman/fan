@@ -371,10 +371,10 @@ async function handleQuestionnaireRpc(
 
 // ─── Extension ───────────────────────────────────────────────
 
-export default function askAnswerExtension(pi: ExtensionAPI) {
+export default function askAnswerExtension(fan: ExtensionAPI) {
 	// ─── Tool: question ────────────────────────────────────────
 
-	pi.registerTool({
+	fan.registerTool({
 		name: "question",
 		label: "Question",
 		description:
@@ -596,7 +596,7 @@ export default function askAnswerExtension(pi: ExtensionAPI) {
 
 	// ─── Tool: questionnaire ──────────────────────────────────
 
-	pi.registerTool({
+	fan.registerTool({
 		name: "questionnaire",
 		label: "Questionnaire",
 		description:

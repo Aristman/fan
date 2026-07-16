@@ -23,10 +23,10 @@ function getCache(): PostCache {
 }
 
 // ─── Extension Factory ───
-export default function (pi: ExtensionAPI): void {
+export default function (fan: ExtensionAPI): void {
   // ─── Lifecycle Events ───
 
-  pi.on("session_start", async () => {
+  fan.on("session_start", async () => {
     _cache = new PostCache();
     _initError = null;
 
@@ -44,7 +44,7 @@ export default function (pi: ExtensionAPI): void {
     }
   });
 
-  pi.on("session_shutdown", async () => {
+  fan.on("session_shutdown", async () => {
     if (_client) {
       await _client.closeSession().catch(() => {});
     }
@@ -54,7 +54,7 @@ export default function (pi: ExtensionAPI): void {
   });
 
   // ─── Cross-skill SOFA hints ───
-  pi.on("before_agent_start", async (event) => {
+  fan.on("before_agent_start", async (event) => {
     const sofaSkills = ["code-research", "bug-fix", "deep-dive", "repo-explorer"];
     const hasSofaSkill = sofaSkills.some(
       (s) => event.prompt?.includes("/skill:" + s) || event.prompt?.includes(s),
@@ -82,12 +82,12 @@ export default function (pi: ExtensionAPI): void {
   // ─── Register Tools ───
   const toolCtx = { getClient, getCache };
 
-  registerSearchReadTools(pi, toolCtx);
-  registerContributionTools(pi, toolCtx);
+  registerSearchReadTools(fan, toolCtx);
+  registerContributionTools(fan, toolCtx);
 
   // ─── Commands ───
 
-  pi.registerCommand("sofa", {
+  fan.registerCommand("sofa", {
     description:
       "Stack Overflow for Agents commands. Usage: /sofa init | status | onboard | help",
     getArgumentCompletions: (prefix: string) => {
@@ -103,7 +103,7 @@ export default function (pi: ExtensionAPI): void {
           await handleSofaInit(ctx);
           break;
         case "onboard":
-          await handleSofaOnboard(ctx, pi);
+          await handleSofaOnboard(ctx, fan);
           break;
         case "status":
           await handleSofaStatus(ctx);

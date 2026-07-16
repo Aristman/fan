@@ -14,11 +14,11 @@ import { getGlobalDbPath, getProjectDbPath } from "../config.js";
 // ──────────────────────────────────────────────
 
 export function registerMemoryCommand(
-  pi: ExtensionAPI,
+  fan: ExtensionAPI,
   getDatabases: () => { global: MemoryDatabase; project: MemoryDatabase | null },
   getConfig: () => MemoryConfig
 ) {
-  pi.registerCommand("memory", {
+  fan.registerCommand("memory", {
     description: "Manage persistent memory (stats, list, search, show, archive, review, maintain)",
     handler: async (args, ctx) => {
       const parts = args.trim().split(/\s+/);
@@ -61,7 +61,7 @@ export function registerMemoryCommand(
   });
 
   // Dedicated maintain command
-  pi.registerCommand("memory-maintain", {
+  fan.registerCommand("memory-maintain", {
     description: "Run memory maintenance pipeline (dedup, clustering, archiving)",
     handler: async (_args, ctx) => {
       const { global, project } = getDatabases();
