@@ -604,7 +604,7 @@
 - **Ожидаемый результат:** обновление в `adapter.ts` + 2 теста
 - **Оценка объёма:** S (≤ 4ч)
 
-#### ☐ F-3.3 [INTEG]: OAuth support для Streamable HTTP
+#### ✅ F-3.3 (commit 415e949) [INTEG]: OAuth support для Streamable HTTP
 - **Приоритет:** P2
 - **Слой:** [INTEG]
 - **Описание:** Поддержать `OAuthClientProvider` для `StreamableHTTPClientTransport`. Хранение токенов в OS keychain (или fallback в encrypted file). Browser redirect flow для authorization code grant.
@@ -717,7 +717,7 @@
 ## P2 — Средний (Could Have, 7)
 - [x] F-3.1 [INTEG]: Progress forwarding forwarding
 - [x] F-3.2 [INTEG]: structuredContent preservation
-- [ ] F-3.3 [INTEG]: OAuth support для Streamable HTTP
+- [x] F-3.3 [INTEG]: OAuth support (commit 415e949) для Streamable HTTP
 - [x] F-3.4 [BIZ]: Auto-restart упавших stdio серверов
 - [x] F-3.5 [BIZ]: /mcp status и /mcp reload команды
 - [x] F-3.6 [CLI]: Dashboard MCP status card (endpoint stub) server status card
