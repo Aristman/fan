@@ -26,6 +26,8 @@ import type {
 	RpcExtensionUIRequest,
 	RpcExtensionUIResponse,
 	RpcResponse,
+	RpcRemoteToolRequest,
+	RpcRemoteToolResponse,
 	RpcSessionState,
 	RpcSlashCommand,
 } from "./rpc-types.js";
@@ -35,6 +37,8 @@ export type {
 	RpcCommand,
 	RpcExtensionUIRequest,
 	RpcExtensionUIResponse,
+	RpcRemoteToolRequest,
+	RpcRemoteToolResponse,
 	RpcResponse,
 	RpcSessionState,
 } from "./rpc-types.js";
@@ -71,6 +75,12 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 	const pendingExtensionRequests = new Map<
 		string,
 		{ resolve: (value: any) => void; reject: (error: Error) => void }
+	>();
+
+	// Pending remote tool invocations waiting for parent response (F-2.2)
+	const pendingRemoteToolRequests = new Map<
+		string,
+		{ resolve: (value: RpcRemoteToolResponse) => void; reject: (error: Error) => void }
 	>();
 
 	// Shutdown request flag
@@ -807,6 +817,36 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				pendingExtensionRequests.delete(response.id);
 				pending.resolve(response);
 			}
+			return;
+		}
+
+		// Handle remote tool responses (F-2.2)
+		if (
+			typeof parsed === "object" &&
+			parsed !== null &&
+			"type" in parsed &&
+			parsed.type === "remote_tool_response"
+		) {
+			const response = parsed as RpcRemoteToolResponse;
+			const pending = pendingRemoteToolRequests.get(response.id);
+			if (pending) {
+				pendingRemoteToolRequests.delete(response.id);
+				pending.resolve(response);
+			} else {
+				// Unknown id — вероятно stale или unknown sender
+				console.warn(`rpc-mode: received remote_tool_response with unknown id "${response.id}"`);
+			}
+			return;
+		}
+
+		// Handle remote tool cancel acknowledgments (reserved for future use)
+		if (
+			typeof parsed === "object" &&
+			parsed !== null &&
+			"type" in parsed &&
+			parsed.type === "remote_tool_cancel_ack"
+		) {
+			// Currently no-op except cleanup; reserved for future use.
 			return;
 		}
 
