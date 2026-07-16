@@ -14,6 +14,7 @@ import { Type, type TSchema } from "@sinclair/typebox";
 import type { ExtensionContext } from "@seaagents/fan-coding-agent";
 import type { ToolDefinition } from "@seaagents/fan-coding-agent";
 import type { AgentToolResult } from "@seaagents/fan-agent-core";
+import { executeMcpTool } from "./executor.js";
 
 // ──────────────────────────────────────────────────
 // JSON Schema → TypeBox
@@ -143,13 +144,17 @@ export interface McpToolDescriptor {
  * This abstraction allows mcpToolToDefinition to work with both real
  * MCP Client instances and test doubles.
  *
- * The full call/execute wire-up lands in F-1.7.
+ * The content block shape mirrors the MCP SDK CallToolResult content union.
  */
 export interface AdapterClient {
 	callTool(
 		params: { name: string; arguments?: Record<string, unknown> },
 		options?: { signal?: AbortSignal; onprogress?: (progress: any) => void },
-	): Promise<{ content: Array<{ type: string; text?: string }>; isError?: boolean }>;
+	): Promise<{
+		content?: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
+		isError?: boolean;
+		structuredContent?: Record<string, unknown>;
+	}>;
 }
 
 // ──────────────────────────────────────────────────
@@ -163,11 +168,7 @@ export interface AdapterClient {
  * - name: normalized as `mcp__<serverId>__<toolName>` (via normalizeToolName)
  * - description: from mcpTool.description (or a fallback)
  * - parameters: MCP inputSchema converted to TypeBox (via jsonSchemaToTypeBox)
- * - execute: delegates to client.callTool() with the parsed parameters
- *
- * For this F-1.6 milestone the execute() is a basic placeholder that maps
- * text content. The full call/execute mapping (image content, structuredContent,
- * compatibility result, etc.) lands in F-1.7.
+ * - execute: delegates to executeMcpTool (text/image mapping, timeout, error handling)
  */
 export function mcpToolToDefinition(
 	serverId: string,
@@ -186,16 +187,12 @@ export function mcpToolToDefinition(
 			_onUpdate?: any,
 			_ctx?: ExtensionContext,
 		) => {
-			const result = await client.callTool(
-				{ name: mcpTool.name, arguments: params as Record<string, unknown> },
-				{ signal },
+			return executeMcpTool(
+				(args, opts) => client.callTool(args, opts),
+				mcpTool.name,
+				params as Record<string, unknown>,
+				signal,
 			);
-			return {
-				content: result.content
-					.filter((c) => c.type === "text")
-					.map((c) => ({ type: "text" as const, text: c.text ?? "" })),
-				details: {},
-			} as AgentToolResult<any>;
 		},
 	};
 }
