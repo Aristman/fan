@@ -79,11 +79,11 @@ export interface McpClientManager {
 /**
  * Create an McpClientManager that owns per-server MCP Client instances.
  *
- * @param pi - Extension API for tool registration/unregistration
+ * @param fan - Extension API for tool registration/unregistration
  * @param permissions - Permission gate for tool call filtering
  */
 export function createMcpClientManager(
-	pi: ExtensionAPI,
+	fan: ExtensionAPI,
 	permissions: PermissionGate,
 ): McpClientManager {
 	const entries: ServerEntry[] = [];
@@ -106,7 +106,7 @@ export function createMcpClientManager(
 	 * Handle a server crash (transport closed unexpectedly).
 	 *
 	 * F-1.17: Sets status to "unavailable" and unregisters all tools
-	 * that were registered for this server via pi.unregisterTool().
+	 * that were registered for this server via fan.unregisterTool().
 	 *
 	 * F-3.4: If config.autoRestart is true, attempts to reconnect
 	 * the server with exponential backoff (1s, 2s, 4s, 8s, 16s)
@@ -123,7 +123,7 @@ export function createMcpClientManager(
 		);
 		for (const toolName of entry.toolNames) {
 			try {
-				pi.unregisterTool(toolName);
+				fan.unregisterTool(toolName);
 			} catch {
 				// Ignore per-tool errors; keep going
 			}
@@ -242,16 +242,16 @@ export function createMcpClientManager(
 			// Remove tools that no longer exist
 			for (const oldName of entry.toolNames) {
 				if (!newToolNames.has(oldName)) {
-					pi.unregisterTool(oldName);
+					fan.unregisterTool(oldName);
 				}
 			}
 
 			// Add new tools / update changed tools
 			for (const { name, def } of newDefs) {
 				if (oldToolSet.has(name)) {
-					pi.updateTool(name, def);
+					fan.updateTool(name, def);
 				} else {
-					pi.registerTool(def);
+					fan.registerTool(def);
 				}
 			}
 
@@ -379,7 +379,7 @@ export function createMcpClientManager(
 					mcpTool as any,
 					adapterClient,
 				);
-				pi.registerTool(def as any);
+				fan.registerTool(def as any);
 				entry.toolNames.push(def.name);
 			}
 
@@ -428,7 +428,7 @@ export function createMcpClientManager(
 				(e) => e.status === "connected",
 			).length;
 			if (connected > 0) {
-				pi.events.emit("mcp:catalog", { servers: entries });
+				fan.events.emit("mcp:catalog", { servers: entries });
 			}
 		},
 

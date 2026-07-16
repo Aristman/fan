@@ -60,7 +60,7 @@
 - **TDD-тесты:**
   - [ ] **TC-F1.1-1:** `unregisterTool` удаляет tool из `_toolRegistry`
     - *Условие:* extension зарегистрировало два tool через `registerTool`; `AgentSession._toolRegistry` имеет обе записи
-    - *Шаги:* вызвать `pi.unregisterTool("firstTool")`
+    - *Шаги:* вызвать `fan.unregisterTool("firstTool")`
     - *Ожидаемый результат:* `getToolDefinition("firstTool")` возвращает `undefined`; `getToolDefinition("secondTool")` возвращает дефиницию
 - **Критерии приёмки:**
   1. В `extensions/types.ts` интерфейс `ExtensionAPI` содержит метод `unregisterTool(name: string): void`
@@ -77,11 +77,11 @@
 - **TDD-тесты:**
   - [ ] **TC-F1.2-1:** `updateTool` заменяет дефиницию существующего tool
     - *Условие:* tool `read_file` зарегистрирован с `description = "old"`; новая дефиниция имеет `description = "new"`
-    - *Шаги:* вызвать `pi.updateTool("read_file", newDef)`
+    - *Шаги:* вызвать `fan.updateTool("read_file", newDef)`
     - *Ожидаемый результат:* `getToolDefinition("read_file").description === "new"`
   - [ ] **TC-F1.2-2:** `updateTool` создаёт tool, если его не было
     - *Условие:* tool `read_file` не зарегистрирован
-    - *Шаги:* вызвать `pi.updateTool("read_file", newDef)`
+    - *Шаги:* вызвать `fan.updateTool("read_file", newDef)`
     - *Ожидаемый результат:* tool зарегистрирован, как при `registerTool`
 - **Критерии приёмки:**
   1. Метод `updateTool(name: string, tool: ToolDefinition): void` добавлен в `ExtensionAPI`
@@ -97,13 +97,13 @@
 #### ✅ F-1.3 [CLI]: FAN Store extension packaging
 - **Приоритет:** P0
 - **Слой:** [CLI]
-- **Описание:** Создать пакет `packages/mcp-extension/` (или external repo) с манифестом `package.json`, где `"fan":{"extensions":["dist/index.js"]}`. Extension factory экспортируется как default — `createMcpExtension(pi: ExtensionAPI)`. Обеспечить компилируемость через tsgo в Bun-compatible bundle. Подготовить tar.gz для FAN Store.
+- **Описание:** Создать пакет `packages/mcp-extension/` (или external repo) с манифестом `package.json`, где `"fan":{"extensions":["dist/index.js"]}`. Extension factory экспортируется как default — `createMcpExtension(fan: ExtensionAPI)`. Обеспечить компилируемость через tsgo в Bun-compatible bundle. Подготовить tar.gz для FAN Store.
 - **Зависимости:** F-1.1, F-1.2 (использует refresh через эти методы)
 - **TDD-тесты:**
   - [ ] **TC-F1.3-1:** Extension loading: framework загружает `fan-mcp` через jiti
     - *Условие:* extension развёрнут в `~/.fan/agent/extensions/fan-mcp/` с манифестом
     - *Шаги:* запустить FAN, framework загружает extension
-    - *Ожидаемый результат:* `pi.on("session_start", ...)` зарегистрирован; инструменты появляются после подключения к серверам
+    - *Ожидаемый результат:* `fan.on("session_start", ...)` зарегистрирован; инструменты появляются после подключения к серверам
 - **Критерии приёмки:**
   1. `packages/mcp-extension/package.json` имеет валидный `fan` манифест
   2. Extension компилируется через `tsgo` без ошибок
@@ -167,7 +167,7 @@
 - **TDD-тесты:**
   - [ ] **TC-F1.6-1:** `tools/list` → `registerTool`: 3 tools с разными схемами
     - *Условие:* mock MCP-сервер возвращает 3 tool: `read_file` (object props), `search` (string enum), `query` (nested object)
-    - *Шаги:* открыть клиент → `listTools()` → для каждого вызвать `mcpToolToDefinition("fs", tool, client)` → `pi.registerTool(def)`
+    - *Шаги:* открыть клиент → `listTools()` → для каждого вызвать `mcpToolToDefinition("fs", tool, client)` → `fan.registerTool(def)`
     - *Ожидаемый результат:* 3 tool в `_toolRegistry` с именами `mcp__fs__read_file` и т.д.; TypeBox schema валидна (параметры парсятся по схеме)
   - [ ] **TC-F1.6-2:** Неподдерживаемая JSON Schema ($ref) → `Type.Any()` + warning
     - *Условие:* tool с `inputSchema: {$ref: "..."}` (без поддержки в конвертере)
@@ -256,7 +256,7 @@
 #### ✅ F-1.10 (commit 666c5f4) [BIZ]: tool_call permission gate
 - **Приоритет:** P0
 - **Слой:** [BIZ]
-- **Описание:** В extension factory зарегистрировать `pi.on("tool_call", handler)`. Handler проверяет: если `toolName` соответствует `mcp__<serverId>__<tool>` и в runtime config `permissions.serverId.deny` есть этот tool — вернуть `{block: true, reason: "..."}`. Иначе — ничего. Использовать существующий паттерн из `permission-gate.ts`.
+- **Описание:** В extension factory зарегистрировать `fan.on("tool_call", handler)`. Handler проверяет: если `toolName` соответствует `mcp__<serverId>__<tool>` и в runtime config `permissions.serverId.deny` есть этот tool — вернуть `{block: true, reason: "..."}`. Иначе — ничего. Использовать существующий паттерн из `permission-gate.ts`.
 - **Зависимости:** F-1.9
 - **TDD-тесты:**
   - [ ] **TC-F1.10-1:** Permission gate блокирует `mcp__fs__delete_file`
@@ -264,7 +264,7 @@
     - *Шаги:* LLM вызывает `mcp__fs__delete_file`; handler срабатывает
     - *Ожидаемый результат:* handler возвращает `{block: true, reason: "Tool delete_file denied by server policy"}`; LLM получает ошибку
 - **Критерии приёмки:**
-  1. `pi.on("tool_call", ...)` handler зарегистрирован при init extension
+  1. `fan.on("tool_call", ...)` handler зарегистрирован при init extension
   2. Handler проверяет `toolName.startsWith("mcp__")` и парсит serverId/toolName
   3. Block возвращает `{block: true, reason: string}`, инструмент НЕ выполняется
   4. Тест: `tc-F1.10-1` + 1 негативный тест (разрешённый tool проходит)
@@ -333,15 +333,15 @@
 #### ✅ F-1.14 (commit 2f464db) [BIZ]: Graceful shutdown с cleanup stdio процессов
 - **Приоритет:** P0
 - **Слой:** [BIZ]
-- **Описание:** В `pi.on("session_shutdown")` handler: для каждого stdio MCP-сервера — закрыть `client`, дёрнуть `transport.close()`. StdioClientTransport делает graceful shutdown (stdin.end → SIGTERM через 2s → SIGKILL через 2s). Дождаться завершения всех cleanup-тасков в течение 5s (не больше).
+- **Описание:** В `fan.on("session_shutdown")` handler: для каждого stdio MCP-сервера — закрыть `client`, дёрнуть `transport.close()`. StdioClientTransport делает graceful shutdown (stdin.end → SIGTERM через 2s → SIGKILL через 2s). Дождаться завершения всех cleanup-тасков в течение 5s (не больше).
 - **Зависимости:** F-1.4, F-1.5
 - **TDD-тесты:**
   - [ ] **TC-F1.14-1:** Stdio процесс корректно завершается на shutdown
     - *Условие:* stdio MCP процесс запущен; есть активный tool call
-    - *Шаги:* вызвать `pi.emit("session_shutdown")`; дождаться завершения cleanup
+    - *Шаги:* вызвать `fan.emit("session_shutdown")`; дождаться завершения cleanup
     - *Ожидаемый результат:* child process PID больше не в `ps`; client.close() вернул true; весь cleanup за < 5s
 - **Критерии приёмки:**
-  1. `pi.on("session_shutdown")` handler делает `client.close()` для всех серверов
+  1. `fan.on("session_shutdown")` handler делает `client.close()` для всех серверов
   2. Stdio процесс получает SIGTERM (через 2s — SIGKILL)
   3. Cleanup не превышает 5s total (иначе warning в лог)
   4. Активные pending tool calls получают ошибку до завершения cleanup
@@ -520,7 +520,7 @@
 #### ✅ F-2.5 (commit 7eaecc4) [BIZ]: orchestrator: broker-handler с EventBus подпиской
 - **Приоритет:** P1
 - **Слой:** [BIZ]
-- **Описание:** Создать модуль `broker-handler.js` в orchestrator extension. На `session_start` подписаться на `pi.events.on("mcp:catalog", ...)`. Сохранять нормализованный catalog для routing tool calls. Поддерживать фильтрацию по worker profile (`allowedTools` для worker type).
+- **Описание:** Создать модуль `broker-handler.js` в orchestrator extension. На `session_start` подписаться на `fan.events.on("mcp:catalog", ...)`. Сохранять нормализованный catalog для routing tool calls. Поддерживать фильтрацию по worker profile (`allowedTools` для worker type).
 - **Зависимости:** F-2.3
 - **TDD-тесты:**
   - [ ] **TC-F2.5-1:** Подписка на `"mcp:catalog"` получает каталог от fan-mcp
@@ -528,7 +528,7 @@
     - *Шаги:* fan-mcp emit `"mcp:catalog"`; orchestrator подписан
     - *Ожидаемый результат:* broker-handler catalog содержит все MCP tools
 - **Критерии приёмки:**
-  1. `pi.events.on("mcp:catalog", handler)` зарегистрирован в session_start
+  1. `fan.events.on("mcp:catalog", handler)` зарегистрирован в session_start
   2. Catalog filter применяется по worker type (explore → read-only)
   3. При `mcp:catalog` re-emit от fan-mcp — broker sync с актуальным состоянием
 - **Ожидаемый результат:** `broker-handler.js` + 2 unit-теста
@@ -633,7 +633,7 @@
 #### ✅ F-3.5 [BIZ]: /mcp status и /mcp reload команды
 - **Приоритет:** P2
 - **Слой:** [BIZ]
-- **Описание:** Зарегистрировать 2 команды через `pi.registerCommand()`: `/mcp status` — таблица серверов со статусом, количеством tools, версией, transport; `/mcp reload` — закрыть все клиенты, перезагрузить config, переподключиться.
+- **Описание:** Зарегистрировать 2 команды через `fan.registerCommand()`: `/mcp status` — таблица серверов со статусом, количеством tools, версией, transport; `/mcp reload` — закрыть все клиенты, перезагрузить config, переподключиться.
 - **Зависимости:** Phase 1
 - **TDD-тесты:** integration test запуска каждой команды
 - **Критерии приёмки:**

@@ -10,5 +10,5 @@ import type { OrchestratorConfig } from "./types.js";
 /**
  * Register all orchestrator tools with the extension API.
  */
-export declare function registerOrchestratorTools(pi: ExtensionAPI, taskManager: TaskManager, config: OrchestratorConfig): void;
+export declare function registerOrchestratorTools(fan: ExtensionAPI, taskManager: TaskManager, config: OrchestratorConfig): void;
 //# sourceMappingURL=orchestrator-tools.d.ts.map

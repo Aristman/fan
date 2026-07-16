@@ -84,33 +84,33 @@ async function mcpCommandHandler(
 	}
 }
 
-export const mcpExtension: ExtensionFactory = (pi: ExtensionAPI) => {
+export const mcpExtension: ExtensionFactory = (fan: ExtensionAPI) => {
 	const configLoader = createMcpConfigLoader();
 	const permissions = createPermissionGate();
 
-	pi.registerCommand("mcp", {
+	fan.registerCommand("mcp", {
 		description: "MCP server status and management",
 		handler: (args, ctx) => mcpCommandHandler(args, ctx, configLoader),
 	});
 
-	pi.on("session_start", async () => {
+	fan.on("session_start", async () => {
 		const config = await configLoader.load();
 		permissions.updateConfig(config.servers);
 		if (config.servers.length === 0) {
 			currentManager = null;
 			return; // No servers configured — silent no-op
 		}
-		const manager = createMcpClientManager(pi, permissions);
+		const manager = createMcpClientManager(fan, permissions);
 		await manager.connectAll(config);
 		currentManager = manager;
 		// Manager stays alive for the session — its transport references
 		// are owned by the manager and disposed on session_shutdown.
-		pi.events.emit("mcp:ready", { servers: config.servers.length });
+		fan.events.emit("mcp:ready", { servers: config.servers.length });
 	});
 
-	pi.on("tool_call", (event) => permissions.gate(event));
+	fan.on("tool_call", (event) => permissions.gate(event));
 
-	pi.on("session_shutdown", async () => {
+	fan.on("session_shutdown", async () => {
 		if (currentManager) {
 			await currentManager.dispose();
 			currentManager = null;

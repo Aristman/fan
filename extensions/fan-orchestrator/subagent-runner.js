@@ -1,7 +1,7 @@
 /**
  * Subprocess Runner — Spawns fan subprocesses for subagent execution
  *
- * Architecture (pi-style, ported from pi-orchestrator/rpc.ts):
+ * Architecture (fan-style, ported from fan-orchestrator/rpc.ts):
  * - ONE timer: stallTimer — resets on ANY stdout data from the subprocess
  * - NO progressTimer — actively streaming LLM emits stdout continuously
  *   so stallTimer never fires during generation
@@ -219,12 +219,12 @@ function formatDuration(ms) {
     return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
 }
 
-// ── Core worker spawn (pi-style) ──────────────────────────────────────────
+// ── Core worker spawn (fan-style) ───────────────────────────────────────────
 
 /**
  * Spawn a fan worker in RPC mode. Returns a promise that resolves when done.
  *
- * Protocol flow (mirrors pi-orchestrator):
+ * Protocol flow (mirrors fan-orchestrator):
  * 1. Send `prompt` with agent instructions + task (after 500ms delay)
  * 2. Poll `get_state` every 2s until `isStreaming` becomes false (after 1s delay post-prompt-ack)
  * 3. Send `get_last_assistant_text` to get the result
@@ -569,7 +569,7 @@ function formatToolCallsBody(toolCalls, maxItems = 12) {
 
 /**
  * Build the status text shown as the worker content (header + body).
- * Mirrors pi-orchestrator's buildWorkerStatusText.
+ * Mirrors fan-orchestrator's buildWorkerStatusText.
  */
 /**
  * Build worker body content (status line + tool calls list).

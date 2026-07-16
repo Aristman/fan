@@ -4,7 +4,7 @@
 > **v7.5.0** — Parallel read-only agents: `toWorkerType` now uses `agent.readOnly` flag instead of hardcoded whitelist. All readOnly agents (code-research, explore, plan, verify) run in parallel with independent slot pools. Write agents (implement, bug-fix, tests-impl, docs-impl) remain exclusive.
 > Pipeline Mode: `/pipeline` command, auto-update hooks, state recovery, conventional-commits policy.
 
-Портирован из pi-orchestrator с сохранением стабильной архитектуры воркеров. Расширение для FAN, добавляющее режим координатора, доску задач, 8 специализированных воркеров, систему разрешений и Pipeline Mode для многофазных проектов.
+Портирован из fan-orchestrator с сохранением стабильной архитектуры воркеров. Расширение для FAN, добавляющее режим координатора, доску задач, 8 специализированных воркеров, систему разрешений и Pipeline Mode для многофазных проектов.
 
 ## Highlights
 
@@ -19,7 +19,7 @@
 
 ## Architecture
 
-### Worker lifecycle (pi-style)
+### Worker lifecycle (fan-style)
 - **`stallTimer`** — единственный таймер зависания, сбрасывается на любой stdout
 - **Recursive poll** — `setTimeout(2000)` рекурсивно, без ограничений по итерациям
 - **RPC JSONL protocol** — stdin/stdout взаимодействие с subprocess: `prompt`, `get_state`, `get_last_assistant_text`
@@ -42,7 +42,7 @@
 | `config.js` | Загрузка/сохранение конфигурации (`~/.fan/agent/extensions/fan-orchestrator/config.json`) |
 | `permissions.js` | Проверка опасных команд (делегирует в core `@seaagents/fan-coding-agent`) |
 | `audit.js` | JSONL-аудит в `~/.fan/agent/audit/orchestrator.log` |
-| `subagent-runner.js` | Запуск воркеров, pi-style RPC, stall timer |
+| `subagent-runner.js` | Запуск воркеров, fan-style RPC, stall timer |
 | `task-manager.js` | Управление задачами: создание, обновление, статусы, виджет |
 | `workers.js` | Реестр активных воркеров: ID, статус, метрики |
 | `task-complexity.js` | L1/L2/L3 оценка сложности задач |
