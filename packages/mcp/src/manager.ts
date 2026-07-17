@@ -57,7 +57,7 @@ interface ServerEntry {
 	config: McpServerConfig;
 	client: Client | null;
 	transport: Transport | null;
-	status: "connecting" | "connected" | "unavailable";
+	status: "connecting" | "connected" | "unavailable" | "disabled";
 	toolNames: string[];
 	connectError?: string;
 	/** AdapterClient used to call tools on this server. */
@@ -68,11 +68,31 @@ interface ServerEntry {
 	firstCrashAt?: number;
 }
 
+/**
+ * Public, read-only view of a server entry for the widget.
+ */
+export interface ServerInfo {
+	index: number;
+	name: string;
+	transport: "stdio" | "streamable-http";
+	status: "connecting" | "connected" | "unavailable" | "disabled";
+	toolNames: string[];
+	connectError?: string;
+	enabled: boolean;
+}
+
 export interface McpClientManager {
 	connectAll(config: McpConfig): Promise<void>;
 	dispose(): Promise<void>;
 	/** Exposed for tests only — returns current internal state. */
 	_entries(): ServerEntry[];
+
+	// New public API for TUI widget
+	getServers(): ServerInfo[];
+	connectOne(index: number): Promise<void>;
+	disconnectOne(index: number): Promise<void>;
+	setToolEnabled(serverIdx: number, toolName: string, enabled: boolean): Promise<void>;
+	reloadConfig(configLoader: import("./config.js").ConfigLoader): Promise<string>;
 }
 
 /**
@@ -81,7 +101,7 @@ export interface McpClientManager {
  * @param fan - Extension API for tool registration/unregistration
  * @param permissions - Permission gate for tool call filtering
  */
-export function createMcpClientManager(fan: ExtensionAPI, _permissions: PermissionGate): McpClientManager {
+export function createMcpClientManager(fan: ExtensionAPI, permissions: PermissionGate): McpClientManager {
 	const entries: ServerEntry[] = [];
 
 	// ── Transport factory ──────────────────────────────────────────
@@ -368,6 +388,12 @@ export function createMcpClientManager(fan: ExtensionAPI, _permissions: Permissi
 		return entry;
 	}
 
+	// ── emit catalog helper ───────────────────────────────────────
+
+	function emitCatalog(): void {
+		fan.events.emit("mcp:catalog", { servers: entries });
+	}
+
 	// ── Public API ─────────────────────────────────────────────────
 
 	return {
@@ -389,11 +415,8 @@ export function createMcpClientManager(fan: ExtensionAPI, _permissions: Permissi
 				}
 			}
 
-			// Emit catalog event if at least one server connected
-			const connected = entries.filter((e) => e.status === "connected").length;
-			if (connected > 0) {
-				fan.events.emit("mcp:catalog", { servers: entries });
-			}
+			// Emit catalog event
+			fan.events.emit("mcp:catalog", { servers: entries });
 		},
 
 		/**
@@ -440,6 +463,123 @@ export function createMcpClientManager(fan: ExtensionAPI, _permissions: Permissi
 
 		_entries(): ServerEntry[] {
 			return entries;
+		},
+
+		getServers(): ServerInfo[] {
+			return entries.map(e => ({
+				index: e.index,
+				name: e.config.command || e.config.url || `Server #${e.index}`,
+				transport: e.config.transport,
+				status: e.status,
+				toolNames: [...e.toolNames],
+				connectError: e.connectError,
+				enabled: e.status === "connected" || e.status === "connecting",
+			}));
+		},
+
+		async connectOne(index: number): Promise<void> {
+			if (!Number.isInteger(index) || index < 0 || index >= entries.length) {
+				throw new RangeError(`Server index ${index} out of range (0..${entries.length - 1})`);
+			}
+
+			// If already connected/connecting — disconnect first to avoid leaking transport/client
+			const existing = entries[index];
+			if (existing.status === "connected" || existing.status === "connecting") {
+				await this.disconnectOne(index);
+			}
+
+			const cfg = existing.config;
+			const newEntry = await connectOne(index, cfg);
+			entries[index] = newEntry;
+
+			emitCatalog();
+		},
+
+		async disconnectOne(index: number): Promise<void> {
+			if (index < 0 || index >= entries.length) {
+				throw new RangeError(`Server index ${index} out of range (0..${entries.length - 1})`);
+			}
+
+			const entry = entries[index];
+			if (entry.status === "unavailable" || entry.status === "disabled") return;
+
+			// Mark as disabled
+			entry.status = "disabled";
+
+			// Unregister all tools
+			for (const name of entry.toolNames) {
+				try {
+					fan.unregisterTool(name);
+				} catch {
+					// Best-effort cleanup
+				}
+			}
+			entry.toolNames = [];
+
+			// Close client + transport
+			if (entry.client) {
+				try {
+					await entry.client.close();
+				} catch {
+					// Best-effort
+				}
+			}
+			if (entry.transport) {
+				try {
+					await entry.transport.close();
+				} catch {
+					// Best-effort
+				}
+			}
+			entry.client = null;
+			entry.transport = null;
+
+			emitCatalog();
+		},
+
+		async setToolEnabled(serverIdx: number, toolName: string, enabled: boolean): Promise<void> {
+			if (serverIdx < 0 || serverIdx >= entries.length) {
+				throw new RangeError(`Server index ${serverIdx} out of range (0..${entries.length - 1})`);
+			}
+
+			const entry = entries[serverIdx];
+			const denied = new Set(entry.config.deniedTools ?? []);
+
+			if (enabled) {
+				denied.delete(toolName);
+			} else {
+				denied.add(toolName);
+			}
+
+			// Mutate config
+			entry.config = { ...entry.config, deniedTools: [...denied] };
+			permissions.updateConfig(entries.map(e => e.config));
+
+			// Re-register tools via diff-based refresh
+			if (entry.client && entry.status === "connected") {
+				await refreshServerTools(entry);
+			}
+
+			emitCatalog();
+		},
+
+		async reloadConfig(configLoader: import("./config.js").ConfigLoader): Promise<string> {
+			// dispose all current connections
+			const closePromises = entries.map(async (entry) => {
+				if (entry.client) {
+					try { await entry.client.close(); } catch {}
+				}
+				if (entry.transport) {
+					try { await entry.transport.close(); } catch {}
+				}
+			});
+			await Promise.allSettled(closePromises);
+
+			entries.length = 0;
+			const config = await configLoader.load();
+			permissions.updateConfig(config.servers);
+			await this.connectAll(config);
+			return `Reloaded: ${entries.length} servers`;
 		},
 	};
 }

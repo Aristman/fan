@@ -41,6 +41,7 @@
 	"dependencies": {
 		"@modelcontextprotocol/sdk": "^1.29.0",
 		"@seaagents/fan-agent-core": "*",
+		"@seaagents/fan-tui": "*",
 		"@sinclair/typebox": "^0.34.0"
 	},
 	"devDependencies": {

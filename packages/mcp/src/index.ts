@@ -15,16 +15,21 @@
  * registered in later sub-functions (F-1.6 + F-1.7 + F-1.15).
  */
 
-import type { ExtensionAPI, ExtensionCommandContext, ExtensionFactory } from "@seaagents/fan-coding-agent";
+import type { Component, TUI } from "@seaagents/fan-tui";
+import type { ExtensionAPI, ExtensionCommandContext, ExtensionFactory, Theme } from "@seaagents/fan-coding-agent";
 import type { ConfigLoader } from "./config.js";
 import { createMcpConfigLoader } from "./config.js";
-import type { McpClientManager } from "./manager.js";
+import { type McpClientManager, type ServerInfo } from "./manager.js";
 import { createMcpClientManager } from "./manager.js";
 import { createPermissionGate } from "./permissions.js";
+import { McpWidget } from "./widget.js";
 
 // Module-scope reference to the current session's manager.
 // Used by the /mcp command handlers to inspect and reload.
 let currentManager: McpClientManager | null = null;
+
+// Track whether the MCP widget overlay is currently open (for toggle)
+let widgetOpen = false;
 
 /**
  * Render a status table of all MCP server connections.
@@ -49,6 +54,84 @@ function renderMcpStatus(): string {
 }
 
 /**
+ * Render a simplified list of MCP servers.
+ */
+function renderMcpList(): string {
+	const servers = currentManager?.getServers() ?? [];
+	if (servers.length === 0) {
+		return "No MCP servers configured.";
+	}
+
+	const rows = servers.map(s => {
+		const statusIcon = s.status === "connected" ? "✓" : s.status === "connecting" ? "⟳" : s.status === "disabled" ? "○" : "✗";
+		const tools = s.toolNames.length > 0 ? `${s.toolNames.length} tools` : "0 tools";
+		const error = s.connectError ? ` (${s.connectError})` : "";
+		return `${statusIcon} [#${s.index}] ${s.name} — ${s.status} — ${tools}${error}`;
+	});
+
+	return ["MCP Servers:", ...rows].join("\n");
+}
+
+/**
+ * Find a server by index (string or number) or by name.
+ * Returns the index or -1 if not found.
+ */
+function findServer(servers: import("./manager.js").ServerInfo[], arg: string): number {
+	// Try numeric index first
+	const num = Number(arg);
+	if (!Number.isNaN(num)) {
+		const idx = servers.findIndex(s => s.index === num);
+		if (idx !== -1) return idx;
+	}
+	// Try name match
+	return servers.findIndex(s => s.name.toLowerCase() === arg.toLowerCase());
+}
+
+/**
+ * Handle connect/disconnect subcommand for a specific server.
+ */
+async function handleConnectDisconnect(
+	action: "connect" | "disconnect",
+	target: string,
+	ctx: ExtensionCommandContext,
+): Promise<void> {
+	if (!currentManager) {
+		ctx.ui.notify("No MCP servers configured.", "warning");
+		return;
+	}
+
+	const servers = currentManager.getServers();
+	const idx = findServer(servers, target);
+
+	if (idx === -1 || idx >= servers.length) {
+		ctx.ui.notify(`Server not found: ${target}`, "warning");
+		return;
+	}
+
+	const server = servers[idx];
+
+	try {
+		if (action === "connect") {
+			if (server.status === "connected") {
+				ctx.ui.notify(`Server "${server.name}" is already connected.`, "info");
+				return;
+			}
+			await currentManager.connectOne(server.index);
+			ctx.ui.notify(`Connected: ${server.name}`, "info");
+		} else {
+			if (server.status === "unavailable" || server.status === "disabled") {
+				ctx.ui.notify(`Server "${server.name}" is already disconnected.`, "info");
+				return;
+			}
+			await currentManager.disconnectOne(server.index);
+			ctx.ui.notify(`Disconnected: ${server.name}`, "info");
+		}
+	} catch (e: any) {
+		ctx.ui.notify(`Failed to ${action} "${server.name}": ${e?.message ?? String(e)}`, "error");
+	}
+}
+
+/**
  * Reload all MCP connections: dispose all clients, reload config,
  * and reconnect.
  */
@@ -58,6 +141,12 @@ async function reloadMcp(configLoader: ConfigLoader): Promise<string> {
 		currentManager = null;
 	}
 	const config = await configLoader.load();
+	if (config.servers.length > 0) {
+		const manager = createMcpClientManager(fanInstance, permissions);
+		await manager.connectAll(config);
+		currentManager = manager;
+		fanInstance.events.emit("mcp:ready", { servers: config.servers.length });
+	}
 	return `Reloaded: ${config.servers.length} servers`;
 }
 
@@ -66,24 +155,110 @@ async function reloadMcp(configLoader: ConfigLoader): Promise<string> {
  */
 async function mcpCommandHandler(
 	args: string,
-	_ctx: ExtensionCommandContext,
+	ctx: ExtensionCommandContext,
 	configLoader: ConfigLoader,
 ): Promise<void> {
 	const subcommand = args.trim().split(/\s+/)[0] || "status";
 
 	if (subcommand === "status") {
-		_ctx.ui.notify(renderMcpStatus(), "info");
+		ctx.ui.notify(renderMcpStatus(), "info");
 	} else if (subcommand === "reload") {
 		const msg = await reloadMcp(configLoader);
-		_ctx.ui.notify(msg, "info");
+		ctx.ui.notify(msg, "info");
+	} else if (subcommand === "list") {
+		const lines = renderMcpList();
+		ctx.ui.notify(lines, "info");
+	} else if (subcommand === "connect" || subcommand === "disconnect") {
+		const target = args.trim().split(/\s+/).slice(1).join(" ");
+		await handleConnectDisconnect(subcommand as "connect" | "disconnect", target, ctx);
 	} else {
-		_ctx.ui.notify(`Unknown subcommand: ${subcommand}. Use 'status' or 'reload'.`, "warning");
+		ctx.ui.notify(`Unknown subcommand: ${subcommand}. Use 'status', 'list', 'reload', '<name> connect', or '<name> disconnect'.`, "warning");
 	}
 }
 
+/**
+ * Show the MCP widget as an overlay.
+ */
+function showMcpWidget(fan: ExtensionAPI, ctx: ExtensionCommandContext): void {
+	const servers = currentManager?.getServers() ?? [];
+
+	ctx.ui.custom(
+		(tui, theme, _kb, done) => {
+			const widget = new McpWidget({
+				theme,
+				initialServers: servers,
+				callbacks: {
+					onConnect: async (serverIdx: number) => {
+						try {
+							await currentManager?.connectOne(serverIdx);
+						} catch (e: any) {
+							ctx.ui.notify(`Connect failed: ${e?.message ?? String(e)}`, "error");
+						}
+						widget.updateServers(currentManager?.getServers() ?? []);
+						tui.requestRender();
+					},
+					onDisconnect: async (serverIdx: number) => {
+						try {
+							await currentManager?.disconnectOne(serverIdx);
+						} catch (e: any) {
+							ctx.ui.notify(`Disconnect failed: ${e?.message ?? String(e)}`, "error");
+						}
+						widget.updateServers(currentManager?.getServers() ?? []);
+						tui.requestRender();
+					},
+					onToggleTool: async (serverIdx: number, toolName: string, enabled: boolean) => {
+						try {
+							await currentManager?.setToolEnabled(serverIdx, toolName, enabled);
+						} catch (e: any) {
+							ctx.ui.notify(`Toggle tool failed: ${e?.message ?? String(e)}`, "error");
+						}
+						widget.updateServers(currentManager?.getServers() ?? []);
+						tui.requestRender();
+					},
+					onClose: () => {
+						done(undefined);
+						widgetOpen = false;
+					},
+				},
+			});
+
+			// Subscribe to external catalog updates
+			const unsub = fan.events.on("mcp:catalog", () => {
+				widget.updateServers(currentManager?.getServers() ?? []);
+				tui.requestRender();
+			});
+
+			// McpWidget is a Component; attach dispose for cleanup
+			const result = widget as Component & { dispose?(): void };
+			result.dispose = () => {
+				unsub();
+			};
+			return result;
+		},
+		{
+			overlay: true,
+			overlayOptions: {
+				anchor: "center",
+				width: "80%",
+			},
+		},
+	).then(() => {
+		widgetOpen = false;
+	}).catch(() => {
+		widgetOpen = false;
+	});
+
+	widgetOpen = true;
+}
+
+// Module-scope reference to ExtensionAPI for use in reloadMcp
+let fanInstance: ExtensionAPI;
+let permissions: ReturnType<typeof createPermissionGate>;
+
 export const mcpExtension: ExtensionFactory = (fan: ExtensionAPI) => {
+	fanInstance = fan;
 	const configLoader = createMcpConfigLoader();
-	const permissions = createPermissionGate();
+	permissions = createPermissionGate();
 
 	fan.registerCommand("mcp", {
 		description: "MCP server status and management",
@@ -103,6 +278,23 @@ export const mcpExtension: ExtensionFactory = (fan: ExtensionAPI) => {
 		// Manager stays alive for the session — its transport references
 		// are owned by the manager and disposed on session_shutdown.
 		fan.events.emit("mcp:ready", { servers: config.servers.length });
+	});
+
+	// Register global shortcuts: alt+m and f4 open/close the MCP widget
+	fan.registerShortcut("alt+m", {
+		description: "MCP server manager",
+		handler: async (ctx) => {
+			if (widgetOpen) return;
+			showMcpWidget(fan, ctx as any);
+		},
+	});
+
+	fan.registerShortcut("f4", {
+		description: "MCP server manager",
+		handler: async (ctx) => {
+			if (widgetOpen) return;
+			showMcpWidget(fan, ctx as any);
+		},
 	});
 
 	fan.on("tool_call", (event) => permissions.gate(event));

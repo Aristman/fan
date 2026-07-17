@@ -6,7 +6,21 @@
 
 import type { ExtensionAPI, ExtensionCommandContext } from "@seaagents/fan-coding-agent";
 import { describe, expect, it, vi } from "vitest";
+import type { ConfigLoader } from "../src/config.js";
 import { mcpExtension } from "../src/index.js";
+
+// Mock createMcpConfigLoader to return a mock that always returns empty config
+// This prevents tests from reading the real ~/.fan/agent/mcp.json on disk
+vi.mock("../src/config.js", async (importOriginal) => {
+	const actual = await importOriginal();
+	const mockLoader: ConfigLoader = {
+		load: vi.fn().mockResolvedValue({ servers: [] }),
+	};
+	return {
+		...actual,
+		createMcpConfigLoader: vi.fn().mockReturnValue(mockLoader),
+	};
+});
 
 /**
  * Create a minimal fake ExtensionAPI for testing.
