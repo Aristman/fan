@@ -97,17 +97,26 @@ function renderToolName(theme: Theme, name: string, enabled: boolean, selected: 
 
 function renderHeader(theme: Theme, width: number, title: string): string[] {
 	const sep = theme.fg("dim", "─".repeat(Math.max(2, width - 2)));
+	const titleVisible = visibleWidth(title);
+	// Truncate title if too long for the available width
+	const maxTitleWidth = Math.max(0, width - 4);
+	const finalTitle = titleVisible > maxTitleWidth ? truncateToWidth(title, maxTitleWidth) : title;
+	const finalTitleVisible = visibleWidth(finalTitle);
 	return [
 		theme.fg("dim", `╭${sep}╮`),
-		`│ ${theme.bold(title)}${" ".repeat(Math.max(0, width - title.length - 3))}│`,
+		`│ ${theme.bold(finalTitle)}${" ".repeat(Math.max(0, width - finalTitleVisible - 3))}│`,
 	];
 }
 
 function renderFooter(theme: Theme, width: number, text: string): string[] {
 	const sep = theme.fg("dim", "─".repeat(Math.max(2, width - 2)));
+	// Truncate footer text if too long for the available width
+	const maxTextWidth = Math.max(0, width - 4);
+	const finalText = visibleWidth(text) > maxTextWidth ? truncateToWidth(text, maxTextWidth) : text;
+	const textVisible = visibleWidth(finalText);
 	return [
 		theme.fg("dim", `├${sep}┤`),
-		`│ ${theme.fg("dim", text)}${" ".repeat(Math.max(0, width - text.length - 3))}│`,
+		`│ ${theme.fg("dim", finalText)}${" ".repeat(Math.max(0, width - textVisible - 3))}│`,
 		theme.fg("dim", `╰${sep}╯`),
 	];
 }
@@ -168,7 +177,8 @@ export class McpWidget implements Component {
 
 		const servers = this.state.servers;
 		if (servers.length === 0) {
-			lines.push(`│ ${this.theme.fg("dim", "No MCP servers configured.")}${" ".repeat(Math.max(0, width - 28))}│`);
+			const t = "No MCP servers configured.";
+			lines.push(`│ ${this.theme.fg("dim", t)}${" ".repeat(Math.max(0, width - visibleWidth(t) - 3))}│`);
 		} else {
 			const maxVisible = Math.max(1, 15);
 			const maxIdx = Math.min(servers.length, this.state.scrollOffset + maxVisible);
@@ -209,7 +219,8 @@ export class McpWidget implements Component {
 
 		if (!server) {
 			lines.push(...renderHeader(this.theme, width, "MCP Servers"));
-			lines.push(`│ ${this.theme.fg("dim", "Server not found.")}${" ".repeat(Math.max(0, width - 18))}│`);
+			const t = "Server not found.";
+			lines.push(`│ ${this.theme.fg("dim", t)}${" ".repeat(Math.max(0, width - visibleWidth(t) - 3))}│`);
 			lines.push(...renderFooter(this.theme, width, "Esc back to servers"));
 			return lines;
 		}
@@ -235,7 +246,13 @@ export class McpWidget implements Component {
 		].filter(Boolean);
 
 		for (const dl of detailLines) {
-			let padded = (dl as string).padEnd(width - 1, " ") + "│";
+			// pad using visible width since `dl` may contain ANSI escape codes
+			const dlVisible = visibleWidth(dl);
+			let padded = dl;
+			if (dlVisible < width) {
+				padded = dl + " ".repeat(width - dlVisible);
+			}
+			padded = padded + "│";
 			if (visibleWidth(padded) > width) padded = truncateLineToWidth(padded, width);
 			lines.push(padded);
 		}
@@ -251,7 +268,8 @@ export class McpWidget implements Component {
 
 		if (!server) {
 			lines.push(...renderHeader(this.theme, width, "MCP Servers"));
-			lines.push(`│ ${this.theme.fg("dim", "Server not found.")}${" ".repeat(Math.max(0, width - 18))}│`);
+			const t = "Server not found.";
+			lines.push(`│ ${this.theme.fg("dim", t)}${" ".repeat(Math.max(0, width - visibleWidth(t) - 3))}│`);
 			lines.push(...renderFooter(this.theme, width, "Esc back to servers"));
 			return lines;
 		}
@@ -263,7 +281,10 @@ export class McpWidget implements Component {
 
 		if (allTools.length === 0) {
 			lines.push(
-				`│ ${this.theme.fg("dim", "No tools available. Connect the server to see tools.")}${" ".repeat(Math.max(0, width - 52))}│`,
+				(() => {
+					const t = "No tools available. Connect the server to see tools.";
+					return `│ ${this.theme.fg("dim", t)}${" ".repeat(Math.max(0, width - visibleWidth(t) - 3))}│`;
+				})(),
 			);
 		} else {
 			const maxVisible = Math.max(1, 15);
@@ -278,7 +299,9 @@ export class McpWidget implements Component {
 				if (visibleWidth(line) > width) {
 					line = truncateLineToWidth(line, width);
 				} else {
-					line = line.padEnd(width - 1, " ") + "│";
+					// pad using visible width since line may contain ANSI codes
+					const v = visibleWidth(line);
+					line = v < width ? line + " ".repeat(width - v) + "│" : line + "│";
 				}
 				lines.push(line);
 			}

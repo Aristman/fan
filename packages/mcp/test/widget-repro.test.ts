@@ -226,3 +226,56 @@ describe("MCP widget no-notify-between-iterations", () => {
 		expect(ui.notify).not.toHaveBeenCalled();
 	});
 });
+
+/**
+ * Overflow guard: render() must never produce lines wider than `width`.
+ *
+ * Bug: when terminal is ~147 cols (fullscreen instead of overlay),
+ * hardcoded `width - 52` paddings caused lines 38+3=150 wide → TUI
+ * crashes mid-render → input freezes. Locks out ESC, Space, anything.
+ */
+describe("render overflow guard", () => {
+	it("renders all lines within width for various widths", () => {
+		const manager = makeMockManager();
+		const theme = makeMockTheme();
+
+		for (const width of [40, 60, 80, 100, 120, 147]) {
+			const widget = new McpWidget({ theme, manager, onAction: () => {} });
+			const lines = widget.render(width);
+			for (const [idx, line] of lines.entries()) {
+				// visible width may include ANSI escapes; compute it
+				const visible = (line.match(/\u001b\[[0-9;]*m/g) || []).reduce(() => 0, 0);
+				expect(visible || line.length, `line ${idx} (w=${line.length}) exceeds width ${width}: ${JSON.stringify(line.slice(0, 80))}`)
+					.toBeLessThanOrEqual(width);
+			}
+		}
+	});
+
+	it("renders tools empty-state line within width", () => {
+		const manager = makeMockManager({
+			getServers: () => [
+				{
+					index: 0,
+					name: "x",
+					transport: "stdio",
+					status: "unavailable",
+					toolNames: [],
+					connectError: undefined,
+					enabled: false,
+					deniedTools: [],
+				},
+			],
+		});
+		const theme = makeMockTheme();
+		const widget = new McpWidget({ theme, manager, onAction: () => {} });
+
+		// navigate: enter first server, enter tools
+		widget.handleInput("\r"); // enter → server-detail
+		widget.handleInput("\r"); // enter → tools (tools list will be empty)
+
+		const lines = widget.render(147);
+		for (const [idx, line] of lines.entries()) {
+			expect(line.length, `line ${idx} too wide: ${line.length} > 147`).toBeLessThanOrEqual(147);
+		}
+	});
+});
