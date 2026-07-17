@@ -27,6 +27,12 @@ export const SAFE_ENV_VARS = ["PATH", "HOME", "LANG", "LC_ALL", "TMPDIR", "USERP
  * Build the StdioServerParameters object from an McpServerConfig.
  *
  * Separated from `createStdioTransport` for easier unit testing.
+ *
+ * stderr handling (default suppresses noise):
+ * - silentStderr !== false (default): route stderr to /dev/null to suppress
+ *   INFO/WARN noise from MCP servers (e.g. github-mcp-server's
+ *   "time=... level=INFO msg=server run start" lines).
+ * - silentStderr === false: inherit parent's stderr for debugging.
  */
 export function buildStdioParams(
 	config: McpServerConfig,
@@ -43,11 +49,16 @@ export function buildStdioParams(
 		? Object.fromEntries(Object.entries(config.env).map(([k, v]) => [k, resolveEnvVars(v, envSource)]))
 		: Object.fromEntries(SAFE_ENV_VARS.filter((k) => envSource[k] !== undefined).map((k) => [k, envSource[k]!]));
 
-	return {
+	const params: StdioServerParameters = {
 		command: config.command,
 		args: config.args,
 		env,
+		// Default silent: drop stderr to /dev/null (Unix) or nul (Windows).
+		// Set silentStderr: false in mcp.json to surface stderr for debugging.
+		stderr: config.silentStderr === false ? "inherit" : "ignore",
 	};
+
+	return params;
 }
 
 /**

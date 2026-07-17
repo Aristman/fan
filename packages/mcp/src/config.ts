@@ -25,6 +25,12 @@ export interface McpServerConfig {
 	deniedTools?: string[];
 	timeout?: number;
 	autoRestart?: boolean;
+	/**
+	 * Suppress MCP server stderr output (default true).
+	 * INFO/WARN/ERROR logs from MCP servers (e.g. github-mcp-server's "server run start")
+	 * would otherwise spam the TUI. Set to false to surface stderr for debugging.
+	 */
+	silentStderr?: boolean;
 	allowLocal?: boolean;
 	allowPrivate?: boolean;
 	oauth?: {
@@ -71,6 +77,7 @@ const McpServerConfigSchema = Type.Object(
 		deniedTools: Type.Optional(Type.Array(Type.String())),
 		timeout: Type.Optional(Type.Integer({ minimum: 1000, maximum: 300_000 })),
 		autoRestart: Type.Optional(Type.Boolean()),
+		silentStderr: Type.Optional(Type.Boolean()),
 		allowLocal: Type.Optional(Type.Boolean()),
 		allowPrivate: Type.Optional(Type.Boolean()),
 		oauth: Type.Optional(
