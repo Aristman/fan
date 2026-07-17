@@ -278,4 +278,44 @@ describe("render overflow guard", () => {
 			expect(line.length, `line ${idx} too wide: ${line.length} > 147`).toBeLessThanOrEqual(147);
 		}
 	});
+
+	it("renders tools list with real-world tool names within width", () => {
+		// Reproduces the bug where toggling to tools view crashed with
+		// 'Rendered line 38 exceeds terminal width (148 > 147)' for
+		// long tool names like mcp__0__add_comment_to_pending_review.
+		const longToolNames = [
+			"mcp__0__add_comment_to_pending_review",
+			"mcp__0__add_issue_comment",
+			"mcp__0__add_reply_to_pull_request_comment",
+			"mcp__0__assign_copilot_to_issue",
+		];
+		const manager = makeMockManager({
+			getServers: () => [
+				{
+					index: 0,
+					name: "github",
+					transport: "stdio",
+					status: "connected",
+					toolNames: longToolNames,
+					connectError: undefined,
+					enabled: true,
+					deniedTools: [],
+				},
+			],
+		});
+		const theme = makeMockTheme();
+		const widget = new McpWidget({ theme, manager, onAction: () => {} });
+
+		// navigate: enter → server-detail, enter → tools
+		widget.handleInput("\r");
+		widget.handleInput("\r");
+
+		for (const width of [40, 80, 120, 147]) {
+			const lines = widget.render(width);
+			for (const [idx, line] of lines.entries()) {
+				expect(line.length, `width=${width} line ${idx} overflow: ${line.length} > ${width}`)
+					.toBeLessThanOrEqual(width);
+			}
+		}
+	});
 });

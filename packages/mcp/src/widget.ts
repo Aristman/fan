@@ -194,7 +194,9 @@ export class McpWidget implements Component {
 				const rightSide = `${toolStr}${errorStr}`;
 				const leftVisible = visibleWidth(stripAnsi(leftSide));
 				const rightVisible = visibleWidth(stripAnsi(rightSide));
-				const paddingNeeded = Math.max(1, width - leftVisible - rightVisible - 3);
+				// line = leftSide + padding + rightSide + " │" (2 visible suffix)
+				// so padding = width - leftVisible - rightVisible - 2
+				const paddingNeeded = Math.max(0, width - leftVisible - rightVisible - 2);
 				let line = `${leftSide}${" ".repeat(paddingNeeded)}${rightSide} │`;
 
 				if (visibleWidth(line) > width) {
@@ -249,8 +251,9 @@ export class McpWidget implements Component {
 			// pad using visible width since `dl` may contain ANSI escape codes
 			const dlVisible = visibleWidth(dl);
 			let padded = dl;
-			if (dlVisible < width) {
-				padded = dl + " ".repeat(width - dlVisible);
+			if (dlVisible + 1 < width) {
+				// reserve 1 char for trailing "│"
+				padded = dl + " ".repeat(width - dlVisible - 1);
 			}
 			padded = padded + "│";
 			if (visibleWidth(padded) > width) padded = truncateLineToWidth(padded, width);
@@ -299,9 +302,10 @@ export class McpWidget implements Component {
 				if (visibleWidth(line) > width) {
 					line = truncateLineToWidth(line, width);
 				} else {
-					// pad using visible width since line may contain ANSI codes
+					// pad using visible width since line may contain ANSI codes;
+					// reserve 1 char for trailing "│"
 					const v = visibleWidth(line);
-					line = v < width ? line + " ".repeat(width - v) + "│" : line + "│";
+					line = v + 1 < width ? line + " ".repeat(width - v - 1) + "│" : line + "│";
 				}
 				lines.push(line);
 			}
