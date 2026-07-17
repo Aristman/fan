@@ -197,7 +197,7 @@ async function showMcpWidget(fan: ExtensionAPI, ctx: ExtensionCommandContext): P
 			// Guard: manager might be nulled during reload outside the loop
 			if (!currentManager) break;
 
-			const action = await ctx.ui.custom<McpAction | "exit">(
+			const action = await ctx.ui.custom<McpAction>(
 				(_tui, theme, _kb, done) => {
 					const widget = new McpWidget({
 						theme,
@@ -210,7 +210,7 @@ async function showMcpWidget(fan: ExtensionAPI, ctx: ExtensionCommandContext): P
 				},
 			);
 
-			if (action === "exit") break;
+			if (action.type === "exit") break;
 
 			try {
 				switch (action.type) {
