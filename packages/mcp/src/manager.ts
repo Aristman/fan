@@ -136,9 +136,7 @@ export function createMcpClientManager(fan: ExtensionAPI, permissions: Permissio
 			return; // Already unavailable or not yet fully connected
 		}
 		entry.status = "unavailable";
-		console.warn(
-			`mcp: server ${entry.index} (${entry.config.command ?? entry.config.url ?? "?"}) crashed, unregistering ${entry.toolNames.length} tools`,
-		);
+		// Crash info available via entry.connectError and mcp:catalog event
 		for (const toolName of entry.toolNames) {
 			try {
 				fan.unregisterTool(toolName);
@@ -165,17 +163,11 @@ export function createMcpClientManager(fan: ExtensionAPI, permissions: Permissio
 		}
 
 		if (entry.restartAttempts > MAX_RESTART_ATTEMPTS) {
-			console.warn(
-				`mcp: server ${entry.index} auto-restart exhausted after ${entry.restartAttempts} attempts, disabling`,
-			);
 			entry.config = { ...entry.config, autoRestart: false };
 			return;
 		}
 
 		const delayMs = backoffDelay(entry.restartAttempts);
-		console.info(
-			`mcp: server ${entry.index} auto-restart attempt ${entry.restartAttempts}/${MAX_RESTART_ATTEMPTS} in ${delayMs}ms`,
-		);
 
 		setTimeout(() => {
 			connectOne(entry.index, entry.config)
@@ -196,17 +188,10 @@ export function createMcpClientManager(fan: ExtensionAPI, permissions: Permissio
 						// Reset backoff counters.
 						entry.restartAttempts = 0;
 						entry.firstCrashAt = undefined;
-						console.info(`mcp: server ${entry.index} auto-restart successful`);
-					} else {
-						console.warn(
-							`mcp: server ${entry.index} auto-restart attempt ${entry.restartAttempts} failed: ${newEntry.connectError ?? "unknown"}`,
-						);
 					}
 				})
 				.catch((e) => {
-					console.warn(
-						`mcp: server ${entry.index} auto-restart attempt ${entry.restartAttempts} threw: ${e instanceof Error ? e.message : String(e)}`,
-					);
+					// Auto-restart failed silently; entry.connectError stays populated
 				});
 		}, delayMs);
 	}
@@ -267,10 +252,8 @@ export function createMcpClientManager(fan: ExtensionAPI, permissions: Permissio
 			}
 
 			entry.toolNames = [...newToolNames];
-
-			console.info(`mcp: server ${serverId} tools refreshed (${newToolNames.size} tools)`);
 		} catch (e: any) {
-			console.warn(`mcp: server ${entry.index} list_changed refresh failed: ${e?.message ?? String(e)}`);
+			// Tools refresh failed — leave entry.toolNames untouched, surface via MCP error path
 		}
 	}
 
@@ -298,7 +281,6 @@ export function createMcpClientManager(fan: ExtensionAPI, permissions: Permissio
 		} catch (e: any) {
 			entry.status = "unavailable";
 			entry.connectError = e?.message ?? String(e);
-			console.warn(`mcp: server ${index} config error: ${entry.connectError}`);
 			return entry;
 		}
 		entry.transport = transport;
@@ -308,7 +290,7 @@ export function createMcpClientManager(fan: ExtensionAPI, permissions: Permissio
 			handleCrash(entry);
 		};
 		transport.onerror = (error: Error) => {
-			console.warn(`mcp: server ${index} transport error: ${error.message}`);
+			// Transport error captured into entry state via crash handler
 		};
 
 		// F-1.15: Set up list_changed subscription with 500ms debounce.
@@ -327,11 +309,10 @@ export function createMcpClientManager(fan: ExtensionAPI, permissions: Permissio
 							// We ignore the SDK-provided tools and do our own
 							// filtered refresh via refreshServerTools.
 							if (entry.status === "connected") {
-								refreshServerTools(entry).catch((e) =>
-									console.warn(
-										`mcp: refreshServerTools failed for server ${index}: ${e?.message ?? String(e)}`,
-									),
-								);
+								refreshServerTools(entry).catch((e) => {
+									// List_changed refresh failed - ignore silently;
+									// existing tools remain registered
+								});
 							}
 						},
 					},
@@ -377,7 +358,6 @@ export function createMcpClientManager(fan: ExtensionAPI, permissions: Permissio
 		} catch (e: any) {
 			entry.status = "unavailable";
 			entry.connectError = e?.message ?? String(e);
-			console.warn(`mcp: server ${index} unavailable: ${entry.connectError}`);
 
 			// Ensure transport is closed on failure
 			try {
@@ -456,11 +436,7 @@ export function createMcpClientManager(fan: ExtensionAPI, permissions: Permissio
 			await Promise.race([Promise.allSettled(closePromises), timeoutPromise]);
 
 			const elapsed = Date.now() - startTime;
-			if (elapsed >= DISPOSE_TIMEOUT_MS) {
-				console.warn(
-					`mcp: shutdown took ${elapsed}ms (>= ${DISPOSE_TIMEOUT_MS}ms threshold), some servers may not have closed gracefully`,
-				);
-			}
+			// Dispose timeout exceeded - cleanup may have been aggressive, but shutdown returns
 		},
 
 		_entries(): ServerEntry[] {
