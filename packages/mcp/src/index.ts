@@ -198,10 +198,11 @@ async function showMcpWidget(fan: ExtensionAPI, ctx: ExtensionCommandContext): P
 			if (!currentManager) break;
 
 			const action = await ctx.ui.custom<McpAction>(
-				(_tui, theme, _kb, done) => {
+				(tui, theme, _kb, done) => {
 					const widget = new McpWidget({
 						theme,
 						manager: currentManager!,
+						tui,
 						onAction: (act: McpAction) => {
 							done(act);
 						},
@@ -223,11 +224,6 @@ async function showMcpWidget(fan: ExtensionAPI, ctx: ExtensionCommandContext): P
 						ctx.ui.setStatus("mcp", "⟳ Disconnecting...");
 						await currentManager.disconnectOne(action.serverIdx);
 						ctx.ui.setStatus("mcp", "✅ Disconnected — MCP Browser");
-						break;
-					case "toggle-tool":
-						ctx.ui.setStatus("mcp", `⟳ ${action.enabled ? "Enabling" : "Disabling"} ${action.toolName}...`);
-						await currentManager.setToolEnabled(action.serverIdx, action.toolName, action.enabled);
-						ctx.ui.setStatus("mcp", `✅ Tool ${action.toolName} ${action.enabled ? "enabled" : "disabled"} — MCP Browser`);
 						break;
 				}
 			} catch (e: any) {

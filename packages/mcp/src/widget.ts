@@ -7,7 +7,7 @@
  * is opened via the while-loop pattern in showMcpWidget.
  */
 
-import type { Component } from "@seaagents/fan-tui";
+import type { Component, TUI } from "@seaagents/fan-tui";
 import { matchesKey, visibleWidth } from "@seaagents/fan-tui";
 import type { Theme } from "@seaagents/fan-coding-agent";
 import type { McpClientManager, ServerInfo } from "./manager.js";
@@ -29,14 +29,15 @@ export interface McpWidgetState {
 export interface McpWidgetOptions {
 	theme: Theme;
 	manager: McpClientManager;
+	tui: TUI;
 	onAction(action: McpAction): void;
 }
 
+/** Actions that close the widget to run externally. */
 export type McpAction =
 	| { type: "exit" }
 	| { type: "connect"; serverIdx: number }
-	| { type: "disconnect"; serverIdx: number }
-	| { type: "toggle-tool"; serverIdx: number; toolName: string; enabled: boolean };
+	| { type: "disconnect"; serverIdx: number };
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -135,11 +136,13 @@ export class McpWidget implements Component {
 	private state: McpWidgetState;
 	private theme: Theme;
 	private manager: McpClientManager;
+	private tui: TUI;
 	private onAction: (action: McpAction) => void;
 
 	constructor(options: McpWidgetOptions) {
 		this.theme = options.theme;
 		this.manager = options.manager;
+		this.tui = options.tui;
 		this.onAction = options.onAction;
 		this.state = {
 			view: "servers",
@@ -432,7 +435,14 @@ export class McpWidget implements Component {
 		} else if (matchesKey(data, "space")) {
 			const toolName = server.toolNames[this.state.selectedToolIndex];
 			const currentEnabled = !isToolDenied(server, toolName);
-			this.onAction({ type: "toggle-tool", serverIdx: server.index, toolName, enabled: !currentEnabled });
+			const newEnabled = !currentEnabled;
+			// Toggle inline — stay in the same view
+			this.manager.setToolEnabled(server.index, toolName, newEnabled).then(() => {
+				this.state.servers = this.manager.getServers();
+				this.tui.requestRender();
+			}).catch(_e => {
+				// best-effort — next loop iteration will refresh
+			});
 		}
 	}
 }

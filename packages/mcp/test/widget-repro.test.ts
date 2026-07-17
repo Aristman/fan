@@ -14,6 +14,10 @@ function makeMockTheme(): any {
 	};
 }
 
+function makeMockTui(): any {
+	return { requestRender: vi.fn() };
+}
+
 function makeMockManager(overrides?: Partial<McpClientManager>): McpClientManager {
 	const entries: ServerInfo[] = [
 		{
@@ -46,7 +50,7 @@ describe("MCP Widget Space key repro", () => {
 		const manager = makeMockManager();
 		let actionReceived: McpAction | null = null;
 
-		const widget = new McpWidget({
+		const widget = new McpWidget({ tui: makeMockTui(), 
 			theme,
 			manager,
 			onAction: (act: McpAction) => {
@@ -69,7 +73,7 @@ describe("MCP Widget Space key repro", () => {
 			}],
 		});
 
-		const widget2 = new McpWidget({
+		const widget2 = new McpWidget({ tui: makeMockTui(), 
 			theme,
 			manager: managerDisabled,
 			onAction: (act: McpAction) => { actionReceived = act; },
@@ -83,7 +87,7 @@ describe("MCP Widget Space key repro", () => {
 		const manager = makeMockManager();
 		const actions: (McpAction | "exit")[] = [];
 
-		const widget = new McpWidget({
+		const widget = new McpWidget({ tui: makeMockTui(), 
 			theme,
 			manager,
 			onAction: (act: McpAction) => { actions.push(act); },
@@ -98,7 +102,7 @@ describe("MCP Widget Space key repro", () => {
 		const manager = makeMockManager();
 		const actions: (McpAction | "exit")[] = [];
 
-		const widget1 = new McpWidget({
+		const widget1 = new McpWidget({ tui: makeMockTui(), 
 			theme, manager,
 			onAction: (act: McpAction) => { actions.push(act); },
 		});
@@ -121,7 +125,7 @@ describe("MCP Widget Space key repro", () => {
 				enabled: false, deniedTools: [],
 			}],
 		});
-		const widget2 = new McpWidget({
+		const widget2 = new McpWidget({ tui: makeMockTui(), 
 			theme, manager: manager2,
 			onAction: (act: McpAction) => { actions.push(act); },
 		});
@@ -140,7 +144,7 @@ describe("MCP Widget Space key repro", () => {
 				enabled: false, deniedTools: [],
 			}],
 		});
-		const widget = new McpWidget({
+		const widget = new McpWidget({ tui: makeMockTui(), 
 			theme, manager: disabledManager,
 			onAction: (act: McpAction) => { actions.push(act); },
 		});
@@ -161,7 +165,7 @@ describe("MCP widget no-notify-between-iterations", () => {
 		const manager = makeMockManager();
 		const actions: McpAction[] = [];
 
-		const widget = new McpWidget({
+		const widget = new McpWidget({ tui: makeMockTui(), 
 			theme,
 			manager,
 			onAction: (act: McpAction) => {
@@ -240,7 +244,7 @@ describe("render overflow guard", () => {
 		const theme = makeMockTheme();
 
 		for (const width of [40, 60, 80, 100, 120, 147]) {
-			const widget = new McpWidget({ theme, manager, onAction: () => {} });
+			const widget = new McpWidget({ tui: makeMockTui(),  theme, manager, onAction: () => {} });
 			const lines = widget.render(width);
 			for (const [idx, line] of lines.entries()) {
 				// visible width may include ANSI escapes; compute it
@@ -267,7 +271,7 @@ describe("render overflow guard", () => {
 			],
 		});
 		const theme = makeMockTheme();
-		const widget = new McpWidget({ theme, manager, onAction: () => {} });
+		const widget = new McpWidget({ tui: makeMockTui(),  theme, manager, onAction: () => {} });
 
 		// navigate: enter first server, enter tools
 		widget.handleInput("\r"); // enter → server-detail
@@ -304,7 +308,7 @@ describe("render overflow guard", () => {
 			],
 		});
 		const theme = makeMockTheme();
-		const widget = new McpWidget({ theme, manager, onAction: () => {} });
+		const widget = new McpWidget({ tui: makeMockTui(),  theme, manager, onAction: () => {} });
 
 		// navigate: enter → server-detail, enter → tools
 		widget.handleInput("\r");
