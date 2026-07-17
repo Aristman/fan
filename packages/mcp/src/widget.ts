@@ -3,14 +3,14 @@
  *
  * 3-level state machine: servers → server-detail → tools
  *
- * This component does NOT import manager.ts directly. It receives data
- * and actions through callbacks to avoid circular dependencies.
+ * Fullscreen Store-style browser. State is fresh each time the widget
+ * is opened via the while-loop pattern in showMcpWidget.
  */
 
 import type { Component } from "@seaagents/fan-tui";
 import { matchesKey, visibleWidth } from "@seaagents/fan-tui";
 import type { Theme } from "@seaagents/fan-coding-agent";
-import type { ServerInfo } from "./manager.js";
+import type { McpClientManager, ServerInfo } from "./manager.js";
 
 // ── Types ───────────────────────────────────────────────────────────
 
@@ -24,22 +24,19 @@ export interface McpWidgetState {
 	selectedServerIndex: number;
 	selectedToolIndex: number;
 	toolScrollOffset: number;
-	/** Per-tool enabled state: key is "<serverIndex>:<toolName>" → boolean */
-	toolEnabled: Map<string, boolean>;
-}
-
-export interface McpWidgetCallbacks {
-	onConnect(serverIdx: number): Promise<void>;
-	onDisconnect(serverIdx: number): Promise<void>;
-	onToggleTool(serverIdx: number, toolName: string, enabled: boolean): Promise<void>;
-	onClose(): void;
 }
 
 export interface McpWidgetOptions {
 	theme: Theme;
-	callbacks: McpWidgetCallbacks;
-	initialServers?: ServerInfo[];
+	manager: McpClientManager;
+	onAction(action: McpAction): void;
 }
+
+export type McpAction =
+	| { type: "exit" }
+	| { type: "connect"; serverIdx: number }
+	| { type: "disconnect"; serverIdx: number }
+	| { type: "toggle-tool"; serverIdx: number; toolName: string; enabled: boolean };
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -67,6 +64,16 @@ function truncateToWidth(s: string, maxWidth: number): string {
 	let truncated = s.slice(0, maxWidth - 1);
 	while (visibleWidth(truncated) > maxWidth - 3) truncated = truncated.slice(0, -1);
 	return truncated + "...";
+}
+
+/** Truncate a line to fit within `width` visible chars, adding "…" at the end. */
+function truncateLineToWidth(line: string, width: number): string {
+	if (visibleWidth(line) <= width) return line;
+	let truncated = line;
+	while (visibleWidth(truncated) > width - 1) {
+		truncated = truncated.slice(0, -1);
+	}
+	return truncated + "…";
 }
 
 function statusColor(theme: Theme, status: ServerInfo["status"], text: string): string {
@@ -105,44 +112,38 @@ function renderFooter(theme: Theme, width: number, text: string): string[] {
 	];
 }
 
+/**
+ * Check whether a specific tool is denied for a server.
+ * Uses the server's deniedTools config.
+ */
+function isToolDenied(server: ServerInfo, toolName: string): boolean {
+	return server.deniedTools?.includes(toolName) ?? false;
+}
+
 // ── McpWidget component ─────────────────────────────────────────────
 
 export class McpWidget implements Component {
 	private state: McpWidgetState;
 	private theme: Theme;
-	private callbacks: McpWidgetCallbacks;
+	private manager: McpClientManager;
+	private onAction: (action: McpAction) => void;
 
 	constructor(options: McpWidgetOptions) {
 		this.theme = options.theme;
-		this.callbacks = options.callbacks;
+		this.manager = options.manager;
+		this.onAction = options.onAction;
 		this.state = {
 			view: "servers",
-			servers: options.initialServers ?? [],
+			servers: options.manager.getServers(),
 			selectedIndex: 0,
 			scrollOffset: 0,
 			selectedServerIndex: 0,
 			selectedToolIndex: 0,
 			toolScrollOffset: 0,
-			toolEnabled: new Map<string, boolean>(),
 		};
-		// Initialize tool enabled state from initial servers
-		for (const s of this.state.servers) {
-			for (const t of s.toolNames) {
-				this.state.toolEnabled.set(`${s.index}:${t}`, true);
-			}
-		}
 	}
 
-	/**
-	 * Update the server list from external events (mcp:catalog).
-	 */
-	updateServers(servers: ServerInfo[]): void {
-		this.state.servers = servers;
-		// Clamp selection to valid range
-		this.state.selectedIndex = Math.min(this.state.selectedIndex, Math.max(0, servers.length - 1));
-		this.state.selectedToolIndex = Math.min(this.state.selectedToolIndex, 0);
-		this.state.toolScrollOffset = Math.min(this.state.toolScrollOffset, 0);
-	}
+
 
 	invalidate(): void {
 		// No cached state to invalidate
@@ -186,8 +187,8 @@ export class McpWidget implements Component {
 				const paddingNeeded = Math.max(1, width - leftVisible - rightVisible - 3);
 				let line = `${leftSide}${" ".repeat(paddingNeeded)}${rightSide} │`;
 
-				if (line.length > width) {
-					line = line.slice(0, width - 1) + "│";
+				if (visibleWidth(line) > width) {
+					line = truncateLineToWidth(line, width);
 				}
 
 				if (selected) {
@@ -235,7 +236,7 @@ export class McpWidget implements Component {
 
 		for (const dl of detailLines) {
 			let padded = (dl as string).padEnd(width - 1, " ") + "│";
-			if (padded.length > width) padded = padded.slice(0, width - 1) + "│";
+			if (visibleWidth(padded) > width) padded = truncateLineToWidth(padded, width);
 			lines.push(padded);
 		}
 
@@ -271,11 +272,11 @@ export class McpWidget implements Component {
 			for (let i = this.state.toolScrollOffset; i < maxIdx; i++) {
 				const toolName = allTools[i];
 				const selected = i === this.state.selectedToolIndex;
-				const enabled = this.state.toolEnabled.get(`${server.index}:${toolName}`) ?? true;
+				const enabled = !isToolDenied(server, toolName);
 				let line = `│ ${renderToolName(this.theme, toolName, enabled, selected)}`;
 
-				if (line.length > width) {
-					line = line.slice(0, width - 1) + "│";
+				if (visibleWidth(line) > width) {
+					line = truncateLineToWidth(line, width);
 				} else {
 					line = line.padEnd(width - 1, " ") + "│";
 				}
@@ -310,7 +311,7 @@ export class McpWidget implements Component {
 
 	private handleBackOrClose(): void {
 		if (this.state.view === "servers") {
-			this.callbacks.onClose();
+			this.onAction({ type: "exit" });
 		} else if (this.state.view === "server-detail") {
 			this.state.view = "servers";
 			this.state.selectedIndex = this.state.selectedServerIndex;
@@ -344,13 +345,13 @@ export class McpWidget implements Component {
 		} else if (matchesKey(data, "space")) {
 			const s = servers[this.state.selectedIndex];
 			if (s.status === "unavailable" || s.status === "disabled") {
-				// No-op for unavailable/disabled servers; no visual change needed
+				// No-op for unavailable/disabled servers
 				return;
 			}
 			if (s.enabled) {
-				this.callbacks.onDisconnect(s.index);
+				this.onAction({ type: "disconnect", serverIdx: s.index });
 			} else {
-				this.callbacks.onConnect(s.index);
+				this.onAction({ type: "connect", serverIdx: s.index });
 			}
 		}
 	}
@@ -366,17 +367,17 @@ export class McpWidget implements Component {
 			this.state.toolScrollOffset = 0;
 		} else if (matchesKey(data, "space")) {
 			if (server.enabled) {
-				this.callbacks.onDisconnect(server.index);
+				this.onAction({ type: "disconnect", serverIdx: server.index });
 			} else {
-				this.callbacks.onConnect(server.index);
+				this.onAction({ type: "connect", serverIdx: server.index });
 			}
 		} else if (matchesKey(data, "c")) {
 			if (server.status !== "connected") {
-				this.callbacks.onConnect(server.index);
+				this.onAction({ type: "connect", serverIdx: server.index });
 			}
 		} else if (matchesKey(data, "d")) {
 			if (server.status === "connected") {
-				this.callbacks.onDisconnect(server.index);
+				this.onAction({ type: "disconnect", serverIdx: server.index });
 			}
 		}
 	}
@@ -403,11 +404,8 @@ export class McpWidget implements Component {
 			}
 		} else if (matchesKey(data, "space")) {
 			const toolName = server.toolNames[this.state.selectedToolIndex];
-			const key = `${server.index}:${toolName}`;
-			const currentEnabled = this.state.toolEnabled.get(key) ?? true;
-			// Flip the local state and notify backend
-			this.state.toolEnabled.set(key, !currentEnabled);
-			this.callbacks.onToggleTool(server.index, toolName, !currentEnabled);
+			const currentEnabled = !isToolDenied(server, toolName);
+			this.onAction({ type: "toggle-tool", serverIdx: server.index, toolName, enabled: !currentEnabled });
 		}
 	}
 }

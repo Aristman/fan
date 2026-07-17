@@ -15,14 +15,13 @@
  * registered in later sub-functions (F-1.6 + F-1.7 + F-1.15).
  */
 
-import type { Component, TUI } from "@seaagents/fan-tui";
-import type { ExtensionAPI, ExtensionCommandContext, ExtensionFactory, Theme } from "@seaagents/fan-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext, ExtensionFactory } from "@seaagents/fan-coding-agent";
 import type { ConfigLoader } from "./config.js";
 import { createMcpConfigLoader } from "./config.js";
-import { type McpClientManager, type ServerInfo } from "./manager.js";
+import { type McpClientManager } from "./manager.js";
 import { createMcpClientManager } from "./manager.js";
 import { createPermissionGate } from "./permissions.js";
-import { McpWidget } from "./widget.js";
+import { McpWidget, type McpAction } from "./widget.js";
 
 // Module-scope reference to the current session's manager.
 // Used by the /mcp command handlers to inspect and reload.
@@ -177,78 +176,65 @@ async function mcpCommandHandler(
 }
 
 /**
- * Show the MCP widget as an overlay.
+ * Show the MCP widget as a fullscreen Store-style browser.
+ * Uses the while-loop pattern: each action dispatches, then re-opens
+ * the browser with fresh state from the manager.
  */
-function showMcpWidget(fan: ExtensionAPI, ctx: ExtensionCommandContext): void {
-	const servers = currentManager?.getServers() ?? [];
-
-	ctx.ui.custom(
-		(tui, theme, _kb, done) => {
-			const widget = new McpWidget({
-				theme,
-				initialServers: servers,
-				callbacks: {
-					onConnect: async (serverIdx: number) => {
-						try {
-							await currentManager?.connectOne(serverIdx);
-						} catch (e: any) {
-							ctx.ui.notify(`Connect failed: ${e?.message ?? String(e)}`, "error");
-						}
-						widget.updateServers(currentManager?.getServers() ?? []);
-						tui.requestRender();
-					},
-					onDisconnect: async (serverIdx: number) => {
-						try {
-							await currentManager?.disconnectOne(serverIdx);
-						} catch (e: any) {
-							ctx.ui.notify(`Disconnect failed: ${e?.message ?? String(e)}`, "error");
-						}
-						widget.updateServers(currentManager?.getServers() ?? []);
-						tui.requestRender();
-					},
-					onToggleTool: async (serverIdx: number, toolName: string, enabled: boolean) => {
-						try {
-							await currentManager?.setToolEnabled(serverIdx, toolName, enabled);
-						} catch (e: any) {
-							ctx.ui.notify(`Toggle tool failed: ${e?.message ?? String(e)}`, "error");
-						}
-						widget.updateServers(currentManager?.getServers() ?? []);
-						tui.requestRender();
-					},
-					onClose: () => {
-						done(undefined);
-						widgetOpen = false;
-					},
-				},
-			});
-
-			// Subscribe to external catalog updates
-			const unsub = fan.events.on("mcp:catalog", () => {
-				widget.updateServers(currentManager?.getServers() ?? []);
-				tui.requestRender();
-			});
-
-			// McpWidget is a Component; attach dispose for cleanup
-			const result = widget as Component & { dispose?(): void };
-			result.dispose = () => {
-				unsub();
-			};
-			return result;
-		},
-		{
-			overlay: true,
-			overlayOptions: {
-				anchor: "center",
-				width: "80%",
-			},
-		},
-	).then(() => {
-		widgetOpen = false;
-	}).catch(() => {
-		widgetOpen = false;
-	});
+async function showMcpWidget(fan: ExtensionAPI, ctx: ExtensionCommandContext): Promise<void> {
+	if (!currentManager) {
+		ctx.ui.notify("No MCP servers configured.", "warning");
+		return;
+	}
 
 	widgetOpen = true;
+	try {
+		// eslint-disable-next-line no-constant-condition
+		while (true) {
+			// Guard: manager might be nulled during reload outside the loop
+			if (!currentManager) break;
+
+			const action = await ctx.ui.custom<McpAction | "exit">(
+				(_tui, theme, _kb, done) => {
+					const widget = new McpWidget({
+						theme,
+						manager: currentManager!,
+						onAction: (act: McpAction) => {
+							done(act);
+						},
+					});
+					return widget;
+				},
+			);
+
+			if (action === "exit") break;
+
+			try {
+				switch (action.type) {
+					case "connect":
+						await currentManager.connectOne(action.serverIdx);
+						ctx.ui.notify("Connected.", "info");
+						break;
+					case "disconnect":
+						await currentManager.disconnectOne(action.serverIdx);
+						ctx.ui.notify("Disconnected.", "info");
+						break;
+					case "toggle-tool":
+						await currentManager.setToolEnabled(action.serverIdx, action.toolName, action.enabled);
+						ctx.ui.notify(
+							`Tool ${action.toolName} ${action.enabled ? "enabled" : "disabled"}.`,
+							"info",
+						);
+						break;
+				}
+			} catch (e: any) {
+				ctx.ui.notify(`Action failed: ${e?.message ?? String(e)}`, "error");
+			}
+
+			// Loop continues — widget re-opens with fresh data from manager.getServers()
+		}
+	} finally {
+		widgetOpen = false;
+	}
 }
 
 // Module-scope reference to ExtensionAPI for use in reloadMcp

@@ -79,6 +79,8 @@ export interface ServerInfo {
 	toolNames: string[];
 	connectError?: string;
 	enabled: boolean;
+	/** List of tool names that are denied/disabled for this server. */
+	deniedTools: string[];
 }
 
 export interface McpClientManager {
@@ -474,6 +476,7 @@ export function createMcpClientManager(fan: ExtensionAPI, permissions: Permissio
 				toolNames: [...e.toolNames],
 				connectError: e.connectError,
 				enabled: e.status === "connected" || e.status === "connecting",
+				deniedTools: [...(e.config.deniedTools ?? [])],
 			}));
 		},
 
