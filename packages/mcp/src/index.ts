@@ -179,6 +179,10 @@ async function mcpCommandHandler(
  * Show the MCP widget as a fullscreen Store-style browser.
  * Uses the while-loop pattern: each action dispatches, then re-opens
  * the browser with fresh state from the manager.
+ *
+ * IMPORTANT: No ctx.ui.notify() calls between loop iterations — that
+ * causes focus races with the editor. Use ctx.ui.setStatus() instead
+ * for transient feedback during operations.
  */
 async function showMcpWidget(fan: ExtensionAPI, ctx: ExtensionCommandContext): Promise<void> {
 	if (!currentManager) {
@@ -186,7 +190,7 @@ async function showMcpWidget(fan: ExtensionAPI, ctx: ExtensionCommandContext): P
 		return;
 	}
 
-	widgetOpen = true;
+	ctx.ui.setStatus("mcp", "MCP Browser — ↑↓ navigate · Enter detail · Space toggle · Esc close");
 	try {
 		// eslint-disable-next-line no-constant-condition
 		while (true) {
@@ -211,29 +215,32 @@ async function showMcpWidget(fan: ExtensionAPI, ctx: ExtensionCommandContext): P
 			try {
 				switch (action.type) {
 					case "connect":
+						ctx.ui.setStatus("mcp", "⟳ Connecting...");
 						await currentManager.connectOne(action.serverIdx);
-						ctx.ui.notify("Connected.", "info");
+						ctx.ui.setStatus("mcp", "✅ Connected — MCP Browser");
 						break;
 					case "disconnect":
+						ctx.ui.setStatus("mcp", "⟳ Disconnecting...");
 						await currentManager.disconnectOne(action.serverIdx);
-						ctx.ui.notify("Disconnected.", "info");
+						ctx.ui.setStatus("mcp", "✅ Disconnected — MCP Browser");
 						break;
 					case "toggle-tool":
+						ctx.ui.setStatus("mcp", `⟳ ${action.enabled ? "Enabling" : "Disabling"} ${action.toolName}...`);
 						await currentManager.setToolEnabled(action.serverIdx, action.toolName, action.enabled);
-						ctx.ui.notify(
-							`Tool ${action.toolName} ${action.enabled ? "enabled" : "disabled"}.`,
-							"info",
-						);
+						ctx.ui.setStatus("mcp", `✅ Tool ${action.toolName} ${action.enabled ? "enabled" : "disabled"} — MCP Browser`);
 						break;
 				}
 			} catch (e: any) {
-				ctx.ui.notify(`Action failed: ${e?.message ?? String(e)}`, "error");
+				ctx.ui.setStatus("mcp", `❌ ${e?.message ?? String(e)} — MCP Browser`);
+				// Brief pause so user sees the error before the widget re-opens
+				await new Promise(r => setTimeout(r, 1500));
+				ctx.ui.setStatus("mcp", "MCP Browser — ↑↓ navigate · Enter detail · Space toggle · Esc close");
 			}
 
 			// Loop continues — widget re-opens with fresh data from manager.getServers()
 		}
 	} finally {
-		widgetOpen = false;
+		ctx.ui.setStatus("mcp", undefined);
 	}
 }
 
@@ -267,11 +274,17 @@ export const mcpExtension: ExtensionFactory = (fan: ExtensionAPI) => {
 	});
 
 	// Register global shortcuts: alt+m and f4 open/close the MCP widget
+	// widgetOpen is set BEFORE showMcpWidget to prevent race on Alt+M double-press
 	fan.registerShortcut("alt+m", {
 		description: "MCP server manager",
 		handler: async (ctx) => {
 			if (widgetOpen) return;
-			showMcpWidget(fan, ctx as any);
+			widgetOpen = true;
+			try {
+				await showMcpWidget(fan, ctx as any);
+			} finally {
+				widgetOpen = false;
+			}
 		},
 	});
 
@@ -279,7 +292,12 @@ export const mcpExtension: ExtensionFactory = (fan: ExtensionAPI) => {
 		description: "MCP server manager",
 		handler: async (ctx) => {
 			if (widgetOpen) return;
-			showMcpWidget(fan, ctx as any);
+			widgetOpen = true;
+			try {
+				await showMcpWidget(fan, ctx as any);
+			} finally {
+				widgetOpen = false;
+			}
 		},
 	});
 
