@@ -446,7 +446,7 @@ export function createMcpClientManager(fan: ExtensionAPI, permissions: Permissio
 		getServers(): ServerInfo[] {
 			return entries.map(e => ({
 				index: e.index,
-				name: e.config.command || e.config.url || `Server #${e.index}`,
+				name: e.config.name || e.config.command || e.config.url || `Server #${e.index}`,
 				transport: e.config.transport,
 				status: e.status,
 				toolNames: [...e.toolNames],

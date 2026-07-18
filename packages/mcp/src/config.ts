@@ -16,6 +16,12 @@ import { Value } from "@sinclair/typebox/value";
  */
 export interface McpServerConfig {
 	transport: "stdio" | "streamable-http";
+	/**
+	 * Display name for the server in the widget list. If omitted,
+	 * falls back to command (stdio) or url (streamable-http), then
+	 * "Server #<index>".
+	 */
+	name?: string;
 	command?: string;
 	args?: string[];
 	env?: Record<string, string>;
@@ -68,6 +74,7 @@ export interface ConfigLoader {
 const McpServerConfigSchema = Type.Object(
 	{
 		transport: Type.Union([Type.Literal("stdio"), Type.Literal("streamable-http")]),
+		name: Type.Optional(Type.String({ minLength: 1 })),
 		command: Type.Optional(Type.String({ minLength: 1 })),
 		args: Type.Optional(Type.Array(Type.String())),
 		env: Type.Optional(Type.Record(Type.String(), Type.String())),

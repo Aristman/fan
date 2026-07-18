@@ -336,6 +336,7 @@ describe("F-1.8: mcp.json loader", () => {
 				servers: [
 					{
 						transport: "stdio",
+						name: "GitHub MCP",
 						command: "my-server",
 						args: ["--port", "8080"],
 						env: { FOO: "bar" },
@@ -343,6 +344,7 @@ describe("F-1.8: mcp.json loader", () => {
 						deniedTools: ["delete_*"],
 						timeout: 30000,
 						autoRestart: true,
+						silentStderr: false,
 						allowLocal: false,
 					},
 				],
@@ -352,6 +354,7 @@ describe("F-1.8: mcp.json loader", () => {
 			expect(result.servers).toHaveLength(1);
 			expect(result.servers[0]).toEqual({
 				transport: "stdio",
+				name: "GitHub MCP",
 				command: "my-server",
 				args: ["--port", "8080"],
 				env: { FOO: "bar" },
@@ -359,6 +362,7 @@ describe("F-1.8: mcp.json loader", () => {
 				deniedTools: ["delete_*"],
 				timeout: 30000,
 				autoRestart: true,
+				silentStderr: false,
 				allowLocal: false,
 			});
 		});

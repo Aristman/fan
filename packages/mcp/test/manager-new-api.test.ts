@@ -104,6 +104,22 @@ describe("McpClientManager.getServers()", () => {
 		expect(servers[0].enabled).toBe(false); // unavailable servers are not enabled
 		expect(servers[0].connectError).toBeDefined();
 	});
+
+	it("prefers config.name over command/url in the display name", async () => {
+		const { api } = makeFakePi();
+		const mgr = createMcpClientManager(api, makePermissiveGate());
+
+		await mgr.connectAll({
+			servers: [
+				{ ...failConfig(), name: "Friendly Name" },
+				failConfig(), // no name → falls back to command
+			],
+		});
+
+		const servers = mgr.getServers();
+		expect(servers[0].name).toBe("Friendly Name");  // explicit name wins
+		expect(servers[1].name).toBe("nonexistent-command-that-will-fail"); // fallback
+	});
 });
 
 describe("McpClientManager.connectOne()", () => {
