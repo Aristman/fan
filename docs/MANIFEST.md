@@ -1,6 +1,7 @@
 # Documentation Manifest
-> Last updated: 2026-07-16 (MCP Integration v0.1.0 added)
+> Last updated: 2026-07-18
 > Comprehensive index of all project documentation.
+> Maintainer: docs-impl agent
 
 ## User-Facing Documentation
 | File | Status | Description |
@@ -17,7 +18,9 @@
 | `docs/guides/orchestrator.md` | ✅ | Orchestrator user guide (Pipeline Mode v3.1.0) |
 | `docs/guides/dashboard.md` | ✅ | Dashboard user guide |
 | `docs/guides/api-reference.md` | ✅ | REST API + WebSocket protocol reference |
-| `docs/guides/mcp.md` | ✅ | MCP integration guide — transports, config, OAuth, Worker Proxy, security |
+| `docs/guides/mcp.md` | ✅ | MCP integration guide (Russian) — transports, config, OAuth, Worker Proxy, security |
+| `docs/mcp.md` | ✅ | MCP in FAN — comprehensive English reference (TOC, config, widget, commands, filtering, examples, troubleshooting, architecture, security) |
+| `docs/mcp.ru.md` | ✅ | MCP в FAN — полный русский перевод (содержание, конфигурация, виджет, команды, фильтрация, примеры, решение проблем, архитектура, безопасность) |
 | `packages/mcp-extension/README.md` | ✅ | @fan/mcp-extension — MCP client extension (241 tests, Phases 1–3) |
 
 ## Architecture & Specifications
@@ -109,4 +112,4 @@
 
 All 5 package READMEs have been created — status updated to ✅.
 
-Total: **44 tracked documents** (42 ✅, 6 ⚠️, 0 ❌)
+Total: **45 tracked documents** (43 ✅, 6 ⚠️, 0 ❌)
