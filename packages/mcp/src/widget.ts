@@ -46,7 +46,7 @@ function statusIcon(status: ServerInfo["status"]): string {
 		case "connecting":
 			return "⟳";
 		case "unavailable":
-			return "✗";
+			return "!";
 		case "disabled":
 			return "✗";
 	}
@@ -85,6 +85,35 @@ function statusColor(theme: Theme, status: ServerInfo["status"], text: string): 
 			return theme.fg("dim", theme.fg("error", text));
 		case "disabled":
 			return theme.fg("dim", theme.fg("warning", text));
+	}
+}
+
+/**
+ * Render a server name with status-colored BACKGROUND that reflects the
+ * connection state — git-style:
+ *   connected    → dim green bg     (✓ icon, green text)
+ *   connecting   → no bg, warn text (⟳ icon, yellow text)
+ *   disabled     → dim red bg       (✗ icon, dim red text)  — user disconnected
+ *   unavailable  → bright red bg    (! icon, bright red text) — server crashed/error
+ *
+ * Uses ANSI 256-color bg escape codes via raw strings (theme.bg() only
+ * exposes ThemeBg union, no "success" / "error" entries).
+ */
+const ANSI_BG_DIM_GREEN = "\x1b[48;5;22m";
+const ANSI_BG_DIM_RED = "\x1b[48;5;52m";
+const ANSI_BG_BRIGHT_RED = "\x1b[48;5;124m";
+const ANSI_BG_RESET = "\x1b[49m";
+
+function styledServerName(theme: Theme, status: ServerInfo["status"], text: string): string {
+	switch (status) {
+		case "connected":
+			return `${ANSI_BG_DIM_GREEN}${theme.fg("success", text)}${ANSI_BG_RESET}`;
+		case "connecting":
+			return theme.fg("warning", text);
+		case "disabled":
+			return `${ANSI_BG_DIM_RED}${theme.fg("dim", theme.fg("error", text))}${ANSI_BG_RESET}`;
+		case "unavailable":
+			return `${ANSI_BG_BRIGHT_RED}${theme.fg("error", text)}${ANSI_BG_RESET}`;
 	}
 }
 
@@ -189,8 +218,8 @@ export class McpWidget implements Component {
 				const toolStr = this.theme.fg("dim", `${s.toolNames.length} tools`);
 				const errorStr = s.connectError ? this.theme.fg("dim", ` (${s.connectError})`) : "";
 				const nameStr = truncateToWidth(s.name, 27);
-				const colorizedName = statusColor(this.theme, s.status, nameStr);
-				const leftSide = `│ ${icon} ${colorizedName}`;
+				const styledName = styledServerName(this.theme, s.status, nameStr);
+				const leftSide = `│ ${icon} ${styledName}`;
 				const rightSide = `${toolStr}${errorStr}`;
 				const leftVisible = visibleWidth(stripAnsi(leftSide));
 				const rightVisible = visibleWidth(stripAnsi(rightSide));
@@ -227,8 +256,8 @@ export class McpWidget implements Component {
 			return lines;
 		}
 
-		const colorizedName = statusColor(this.theme, server.status, server.name);
-		const title = `Tools: ${colorizedName}`;
+		const styledName = styledServerName(this.theme, server.status, server.name);
+		const title = `Tools: ${styledName}`;
 		lines.push(...renderHeader(this.theme, width, title));
 
 		const allTools = server.toolNames;

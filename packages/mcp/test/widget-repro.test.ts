@@ -238,6 +238,11 @@ describe("MCP widget no-notify-between-iterations", () => {
  * crashes mid-render → input freezes. Locks out ESC, Space, anything.
  */
 describe("render overflow guard", () => {
+	function visibleWidth(s: string): number {
+		// Strip ANSI escape sequences (ESC[...m) to count actual visible chars
+		return s.replace(/\u001b\[[0-9;]*m/g, "").length;
+	}
+
 	it("renders all lines within width for various widths", () => {
 		const manager = makeMockManager();
 		const theme = makeMockTheme();
@@ -246,9 +251,8 @@ describe("render overflow guard", () => {
 			const widget = new McpWidget({ tui: makeMockTui(),  theme, manager, onAction: () => {} });
 			const lines = widget.render(width);
 			for (const [idx, line] of lines.entries()) {
-				// visible width may include ANSI escapes; compute it
-				const visible = (line.match(/\u001b\[[0-9;]*m/g) || []).reduce(() => 0, 0);
-				expect(visible || line.length, `line ${idx} (w=${line.length}) exceeds width ${width}: ${JSON.stringify(line.slice(0, 80))}`)
+				const w = visibleWidth(line);
+				expect(w, `line ${idx} (w=${w}) exceeds width ${width}: ${JSON.stringify(line.slice(0, 80))}`)
 					.toBeLessThanOrEqual(width);
 			}
 		}
@@ -277,7 +281,8 @@ describe("render overflow guard", () => {
 
 		const lines = widget.render(147);
 		for (const [idx, line] of lines.entries()) {
-			expect(line.length, `line ${idx} too wide: ${line.length} > 147`).toBeLessThanOrEqual(147);
+			const w = visibleWidth(line);
+			expect(w, `line ${idx} too wide: ${w} > 147`).toBeLessThanOrEqual(147);
 		}
 	});
 
@@ -314,7 +319,8 @@ describe("render overflow guard", () => {
 		for (const width of [40, 80, 120, 147]) {
 			const lines = widget.render(width);
 			for (const [idx, line] of lines.entries()) {
-				expect(line.length, `width=${width} line ${idx} overflow: ${line.length} > ${width}`)
+				const w = visibleWidth(line);
+				expect(w, `width=${width} line ${idx} overflow: ${w} > ${width}`)
 					.toBeLessThanOrEqual(width);
 			}
 		}
