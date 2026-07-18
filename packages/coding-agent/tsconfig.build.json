@@ -7,6 +7,10 @@
 			"@fan/mcp": ["./types/mcp-stub.d.ts"]
 		}
 	},
-	"include": ["src/**/*", "types/**/*.d.ts"],
+	"include": [
+		"src/**/*.ts",
+		"src/core/security/permissions.d.ts",
+		"types/**/*.d.ts"
+	],
 	"exclude": ["node_modules", "dist"]
 }
