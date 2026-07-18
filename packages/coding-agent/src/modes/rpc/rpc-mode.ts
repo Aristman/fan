@@ -21,10 +21,14 @@ import type {
 import { takeOverStdout, writeRawStdout } from "../../core/output-guard.js";
 import { type Theme, theme } from "../interactive/theme/theme.js";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.js";
+import type { RemoteToolPendingRegistry } from "./remote-proxy-tool.js";
+import { createRemoteProxyTool } from "./remote-proxy-tool.js";
 import type {
 	RpcCommand,
 	RpcExtensionUIRequest,
 	RpcExtensionUIResponse,
+	RpcRemoteToolCatalog,
+	RpcRemoteToolResponse,
 	RpcResponse,
 	RpcSessionState,
 	RpcSlashCommand,
@@ -35,6 +39,8 @@ export type {
 	RpcCommand,
 	RpcExtensionUIRequest,
 	RpcExtensionUIResponse,
+	RpcRemoteToolRequest,
+	RpcRemoteToolResponse,
 	RpcResponse,
 	RpcSessionState,
 } from "./rpc-types.js";
@@ -43,7 +49,7 @@ export type {
  * Run in RPC mode.
  * Listens for JSON commands on stdin, outputs events and responses on stdout.
  */
-export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<never> {
+export async function runRpcMode(runtimeHost: AgentSessionRuntime, remoteTools?: string[]): Promise<never> {
 	takeOverStdout();
 	let session = runtimeHost.session;
 	let unsubscribe: (() => void) | undefined;
@@ -72,6 +78,35 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		string,
 		{ resolve: (value: any) => void; reject: (error: Error) => void }
 	>();
+
+	// RemoteProxyTool pending registry for awaiting remote_tool_response (F-2.6)
+	const remoteToolPendingRegistry: RemoteToolPendingRegistry = (() => {
+		const map = new Map<
+			string,
+			{
+				resolve: (r: RpcRemoteToolResponse) => void;
+				reject: (e: Error) => void;
+				timer: ReturnType<typeof setTimeout>;
+			}
+		>();
+		return {
+			register(id, resolve, reject, timeoutMs) {
+				const timer = setTimeout(() => {
+					map.delete(id);
+					reject(new Error(`RemoteProxyTool timeout: ${id} (${timeoutMs}ms)`));
+				}, timeoutMs);
+				map.set(id, { resolve, reject, timer });
+			},
+			resolve(id, response) {
+				const entry = map.get(id);
+				if (!entry) return false;
+				map.delete(id);
+				clearTimeout(entry.timer);
+				entry.resolve(response);
+				return true;
+			},
+		};
+	})();
 
 	// Shutdown request flag
 	let shutdownRequested = false;
@@ -779,6 +814,26 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		await shutdown();
 	}
 
+	async function handleRemoteToolCatalog(catalog: RpcRemoteToolCatalog) {
+		const allowedNames = new Set(remoteTools ?? []);
+		if (allowedNames.size === 0) return; // nothing requested
+
+		const matched = catalog.tools.filter((t) => allowedNames.has(t.id));
+		if (matched.length === 0) return;
+
+		const proxyTools = matched.map((descriptor) =>
+			createRemoteProxyTool(descriptor, {
+				output: (obj) => output(obj as any),
+				pendingRegistry: remoteToolPendingRegistry,
+				timeoutMs: 60_000,
+			}),
+		);
+
+		if (typeof (session as any).registerCustomTools === "function") {
+			await (session as any).registerCustomTools(proxyTools);
+		}
+	}
+
 	const handleInputLine = async (line: string) => {
 		let parsed: unknown;
 		try {
@@ -807,6 +862,31 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				pendingExtensionRequests.delete(response.id);
 				pending.resolve(response);
 			}
+			return;
+		}
+
+		// Handle remote tool responses (F-2.2 / F-2.6)
+		if (typeof parsed === "object" && parsed !== null && "type" in parsed && parsed.type === "remote_tool_response") {
+			const response = parsed as RpcRemoteToolResponse;
+			// Resolve RemoteProxyTool promise if registered (F-2.6)
+			remoteToolPendingRegistry.resolve(response.id, response);
+			return;
+		}
+
+		// Handle remote tool catalog (F-2.6) — emitted by parent to advertise MCP tools
+		if (typeof parsed === "object" && parsed !== null && "type" in parsed && parsed.type === "remote_tool_catalog") {
+			handleRemoteToolCatalog(parsed as RpcRemoteToolCatalog);
+			return;
+		}
+
+		// Handle remote tool cancel acknowledgments (reserved for future use)
+		if (
+			typeof parsed === "object" &&
+			parsed !== null &&
+			"type" in parsed &&
+			parsed.type === "remote_tool_cancel_ack"
+		) {
+			// Currently no-op except cleanup; reserved for future use.
 			return;
 		}
 

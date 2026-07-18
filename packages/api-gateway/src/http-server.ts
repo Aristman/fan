@@ -6,6 +6,7 @@ import { logger } from "hono/logger";
 import { generateToken as createToken, listTokens, revokeToken, tokenAuth } from "./auth.js";
 import type {
 	ApiError,
+	ApiMcpStatusResponse,
 	CreateSessionRequest,
 	CreateSessionResponse,
 	DeleteSessionResponse,
@@ -236,6 +237,20 @@ async function createApp(
 		await modelManager.configureBudget(body);
 		const resp: UpdateBudgetResponse = { config: body };
 		return c.json(resp);
+	});
+
+	// --- MCP (Model Context Protocol) ---
+
+	// F-3.6: MCP server status (for dashboard MCP card)
+	// TODO Phase 4: real MCP inspector via fan-mcp runtime bridge, currently stub
+	app.get("/api/mcp/servers", async (c) => {
+		const response: ApiMcpStatusResponse = {
+			servers: [],
+			totalConnected: 0,
+			totalUnavailable: 0,
+			lastUpdate: new Date().toISOString(),
+		};
+		return c.json(response);
 	});
 
 	// --- Tokens ---

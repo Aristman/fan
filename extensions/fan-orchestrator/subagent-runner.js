@@ -1,7 +1,7 @@
 /**
  * Subprocess Runner — Spawns fan subprocesses for subagent execution
  *
- * Architecture (pi-style, ported from pi-orchestrator/rpc.ts):
+ * Architecture (fan-style, ported from fan-orchestrator/rpc.ts):
  * - ONE timer: stallTimer — resets on ANY stdout data from the subprocess
  * - NO progressTimer — actively streaming LLM emits stdout continuously
  *   so stallTimer never fires during generation
@@ -13,6 +13,7 @@
 import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { brokerHandler } from "./broker-handler.js";
 export const MAX_PARALLEL_TASKS = 8;
 export const MAX_CONCURRENCY = 4;
 export function getFinalOutput(messages) {
@@ -218,12 +219,12 @@ function formatDuration(ms) {
     return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
 }
 
-// ── Core worker spawn (pi-style) ──────────────────────────────────────────
+// ── Core worker spawn (fan-style) ───────────────────────────────────────────
 
 /**
  * Spawn a fan worker in RPC mode. Returns a promise that resolves when done.
  *
- * Protocol flow (mirrors pi-orchestrator):
+ * Protocol flow (mirrors fan-orchestrator):
  * 1. Send `prompt` with agent instructions + task (after 500ms delay)
  * 2. Poll `get_state` every 2s until `isStreaming` becomes false (after 1s delay post-prompt-ack)
  * 3. Send `get_last_assistant_text` to get the result
@@ -232,7 +233,7 @@ function formatDuration(ms) {
  * Single stallTimer — reset on ANY stdout data. Worker can run indefinitely
  * as long as it's producing output. If no output for stallTimeout ms → kill.
  */
-export function runWorker(model, temperature, agentPrompt, tools, task, stallTimeout, options) {
+export function runWorker(model, temperature, agentPrompt, tools, task, stallTimeout, options, agentName) {
     const PROMPT_ID = "orch-prompt";
     const STATE_ID = "orch-state";
     const TEXT_ID = "orch-text";
@@ -242,6 +243,22 @@ export function runWorker(model, temperature, agentPrompt, tools, task, stallTim
         if (model) rpcArgs.push("--model", model);
         if (temperature != null) rpcArgs.push("--temperature", String(temperature));
         if (tools && tools.length > 0) rpcArgs.push("--tools", tools.join(","));
+
+        // F-2.7: per-worker profile filtering (MCP tools)
+        const agentProfile = agentName || "";
+        const permLevel = brokerHandler.getPermissionLevel(agentProfile);
+        let allowedMcpTools = [];
+        try {
+            const catalogTools = brokerHandler.listTools();
+            allowedMcpTools = brokerHandler.filterToolsByProfile(catalogTools, permLevel);
+        } catch (e) {
+            // broker may not be initialized — continue without remote tools
+        }
+        const remoteToolsFlag = allowedMcpTools.map((t) => t.id);
+        if (remoteToolsFlag.length > 0) {
+            rpcArgs.push("--remote-tools", remoteToolsFlag.join(","));
+        }
+
         rpcArgs.push("--no-session", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes");
         const invocation = getFnaInvocation(rpcArgs);
         const child = spawn(invocation.command, invocation.args, {
@@ -330,6 +347,22 @@ export function runWorker(model, temperature, agentPrompt, tools, task, stallTim
             if (!resolved) {
                 try { child.stdin?.write(JSON.stringify(data) + "\n"); } catch { /* ignore */ }
             }
+        }
+
+        // F-2.7: send remote_tool_catalog to worker if MCP tools were requested
+        if (allowedMcpTools.length > 0) {
+            const catalogMsg = {
+                type: "remote_tool_catalog",
+                tools: allowedMcpTools.map((t) => ({
+                    id: t.id,
+                    label: t.label,
+                    description: t.description,
+                    inputSchema: t.inputSchema,
+                    serverName: t.serverName,
+                    annotations: t.annotations,
+                })),
+            };
+            try { child.stdin?.write(JSON.stringify(catalogMsg) + "\n"); } catch { /* ignore */ }
         }
 
         function schedulePoll() {
@@ -445,6 +478,13 @@ export function runWorker(model, temperature, agentPrompt, tools, task, stallTim
                 }
             }
 
+            // F-2.4: Handle remote tool invocations from worker (MCP proxy)
+            if (data.type === "remote_tool_request") {
+                const { id, toolId, args } = data;
+                handleRemoteToolRequest(id, toolId, args);
+                return;
+            }
+
             // Fill in preview when tool actually starts executing (args are complete)
             if (data.type === "tool_execution_start") {
                 const existing = toolCalls.find(tc => tc.name === data.toolName && tc.preview === "");
@@ -471,6 +511,34 @@ export function runWorker(model, temperature, agentPrompt, tools, task, stallTim
             }
             setTimeout(() => { if (!resolved) finish({ text: lastText, messageCount }); }, 2000);
         });
+
+        function handleRemoteToolRequest(id, toolId, args) {
+            // F-2.4 FIX: Route through brokerHandler.invokeTool → registered handler.
+            // The handler is set by orchestrator-extension at init.
+            (async () => {
+                try {
+                    const result = await brokerHandler.handleRemoteToolInvocation(toolId, args);
+                    send(JSON.stringify({
+                        type: "remote_tool_response",
+                        id,
+                        content: result.content,
+                        isError: result.isError,
+                        errorMessage: result.isError && typeof result.content[0]?.text === "string"
+                            ? result.content[0].text
+                            : undefined,
+                    }) + "\n");
+                } catch (e) {
+                    const message = e instanceof Error ? e.message : String(e);
+                    send(JSON.stringify({
+                        type: "remote_tool_response",
+                        id,
+                        content: [{ type: "text", text: `Broker error: ${message}` }],
+                        isError: true,
+                        errorMessage: message,
+                    }) + "\n");
+                }
+            })();
+        }
 
         // Initial 500ms delay before sending prompt
         setTimeout(() => {
@@ -501,7 +569,7 @@ function formatToolCallsBody(toolCalls, maxItems = 12) {
 
 /**
  * Build the status text shown as the worker content (header + body).
- * Mirrors pi-orchestrator's buildWorkerStatusText.
+ * Mirrors fan-orchestrator's buildWorkerStatusText.
  */
 /**
  * Build worker body content (status line + tool calls list).
@@ -588,7 +656,7 @@ export async function runSingleAgent(defaultCwd, agents, agentName, task, temper
     }
 
     try {
-        const result = await runWorker(model, temperature, agentPrompt, tools, task, stallTimeout, progressOptions);
+        const result = await runWorker(model, temperature, agentPrompt, tools, task, stallTimeout, progressOptions, agentName);
         lastText = result.text;
         messageCount = result.messageCount;
         const endTime = Date.now();

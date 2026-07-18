@@ -2,8 +2,15 @@
 	"extends": "../../tsconfig.base.json",
 	"compilerOptions": {
 		"outDir": "./dist",
-		"rootDir": "./src"
+		"rootDir": "./src",
+		"paths": {
+			"@fan/mcp": ["./types/mcp-stub.d.ts"]
+		}
 	},
-	"include": ["src/**/*.ts"],
-	"exclude": ["node_modules", "dist", "**/*.d.ts", "src/**/*.d.ts"]
+	"include": [
+		"src/**/*.ts",
+		"src/core/security/permissions.d.ts",
+		"types/**/*.d.ts"
+	],
+	"exclude": ["node_modules", "dist"]
 }

@@ -9,6 +9,7 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { type SessionAdapter, startServer } from "@fan/api-gateway";
+import { mcpExtension } from "@fan/mcp";
 import { storeExtension } from "@fan/store";
 import { type ImageContent, modelsAreEqual, supportsXhigh } from "@seaagents/fan-ai";
 import { ProcessTerminal, setKeybindings, TUI } from "@seaagents/fan-tui";
@@ -944,7 +945,10 @@ export async function main(args: string[]) {
 				noThemes: parsed.noThemes,
 				systemPrompt: parsed.systemPrompt,
 				appendSystemPrompt: parsed.appendSystemPrompt,
-				extensionFactories: [...(parsed.noStore ? [] : [storeExtension as unknown as CodingAgentExtensionFactory])],
+				extensionFactories: [
+					...(parsed.noStore ? [] : [storeExtension as unknown as CodingAgentExtensionFactory]),
+					mcpExtension as unknown as CodingAgentExtensionFactory,
+				],
 			},
 		});
 		const { settingsManager, modelRegistry, resourceLoader } = services;
@@ -1192,7 +1196,7 @@ export async function main(args: string[]) {
 		});
 	} else if (appMode === "rpc") {
 		printTimings();
-		await runRpcMode(runtime);
+		await runRpcMode(runtime, parsed.remoteTools);
 	} else if (appMode === "interactive") {
 		if (scopedModels.length > 0 && (parsed.verbose || !settingsManager.getQuietStartup())) {
 			const modelList = scopedModels

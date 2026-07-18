@@ -17,6 +17,7 @@
  *   /delegate <agent> <task> — Quick delegate
  *   /pipeline             — Pipeline mode (init/status/log/finish/cancel)
  */
+import { brokerHandler } from "./broker-handler.js";
 import { COORDINATOR_PROMPT, buildCoordinatorPrompt, discoverAgents } from "./agents.js";
 import { DEFAULTS, configExists, loadConfig, resolveWorkerModel, resolveWorkerTemperature, saveConfig } from "./config.js";
 import { registerOrchestratorTools } from "./orchestrator-tools.js";
@@ -28,6 +29,27 @@ import { _resetRegistry, activeWorkers, genWorkerId, registerWorker, updateWorke
 import { PipelineState } from "./pipeline-state.js";
 import * as path from "node:path";
 export const orchestratorExtension = (fan) => {
+    // F-2.5: Subscribe to MCP catalog (fan-mcp extension emits on "mcp:catalog")
+    brokerHandler.initialize(fan);
+
+    // F-2.4 FIX: Set up the tool call handler that calls back into fan-mcp.
+    // This requires fan-mcp to expose its MCPC client manager via some bridge.
+    // For now, use a placeholder that gracefully errors until Phase 4 wiring.
+    brokerHandler.setToolCallHandler(async (serverId, toolName, args) => {
+        // Production: dispatch to fan-mcp's MCPC client via Module-level bridge.
+        // Phase 4 item: frozen module reference between extensions.
+        console.warn(
+            `[FAN Orchestrator] MCP tool call bridge not wired: serverId=${serverId} tool=${toolName}. Phase 4 item.`
+        );
+        return {
+            content: [{
+                type: "text",
+                text: `MCP tool ${toolName} (server ${serverId}) called but bridge not yet wired. This is a Phase 4 item.`,
+            }],
+            isError: true,
+        };
+    });
+
     // ---- Infrastructure setup ----
     const hasConfig = configExists();
     const config = hasConfig ? loadConfig() : { ...DEFAULTS };

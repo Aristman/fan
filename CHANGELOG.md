@@ -1,6 +1,127 @@
 # Changelog
 
-## [2.2.3] - 2026-07-15
+## [2.3.1] — 2026-07-16
+
+### MCP Интеграция — Полный цикл (Phase 1 + 2 + 3)
+
+Пакет `@fan/mcp` (внутреннее имя `fan-mcp`) — встроенное расширение FAN для
+подключения к внешним MCP-серверам (Model Context Protocol). Реализован полный
+набор roadmap функций (31/32, 96.9%), включая координаторный MCP, прокси
+для воркеров, OAuth, авто-восстановление и observability.
+
+Расширение внедрено в ядро FAN так же, как `@fan/store` — через статический
+импорт в `loader.ts` + `VIRTUAL_MODULES` + `tsconfig.json paths` + зависимость
+в `coding-agent/package.json`. При компиляции FAN бинарника код mcp-расширения
+включается статически и доступен сразу после установки без дополнительных шагов.
+
+**Состояние:** 31/32 roadmap-функций реализованы (96.9%). 1 функция (Dashboard
+Lit-компонент) отложена на Phase 4 как UX-улучшение.
+
+**Тесты:**
+- `packages/mcp`: 283 теста (20 test files)
+- `packages/coding-agent`: 1 029 тестов (без регрессий)
+- `packages/tui`: 500 тестов
+- `packages/api-gateway`: 45 тестов
+- Total: ~1 857 тестов
+
+#### Добавлено
+
+**Новый пакет `@fan/mcp`** (ранее `packages/mcp-extension`, переименован в
+`packages/mcp`):
+
+- **Координаторный MCP (Phase 1)** — основной агент подключается к
+  MCP-серверам напрямую:
+  - Транспорты: `stdio` (спавн дочернего процесса) и `Streamable HTTP`
+  - Обнаружение инструментов через `tools/list`, динамическое обновление
+    каталога через `notifications/tools/list_changed`
+  - Конвертер JSON Schema → TypeBox для параметров инструментов
+  - Маппинг `CallToolResult` → `AgentToolResult` (текст, изображения,
+    fallback для неподдерживаемых типов контента)
+  - Сохранение `structuredContent` в `result.details`
+  - Загрузчик `mcp.json` с объединением глобального/проектного конфига
+  - Фильтрация инструментов: `allowedTools`/`deniedTools` (glob-шаблоны)
+  - Permission gate через хук `tool_call` (блокировка до выполнения)
+  - Отмена вызовов через `AbortSignal` → MCP cancel
+  - Таймауты per-call (по умолчанию 60 с)
+  - Разрешение `${ENV_VAR}` в `mcp.json`
+  - Graceful shutdown (закрытие клиентов, kill stdio-процессов)
+  - Атомарное обновление реестра при `list_changed`
+  - Обработка ошибок: недоступный сервер, краш stdio-процесса,
+    невалидный `mcp.json` (graceful skip с warning)
+
+- **Worker Proxy (Phase 2)** — воркеры получают MCP-инструменты через
+  protocol-neutral прокси без прямой загрузки расширения и без открытия
+  собственных MCP-соединений:
+  - Типы `RpcRemoteToolRequest` / `Response` / `Cancel` / `Catalog`
+    в `rpc-types.ts` (protocol-neutral, без привязки к MCP SDK)
+  - Карта корреляции `remoteToolPendingRegistry` в `rpc-mode.ts`
+  - CLI-флаг `--remote-tools=<list>` для режима воркера
+  - `RemoteProxyTool` — локальный прокси, отправляющий `remote_tool_request`
+    на stdout и ожидающий `remote_tool_response` от родителя
+  - `broker-handler` в расширении оркестратора — подписывается на
+    EventBus `mcp:catalog`, хранит каталог, маршрутизирует вызовы
+  - Профильная фильтрация per-worker:
+    - `explore` / `plan` / `verify` / `code-research` → только чтение
+    - `implement` / `bug-fix` / `tests-impl` → полный доступ
+  - Кеш `lastEvent` на `EventBus` (replay-on-subscribe) для опоздавших
+    подписчиков
+
+- **Polish & Hardening (Phase 3)**:
+  - **OAuth 2.0 + PKCE** — генерация code_verifier/challenge (S256),
+    локальный callback-сервер, обмен code→token, refresh-логика,
+    файловое хранилище токенов (`~/.fan/agent/mcp-tokens.json`, mode 0o600)
+  - **Авто-перезапуск** упавших stdio-серверов с экспоненциальной
+    задержкой (1 с → 2 с → 4 с → 8 с → 16 с, макс. 5 попыток за 60 с)
+  - **Slash-команды** `/mcp status` и `/mcp reload`
+  - **Логгер** — структурированные JSON-lines в
+    `~/.fan/agent/logs/mcp-YYYY-MM-DD.log`
+  - **Progress forwarding** — MCP progress → FAN `onUpdate` с
+    throttle 50 мс (батчинг высокочастотных событий)
+  - **API Gateway** — эндпоинт `GET /api/mcp/servers` (заглушка,
+    полный runtime-мост в Phase 4)
+  - **Seed starter mcp.json** — при первом запуске FAN автоматически
+    создаётся `~/.fan/agent/mcp.json` с пустым списком серверов
+    (idempotent, не перезаписывает существующий)
+
+#### Изменения в core
+
+| Файл | Строк | Описание |
+|------|-------|----------|
+| `extensions/types.ts` | +15 | `unregisterTool`, `updateTool` на ExtensionAPI |
+| `extensions/loader.ts` | +2 | Импорт `@fan/mcp` + `VIRTUAL_MODULES` entry |
+| `event-bus.ts` | +10 | Кеш `lastEvent` (replay-on-subscribe) |
+| `rpc-types.ts` | +90 | Protocol-neutral `RpcRemoteTool*` types |
+| `rpc-mode.ts` | +60 | Карта корреляции + хендлеры |
+| `rpc/remote-proxy-tool.ts` | новый | `RemoteProxyTool` class |
+| `cli/args.ts` | +5 | `--remote-tools` CLI-флаг |
+| `agent-session.ts` | +10 | `registerCustomTools` метод |
+| **Total core** | **~192 строк** | **Ноль импортов MCP SDK в core** |
+
+#### Исправления безопасности (10 багов найдено при adversarial review)
+
+| # | Severity | Баг |
+|---|----------|-----|
+| BUG-1 | **CRITICAL** | Permission gate создавался с пустым config — все MCP-вызовы блокировались в runtime |
+| BUG-2 | HIGH | Server ID alias injection через `Number("0e0") === 0` |
+| BUG-3 | HIGH | SSRF через диапазон 127.0.0.0/8 (loopback bypass) |
+| BUG-4 | HIGH | Детерминированный баг в тесте TC-F1.7-9 (неправильная позиция аргумента) |
+| BUG-5 | CRITICAL | `list_changed` двойной fetch (SDK `autoRefresh` + ручной вызов) |
+| BUG-6 | HIGH | matchGlob ReDoS через неограниченные wildcard-шаблоны |
+| BUG-7 | LOW | Мёртвый код `pendingRemoteToolRequests` Map |
+| BUG-8 | MEDIUM | Несоответствие имён filterToolsByConfig (raw имена) и permission gate (полные имена) |
+| BUG-9 | LOW | Утечка секретов в логгер (Bearer-токены, API-ключи) |
+| BUG-10 | MEDIUM | 36 TypeScript-ошибок в тестовых файлах |
+
+#### Изменения версий
+
+- **fan** (root) — `2.3.0` → `2.3.1`
+- **@fan/mcp** (новый пакет) — `1.0.0`
+- Пакет `@fan/mcp-extension` переименован в `@fan/mcp`,
+  директория `packages/mcp-extension/` → `packages/mcp/`
+
+---
+
+## [2.3.0] - 2026-07-14
 
 ### 📋 Вставка картинок из буфера (TUI)
 

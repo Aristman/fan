@@ -794,6 +794,18 @@ export class AgentSession {
 	}
 
 	/**
+	 * Register additional custom tools at runtime and refresh the tool registry.
+	 * Used by the RPC worker to inject RemoteProxyTool instances received via
+	 * the `remote_tool_catalog` message (F-2.6).
+	 */
+	registerCustomTools(tools: ToolDefinition[]): void {
+		for (const tool of tools) {
+			this._customTools.push(tool);
+		}
+		this._refreshToolRegistry({ activeToolNames: this.getActiveToolNames() });
+	}
+
+	/**
 	 * Set active tools by name.
 	 * Only tools in the registry can be enabled. Unknown tool names are ignored.
 	 * Also rebuilds the system prompt to reflect the new tool set.

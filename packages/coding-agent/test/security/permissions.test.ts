@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { isDangerousCommand } from "../../src/core/security/permissions.js";
 
 /* ===================================================================
@@ -227,15 +227,13 @@ describe("isDangerousCommand — FAN_DANGEROUSLY_SKIP_PERMISSIONS bypass", () =>
 		// Without env var — guard is active, danger check runs
 		const guardActive = { _fanDangerouslyApproved: undefined };
 		const shouldCheck1 =
-			guardActive._fanDangerouslyApproved !== true &&
-			process.env.FAN_DANGEROUSLY_SKIP_PERMISSIONS !== "true";
+			guardActive._fanDangerouslyApproved !== true && process.env.FAN_DANGEROUSLY_SKIP_PERMISSIONS !== "true";
 		expect(shouldCheck1).toBe(true);
 
 		// With env var — guard is bypassed, danger check is skipped
 		process.env.FAN_DANGEROUSLY_SKIP_PERMISSIONS = "true";
 		const shouldCheck2 =
-			guardActive._fanDangerouslyApproved !== true &&
-			process.env.FAN_DANGEROUSLY_SKIP_PERMISSIONS !== "true";
+			guardActive._fanDangerouslyApproved !== true && process.env.FAN_DANGEROUSLY_SKIP_PERMISSIONS !== "true";
 		expect(shouldCheck2).toBe(false);
 
 		// Restore
@@ -333,13 +331,7 @@ describe("isDangerousCommand — _fanDangerouslyApproved flag bypass", () => {
 	});
 
 	it("should detect safe commands as null regardless of any bypass flag", () => {
-		const safeCommands = [
-			"ls -la",
-			'echo "hello"',
-			"cat file.txt",
-			"grep -r foo src/",
-			'mkdir -p /tmp/test',
-		];
+		const safeCommands = ["ls -la", 'echo "hello"', "cat file.txt", "grep -r foo src/", "mkdir -p /tmp/test"];
 
 		for (const cmd of safeCommands) {
 			expect(isDangerousCommand(cmd)).toBeNull();

@@ -272,27 +272,10 @@ for platform in "${PLATFORMS[@]}"; do
     echo "  binaries/$platform/fan"
 done
 
-# Generate manifest.json
+# Generate manifest.json (cross-platform Node replacement for python3 heredoc)
 echo "==> Generating manifest.json..."
 export FAN_VERSION
-python3 << 'PYEOF'
-import json, hashlib, os, glob
-version = os.environ['FAN_VERSION']
-released_at = os.popen("date -u +%Y-%m-%dT%H:%M:%SZ").read().strip()
-platforms = {}
-for f in sorted(glob.glob(f"fan-{version}-*.tar.gz") + glob.glob(f"fan-{version}-*.zip")):
-    name = f.replace(f"fan-{version}-", "").replace(".tar.gz", "").replace(".zip", "")
-    h = hashlib.sha256(open(f, "rb").read()).hexdigest()
-    s = os.path.getsize(f)
-    platforms[name] = {"url": f"https://fan.sea-agents.ru/fan-store/dist/{f}", "hash": f"sha256:{h}", "size": s}
-manifest = {"latest": version, "releasedAt": released_at, "releaseNotes": "", "platforms": platforms}
-with open("manifest.json", "w") as out:
-    json.dump(manifest, out, indent=2)
-    out.write("\n")
-print(f"Manifest: {len(platforms)} platforms, version {version}")
-for name, p in sorted(platforms.items()):
-    print(f"  {name}: {p['size']} bytes")
-PYEOF
+node "$SCRIPT_DIR/gen-manifest.mjs"
 
 # Copy artifacts to dist repo
 DIST_REPO="$HOME/fan-store/dist"

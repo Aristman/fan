@@ -1,4 +1,4 @@
-import { describe, it, assert } from "vitest";
+import { assert, describe, it } from "vitest";
 import { visibleWidth, wrapTextWithAnsi } from "../src/utils.js";
 
 describe("wrapTextWithAnsi", () => {
