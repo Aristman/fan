@@ -1,16 +1,9 @@
 /**
- * Check whether a shell command is dangerous.
+ * Type declaration for permissions.js (JavaScript module without .ts source).
  *
- * Detection pipeline:
- *  1. Custom patterns (configurable)
- *  2. Pipe analysis
- *  3. Subshell extraction
- *  4. Heredoc extraction
- *  5. Interpreter inline code
- *  6. Stripped command (fallback)
+ * The implementation lives in permissions.js. This file provides the type
+ * declarations so TypeScript can type-check imports of it.
  *
- * @param cmd - The raw command string to evaluate.
- * @param customPatterns - Optional list of custom dangerous command patterns.
- * @returns A human-readable danger reason, or `null` if the command is safe.
+ * Source of truth for the signature is JSDoc on the function in permissions.js.
  */
-export function isDangerousCommand(cmd: string, customPatterns?: string[]): string | null;
+export declare function isDangerousCommand(cmd: string, customPatterns?: RegExp[]): string | null;
