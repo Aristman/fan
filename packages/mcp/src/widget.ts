@@ -48,7 +48,7 @@ function statusIcon(status: ServerInfo["status"]): string {
 		case "unavailable":
 			return "✗";
 		case "disabled":
-			return "○";
+			return "✗";
 	}
 }
 
@@ -189,7 +189,8 @@ export class McpWidget implements Component {
 				const toolStr = this.theme.fg("dim", `${s.toolNames.length} tools`);
 				const errorStr = s.connectError ? this.theme.fg("dim", ` (${s.connectError})`) : "";
 				const nameStr = truncateToWidth(s.name, 27);
-				const leftSide = `│ ${icon} ${nameStr}`;
+				const colorizedName = statusColor(this.theme, s.status, nameStr);
+				const leftSide = `│ ${icon} ${colorizedName}`;
 				const rightSide = `${toolStr}${errorStr}`;
 				const leftVisible = visibleWidth(stripAnsi(leftSide));
 				const rightVisible = visibleWidth(stripAnsi(rightSide));
@@ -226,7 +227,8 @@ export class McpWidget implements Component {
 			return lines;
 		}
 
-		const title = `Tools: ${server.name}`;
+		const colorizedName = statusColor(this.theme, server.status, server.name);
+		const title = `Tools: ${colorizedName}`;
 		lines.push(...renderHeader(this.theme, width, title));
 
 		const allTools = server.toolNames;
