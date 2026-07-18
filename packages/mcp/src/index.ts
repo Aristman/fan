@@ -190,7 +190,7 @@ async function showMcpWidget(fan: ExtensionAPI, ctx: ExtensionCommandContext): P
 		return;
 	}
 
-	ctx.ui.setStatus("mcp", "MCP Browser — ↑↓ navigate · Enter detail · Space toggle · Esc close");
+	ctx.ui.setStatus("mcp", "MCP Browser — ↑↓ navigate · Enter tools · Space toggle · Esc close");
 	try {
 		// eslint-disable-next-line no-constant-condition
 		while (true) {
@@ -230,7 +230,7 @@ async function showMcpWidget(fan: ExtensionAPI, ctx: ExtensionCommandContext): P
 				ctx.ui.setStatus("mcp", `❌ ${e?.message ?? String(e)} — MCP Browser`);
 				// Brief pause so user sees the error before the widget re-opens
 				await new Promise(r => setTimeout(r, 1500));
-				ctx.ui.setStatus("mcp", "MCP Browser — ↑↓ navigate · Enter detail · Space toggle · Esc close");
+				ctx.ui.setStatus("mcp", "MCP Browser — ↑↓ navigate · Enter tools · Space toggle · Esc close");
 			}
 
 			// Loop continues — widget re-opens with fresh data from manager.getServers()

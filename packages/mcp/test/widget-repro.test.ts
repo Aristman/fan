@@ -108,7 +108,7 @@ describe("MCP Widget Space key repro", () => {
 		});
 
 		widget1.handleInput("\r");
-		expect((widget1 as any).state.view).toBe("server-detail");
+		expect((widget1 as any).state.view).toBe("tools");
 
 		widget1.handleInput("\x1b");
 		expect((widget1 as any).state.view).toBe("servers");
@@ -274,8 +274,7 @@ describe("render overflow guard", () => {
 		const widget = new McpWidget({ tui: makeMockTui(),  theme, manager, onAction: () => {} });
 
 		// navigate: enter first server, enter tools
-		widget.handleInput("\r"); // enter → server-detail
-		widget.handleInput("\r"); // enter → tools (tools list will be empty)
+		widget.handleInput("\r"); // enter → tools directly (tools list will be empty)
 
 		const lines = widget.render(147);
 		for (const [idx, line] of lines.entries()) {
@@ -310,8 +309,7 @@ describe("render overflow guard", () => {
 		const theme = makeMockTheme();
 		const widget = new McpWidget({ tui: makeMockTui(),  theme, manager, onAction: () => {} });
 
-		// navigate: enter → server-detail, enter → tools
-		widget.handleInput("\r");
+		// navigate: enter → tools directly
 		widget.handleInput("\r");
 
 		for (const width of [40, 80, 120, 147]) {

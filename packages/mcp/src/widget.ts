@@ -1,7 +1,7 @@
 /**
  * MCP Widget — TUI component for managing MCP servers interactively.
  *
- * 3-level state machine: servers → server-detail → tools
+ * 2-level state machine: servers → tools
  *
  * Fullscreen Store-style browser. State is fresh each time the widget
  * is opened via the while-loop pattern in showMcpWidget.
@@ -14,7 +14,7 @@ import type { McpClientManager, ServerInfo } from "./manager.js";
 
 // ── Types ───────────────────────────────────────────────────────────
 
-export type McpWidgetView = "servers" | "server-detail" | "tools";
+export type McpWidgetView = "servers" | "tools";
 
 export interface McpWidgetState {
 	view: McpWidgetView;
@@ -167,8 +167,6 @@ export class McpWidget implements Component {
 		switch (this.state.view) {
 			case "servers":
 				return this.renderServers(width);
-			case "server-detail":
-				return this.renderServerDetail(width);
 			case "tools":
 				return this.renderTools(width);
 		}
@@ -213,57 +211,7 @@ export class McpWidget implements Component {
 			}
 		}
 
-		lines.push(...renderFooter(this.theme, width, "↑↓ navigate · Enter detail · Space toggle · Esc close"));
-		return lines;
-	}
-
-	private renderServerDetail(width: number): string[] {
-		const lines: string[] = [];
-		const serverIdx = this.state.selectedServerIndex;
-		const server = this.state.servers[serverIdx];
-
-		if (!server) {
-			lines.push(...renderHeader(this.theme, width, "MCP Servers"));
-			const t = "Server not found.";
-			lines.push(`│ ${this.theme.fg("dim", t)}${" ".repeat(Math.max(0, width - visibleWidth(t) - 3))}│`);
-			lines.push(...renderFooter(this.theme, width, "Esc back to servers"));
-			return lines;
-		}
-
-		const title = `Server: ${server.name}`;
-		lines.push(...renderHeader(this.theme, width, title));
-
-		const statusStr = statusColor(this.theme, server.status, server.status);
-		const transportStr = server.transport;
-		const toolsStr = `${server.toolNames.length} tools`;
-		const errorStr = server.connectError ? `Error: ${server.connectError}` : "";
-		const enabledStr = server.enabled ? this.theme.fg("success", "Enabled") : this.theme.fg("error", "Disabled");
-
-		const detailLines = [
-			`│ Status: ${statusStr}   Transport: ${transportStr}   ${toolsStr}   ${enabledStr}`,
-			errorStr ? `│ ${this.theme.fg("dim", errorStr)}` : "",
-			"│",
-			`│  ${statusColor(this.theme, server.status, statusIcon(server.status))} ${this.theme.bold("[Toggle enable/disable]")} — press Space`,
-			`│  ${this.theme.fg("dim", "Enter")} ${this.theme.bold("Tools")} — press Enter`,
-			"│",
-			`│  Connect:   press ${this.theme.fg("dim", "c")}`,
-			`│  Disconnect: press ${this.theme.fg("dim", "d")}`,
-		].filter(Boolean);
-
-		for (const dl of detailLines) {
-			// pad using visible width since `dl` may contain ANSI escape codes
-			const dlVisible = visibleWidth(dl);
-			let padded = dl;
-			if (dlVisible + 1 < width) {
-				// reserve 1 char for trailing "│"
-				padded = dl + " ".repeat(width - dlVisible - 1);
-			}
-			padded = padded + "│";
-			if (visibleWidth(padded) > width) padded = truncateLineToWidth(padded, width);
-			lines.push(padded);
-		}
-
-		lines.push(...renderFooter(this.theme, width, "Enter tools · Space toggle · c/d connect/disconnect · Esc back"));
+		lines.push(...renderFooter(this.theme, width, "↑↓ navigate · Enter tools · Space toggle · Esc close"));
 		return lines;
 	}
 
@@ -314,7 +262,7 @@ export class McpWidget implements Component {
 			}
 		}
 
-		lines.push(...renderFooter(this.theme, width, "↑↓ navigate · Space toggle · Esc back"));
+		lines.push(...renderFooter(this.theme, width, "↑↓ navigate · Space toggle · Esc servers"));
 		return lines;
 	}
 
@@ -330,9 +278,6 @@ export class McpWidget implements Component {
 			case "servers":
 				this.handleServersInput(data);
 				break;
-			case "server-detail":
-				this.handleServerDetailInput(data);
-				break;
 			case "tools":
 				this.handleToolsInput(data);
 				break;
@@ -342,11 +287,16 @@ export class McpWidget implements Component {
 	private handleBackOrClose(): void {
 		if (this.state.view === "servers") {
 			this.onAction({ type: "exit" });
-		} else if (this.state.view === "server-detail") {
+		} else if (this.state.view === "tools") {
 			this.state.view = "servers";
 			this.state.selectedIndex = this.state.selectedServerIndex;
-		} else if (this.state.view === "tools") {
-			this.state.view = "server-detail";
+			this.state.scrollOffset = Math.max(
+				0,
+				Math.min(
+					this.state.scrollOffset,
+					Math.max(0, this.state.servers.length - 15),
+				),
+			);
 		}
 	}
 
@@ -371,7 +321,9 @@ export class McpWidget implements Component {
 			}
 		} else if (matchesKey(data, "enter")) {
 			this.state.selectedServerIndex = this.state.selectedIndex;
-			this.state.view = "server-detail";
+			this.state.selectedToolIndex = 0;
+			this.state.toolScrollOffset = 0;
+			this.state.view = "tools";
 		} else if (matchesKey(data, "space")) {
 			const s = servers[this.state.selectedIndex];
 			if (s.status === "unavailable" || s.status === "disabled") {
@@ -382,32 +334,6 @@ export class McpWidget implements Component {
 				this.onAction({ type: "disconnect", serverIdx: s.index });
 			} else {
 				this.onAction({ type: "connect", serverIdx: s.index });
-			}
-		}
-	}
-
-	private handleServerDetailInput(data: string): void {
-		const serverIdx = this.state.selectedServerIndex;
-		const server = this.state.servers[serverIdx];
-		if (!server) return;
-
-		if (matchesKey(data, "enter")) {
-			this.state.view = "tools";
-			this.state.selectedToolIndex = 0;
-			this.state.toolScrollOffset = 0;
-		} else if (matchesKey(data, "space")) {
-			if (server.enabled) {
-				this.onAction({ type: "disconnect", serverIdx: server.index });
-			} else {
-				this.onAction({ type: "connect", serverIdx: server.index });
-			}
-		} else if (matchesKey(data, "c")) {
-			if (server.status !== "connected") {
-				this.onAction({ type: "connect", serverIdx: server.index });
-			}
-		} else if (matchesKey(data, "d")) {
-			if (server.status === "connected") {
-				this.onAction({ type: "disconnect", serverIdx: server.index });
 			}
 		}
 	}
