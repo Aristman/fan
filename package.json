@@ -14,7 +14,7 @@
   ],
   "scripts": {
     "clean": "npm run clean --workspaces",
-    "build": "cd packages/db && npm run build && cd ../tui && npm run build && cd ../ai && npm run build && cd ../agent && npm run build && cd ../model-manager && npm run build && cd ../api-gateway && npm run build && cd ../web-ui && npm run build && cd ../store && npm run build && cd ../coding-agent && npm run build",
+    "build": "cd packages/db && npm run build && cd ../tui && npm run build && cd ../ai && npm run build && cd ../agent && npm run build && cd ../model-manager && npm run build && cd ../api-gateway && npm run build && cd ../web-ui && npm run build && cd ../store && npm run build && cd ../mcp && npm run build && cd ../coding-agent && npm run build",
     "dev": "concurrently --names \"ai,agent,coding-agent,web-ui,tui,model-manager,dashboard\" --prefix-colors \"cyan,yellow,red,green,magenta,orange,purple\" \"cd packages/ai && npm run dev\" \"cd packages/agent && npm run dev\" \"cd packages/coding-agent && npm run dev\" \"cd packages/web-ui && npm run dev\" \"cd packages/tui && npm run dev\" \"cd packages/model-manager && npm run dev\" \"cd packages/dashboard && npm run dev\"",
     "dev:tsc": "concurrently --names \"ai,web-ui\" --prefix-colors \"cyan,green\" \"cd packages/ai && npm run dev:tsc\" \"cd packages/web-ui && npm run dev:tsc\"",
     "check": "biome check --write --error-on-warnings . && cd packages/ai && npm run generate-models && cd ../.. && tsgo --noEmit && npm run check:browser-smoke && cd packages/web-ui && npm run check",
