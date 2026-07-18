@@ -45,12 +45,12 @@ function makeMockManager(overrides?: Partial<McpClientManager>): McpClientManage
 }
 
 describe("MCP Widget Space key repro", () => {
-	it("should handle Space toggle without breaking UI state", () => {
+	it("should handle Space toggle inline (calls manager directly)", async () => {
 		const theme = makeMockTheme();
 		const manager = makeMockManager();
 		let actionReceived: McpAction | null = null;
 
-		const widget = new McpWidget({ tui: makeMockTui(), 
+		const widget = new McpWidget({ tui: makeMockTui(),
 			theme,
 			manager,
 			onAction: (act: McpAction) => {
@@ -58,28 +58,38 @@ describe("MCP Widget Space key repro", () => {
 			},
 		});
 
-		expect(actionReceived).toBeNull();
+		// Space on connected server should call manager.disconnectOne directly,
+		// NOT emit a connect/disconnect action via onAction.
 		widget.handleInput(" ");
-		expect(actionReceived).not.toBeNull();
-		expect(actionReceived!.type).toBe("disconnect");
-		expect(actionReceived!.serverIdx).toBe(0);
+		expect(actionReceived).toBeNull();
+		expect(manager.disconnectOne).toHaveBeenCalledWith(0);
 
-		// After disconnect: server is disabled, Space should be no-op
-		const managerDisabled = makeMockManager({
+		// Wait for the async promise to settle
+		await Promise.resolve();
+
+		// After disconnect: state.servers should be re-read from manager
+		expect((widget as any).tui.requestRender).toHaveBeenCalled();
+	});
+
+	it("should allow Space to reconnect an unavailable server", async () => {
+		const theme = makeMockTheme();
+		const manager = makeMockManager({
 			getServers: () => [{
 				index: 0, name: "test-server", transport: "stdio",
-				status: "disabled", toolNames: [], connectError: undefined,
+				status: "unavailable", toolNames: [], connectError: undefined,
 				enabled: false, deniedTools: [],
 			}],
 		});
 
-		const widget2 = new McpWidget({ tui: makeMockTui(), 
+		const widget = new McpWidget({ tui: makeMockTui(),
 			theme,
-			manager: managerDisabled,
-			onAction: (act: McpAction) => { actionReceived = act; },
+			manager,
+			onAction: () => {},
 		});
-		widget2.handleInput(" ");
-		expect(actionReceived!.type).toBe("disconnect"); // unchanged from first
+		widget.handleInput(" ");
+		// Should call connectOne (not be a no-op)
+		expect(manager.connectOne).toHaveBeenCalledWith(0);
+		await Promise.resolve();
 	});
 
 	it("should handle rapid Esc without corruption", () => {
@@ -97,12 +107,12 @@ describe("MCP Widget Space key repro", () => {
 		expect(actions[0]).toEqual({ type: "exit" });
 	});
 
-	it("should cycle views and toggle without losing state", () => {
+	it("should cycle views and toggle without losing state", async () => {
 		const theme = makeMockTheme();
 		const manager = makeMockManager();
 		const actions: (McpAction | "exit")[] = [];
 
-		const widget1 = new McpWidget({ tui: makeMockTui(), 
+		const widget1 = new McpWidget({ tui: makeMockTui(),
 			theme, manager,
 			onAction: (act: McpAction) => { actions.push(act); },
 		});
@@ -113,28 +123,19 @@ describe("MCP Widget Space key repro", () => {
 		widget1.handleInput("\x1b");
 		expect((widget1 as any).state.view).toBe("servers");
 
+		// Space on connected server → inline disconnect (no action emitted)
 		widget1.handleInput(" ");
-		expect(actions.length).toBe(1);
-		expect(actions[0]!.type).toBe("disconnect");
+		expect(actions.length).toBe(0);
+		expect(manager.disconnectOne).toHaveBeenCalledWith(0);
+		await Promise.resolve();
 
-		// New widget with disabled state
-		const manager2 = makeMockManager({
-			getServers: () => [{
-				index: 0, name: "test-server", transport: "stdio",
-				status: "disabled", toolNames: [], connectError: undefined,
-				enabled: false, deniedTools: [],
-			}],
-		});
-		const widget2 = new McpWidget({ tui: makeMockTui(), 
-			theme, manager: manager2,
-			onAction: (act: McpAction) => { actions.push(act); },
-		});
-		widget2.handleInput("\x1b");
-		expect(actions.length).toBe(2);
-		expect(actions[1]).toEqual({ type: "exit" });
+		// Esc emits exit action
+		widget1.handleInput("\x1b");
+		expect(actions.length).toBe(1);
+		expect(actions[0]).toEqual({ type: "exit" });
 	});
 
-	it("should not call onAction for disabled server Space", () => {
+	it("should call connectOne inline for disabled/unavailable server Space", async () => {
 		const theme = makeMockTheme();
 		const actions: McpAction[] = [];
 		const disabledManager = makeMockManager({
@@ -144,12 +145,14 @@ describe("MCP Widget Space key repro", () => {
 				enabled: false, deniedTools: [],
 			}],
 		});
-		const widget = new McpWidget({ tui: makeMockTui(), 
+		const widget = new McpWidget({ tui: makeMockTui(),
 			theme, manager: disabledManager,
 			onAction: (act: McpAction) => { actions.push(act); },
 		});
 		widget.handleInput(" ");
 		expect(actions.length).toBe(0);
+		expect(disabledManager.connectOne).toHaveBeenCalledWith(0);
+		await Promise.resolve();
 	});
 });
 
@@ -175,21 +178,17 @@ describe("MCP widget no-notify-between-iterations", () => {
 			},
 		});
 
-		// Simulate a Space toggle → should produce disconnect action
+		// Simulate a Space toggle → should NOT emit any action
+		// (toggle is handled inline via manager.connectOne/disconnectOne)
 		widget.handleInput(" ");
-		expect(actions.length).toBe(1);
-		expect(actions[0]!.type).toBe("disconnect");
-
+		expect(actions.length).toBe(0);
 		// The widget does not have access to ctx.ui, so it cannot call notify.
-		// This test verifies that the widget's action dispatch does NOT
-		// accidentally embed notify calls.
+		// This test verifies that the widget does NOT emit actions (and
+		// therefore the showMcpWidget loop has nothing to dispatch).
 
-		// Simulate another Space on same server (now disabled in mock, but
-		// widget sees server as still connected — the state is managed by
-		// the while-loop creating fresh widgets each iteration)
+		// Simulate another Space on same server (still connected in mock)
 		widget.handleInput(" ");
-		expect(actions.length).toBe(2);
-		expect(actions[1]!.type).toBe("disconnect"); // same action again
+		expect(actions.length).toBe(0);
 	});
 
 	it("should use setStatus instead of notify for action feedback", () => {

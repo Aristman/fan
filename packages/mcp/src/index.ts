@@ -212,28 +212,8 @@ async function showMcpWidget(fan: ExtensionAPI, ctx: ExtensionCommandContext): P
 			);
 
 			if (action.type === "exit") break;
-
-			try {
-				switch (action.type) {
-					case "connect":
-						ctx.ui.setStatus("mcp", "⟳ Connecting...");
-						await currentManager.connectOne(action.serverIdx);
-						ctx.ui.setStatus("mcp", "✅ Connected — MCP Browser");
-						break;
-					case "disconnect":
-						ctx.ui.setStatus("mcp", "⟳ Disconnecting...");
-						await currentManager.disconnectOne(action.serverIdx);
-						ctx.ui.setStatus("mcp", "✅ Disconnected — MCP Browser");
-						break;
-				}
-			} catch (e: any) {
-				ctx.ui.setStatus("mcp", `❌ ${e?.message ?? String(e)} — MCP Browser`);
-				// Brief pause so user sees the error before the widget re-opens
-				await new Promise(r => setTimeout(r, 1500));
-				ctx.ui.setStatus("mcp", "MCP Browser — ↑↓ navigate · Enter tools · Space toggle · Esc close");
-			}
-
-			// Loop continues — widget re-opens with fresh data from manager.getServers()
+			// All other actions (currently none — connect/disconnect are
+			// handled inline inside the widget) would be dispatched here.
 		}
 	} finally {
 		ctx.ui.setStatus("mcp", undefined);

@@ -33,11 +33,9 @@ export interface McpWidgetOptions {
 	onAction(action: McpAction): void;
 }
 
-/** Actions that close the widget to run externally. */
-export type McpAction =
-	| { type: "exit" }
-	| { type: "connect"; serverIdx: number }
-	| { type: "disconnect"; serverIdx: number };
+/** Actions emitted via onAction. Only "exit" remains; connect/disconnect
+ *  are now handled inline inside the widget (same pattern as tool toggle). */
+export type McpAction = { type: "exit" };
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -326,15 +324,20 @@ export class McpWidget implements Component {
 			this.state.view = "tools";
 		} else if (matchesKey(data, "space")) {
 			const s = servers[this.state.selectedIndex];
-			if (s.status === "unavailable" || s.status === "disabled") {
-				// No-op for unavailable/disabled servers
-				return;
-			}
-			if (s.enabled) {
-				this.onAction({ type: "disconnect", serverIdx: s.index });
-			} else {
-				this.onAction({ type: "connect", serverIdx: s.index });
-			}
+			// Toggle inline — same pattern as tool toggle. Stay on the
+			// same view, no widget re-creation, no UI flicker.
+			// Allow toggle even when status is unavailable/disabled —
+			// the user expects Space to TOGGLE state, not be a no-op.
+			const op = s.enabled
+				? this.manager.disconnectOne(s.index)
+				: this.manager.connectOne(s.index);
+			op.then(() => {
+				this.state.servers = this.manager.getServers();
+				this.tui.requestRender();
+			}).catch(_e => {
+				// best-effort — next state read will reflect failure via
+				// entry.connectError surfaced in the widget
+			});
 		}
 	}
 
