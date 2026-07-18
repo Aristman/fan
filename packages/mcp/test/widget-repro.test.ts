@@ -40,6 +40,7 @@ function makeMockManager(overrides?: Partial<McpClientManager>): McpClientManage
 		connectAll: vi.fn(),
 		dispose: vi.fn(),
 		reloadConfig: vi.fn() as any,
+		disposed: false,
 		...overrides,
 	};
 }
@@ -323,6 +324,69 @@ describe("render overflow guard", () => {
 				expect(w, `width=${width} line ${idx} overflow: ${w} > ${width}`)
 					.toBeLessThanOrEqual(width);
 			}
+		}
+	});
+});
+
+describe("Space key debounce", () => {
+	it("throttles rapid Space presses — only first fires (F1/L7)", async () => {
+		const theme = makeMockTheme();
+		const manager = makeMockManager();
+
+		const widget = new McpWidget({ tui: makeMockTui(), theme, manager, onAction: () => {} });
+
+		// Simulate 5 rapid consecutive Space presses (100x Space scenario)
+		for (let i = 0; i < 5; i++) {
+			widget.handleInput(" ");
+		}
+
+		// Only the first Space should call disconnectOne (debounce at 300ms throttle)
+		expect(manager.disconnectOne).toHaveBeenCalledTimes(1);
+		expect(manager.disconnectOne).toHaveBeenCalledWith(0);
+
+		// After debounce window passes, next Space should fire
+		(manager.disconnectOne as any).mockClear();
+		(manager as any).disconnectOne = vi.fn().mockResolvedValue(undefined);
+
+		// Simulate time passing (310ms later)
+		const origNow = Date.now;
+		Date.now = () => origNow() + 310;
+		try {
+			widget.handleInput(" ");
+			expect(manager.disconnectOne).toHaveBeenCalledTimes(1);
+		} finally {
+			Date.now = origNow;
+		}
+	});
+
+	it("throttles rapid Space in tools view (F1/L7)", async () => {
+		const theme = makeMockTheme();
+		const manager = makeMockManager();
+
+		const widget = new McpWidget({ tui: makeMockTui(), theme, manager, onAction: () => {} });
+
+		// Enter tools view
+		widget.handleInput("\r");
+
+		// 3 rapid Space presses
+		for (let i = 0; i < 3; i++) {
+			widget.handleInput(" ");
+		}
+
+		// Only first Space should call setToolEnabled
+		expect(manager.setToolEnabled).toHaveBeenCalledTimes(1);
+
+		// After debounce window passes, next Space should fire
+		(manager.setToolEnabled as any).mockClear();
+		(manager as any).setToolEnabled = vi.fn().mockResolvedValue(undefined);
+
+		const origNow = Date.now;
+		Date.now = () => origNow() + 310;
+		try {
+			widget.handleInput(" ");
+			expect(manager.setToolEnabled).toHaveBeenCalledTimes(1);
+		} finally {
+			Date.now = origNow;
 		}
 	});
 });

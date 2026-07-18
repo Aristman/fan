@@ -165,6 +165,8 @@ export class McpWidget implements Component {
 	private manager: McpClientManager;
 	private tui: TUI;
 	private onAction: (action: McpAction) => void;
+	/** Tracks the last toggle timestamp for throttle (debounce F1/L7). */
+	private lastToggleAt = 0;
 
 	constructor(options: McpWidgetOptions) {
 		this.theme = options.theme;
@@ -182,7 +184,15 @@ export class McpWidget implements Component {
 		};
 	}
 
-
+	/**
+	 * Dispose the widget — cancels pending operations.
+	 * Currently no subscriptions or timers, but required for future-proof
+	 * lifecycle management (D1).
+	 */
+	dispose(): void {
+		// No subscriptions or timers to clean up yet.
+		// If async ops are added, track them here for cancellation.
+	}
 
 	invalidate(): void {
 		// No cached state to invalidate
@@ -330,6 +340,9 @@ export class McpWidget implements Component {
 	}
 
 	private handleServersInput(data: string): void {
+		// Guard: manager may have been disposed after reload (F4/R2)
+		if ((this.manager as any).disposed) return;
+
 		const servers = this.state.servers;
 		if (servers.length === 0) return;
 
@@ -354,6 +367,11 @@ export class McpWidget implements Component {
 			this.state.toolScrollOffset = 0;
 			this.state.view = "tools";
 		} else if (matchesKey(data, "space")) {
+			// Debounce: throttle toggles to 1 per 300ms (F1/L7)
+			const now = Date.now();
+			if (this.lastToggleAt && now - this.lastToggleAt < 300) return;
+			this.lastToggleAt = now;
+
 			const s = servers[this.state.selectedIndex];
 			// Toggle inline — same pattern as tool toggle. Stay on the
 			// same view, no widget re-creation, no UI flicker.
@@ -373,6 +391,9 @@ export class McpWidget implements Component {
 	}
 
 	private handleToolsInput(data: string): void {
+		// Guard: manager may have been disposed after reload (F4/R2)
+		if ((this.manager as any).disposed) return;
+
 		const serverIdx = this.state.selectedServerIndex;
 		const server = this.state.servers[serverIdx];
 		if (!server || server.toolNames.length === 0) return;
@@ -393,6 +414,11 @@ export class McpWidget implements Component {
 				}
 			}
 		} else if (matchesKey(data, "space")) {
+			// Debounce: throttle toggles to 1 per 300ms (F1/L7)
+			const now = Date.now();
+			if (this.lastToggleAt && now - this.lastToggleAt < 300) return;
+			this.lastToggleAt = now;
+
 			const toolName = server.toolNames[this.state.selectedToolIndex];
 			const currentEnabled = !isToolDenied(server, toolName);
 			const newEnabled = !currentEnabled;

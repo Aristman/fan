@@ -66,6 +66,8 @@ interface ServerEntry {
 	restartAttempts?: number;
 	/** Timestamp of the first crash in the current backoff window. */
 	firstCrashAt?: number;
+	/** Handle for the auto-restart setTimeout, cleared on dispose/crash/connect. */
+	restartTimer?: ReturnType<typeof setTimeout> | null;
 }
 
 /**
@@ -95,6 +97,12 @@ export interface McpClientManager {
 	disconnectOne(index: number): Promise<void>;
 	setToolEnabled(serverIdx: number, toolName: string, enabled: boolean): Promise<void>;
 	reloadConfig(configLoader: import("./config.js").ConfigLoader): Promise<string>;
+
+	/**
+	 * Flag set to true after dispose() to prevent stale widget references
+	 * from executing operations on a disposed manager (F4/R2).
+	 */
+	disposed: boolean;
 }
 
 /**
@@ -105,6 +113,7 @@ export interface McpClientManager {
  */
 export function createMcpClientManager(fan: ExtensionAPI, permissions: PermissionGate): McpClientManager {
 	const entries: ServerEntry[] = [];
+	let disposed = false;
 
 	// ── Transport factory ──────────────────────────────────────────
 
@@ -135,6 +144,16 @@ export function createMcpClientManager(fan: ExtensionAPI, permissions: Permissio
 		if (entry.status !== "connected") {
 			return; // Already unavailable or not yet fully connected
 		}
+
+		// Cancel any pending auto-restart timer (R1/L3)
+		if (entry.restartTimer) {
+			clearTimeout(entry.restartTimer);
+			entry.restartTimer = null;
+		}
+
+		// Clear adapterClient reference (L2)
+		entry.adapterClient = undefined;
+
 		entry.status = "unavailable";
 		// Crash info available via entry.connectError and mcp:catalog event
 		for (const toolName of entry.toolNames) {
@@ -169,7 +188,8 @@ export function createMcpClientManager(fan: ExtensionAPI, permissions: Permissio
 
 		const delayMs = backoffDelay(entry.restartAttempts);
 
-		setTimeout(() => {
+		entry.restartTimer = setTimeout(() => {
+			entry.restartTimer = null;
 			connectOne(entry.index, entry.config)
 				.then((newEntry) => {
 					// Merge fields from the new connection back into the existing entry.
@@ -253,7 +273,9 @@ export function createMcpClientManager(fan: ExtensionAPI, permissions: Permissio
 
 			entry.toolNames = [...newToolNames];
 		} catch (e: any) {
-			// Tools refresh failed — leave entry.toolNames untouched, surface via MCP error path
+			// Tools refresh failed — store error on entry so UI can display it
+			entry.connectError = e?.message ?? String(e);
+			fan.events.emit("mcp:catalog", { servers: entries });
 		}
 	}
 
@@ -265,6 +287,13 @@ export function createMcpClientManager(fan: ExtensionAPI, permissions: Permissio
 	 * the entry is marked "unavailable" with connectError set.
 	 */
 	async function connectOne(index: number, cfg: McpServerConfig): Promise<ServerEntry> {
+		// Cancel any pending restart timer before establishing a new connection
+		const existingEntry = entries[index];
+		if (existingEntry?.restartTimer) {
+			clearTimeout(existingEntry.restartTimer);
+			existingEntry.restartTimer = null;
+		}
+
 		const entry: ServerEntry = {
 			index,
 			config: cfg,
@@ -409,6 +438,15 @@ export function createMcpClientManager(fan: ExtensionAPI, permissions: Permissio
 		 * still resolves.
 		 */
 		async dispose(): Promise<void> {
+			disposed = true;
+			// Cancel all pending auto-restart timers (R1/L3/L4)
+			for (const entry of entries) {
+				if (entry.restartTimer) {
+					clearTimeout(entry.restartTimer);
+					entry.restartTimer = null;
+				}
+			}
+
 			const startTime = Date.now();
 
 			const closePromises = entries.map(async (entry) => {
@@ -512,6 +550,7 @@ export function createMcpClientManager(fan: ExtensionAPI, permissions: Permissio
 			}
 			entry.client = null;
 			entry.transport = null;
+			entry.adapterClient = undefined;
 
 			emitCatalog();
 		},
@@ -559,6 +598,10 @@ export function createMcpClientManager(fan: ExtensionAPI, permissions: Permissio
 			permissions.updateConfig(config.servers);
 			await this.connectAll(config);
 			return `Reloaded: ${entries.length} servers`;
+		},
+
+		get disposed(): boolean {
+			return disposed;
 		},
 	};
 }
