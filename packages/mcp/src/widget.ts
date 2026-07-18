@@ -7,9 +7,9 @@
  * is opened via the while-loop pattern in showMcpWidget.
  */
 
+import type { Theme } from "@seaagents/fan-coding-agent";
 import type { Component, TUI } from "@seaagents/fan-tui";
 import { matchesKey, visibleWidth } from "@seaagents/fan-tui";
-import type { Theme } from "@seaagents/fan-coding-agent";
 import type { McpClientManager, ServerInfo } from "./manager.js";
 
 // ── Types ───────────────────────────────────────────────────────────
@@ -62,7 +62,7 @@ function truncateToWidth(s: string, maxWidth: number): string {
 	if (visibleWidth(s) <= maxWidth) return s;
 	let truncated = s.slice(0, maxWidth - 1);
 	while (visibleWidth(truncated) > maxWidth - 3) truncated = truncated.slice(0, -1);
-	return truncated + "...";
+	return `${truncated}...`;
 }
 
 /** Truncate a line to fit within `width` visible chars, adding "…" at the end. */
@@ -72,7 +72,7 @@ function truncateLineToWidth(line: string, width: number): string {
 	while (visibleWidth(truncated) > width - 1) {
 		truncated = truncated.slice(0, -1);
 	}
-	return truncated + "…";
+	return `${truncated}…`;
 }
 
 function statusColor(theme: Theme, status: ServerInfo["status"], text: string): string {
@@ -295,7 +295,7 @@ export class McpWidget implements Component {
 					// pad using visible width since line may contain ANSI codes;
 					// reserve 1 char for trailing "│"
 					const v = visibleWidth(line);
-					line = v + 1 < width ? line + " ".repeat(width - v - 1) + "│" : line + "│";
+					line = v + 1 < width ? `${line + " ".repeat(width - v - 1)}│` : `${line}│`;
 				}
 				lines.push(line);
 			}
@@ -331,10 +331,7 @@ export class McpWidget implements Component {
 			this.state.selectedIndex = this.state.selectedServerIndex;
 			this.state.scrollOffset = Math.max(
 				0,
-				Math.min(
-					this.state.scrollOffset,
-					Math.max(0, this.state.servers.length - 15),
-				),
+				Math.min(this.state.scrollOffset, Math.max(0, this.state.servers.length - 15)),
 			);
 		}
 	}
@@ -377,13 +374,11 @@ export class McpWidget implements Component {
 			// same view, no widget re-creation, no UI flicker.
 			// Allow toggle even when status is unavailable/disabled —
 			// the user expects Space to TOGGLE state, not be a no-op.
-			const op = s.enabled
-				? this.manager.disconnectOne(s.index)
-				: this.manager.connectOne(s.index);
+			const op = s.enabled ? this.manager.disconnectOne(s.index) : this.manager.connectOne(s.index);
 			op.then(() => {
 				this.state.servers = this.manager.getServers();
 				this.tui.requestRender();
-			}).catch(_e => {
+			}).catch((_e) => {
 				// best-effort — next state read will reflect failure via
 				// entry.connectError surfaced in the widget
 			});
@@ -423,12 +418,15 @@ export class McpWidget implements Component {
 			const currentEnabled = !isToolDenied(server, toolName);
 			const newEnabled = !currentEnabled;
 			// Toggle inline — stay in the same view
-			this.manager.setToolEnabled(server.index, toolName, newEnabled).then(() => {
-				this.state.servers = this.manager.getServers();
-				this.tui.requestRender();
-			}).catch(_e => {
-				// best-effort — next loop iteration will refresh
-			});
+			this.manager
+				.setToolEnabled(server.index, toolName, newEnabled)
+				.then(() => {
+					this.state.servers = this.manager.getServers();
+					this.tui.requestRender();
+				})
+				.catch((_e) => {
+					// best-effort — next loop iteration will refresh
+				});
 		}
 	}
 }

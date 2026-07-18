@@ -210,7 +210,7 @@ export function createMcpClientManager(fan: ExtensionAPI, permissions: Permissio
 						entry.firstCrashAt = undefined;
 					}
 				})
-				.catch((e) => {
+				.catch((_e) => {
 					// Auto-restart failed silently; entry.connectError stays populated
 				});
 		}, delayMs);
@@ -318,7 +318,7 @@ export function createMcpClientManager(fan: ExtensionAPI, permissions: Permissio
 		transport.onclose = () => {
 			handleCrash(entry);
 		};
-		transport.onerror = (error: Error) => {
+		transport.onerror = (_error: Error) => {
 			// Transport error captured into entry state via crash handler
 		};
 
@@ -338,7 +338,7 @@ export function createMcpClientManager(fan: ExtensionAPI, permissions: Permissio
 							// We ignore the SDK-provided tools and do our own
 							// filtered refresh via refreshServerTools.
 							if (entry.status === "connected") {
-								refreshServerTools(entry).catch((e) => {
+								refreshServerTools(entry).catch((_e) => {
 									// List_changed refresh failed - ignore silently;
 									// existing tools remain registered
 								});
@@ -473,7 +473,7 @@ export function createMcpClientManager(fan: ExtensionAPI, permissions: Permissio
 
 			await Promise.race([Promise.allSettled(closePromises), timeoutPromise]);
 
-			const elapsed = Date.now() - startTime;
+			const _elapsed = Date.now() - startTime;
 			// Dispose timeout exceeded - cleanup may have been aggressive, but shutdown returns
 		},
 
@@ -482,7 +482,7 @@ export function createMcpClientManager(fan: ExtensionAPI, permissions: Permissio
 		},
 
 		getServers(): ServerInfo[] {
-			return entries.map(e => ({
+			return entries.map((e) => ({
 				index: e.index,
 				name: e.config.name || e.config.command || e.config.url || `Server #${e.index}`,
 				transport: e.config.transport,
@@ -571,7 +571,7 @@ export function createMcpClientManager(fan: ExtensionAPI, permissions: Permissio
 
 			// Mutate config
 			entry.config = { ...entry.config, deniedTools: [...denied] };
-			permissions.updateConfig(entries.map(e => e.config));
+			permissions.updateConfig(entries.map((e) => e.config));
 
 			// Re-register tools via diff-based refresh
 			if (entry.client && entry.status === "connected") {
@@ -585,10 +585,14 @@ export function createMcpClientManager(fan: ExtensionAPI, permissions: Permissio
 			// dispose all current connections
 			const closePromises = entries.map(async (entry) => {
 				if (entry.client) {
-					try { await entry.client.close(); } catch {}
+					try {
+						await entry.client.close();
+					} catch {}
 				}
 				if (entry.transport) {
-					try { await entry.transport.close(); } catch {}
+					try {
+						await entry.transport.close();
+					} catch {}
 				}
 			});
 			await Promise.allSettled(closePromises);

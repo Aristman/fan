@@ -17,7 +17,7 @@ vi.mock("../src/config.js", async (importOriginal) => {
 		load: vi.fn().mockResolvedValue({ servers: [] }),
 	};
 	return {
-		...actual,
+		...(actual as Record<string, unknown>),
 		createMcpConfigLoader: vi.fn().mockReturnValue(mockLoader),
 	};
 });

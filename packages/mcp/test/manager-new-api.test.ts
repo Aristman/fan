@@ -5,8 +5,7 @@
 import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
 import { describe, expect, it, vi } from "vitest";
 import { createMcpClientManager } from "../src/manager.js";
-import { createPermissionGate, type PermissionGate } from "../src/permissions.js";
-import { createMcpConfigLoader } from "../src/config.js";
+import type { PermissionGate } from "../src/permissions.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -117,7 +116,7 @@ describe("McpClientManager.getServers()", () => {
 		});
 
 		const servers = mgr.getServers();
-		expect(servers[0].name).toBe("Friendly Name");  // explicit name wins
+		expect(servers[0].name).toBe("Friendly Name"); // explicit name wins
 		expect(servers[1].name).toBe("nonexistent-command-that-will-fail"); // fallback
 	});
 });
@@ -138,7 +137,7 @@ describe("McpClientManager.connectOne()", () => {
 		const mgr = createMcpClientManager(api, makePermissiveGate());
 
 		await mgr.connectAll({ servers: [failConfig()] });
-		const beforeEvents = events.filter(e => e === "mcp:catalog").length;
+		const beforeEvents = events.filter((e) => e === "mcp:catalog").length;
 
 		// connectOne on index 0 — will still fail (command doesn't exist) but replace entry
 		await mgr.connectOne(0);
@@ -148,7 +147,7 @@ describe("McpClientManager.connectOne()", () => {
 		expect(servers[0].status).toBe("unavailable");
 
 		// Should have emitted mcp:catalog
-		const afterEvents = events.filter(e => e === "mcp:catalog").length;
+		const afterEvents = events.filter((e) => e === "mcp:catalog").length;
 		expect(afterEvents).toBeGreaterThan(beforeEvents);
 	});
 });
@@ -165,7 +164,7 @@ describe("McpClientManager.disconnectOne()", () => {
 	});
 
 	it("sets unavailable server to disabled (no-op for unavailable)", async () => {
-		const { api, events } = makeFakePi();
+		const { api } = makeFakePi();
 		const mgr = createMcpClientManager(api, makePermissiveGate());
 
 		await mgr.connectAll({ servers: [failConfig()] });
@@ -186,9 +185,9 @@ describe("McpClientManager.disconnectOne()", () => {
 
 		await mgr.connectAll({ servers: [failConfig()] });
 
-		const beforeCount = events.filter(e => e === "mcp:catalog").length;
+		const beforeCount = events.filter((e) => e === "mcp:catalog").length;
 		await mgr.disconnectOne(0);
-		const afterCount = events.filter(e => e === "mcp:catalog").length;
+		const afterCount = events.filter((e) => e === "mcp:catalog").length;
 
 		// Should have emitted at least one catalog event
 		expect(afterCount).toBeGreaterThanOrEqual(beforeCount);
@@ -210,11 +209,13 @@ describe("McpClientManager.setToolEnabled()", () => {
 		const mgr = createMcpClientManager(api, makePermissiveGate());
 
 		await mgr.connectAll({
-			servers: [{
-				transport: "stdio",
-				command: "test",
-				deniedTools: [],
-			}],
+			servers: [
+				{
+					transport: "stdio",
+					command: "test",
+					deniedTools: [],
+				},
+			],
 		});
 
 		// Disable a tool
@@ -229,11 +230,13 @@ describe("McpClientManager.setToolEnabled()", () => {
 		const mgr = createMcpClientManager(api, makePermissiveGate());
 
 		await mgr.connectAll({
-			servers: [{
-				transport: "stdio",
-				command: "test",
-				deniedTools: ["blocked_tool"],
-			}],
+			servers: [
+				{
+					transport: "stdio",
+					command: "test",
+					deniedTools: ["blocked_tool"],
+				},
+			],
 		});
 
 		// Enable the tool (remove from denied)
@@ -260,7 +263,7 @@ describe("McpClientManager.reloadConfig()", () => {
 		expect(result).toContain("Reloaded");
 		expect(result).toContain("servers");
 		// Should emit catalog events during connectAll inside reload
-		const catalogEvents = events.filter(e => e === "mcp:catalog").length;
+		const catalogEvents = events.filter((e) => e === "mcp:catalog").length;
 		expect(catalogEvents).toBeGreaterThan(0);
 	});
 });
@@ -273,7 +276,7 @@ describe("mcp:catalog emission", () => {
 		await mgr.connectAll({ servers: [failConfig()] });
 
 		// connectAll emits mcp:catalog only if at least one server (connected or not)
-		const catalogEvents = events.filter(e => e === "mcp:catalog");
+		const catalogEvents = events.filter((e) => e === "mcp:catalog");
 		expect(catalogEvents.length).toBeGreaterThanOrEqual(0); // current code emits only if connected>0, but fail config has no connected
 	});
 });

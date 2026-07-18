@@ -18,10 +18,9 @@
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionFactory } from "@seaagents/fan-coding-agent";
 import type { ConfigLoader } from "./config.js";
 import { createMcpConfigLoader } from "./config.js";
-import { type McpClientManager } from "./manager.js";
-import { createMcpClientManager } from "./manager.js";
+import { createMcpClientManager, type McpClientManager } from "./manager.js";
 import { createPermissionGate } from "./permissions.js";
-import { McpWidget, type McpAction } from "./widget.js";
+import { type McpAction, McpWidget } from "./widget.js";
 
 // Module-scope reference to the current session's manager.
 // Used by the /mcp command handlers to inspect and reload.
@@ -61,8 +60,9 @@ function renderMcpList(): string {
 		return "No MCP servers configured.";
 	}
 
-	const rows = servers.map(s => {
-		const statusIcon = s.status === "connected" ? "✓" : s.status === "connecting" ? "⟳" : s.status === "disabled" ? "○" : "✗";
+	const rows = servers.map((s) => {
+		const statusIcon =
+			s.status === "connected" ? "✓" : s.status === "connecting" ? "⟳" : s.status === "disabled" ? "○" : "✗";
 		const tools = s.toolNames.length > 0 ? `${s.toolNames.length} tools` : "0 tools";
 		const error = s.connectError ? ` (${s.connectError})` : "";
 		return `${statusIcon} [#${s.index}] ${s.name} — ${s.status} — ${tools}${error}`;
@@ -79,11 +79,11 @@ function findServer(servers: import("./manager.js").ServerInfo[], arg: string): 
 	// Try numeric index first
 	const num = Number(arg);
 	if (!Number.isNaN(num)) {
-		const idx = servers.findIndex(s => s.index === num);
+		const idx = servers.findIndex((s) => s.index === num);
 		if (idx !== -1) return idx;
 	}
 	// Try name match
-	return servers.findIndex(s => s.name.toLowerCase() === arg.toLowerCase());
+	return servers.findIndex((s) => s.name.toLowerCase() === arg.toLowerCase());
 }
 
 /**
@@ -171,7 +171,10 @@ async function mcpCommandHandler(
 		const target = args.trim().split(/\s+/).slice(1).join(" ");
 		await handleConnectDisconnect(subcommand as "connect" | "disconnect", target, ctx);
 	} else {
-		ctx.ui.notify(`Unknown subcommand: ${subcommand}. Use 'status', 'list', 'reload', '<name> connect', or '<name> disconnect'.`, "warning");
+		ctx.ui.notify(
+			`Unknown subcommand: ${subcommand}. Use 'status', 'list', 'reload', '<name> connect', or '<name> disconnect'.`,
+			"warning",
+		);
 	}
 }
 
@@ -184,7 +187,7 @@ async function mcpCommandHandler(
  * causes focus races with the editor. Use ctx.ui.setStatus() instead
  * for transient feedback during operations.
  */
-async function showMcpWidget(fan: ExtensionAPI, ctx: ExtensionCommandContext): Promise<void> {
+async function showMcpWidget(_fan: ExtensionAPI, ctx: ExtensionCommandContext): Promise<void> {
 	if (!currentManager) {
 		ctx.ui.notify("No MCP servers configured.", "warning");
 		return;
@@ -197,19 +200,17 @@ async function showMcpWidget(fan: ExtensionAPI, ctx: ExtensionCommandContext): P
 			// Guard: manager might be nulled during reload outside the loop
 			if (!currentManager) break;
 
-			const action = await ctx.ui.custom<McpAction>(
-				(tui, theme, _kb, done) => {
-					const widget = new McpWidget({
-						theme,
-						manager: currentManager!,
-						tui,
-						onAction: (act: McpAction) => {
-							done(act);
-						},
-					});
-					return widget;
-				},
-			);
+			const action = await ctx.ui.custom<McpAction>((tui, theme, _kb, done) => {
+				const widget = new McpWidget({
+					theme,
+					manager: currentManager!,
+					tui,
+					onAction: (act: McpAction) => {
+						done(act);
+					},
+				});
+				return widget;
+			});
 
 			if (action.type === "exit") break;
 			// All other actions (currently none — connect/disconnect are

@@ -2,8 +2,8 @@
  * Repro test for MCP widget Space-toggle freeze bug.
  */
 import { describe, expect, it, vi } from "vitest";
-import { McpWidget, type McpAction } from "../src/widget.js";
 import type { McpClientManager, ServerInfo } from "../src/manager.js";
+import { type McpAction, McpWidget } from "../src/widget.js";
 
 function makeMockTheme(): any {
 	return {
@@ -36,7 +36,10 @@ function makeMockManager(overrides?: Partial<McpClientManager>): McpClientManage
 		connectOne: vi.fn().mockResolvedValue(undefined),
 		disconnectOne: vi.fn().mockResolvedValue(undefined),
 		setToolEnabled: vi.fn().mockResolvedValue(undefined),
-		_entries: () => entries.map((e) => ({ ...e, config: { transport: "stdio", command: e.name }, client: null, transport: null }) as any),
+		_entries: () =>
+			entries.map(
+				(e) => ({ ...e, config: { transport: "stdio", command: e.name }, client: null, transport: null }) as any,
+			),
 		connectAll: vi.fn(),
 		dispose: vi.fn(),
 		reloadConfig: vi.fn() as any,
@@ -51,7 +54,8 @@ describe("MCP Widget Space key repro", () => {
 		const manager = makeMockManager();
 		let actionReceived: McpAction | null = null;
 
-		const widget = new McpWidget({ tui: makeMockTui(),
+		const widget = new McpWidget({
+			tui: makeMockTui(),
 			theme,
 			manager,
 			onAction: (act: McpAction) => {
@@ -75,18 +79,21 @@ describe("MCP Widget Space key repro", () => {
 	it("should allow Space to reconnect an unavailable server", async () => {
 		const theme = makeMockTheme();
 		const manager = makeMockManager({
-			getServers: () => [{
-				index: 0, name: "test-server", transport: "stdio",
-				status: "unavailable", toolNames: [], connectError: undefined,
-				enabled: false, deniedTools: [],
-			}],
+			getServers: () => [
+				{
+					index: 0,
+					name: "test-server",
+					transport: "stdio",
+					status: "unavailable",
+					toolNames: [],
+					connectError: undefined,
+					enabled: false,
+					deniedTools: [],
+				},
+			],
 		});
 
-		const widget = new McpWidget({ tui: makeMockTui(),
-			theme,
-			manager,
-			onAction: () => {},
-		});
+		const widget = new McpWidget({ tui: makeMockTui(), theme, manager, onAction: () => {} });
 		widget.handleInput(" ");
 		// Should call connectOne (not be a no-op)
 		expect(manager.connectOne).toHaveBeenCalledWith(0);
@@ -98,10 +105,13 @@ describe("MCP Widget Space key repro", () => {
 		const manager = makeMockManager();
 		const actions: (McpAction | "exit")[] = [];
 
-		const widget = new McpWidget({ tui: makeMockTui(), 
+		const widget = new McpWidget({
+			tui: makeMockTui(),
 			theme,
 			manager,
-			onAction: (act: McpAction) => { actions.push(act); },
+			onAction: (act: McpAction) => {
+				actions.push(act);
+			},
 		});
 		widget.handleInput("\x1b");
 		expect(actions.length).toBe(1);
@@ -113,9 +123,13 @@ describe("MCP Widget Space key repro", () => {
 		const manager = makeMockManager();
 		const actions: (McpAction | "exit")[] = [];
 
-		const widget1 = new McpWidget({ tui: makeMockTui(),
-			theme, manager,
-			onAction: (act: McpAction) => { actions.push(act); },
+		const widget1 = new McpWidget({
+			tui: makeMockTui(),
+			theme,
+			manager,
+			onAction: (act: McpAction) => {
+				actions.push(act);
+			},
 		});
 
 		widget1.handleInput("\r");
@@ -140,15 +154,26 @@ describe("MCP Widget Space key repro", () => {
 		const theme = makeMockTheme();
 		const actions: McpAction[] = [];
 		const disabledManager = makeMockManager({
-			getServers: () => [{
-				index: 0, name: "offline", transport: "stdio",
-				status: "disabled", toolNames: [], connectError: undefined,
-				enabled: false, deniedTools: [],
-			}],
+			getServers: () => [
+				{
+					index: 0,
+					name: "offline",
+					transport: "stdio",
+					status: "disabled",
+					toolNames: [],
+					connectError: undefined,
+					enabled: false,
+					deniedTools: [],
+				},
+			],
 		});
-		const widget = new McpWidget({ tui: makeMockTui(),
-			theme, manager: disabledManager,
-			onAction: (act: McpAction) => { actions.push(act); },
+		const widget = new McpWidget({
+			tui: makeMockTui(),
+			theme,
+			manager: disabledManager,
+			onAction: (act: McpAction) => {
+				actions.push(act);
+			},
 		});
 		widget.handleInput(" ");
 		expect(actions.length).toBe(0);
@@ -169,7 +194,8 @@ describe("MCP widget no-notify-between-iterations", () => {
 		const manager = makeMockManager();
 		const actions: McpAction[] = [];
 
-		const widget = new McpWidget({ tui: makeMockTui(), 
+		const widget = new McpWidget({
+			tui: makeMockTui(),
 			theme,
 			manager,
 			onAction: (act: McpAction) => {
@@ -249,12 +275,14 @@ describe("render overflow guard", () => {
 		const theme = makeMockTheme();
 
 		for (const width of [40, 60, 80, 100, 120, 147]) {
-			const widget = new McpWidget({ tui: makeMockTui(),  theme, manager, onAction: () => {} });
+			const widget = new McpWidget({ tui: makeMockTui(), theme, manager, onAction: () => {} });
 			const lines = widget.render(width);
 			for (const [idx, line] of lines.entries()) {
 				const w = visibleWidth(line);
-				expect(w, `line ${idx} (w=${w}) exceeds width ${width}: ${JSON.stringify(line.slice(0, 80))}`)
-					.toBeLessThanOrEqual(width);
+				expect(
+					w,
+					`line ${idx} (w=${w}) exceeds width ${width}: ${JSON.stringify(line.slice(0, 80))}`,
+				).toBeLessThanOrEqual(width);
 			}
 		}
 	});
@@ -275,7 +303,7 @@ describe("render overflow guard", () => {
 			],
 		});
 		const theme = makeMockTheme();
-		const widget = new McpWidget({ tui: makeMockTui(),  theme, manager, onAction: () => {} });
+		const widget = new McpWidget({ tui: makeMockTui(), theme, manager, onAction: () => {} });
 
 		// navigate: enter first server, enter tools
 		widget.handleInput("\r"); // enter → tools directly (tools list will be empty)
@@ -312,7 +340,7 @@ describe("render overflow guard", () => {
 			],
 		});
 		const theme = makeMockTheme();
-		const widget = new McpWidget({ tui: makeMockTui(),  theme, manager, onAction: () => {} });
+		const widget = new McpWidget({ tui: makeMockTui(), theme, manager, onAction: () => {} });
 
 		// navigate: enter → tools directly
 		widget.handleInput("\r");
@@ -321,8 +349,7 @@ describe("render overflow guard", () => {
 			const lines = widget.render(width);
 			for (const [idx, line] of lines.entries()) {
 				const w = visibleWidth(line);
-				expect(w, `width=${width} line ${idx} overflow: ${w} > ${width}`)
-					.toBeLessThanOrEqual(width);
+				expect(w, `width=${width} line ${idx} overflow: ${w} > ${width}`).toBeLessThanOrEqual(width);
 			}
 		}
 	});
