@@ -36,6 +36,7 @@ export const defaultModelPerProvider: Record<KnownProvider, string> = {
 	"opencode-go": "kimi-k2.5",
 	"kimi-coding": "kimi-k2.7-code",
 	xiaomi: "mimo-v2.5-pro",
+	qwen: "qwen3.7-max",
 };
 
 export interface ScopedModel {

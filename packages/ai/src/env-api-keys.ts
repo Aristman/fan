@@ -100,6 +100,7 @@ export function getEnvApiKey(provider: any, envOverrides?: Record<string, string
 		xiaomi: "MIMO_API_KEY",
 		openrouter: "OPENROUTER_API_KEY",
 		"vercel-ai-gateway": "AI_GATEWAY_API_KEY",
+		qwen: "QWEN_API_KEY",
 		zai: "ZAI_API_KEY",
 		mistral: "MISTRAL_API_KEY",
 		minimax: "MINIMAX_API_KEY",
