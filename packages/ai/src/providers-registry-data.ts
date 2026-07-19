@@ -120,6 +120,13 @@ export const providersRegistryData = {
 			wizardModels: [],
 			authType: "apiKey",
 		},
+		qwen: {
+			displayName: "Qwen (Aliyun Token Plan)",
+			envVars: ["QWEN_API_KEY"],
+			primaryEnvVar: "QWEN_API_KEY",
+			wizardModels: ["qwen3.7-max", "qwen3.7-plus", "qwen3.6-flash"],
+			authType: "apiKey",
+		},
 		"azure-openai-responses": {
 			displayName: "Azure OpenAI",
 			envVars: ["AZURE_OPENAI_API_KEY"],
@@ -154,5 +161,6 @@ export const providersRegistryData = {
 		"zai",
 		"deepseek",
 		"xiaomi",
+		"qwen",
 	],
 } as const;

@@ -38,6 +38,7 @@ Nested objects merge recursively (partial overrides supported).
 | Z.AI | `ZAI_API_KEY` | — |
 | MiniMax | `MINIMAX_API_KEY` | — |
 | Kimi | `KIMI_API_KEY` | — |
+| Qwen (Aliyun Token Plan) | `QWEN_API_KEY` | — |
 | Vercel AI Gateway | `AI_GATEWAY_API_KEY` | — |
 | GitHub Copilot | `COPILOT_GITHUB_TOKEN` | `GH_TOKEN`, `GITHUB_TOKEN` |
 
