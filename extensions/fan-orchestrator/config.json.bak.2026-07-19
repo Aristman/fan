@@ -1,15 +1,15 @@
 {
   "cloud": {
-    "model": "qwen/qwen3.7-max",
+    "model": "",
     "models": {
-      "explore": "qwen/qwen3.6-flash",
-      "plan": "qwen/qwen3.7-max",
-      "implement": "qwen/qwen3.7-max",
-      "verify": "qwen/qwen3.7-plus",
-      "bug-fix": "qwen/qwen3.7-max",
-      "code-research": "qwen/qwen3.7-plus",
-      "tests-impl": "qwen/qwen3.7-plus",
-      "docs-impl": "qwen/qwen3.6-flash"
+      "explore": "",
+      "plan": "",
+      "implement": "",
+      "verify": "",
+      "bug-fix": "",
+      "code-research": "",
+      "tests-impl": "",
+      "docs-impl": ""
     }
   },
   "local": {
@@ -25,7 +25,7 @@
       "docs-impl": ""
     }
   },
-  "providerMode": "cloud",
+  "providerMode": "auto",
   "coordinatorDefault": true,
   "parallelWorkers": 3,
   "workerTimeout": 600,

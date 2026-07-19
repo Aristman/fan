@@ -170,7 +170,7 @@ export const orchestratorExtension = (fan) => {
             ctx.ui.setStatus("2-orchestrator", "🎭 Coordinator ON");
         }
         else {
-            ctx.ui.setStatus("2-orchestrator", `🎭 Orchestrator (${config.providerMode})`);
+            ctx.ui.setStatus("2-orchestrator", "🎭 Orchestrator OFF");
         }
     }
     // ---- Shortcuts ----
@@ -234,7 +234,7 @@ export const orchestratorExtension = (fan) => {
             ctx.ui.setStatus("2-orchestrator", "🎭 Coordinator ON");
         }
         else {
-            ctx.ui.setStatus("2-orchestrator", `🎭 Orchestrator (${config.providerMode})`);
+            ctx.ui.setStatus("2-orchestrator", "🎭 Orchestrator OFF");
         }
         // ---- Pipeline: auto-detect active pipeline on disk ----
         if (!pipelineState) {
@@ -862,7 +862,7 @@ export const orchestratorExtension = (fan) => {
                 }
                 ctx.ui.notify("Plan rejected.");
                 ctx.ui.setWidget("orchestrator-plan", undefined);
-                ctx.ui.setStatus("2-orchestrator", coordinatorActive ? "🎭 Coordinator ON" : "");
+                ctx.ui.setStatus("2-orchestrator", coordinatorActive ? "🎭 Coordinator ON" : "🎭 Orchestrator OFF");
                 return false;
             }
             // Run planning worker with live progress
