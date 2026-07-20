@@ -10,7 +10,7 @@
  *   Alt+T — Toggle task list collapse
  *
  * Slash commands:
- *   /orchestrator [on|off|stop|config|init|mode|status] — Orchestrator control
+ *   /orchestrator [on|off|stop|config|init|mode|models|status] — Orchestrator control
  *   /tasks [status]       — List tracked tasks
  *   /agents [scope]       — List available agents
  *   /plan [task]          — Generate implementation plan
@@ -383,7 +383,7 @@ export const orchestratorExtension = (fan) => {
     });
     // ---- Slash Command: /orchestrator (enhanced) ----
     fan.registerCommand("orchestrator", {
-        description: "Orchestrator control: on, off, stop, config, init, mode, status",
+        description: "Orchestrator control: on, off, stop, config, init, mode, models, status",
         handler: async (args, ctx) => {
             const parts = args.trim().split(/\s+/);
             const sub = parts[0]?.toLowerCase();
@@ -443,6 +443,350 @@ export const orchestratorExtension = (fan) => {
                     }
                     config.providerMode = mode;
                     ctx.ui.notify(`Provider mode set to: ${mode}`);
+                    return;
+                }
+                case "models": {
+                    if (!ctx.hasUI) {
+                        ctx.ui?.notify("UI not available. Edit config.json manually.");
+                        return;
+                    }
+
+                    const agentTypes = ["explore", "plan", "implement", "verify", "bug-fix", "code-research", "tests-impl", "docs-impl"];
+                    const agentIcons = {
+                        explore: "🔍", plan: "📋", implement: "🔧", verify: "✅",
+                        "bug-fix": "🐛", "code-research": "🔬", "tests-impl": "🧪", "docs-impl": "📝",
+                    };
+
+                    // Refresh and get available models from the runtime
+                    const registry = ctx.modelRegistry;
+                    registry.refresh();
+                    const allAvailable = registry.getAvailable();
+
+                    // Detect active provider from current session model
+                    const activeProvider = ctx.model?.provider;
+
+                    // Group models by provider
+                    const modelsByProvider = new Map();
+                    for (const m of allAvailable) {
+                        if (!modelsByProvider.has(m.provider)) modelsByProvider.set(m.provider, []);
+                        modelsByProvider.get(m.provider).push(m);
+                    }
+
+                    // === Smart assignment scoring ===
+                    // Worker type profiles: what each worker values in a model
+                    // Weights calibrated for diversity: heavy workers get flagship models,
+                    // light workers get cheap/fast models
+                    const WORKER_PROFILES = {
+                        implement:    { reasoning: 10, context: 1, cost: 0.1, maxTokens: 3 },
+                        plan:         { reasoning: 10, context: 3, cost: 0.2, maxTokens: 1 },
+                        "bug-fix":    { reasoning: 8, context: 1, cost: 0.1, maxTokens: 2 },
+                        explore:      { reasoning: 0.5, context: 6, cost: 3, maxTokens: 0.3 },
+                        "code-research": { reasoning: 1, context: 6, cost: 2, maxTokens: 0.3 },
+                        verify:       { reasoning: 0.5, context: 0.5, cost: 5, maxTokens: 0.3 },
+                        "tests-impl": { reasoning: 2, context: 1, cost: 2, maxTokens: 1 },
+                        "docs-impl":  { reasoning: 0.3, context: 1, cost: 4, maxTokens: 0.5 },
+                    };
+                    // Priority order: assign heavy workers first so they get the best models
+                    const ASSIGNMENT_ORDER = ["implement", "plan", "bug-fix", "explore", "code-research", "tests-impl", "verify", "docs-impl"];
+
+                    function scoreModel(model, profile) {
+                        let score = 0;
+                        if (model.reasoning) score += (profile.reasoning || 0) * 10;
+                        score += Math.min((model.contextWindow || 0) / 100000, 10) * (profile.context || 0);
+                        const totalCost = (model.cost?.input || 0) + (model.cost?.output || 0);
+                        if (totalCost > 0) score += Math.max(0, 10 - Math.log2(totalCost)) * (profile.cost || 0);
+                        score += Math.min((model.maxTokens || 0) / 16000, 10) * (profile.maxTokens || 0);
+                        return score;
+                    }
+
+                    function findBestModel(models, workerType, usedModelIds) {
+                        const profile = WORKER_PROFILES[workerType] || { reasoning: 1, context: 1, cost: 1, maxTokens: 1 };
+                        let best = null;
+                        let bestScore = -1;
+                        for (const m of models) {
+                            let s = scoreModel(m, profile);
+                            // Penalty: if this model is already assigned to another worker, heavily penalize
+                            if (usedModelIds?.has(m.id)) s *= 0.15;
+                            if (s > bestScore) {
+                                bestScore = s;
+                                best = m;
+                            }
+                        }
+                        return best;
+                    }
+
+                    function modelLabel(m) {
+                        if (!m) return "(none)";
+                        const name = m.name && m.name !== m.id ? `${m.name} (${m.id})` : m.id;
+                        const cost = (m.cost?.input || 0) + (m.cost?.output || 0);
+                        const costStr = cost > 0 ? `$${(cost).toFixed(1)}/M` : "free";
+                        const tags = [];
+                        if (m.reasoning) tags.push("🧠");
+                        if (m.contextWindow >= 500000) tags.push("📚");
+                        return `${name} ${tags.join("")} [${costStr}]`;
+                    }
+
+                    // === Brand filtering ===
+                    // Provider → keywords that identify the provider's own branded models.
+                    // Empty array = no filter (aggregator/local — show all models).
+                    const BRAND_KEYWORDS = {
+                        anthropic: ["claude"],
+                        openai: ["gpt", "o1", "o3", "o4"],
+                        google: ["gemini", "gemma", "gem"],
+                        deepseek: ["deepseek"],
+                        qwen: ["qwen"],
+                        mistral: ["mistral", "mixtral", "magistral"],
+                        xai: ["grok"],
+                        minimax: ["minimax"],
+                        cerebras: ["llama"],
+                        groq: ["llama", "gemma", "mixtral"],
+                        // Aggregators and local — no brand filter
+                        huggingface: [],
+                        openrouter: [],
+                        ollama: [],
+                        "llama-cpp": [],
+                        opencode: [],
+                        "opencode-go": [],
+                    };
+
+                    function filterByBrand(models, provider) {
+                        const keywords = BRAND_KEYWORDS[provider];
+                        if (!keywords || keywords.length === 0) return models;
+                        return models.filter(m => {
+                            const idLower = m.id.toLowerCase();
+                            const nameLower = (m.name || "").toLowerCase();
+                            return keywords.some(kw => idLower.includes(kw) || nameLower.includes(kw));
+                        });
+                    }
+
+                    // === UI helpers ===
+                    function buildModelOptions(modelList) {
+                        const options = ["(reset — use session default)"];
+                        for (const m of modelList) {
+                            options.push(modelLabel(m));
+                        }
+                        return options;
+                    }
+
+                    // Build options list with a specific model pre-selected (first in list)
+                    function buildOptionsWithDefault(modelList, defaultModel) {
+                        const options = [];
+                        // First: the suggested/default model (will be pre-selected in TUI)
+                        if (defaultModel) options.push(modelLabel(defaultModel));
+                        // Second: reset option
+                        options.push("(reset — use session default)");
+                        // Rest: other models (skip the default to avoid duplicates)
+                        for (const m of modelList) {
+                            if (defaultModel && m.id === defaultModel.id) continue;
+                            options.push(modelLabel(m));
+                        }
+                        return options;
+                    }
+
+                    function parseModelSelection(selection) {
+                        if (!selection || selection.startsWith("(reset")) return "";
+                        // Strip trailing ⭐ and [provider] tags
+                        const clean = selection.replace(/\s*⭐?\s*$/, "").replace(/[🧠📚]/g, "").trim();
+                        // Extract model id from "Name (id) [cost]" or "id [cost]" format
+                        const parenMatch = clean.match(/\(([^)]+)\)/);
+                        if (parenMatch) return parenMatch[1].trim();
+                        // No parenthetical — take everything before [ or end
+                        const bracketMatch = clean.match(/^(.+?)\s*\[/);
+                        if (bracketMatch) return bracketMatch[1].trim();
+                        return clean.trim();
+                    }
+
+                    // 1. Choose provider mode to configure
+                    const modeChoice = await ctx.ui.select("Configure models for which provider mode?", [
+                        `☁️ cloud (current: ${config.cloud?.model || "session default"})`,
+                        `🏠 local (current: ${config.local?.model || "session default"})`,
+                        "⚙️ auto (configure both)",
+                    ]);
+                    if (modeChoice === undefined) {
+                        ctx.ui.notify("Models configuration cancelled.");
+                        return;
+                    }
+
+                    const modesToConfigure = [];
+                    if (modeChoice.includes("cloud") || modeChoice.includes("auto")) modesToConfigure.push("cloud");
+                    if (modeChoice.includes("local") || modeChoice.includes("auto")) modesToConfigure.push("local");
+
+                    // 2. Choose which provider to use for smart suggestions
+                    // Determine active provider: session model → existing config → first alphabetically
+                    let smartProvider = activeProvider;
+                    if (!smartProvider || !modelsByProvider.has(smartProvider)) {
+                        // Try to detect from existing config
+                        const configModel = config.cloud?.model || config.local?.model;
+                        if (configModel) {
+                            for (const [provider, models] of modelsByProvider) {
+                                if (models.some(m => m.id === configModel)) {
+                                    smartProvider = provider;
+                                    break;
+                                }
+                            }
+                        }
+                        if (!smartProvider || !modelsByProvider.has(smartProvider)) {
+                            smartProvider = [...modelsByProvider.keys()].sort()[0];
+                        }
+                    }
+                    // Sort: active provider first, then alphabetically
+                    const providerList = [...modelsByProvider.keys()].sort((a, b) => {
+                        if (a === smartProvider) return -1;
+                        if (b === smartProvider) return 1;
+                        return a.localeCompare(b);
+                    });
+
+                    let chosenProvider = smartProvider;
+                    if (providerList.length > 1) {
+                        const providerOptions = providerList.map(p => {
+                            const allModels = modelsByProvider.get(p) || [];
+                            const brandedModels = filterByBrand(allModels, p);
+                            const count = brandedModels.length > 0 ? brandedModels.length : allModels.length;
+                            const suffix = brandedModels.length > 0 && brandedModels.length < allModels.length
+                                ? ` branded`
+                                : ``;
+                            const isDefault = p === smartProvider ? " ⭐ active" : "";
+                            return `${p} (${count}${suffix})${isDefault}`;
+                        });
+                        const providerChoice = await ctx.ui.select(
+                            `Select provider for model suggestions (${providerList.length} available):`,
+                            providerOptions,
+                        );
+                        if (providerChoice === undefined) {
+                            ctx.ui.notify("Models configuration cancelled.");
+                            return;
+                        }
+                        chosenProvider = providerChoice.split(" ")[0];
+                    }
+
+                    // Filter to only branded models (e.g. qwen provider → only Qwen-branded models)
+                    const allProviderModels = modelsByProvider.get(chosenProvider) || [];
+                    const providerModels = filterByBrand(allProviderModels, chosenProvider);
+                    if (providerModels.length === 0) {
+                        ctx.ui.notify(`No ${chosenProvider}-branded models found. Showing all provider models.`);
+                        providerModels.push(...allProviderModels);
+                    }
+                    const allModelOptions = buildModelOptions(providerModels);
+
+                    // 3. Compute smart assignment — iterate in priority order for diversity
+                    const smartAssignment = {};
+                    const usedModelIds = new Set();
+                    for (const type of ASSIGNMENT_ORDER) {
+                        const best = findBestModel(providerModels, type, usedModelIds);
+                        smartAssignment[type] = best;
+                        if (best) usedModelIds.add(best.id);
+                    }
+
+                    // Find the best "default" model (balanced for general use, ignoring usedModelIds)
+                    const defaultModel = findBestModel(providerModels, "implement");
+
+                    // 4. Show proposed assignment and let operator decide
+                    // Build compact summary — group workers by assigned model
+                    const modelGroups = new Map();
+                    for (const type of agentTypes) {
+                        const model = smartAssignment[type];
+                        const key = model?.id || "(none)";
+                        if (!modelGroups.has(key)) modelGroups.set(key, { model, types: [] });
+                        modelGroups.get(key).types.push(type);
+                    }
+
+                    const filteredCount = allProviderModels.length - providerModels.length;
+                    const countStr = filteredCount > 0
+                        ? `${providerModels.length}/${allProviderModels.length} branded`
+                        : `${providerModels.length} models`;
+                    const summaryLines = [
+                        `🤖 ${chosenProvider} — ${countStr}`,
+                        `Default: ${modelLabel(defaultModel)}`,
+                    ];
+                    for (const [, { model, types }] of modelGroups) {
+                        summaryLines.push(`${types.map(t => agentIcons[t] + t).join(", ")} → ${modelLabel(model)}`);
+                    }
+
+                    ctx.ui.setWidget("orchestrator", summaryLines);
+
+                    // Show full details via notify
+                    const detailLines = [`Smart assignment for ${chosenProvider}:\n`, `Default: ${modelLabel(defaultModel)}\n`];
+                    for (const type of agentTypes) {
+                        detailLines.push(`${agentIcons[type]} ${type}: ${modelLabel(smartAssignment[type])}`);
+                    }
+                    ctx.ui.notify(detailLines.join("\n"));
+
+                    const actionChoice = await ctx.ui.select("Smart assignment computed. How to proceed?", [
+                        "✅ Accept all — use the suggested assignment",
+                        "✏️ Customize — change specific workers",
+                        "🔄 Reset all — clear all overrides (use session default)",
+                    ]);
+                    if (actionChoice === undefined) {
+                        ctx.ui.notify("Models configuration cancelled.");
+                        return;
+                    }
+
+                    for (const mode of modesToConfigure) {
+                        const icon = mode === "cloud" ? "☁️" : "🏠";
+                        const newModels = { ...(config[mode]?.models || {}) };
+                        let newDefault = config[mode]?.model || "";
+
+                        if (actionChoice.startsWith("🔄")) {
+                            // Reset all
+                            for (const type of agentTypes) {
+                                delete newModels[type];
+                            }
+                            newDefault = "";
+                        } else if (actionChoice.startsWith("✅")) {
+                            // Accept smart assignment
+                            newDefault = defaultModel?.id || "";
+                            for (const type of agentTypes) {
+                                if (smartAssignment[type]) {
+                                    newModels[type] = smartAssignment[type].id;
+                                }
+                            }
+                        } else {
+                            // Customize — suggested model is pre-selected (first in list)
+                            // First, default model
+                            const defOptions = buildOptionsWithDefault(providerModels, defaultModel);
+                            const defChoice = await ctx.ui.select(
+                                `${icon} Default ${mode} model`,
+                                defOptions,
+                            );
+                            if (defChoice === undefined) {
+                                ctx.ui.notify("Models configuration cancelled.");
+                                return;
+                            }
+                            newDefault = parseModelSelection(defChoice);
+
+                            // Then per-agent — suggested model is first (pre-selected)
+                            for (const type of agentTypes) {
+                                const suggested = smartAssignment[type];
+                                const agentOptions = buildOptionsWithDefault(providerModels, suggested);
+                                const choice = await ctx.ui.select(
+                                    `${agentIcons[type]} ${type}`,
+                                    agentOptions,
+                                );
+                                if (choice === undefined) {
+                                    ctx.ui.notify("Models configuration cancelled.");
+                                    return;
+                                }
+                                const parsed = parseModelSelection(choice);
+                                if (parsed) {
+                                    newModels[type] = parsed;
+                                } else {
+                                    delete newModels[type]; // reset
+                                }
+                            }
+                        }
+
+                        // Apply to config
+                        if (!config[mode]) config[mode] = { model: "", models: {} };
+                        config[mode].model = newDefault;
+                        config[mode].models = newModels;
+                    }
+
+                    // 5. Save
+                    saveConfig(config);
+                    const fresh = loadConfig();
+                    Object.assign(config, fresh);
+                    ctx.ui.setWidget("orchestrator", undefined);
+                    ctx.ui.notify("✅ Model configuration saved!");
                     return;
                 }
                 case "retry": {
@@ -536,62 +880,14 @@ export const orchestratorExtension = (fan) => {
                     if (maxRetriesStr === undefined) { cancelled(); return; }
                     const maxRetries = parseInt(maxRetriesStr, 10) || 2;
 
-                    // 3. Cloud model (default)
-                    const cloudModel = await ctx.ui.input("Cloud default model (empty = session model)", config.cloud.model || "");
-                    if (cloudModel === undefined) { cancelled(); return; }
-
-                    // 4. Cloud per-agent models
-                    const doCloudOverrides = await ctx.ui.select("Configure per-agent cloud models?", [
-                        "No — use the same cloud model for all agents",
-                        "Yes — set custom model for each agent",
-                    ]);
-                    if (doCloudOverrides === undefined) { cancelled(); return; }
-                    const cloudModels = Object.fromEntries(agentTypes.map(t => [t, ""]));
-                    if (doCloudOverrides.startsWith("Yes")) {
-                        ctx.ui.setWidget("orchestrator", [
-                            `⚡ Cloud per-agent models (default: ${cloudModel})`,
-                            "Leave empty to use the default model for that agent.",
-                        ]);
-                        for (const type of agentTypes) {
-                            const current = config.cloud.models?.[type] || "";
-                            const val = await ctx.ui.input(`${agentIcons[type]} ${type} cloud model`, current);
-                            if (val === undefined) { cancelled(); return; }
-                            if (val.trim()) cloudModels[type] = val.trim();
-                        }
-                    }
-
-                    // 5. Local model (default)
-                    const localModel = await ctx.ui.input("Local default model (empty = session model)", config.local.model || "");
-                    if (localModel === undefined) { cancelled(); return; }
-
-                    // 6. Local per-agent models
-                    const doLocalOverrides = await ctx.ui.select("Configure per-agent local models?", [
-                        "No — use the same local model for all agents",
-                        "Yes — set custom model for each agent",
-                    ]);
-                    if (doLocalOverrides === undefined) { cancelled(); return; }
-                    const localModels = Object.fromEntries(agentTypes.map(t => [t, ""]));
-                    if (doLocalOverrides.startsWith("Yes")) {
-                        ctx.ui.setWidget("orchestrator", [
-                            `⚡ Local per-agent models (default: ${localModel})`,
-                            "Leave empty to use the default model for that agent.",
-                        ]);
-                        for (const type of agentTypes) {
-                            const current = config.local.models?.[type] || "";
-                            const val = await ctx.ui.input(`${agentIcons[type]} ${type} local model`, current);
-                            if (val === undefined) { cancelled(); return; }
-                            if (val.trim()) localModels[type] = val.trim();
-                        }
-                    }
-
-                    // 7. Default temperature
+                    // 3. Default temperature
                     const defaultTempStr = await ctx.ui.input(`Default worker temperature (0.0-1.0, current: ${config.temperature ?? 0.1})`, String(config.temperature ?? 0.1));
                     if (defaultTempStr === undefined) { cancelled(); return; }
                     let temperature = parseFloat(defaultTempStr);
                     if (Number.isNaN(temperature)) temperature = 0.1;
                     temperature = Math.max(0.0, Math.min(1.0, temperature));
 
-                    // 8. Per-agent temperatures
+                    // 4. Per-agent temperatures
                     const doTempOverrides = await ctx.ui.select("Configure per-agent temperatures?", [
                         "No — use default per-agent temperatures",
                         "Yes — set custom temperature for each agent",
@@ -619,7 +915,7 @@ export const orchestratorExtension = (fan) => {
                         agentTemperature = { ...DEFAULTS.agentTemperature };
                     }
 
-                    // 9. Coordinator default
+                    // 5. Coordinator default
                     const coordDefault = await ctx.ui.select("Enable coordinator mode by default?", [
                         `Yes (current: ${config.coordinatorDefault ? "on" : "off"})`,
                         "No",
@@ -627,7 +923,7 @@ export const orchestratorExtension = (fan) => {
                     if (coordDefault === undefined) { cancelled(); return; }
                     const coordinatorDefault = coordDefault.startsWith("Yes");
 
-                    // 10. Edit dangerous commands
+                    // 6. Edit dangerous commands
                     const editDangerousChoice = await ctx.ui.select("Edit dangerous commands?", [
                         "No — keep current list",
                         "Yes — edit list",
@@ -692,10 +988,10 @@ export const orchestratorExtension = (fan) => {
                         finalDangerousCommands = [...config.dangerousCommands];
                     }
 
-                    // 11. Build and save config
+                    // 7. Build and save config
                     const newConfig = {
-                        cloud: { model: cloudModel || config.cloud.model, models: cloudModels },
-                        local: { model: localModel || config.local.model, models: localModels },
+                        cloud: { ...config.cloud },
+                        local: { ...config.local },
                         providerMode,
                         coordinatorDefault,
                         parallelWorkers,
@@ -715,7 +1011,7 @@ export const orchestratorExtension = (fan) => {
                         const fresh = loadConfig();
                         Object.assign(config, fresh);
                         configInitialized = true;
-                        ctx.ui.notify("Orchestrator configured! ✅");
+                        ctx.ui.notify("Orchestrator configured! ✅\n\n💡 Use `/orchestrator models` to configure LLM models for workers.");
                         ctx.ui.setWidget("orchestrator", undefined);
                         setCoordinatorStatus(ctx, coordinatorDefault);
                     } else {
@@ -739,6 +1035,7 @@ export const orchestratorExtension = (fan) => {
                         "  init     — Interactive configuration wizard",
                         "  config   — Show configuration (widget)",
                         "  mode     — Switch provider mode (cloud|local|auto)",
+                        "  models   — Configure LLM models for main agent and workers",
                         "  status   — Extended status (widget, 10s)",
                         "  retry    — Retry last failed task",
                         "",

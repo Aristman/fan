@@ -2,7 +2,6 @@
   "cloud": {
     "model": "",
     "models": {
-      "_comment": "Per-agent model overrides (optional). Empty = use cloud.model or session model.",
       "explore": "",
       "plan": "",
       "implement": "",
@@ -16,7 +15,6 @@
   "local": {
     "model": "",
     "models": {
-      "_comment": "Per-agent model overrides (optional). Empty = use local.model or session model.",
       "explore": "",
       "plan": "",
       "implement": "",
@@ -31,8 +29,8 @@
   "coordinatorDefault": true,
   "parallelWorkers": 3,
   "workerTimeout": 600,
-  "stallTimeout": 300,
-  "planTimeout": 300,
+  "stallTimeout": 600,
+  "planTimeout": 600,
   "maxRetries": 2,
   "agentTimeouts": {
     "explore": 600,
@@ -42,7 +40,6 @@
   },
   "temperature": 0.1,
   "agentTemperature": {
-    "_comment": "Per-agent temperature overrides (0.0-1.0). Null or empty = use default temperature.",
     "explore": 0.3,
     "plan": 0.1,
     "implement": 0.1,
