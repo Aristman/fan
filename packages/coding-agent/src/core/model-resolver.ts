@@ -3,7 +3,7 @@
  */
 
 import type { ThinkingLevel } from "@seaagents/fan-agent-core";
-import { type Api, type KnownProvider, type Model, modelsAreEqual } from "@seaagents/fan-ai";
+import { type Api, getEnvApiKey, type KnownProvider, type Model, modelsAreEqual } from "@seaagents/fan-ai";
 import chalk from "chalk";
 import { minimatch } from "minimatch";
 import { isValidThinkingLevel } from "../cli/args.js";
@@ -104,7 +104,16 @@ export function findExactModelReferenceMatch(
 	}
 
 	const idMatches = availableModels.filter((model) => model.id.toLowerCase() === normalizedReference);
-	return idMatches.length === 1 ? idMatches[0] : undefined;
+	if (idMatches.length === 1) return idMatches[0];
+	if (idMatches.length > 1) {
+		// Bare ID matches multiple providers — disambiguate by preferring models
+		// whose provider has an API key configured (env var or auth storage).
+		// Without this, "qwen3.7-max" ambiguously matches both opencode-go and qwen
+		// providers, and alphabetical sort picks the wrong one.
+		const withEnvAuth = idMatches.filter((m) => getEnvApiKey(m.provider as KnownProvider));
+		if (withEnvAuth.length === 1) return withEnvAuth[0];
+	}
+	return undefined;
 }
 
 /**
@@ -387,11 +396,10 @@ export function resolveCliModel(options: {
 
 	// If no provider was inferred from the slash, try exact matches without provider inference.
 	// This handles models whose IDs naturally contain slashes (e.g. OpenRouter-style IDs).
+	// Uses findExactModelReferenceMatch for auth-based disambiguation when a bare ID
+	// matches multiple providers (e.g. "qwen3.7-max" exists in both opencode-go and qwen).
 	if (!provider) {
-		const lower = cliModel.toLowerCase();
-		const exact = availableModels.find(
-			(m) => m.id.toLowerCase() === lower || `${m.provider}/${m.id}`.toLowerCase() === lower,
-		);
+		const exact = findExactModelReferenceMatch(cliModel, availableModels);
 		if (exact) {
 			return { model: exact, warning: undefined, thinkingLevel: undefined, error: undefined };
 		}
@@ -419,12 +427,9 @@ export function resolveCliModel(options: {
 	// This handles OpenRouter-style IDs like "openai/gpt-4o:extended" where "openai"
 	// looks like a provider but the full string is actually a model id on openrouter.
 	if (inferredProvider) {
-		const lower = cliModel.toLowerCase();
-		const exact = availableModels.find(
-			(m) => m.id.toLowerCase() === lower || `${m.provider}/${m.id}`.toLowerCase() === lower,
-		);
-		if (exact) {
-			return { model: exact, warning: undefined, thinkingLevel: undefined, error: undefined };
+		const exactFallback = findExactModelReferenceMatch(cliModel, availableModels);
+		if (exactFallback) {
+			return { model: exactFallback, warning: undefined, thinkingLevel: undefined, error: undefined };
 		}
 		// Also try parseModelPattern on the full input against all models
 		const fallback = parseModelPattern(cliModel, availableModels, {
