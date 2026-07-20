@@ -18,8 +18,8 @@ export const DEFAULTS = {
     coordinatorDefault: true,
     parallelWorkers: 3,
     workerTimeout: 600,
-    stallTimeout: 300,
-    planTimeout: 300,
+    stallTimeout: 600,
+    planTimeout: 600,
     maxRetries: 2,
     agentTimeouts: {
         explore: 600,

@@ -568,6 +568,21 @@ export const orchestratorExtension = (fan) => {
                         return options;
                     }
 
+                    // Build options list with a specific model pre-selected (first in list)
+                    function buildOptionsWithDefault(modelList, defaultModel) {
+                        const options = [];
+                        // First: the suggested/default model (will be pre-selected in TUI)
+                        if (defaultModel) options.push(modelLabel(defaultModel));
+                        // Second: reset option
+                        options.push("(reset — use session default)");
+                        // Rest: other models (skip the default to avoid duplicates)
+                        for (const m of modelList) {
+                            if (defaultModel && m.id === defaultModel.id) continue;
+                            options.push(modelLabel(m));
+                        }
+                        return options;
+                    }
+
                     function parseModelSelection(selection) {
                         if (!selection || selection.startsWith("(reset")) return "";
                         // Strip trailing ⭐ and [provider] tags
@@ -726,58 +741,36 @@ export const orchestratorExtension = (fan) => {
                                 }
                             }
                         } else {
-                            // Customize — start from smart assignment as defaults
+                            // Customize — suggested model is pre-selected (first in list)
                             // First, default model
+                            const defOptions = buildOptionsWithDefault(providerModels, defaultModel);
                             const defChoice = await ctx.ui.select(
-                                `${icon} Default ${mode} model (suggested: ${modelLabel(defaultModel)})`,
-                                ["Keep suggested", ...allModelOptions],
+                                `${icon} Default ${mode} model`,
+                                defOptions,
                             );
                             if (defChoice === undefined) {
                                 ctx.ui.notify("Models configuration cancelled.");
                                 return;
                             }
-                            if (defChoice === "Keep suggested") {
-                                newDefault = defaultModel?.id || "";
-                            } else {
-                                newDefault = parseModelSelection(defChoice);
-                            }
+                            newDefault = parseModelSelection(defChoice);
 
-                            // Then per-agent
+                            // Then per-agent — suggested model is first (pre-selected)
                             for (const type of agentTypes) {
                                 const suggested = smartAssignment[type];
-                                const current = config[mode]?.models?.[type];
-                                const statusParts = [];
-                                if (suggested) statusParts.push(`suggested: ${suggested.id}`);
-                                if (current) statusParts.push(`current: ${current}`);
-                                const status = statusParts.length > 0 ? ` (${statusParts.join(", ")})` : "";
-
+                                const agentOptions = buildOptionsWithDefault(providerModels, suggested);
                                 const choice = await ctx.ui.select(
-                                    `${agentIcons[type]} ${type}${status}`,
-                                    [
-                                        "Use suggested",
-                                        "Keep current",
-                                        ...allModelOptions,
-                                    ],
+                                    `${agentIcons[type]} ${type}`,
+                                    agentOptions,
                                 );
                                 if (choice === undefined) {
                                     ctx.ui.notify("Models configuration cancelled.");
                                     return;
                                 }
-                                if (choice === "Use suggested") {
-                                    if (suggested) {
-                                        newModels[type] = suggested.id;
-                                    } else {
-                                        delete newModels[type];
-                                    }
-                                } else if (choice === "Keep current") {
-                                    // no change
+                                const parsed = parseModelSelection(choice);
+                                if (parsed) {
+                                    newModels[type] = parsed;
                                 } else {
-                                    const parsed = parseModelSelection(choice);
-                                    if (parsed) {
-                                        newModels[type] = parsed;
-                                    } else {
-                                        delete newModels[type]; // reset
-                                    }
+                                    delete newModels[type]; // reset
                                 }
                             }
                         }
