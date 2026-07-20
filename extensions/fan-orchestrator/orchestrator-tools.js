@@ -22,6 +22,7 @@ const AGENT_ICONS = {
     implement: "🔧",
     verify: "🛡️",
 };
+const WRITE_WORKER_TYPES = new Set(["implement", "bug-fix", "tests-impl", "docs-impl"]);
 function getAgentIcon(agentName) {
     return AGENT_ICONS[agentName] ?? "🤖";
 }
@@ -317,6 +318,22 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                             },
                         ],
                         details: makeDetails("parallel")([]),
+                    };
+                }
+                // Block write workers from parallel mode
+                const writeWorkersInParallel = params.tasks.filter(t => {
+                    const agent = agents.find(a => a.name === t.agent);
+                    return agent ? !agent.readOnly : WRITE_WORKER_TYPES.has(t.agent);
+                });
+                if (writeWorkersInParallel.length > 0) {
+                    const names = [...new Set(writeWorkersInParallel.map(t => t.agent))].join(", ");
+                    return {
+                        content: [{
+                            type: "text",
+                            text: `Write workers (${names}) cannot run in parallel mode. Use single or chain mode instead.`,
+                        }],
+                        details: makeDetails("parallel")([]),
+                        isError: true,
                     };
                 }
                 const allResults = new Array(params.tasks.length);
