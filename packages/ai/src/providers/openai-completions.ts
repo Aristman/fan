@@ -814,7 +814,9 @@ function detectCompat(model: Model<"openai-completions">): Required<OpenAIComple
 		baseUrl.includes("deepseek.com") ||
 		isZai ||
 		provider === "opencode" ||
-		baseUrl.includes("opencode.ai");
+		baseUrl.includes("opencode.ai") ||
+		provider === "qwen" ||
+		baseUrl.includes("maas.aliyuncs.com");
 
 	const useMaxTokens = baseUrl.includes("chutes.ai");
 
@@ -845,7 +847,9 @@ function detectCompat(model: Model<"openai-completions">): Required<OpenAIComple
 			? "zai"
 			: provider === "openrouter" || baseUrl.includes("openrouter.ai")
 				? "openrouter"
-				: "openai",
+				: provider === "qwen" || baseUrl.includes("maas.aliyuncs.com")
+					? "qwen"
+					: "openai",
 		openRouterRouting: {},
 		vercelGatewayRouting: {},
 		zaiToolStream: false,
