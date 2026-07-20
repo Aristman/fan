@@ -1,15 +1,15 @@
 {
 	"name": "fan-orchestrator",
 	"version": "7.8.0",
-	"description": "FAN orchestrator v7.8.0 — Smart model assignment, brand filtering, parallel write-worker blocking, /orchestrator models command, config auto-init from example.",
+	"description": "Многоагентный оркестратор для FAN — декомпозиция задач, координация воркеров, планирование и отслеживание прогресса.",
 	"type": "module",
 	"main": "./orchestrator-extension.js",
 	"types": "./orchestrator-extension.d.ts",
 	"fan": {
 		"name": "fan-orchestrator",
 		"type": "extension",
-		"displayName": "FAN Orchestrator v7.8.0",
-		"description": "FAN orchestrator v7.8.0 — Smart model assignment, brand filtering, parallel write-worker blocking, /orchestrator models command, config auto-init from example.",
+		"displayName": "FAN Orchestrator",
+		"description": "Многоагентный оркестратор — декомпозиция задач, координация воркеров, планирование и отслеживание прогресса.",
 		"version": "7.8.0",
 		"main": "orchestrator-extension.js",
 		"entry": "src/orchestrator-extension.ts",
