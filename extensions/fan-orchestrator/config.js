@@ -164,8 +164,22 @@ export function saveConfig(config) {
 }
 
 export function loadConfig() {
-    // If config doesn't exist — use DEFAULTS, do NOT auto-create
+    // If config doesn't exist — create from config.example.json (or DEFAULTS)
     if (!fs.existsSync(CONFIG_PATH)) {
+        const examplePath = path.join(__dirname, "config.example.json");
+        if (fs.existsSync(examplePath)) {
+            try {
+                const example = JSON.parse(fs.readFileSync(examplePath, "utf-8"));
+                normalizeConfigKeys(example);
+                normalizeTemperatureConfig(example);
+                const merged = deepMerge(DEFAULTS, example);
+                saveConfig(merged);
+                console.log("[FAN Orchestrator] Created config.json from config.example.json");
+                return merged;
+            } catch (e) {
+                console.warn(`[FAN Orchestrator] Failed to read config.example.json: ${e.message}. Using defaults.`);
+            }
+        }
         console.log("[FAN Orchestrator] No config.json found. Using defaults. Run /orchestrator init to configure.");
         return { ...DEFAULTS };
     }
