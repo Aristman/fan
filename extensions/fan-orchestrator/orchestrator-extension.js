@@ -523,7 +523,7 @@ export const orchestratorExtension = (fan) => {
                         const tags = [];
                         if (m.reasoning) tags.push("🧠");
                         if (m.contextWindow >= 500000) tags.push("📚");
-                        return `${name} ${tags.join("")} [${costStr}]`;
+                        return `${name} ${tags.join("")} [${costStr}] [${m.provider}]`;
                     }
 
                     // === Brand filtering ===
@@ -585,15 +585,21 @@ export const orchestratorExtension = (fan) => {
 
                     function parseModelSelection(selection) {
                         if (!selection || selection.startsWith("(reset")) return "";
-                        // Strip trailing ⭐ and [provider] tags
                         const clean = selection.replace(/\s*⭐?\s*$/, "").replace(/[🧠📚]/g, "").trim();
-                        // Extract model id from "Name (id) [cost]" or "id [cost]" format
+                        // Extract provider from last [provider] tag
+                        const providerTags = [...clean.matchAll(/\[([^\]]+)\]/g)].map(x => x[1]);
+                        const provider = providerTags.length > 0 ? providerTags[providerTags.length - 1] : "";
+                        // Extract model id from "Name (id) [cost] [provider]" or "id [cost] [provider]"
                         const parenMatch = clean.match(/\(([^)]+)\)/);
-                        if (parenMatch) return parenMatch[1].trim();
-                        // No parenthetical — take everything before [ or end
-                        const bracketMatch = clean.match(/^(.+?)\s*\[/);
-                        if (bracketMatch) return bracketMatch[1].trim();
-                        return clean.trim();
+                        let modelId;
+                        if (parenMatch) {
+                            modelId = parenMatch[1].trim();
+                        } else {
+                            const bracketMatch = clean.match(/^(.+?)\s*\[/);
+                            modelId = bracketMatch ? bracketMatch[1].trim() : clean.trim();
+                        }
+                        // Return provider/id to avoid ambiguous resolution
+                        return provider ? `${provider}/${modelId}` : modelId;
                     }
 
                     // 1. Choose provider mode to configure
@@ -615,11 +621,18 @@ export const orchestratorExtension = (fan) => {
                     // Determine active provider: session model → existing config → first alphabetically
                     let smartProvider = activeProvider;
                     if (!smartProvider || !modelsByProvider.has(smartProvider)) {
-                        // Try to detect from existing config
+                        // Try to detect from existing config (supports both "id" and "provider/id" formats)
                         const configModel = config.cloud?.model || config.local?.model;
                         if (configModel) {
+                            const [cfgProvider, cfgId] = configModel.includes("/")
+                                ? configModel.split("/", 2)
+                                : [null, configModel];
                             for (const [provider, models] of modelsByProvider) {
-                                if (models.some(m => m.id === configModel)) {
+                                if (cfgProvider && provider === cfgProvider && models.some(m => m.id === cfgId)) {
+                                    smartProvider = provider;
+                                    break;
+                                }
+                                if (!cfgProvider && models.some(m => m.id === cfgId)) {
                                     smartProvider = provider;
                                     break;
                                 }
@@ -733,11 +746,12 @@ export const orchestratorExtension = (fan) => {
                             }
                             newDefault = "";
                         } else if (actionChoice.startsWith("✅")) {
-                            // Accept smart assignment
-                            newDefault = defaultModel?.id || "";
+                            // Accept smart assignment — write provider/id to avoid ambiguity
+                            newDefault = defaultModel ? `${defaultModel.provider}/${defaultModel.id}` : "";
                             for (const type of agentTypes) {
-                                if (smartAssignment[type]) {
-                                    newModels[type] = smartAssignment[type].id;
+                                const m = smartAssignment[type];
+                                if (m) {
+                                    newModels[type] = `${m.provider}/${m.id}`;
                                 }
                             }
                         } else {
