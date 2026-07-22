@@ -54,3 +54,6 @@ packages/orchestrator/src/config.json
 /packages/ai/src/models.generated.ts
 /bun.lock
 /pnpm-lock.yaml
+
+# FAN Store archives
+extensions/*.tar.gz
