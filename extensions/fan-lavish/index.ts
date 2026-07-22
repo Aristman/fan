@@ -8,8 +8,9 @@
  *   - loadConfig(): returns config with defaults
  */
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
 import { Type } from "@sinclair/typebox";
 
@@ -69,11 +70,37 @@ export function detectCli(): CliInfo {
 // ── Config ───────────────────────────────────────────────────────────────────
 
 export function loadConfig(): LavishConfig {
-  // Defaults — config.json support will be added in F-2.2
-  return {
-    port: 4387,
-    noOpen: false,
-  };
+  const defaults: LavishConfig = { port: 4387, noOpen: false };
+  try {
+    const __dirname = dirname(fileURLToPath(import.meta.url));
+    const configPath = join(__dirname, "config.json");
+    const raw = readFileSync(configPath, "utf-8");
+    const parsed = JSON.parse(raw);
+    return {
+      port: typeof parsed.port === "number" ? parsed.port : defaults.port,
+      noOpen: typeof parsed.noOpen === "boolean" ? parsed.noOpen : defaults.noOpen,
+    };
+  } catch {
+    return defaults;
+  }
+}
+
+// ── Process Tree Kill Helper ─────────────────────────────────────────────────
+
+function killProcessTree(pid: number | undefined): void {
+  if (!pid) return;
+  try {
+    if (process.platform === "win32") {
+      spawnSync("taskkill", ["/F", "/T", "/PID", String(pid)], {
+        stdio: "ignore",
+        timeout: 5000,
+      });
+    } else {
+      process.kill(pid, "SIGKILL");
+    }
+  } catch {
+    // Process may have already exited
+  }
 }
 
 // ── Subprocess Execution ─────────────────────────────────────────────────────
@@ -116,13 +143,13 @@ export function executeLavish(
       stderr += chunk.toString();
     });
 
-    // Kill helper: SIGTERM → 5s grace → SIGKILL
+    // Kill helper: SIGTERM → 5s grace → SIGKILL/taskkill
     const killProc = () => {
       if (child.exitCode !== null || child.killed) return;
       child.kill("SIGTERM");
       setTimeout(() => {
         if (child.exitCode === null && !child.killed) {
-          child.kill("SIGKILL");
+          killProcessTree(child.pid);
         }
       }, 5000);
     };
@@ -196,13 +223,13 @@ export function executeLavishPoll(
       }
     });
 
-    // Kill helper: SIGTERM → 5s grace → SIGKILL
+    // Kill helper: SIGTERM → 5s grace → SIGKILL/taskkill
     const killProc = () => {
       if (child.exitCode !== null || child.killed) return;
       child.kill("SIGTERM");
       setTimeout(() => {
         if (child.exitCode === null && !child.killed) {
-          child.kill("SIGKILL");
+          killProcessTree(child.pid);
         }
       }, 5000);
     };
