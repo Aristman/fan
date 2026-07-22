@@ -41,10 +41,12 @@ export function detectCli(): CliInfo {
   const pathResult = spawnSync(whichCmd, ["lavish-axi"], {
     encoding: "utf-8",
     timeout: 2000,
+    shell: process.platform === "win32",
   });
 
   if (pathResult.status === 0 && pathResult.stdout.trim()) {
-    cachedCli = { bin: "lavish-axi", args: [], source: "path" };
+    const resolvedPath = pathResult.stdout.trim().split(/\r?\n/)[0].trim();
+    cachedCli = { bin: resolvedPath, args: [], source: "path" };
     return cachedCli;
   }
 
@@ -52,6 +54,7 @@ export function detectCli(): CliInfo {
   const npmRootResult = spawnSync("npm", ["root", "-g"], {
     encoding: "utf-8",
     timeout: 2000,
+    shell: process.platform === "win32",
   });
 
   if (npmRootResult.status === 0 && npmRootResult.stdout.trim()) {
@@ -122,7 +125,7 @@ export function executeLavish(
 
   return new Promise<ExecuteResult>((resolve, reject) => {
     const child = spawn(cli.bin, fullArgs, {
-      shell: false,
+      shell: process.platform === "win32",
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
       env: {
@@ -197,7 +200,7 @@ export function executeLavishPoll(
 
   return new Promise<ExecuteResult>((resolve, reject) => {
     const child = spawn(cli.bin, fullArgs, {
-      shell: false,
+      shell: process.platform === "win32",
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
       env: {
