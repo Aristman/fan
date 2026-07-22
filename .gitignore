@@ -56,4 +56,4 @@ packages/orchestrator/src/config.json
 /pnpm-lock.yaml
 
 # FAN Store archives
-extensions/*.tar.gz
+bundles/*.tar.gz
