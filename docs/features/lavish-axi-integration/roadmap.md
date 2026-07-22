@@ -47,7 +47,7 @@
 
 ---
 
-#### ☐ F-1.1: CLI auto-detect lavish-axi
+#### ✅ F-1.1: CLI auto-detect lavish-axi
 
 - **Приоритет:** P0
 - **Слой:** [INTEG]
@@ -76,7 +76,7 @@
 
 ---
 
-#### ☐ F-1.2: Tool `lavish` registration с TypeBox schema
+#### ✅ F-1.2: Tool `lavish` registration с TypeBox schema
 
 - **Приоритет:** P0
 - **Слой:** [API]
@@ -101,7 +101,7 @@
 
 ---
 
-#### ☐ F-1.3: Core subcommands — open, poll, end
+#### ✅ F-1.3: Core subcommands — open, poll, end
 
 - **Приоритет:** P0
 - **Слой:** [API]
@@ -131,7 +131,7 @@
 
 ---
 
-#### ☐ F-1.4: Subcommands playbook и info
+#### ✅ F-1.4: Subcommands playbook и info
 
 - **Приоритет:** P0
 - **Слой:** [API]
@@ -156,7 +156,7 @@
 
 ---
 
-#### ☐ F-1.5: Lifecycle hook `session_start` — ambient context
+#### ✅ F-1.5: Lifecycle hook `session_start` — ambient context
 
 - **Приоритет:** P0
 - **Слой:** [INTEG]
@@ -181,7 +181,7 @@
 
 ---
 
-#### ☐ F-1.6: Lifecycle hook `session_shutdown` — cleanup
+#### ✅ F-1.6: Lifecycle hook `session_shutdown` — cleanup
 
 - **Приоритет:** P0
 - **Слой:** [INTEG]
@@ -206,7 +206,7 @@
 
 ---
 
-#### ☐ F-1.7: SKILL.md — narrative guidance для агентов
+#### ✅ F-1.7: SKILL.md — narrative guidance для агентов
 
 - **Приоритет:** P0
 - **Слой:** [CLI]
@@ -227,7 +227,7 @@
 
 ---
 
-#### ☐ F-1.8: Playbook support — diagram, plan, comparison
+#### ✅ F-1.8: Playbook support — diagram, plan, comparison
 
 - **Приоритет:** P1
 - **Слой:** [CLI]
@@ -260,7 +260,7 @@
 
 ---
 
-#### ☐ F-2.1: Subcommands design и export
+#### ✅ F-2.1: Subcommands design и export
 
 - **Приоритет:** P1
 - **Слой:** [API]
@@ -285,7 +285,7 @@
 
 ---
 
-#### ☐ F-2.2: Конфигурация — config.json (port, noOpen)
+#### ✅ F-2.2: Конфигурация — config.json (port, noOpen)
 
 - **Приоритет:** P1
 - **Слой:** [DATA]
@@ -310,7 +310,7 @@
 
 ---
 
-#### ☐ F-2.3: Windows-совместимость
+#### ✅ F-2.3: Windows-совместимость
 
 - **Приоритет:** P1
 - **Слой:** [INTEG]
@@ -335,7 +335,7 @@
 
 ---
 
-#### ☐ F-2.4: README.md — документация
+#### ✅ F-2.4: README.md — документация
 
 - **Приоритет:** P1
 - **Слой:** [CLI]
@@ -364,7 +364,7 @@
 
 ---
 
-#### ☐ F-3.1: FAN Store packaging и smoke-test
+#### ✅ F-3.1: FAN Store packaging и smoke-test
 
 - **Приоритет:** P2
 - **Слой:** [CLI]
@@ -393,25 +393,25 @@
 
 ### P0 — Критические
 
-- [ ] F-1.1 [INTEG]: CLI auto-detect lavish-axi (PATH → global npm → npx -y fallback)
-- [ ] F-1.2 [API]: Tool `lavish` registration с TypeBox schema (7 subcommands, promptGuidelines)
-- [ ] F-1.3 [API]: Core subcommands open/poll/end (subprocess, long-poll, AbortSignal)
-- [ ] F-1.4 [API]: Subcommands playbook и info (playbook list/guidance, sessions overview)
-- [ ] F-1.5 [INTEG]: Lifecycle hook `session_start` (ambient context injection)
-- [ ] F-1.6 [INTEG]: Lifecycle hook `session_shutdown` (graceful server stop)
-- [ ] F-1.7 [CLI]: SKILL.md (narrative guidance, workflow, playbook router, visual guidance)
+- [x] F-1.1 [INTEG]: CLI auto-detect lavish-axi (PATH → global npm → npx -y fallback)
+- [x] F-1.2 [API]: Tool `lavish` registration с TypeBox schema (7 subcommands, promptGuidelines)
+- [x] F-1.3 [API]: Core subcommands open/poll/end (subprocess, long-poll, AbortSignal)
+- [x] F-1.4 [API]: Subcommands playbook и info (playbook list/guidance, sessions overview)
+- [x] F-1.5 [INTEG]: Lifecycle hook `session_start` (ambient context injection)
+- [x] F-1.6 [INTEG]: Lifecycle hook `session_shutdown` (graceful server stop)
+- [x] F-1.7 [CLI]: SKILL.md (narrative guidance, workflow, playbook router, visual guidance)
 
 ### P1 — Высокие
 
-- [ ] F-1.8 [CLI]: Playbook support — diagram, plan, comparison (3 playbook-а через upstream CLI)
-- [ ] F-2.1 [API]: Subcommands design и export (design guidance, standalone HTML export)
-- [ ] F-2.2 [DATA]: Конфигурация config.json (port, noOpen → env vars)
-- [ ] F-2.3 [INTEG]: Windows-совместимость (where, paths, spawn, abort)
-- [ ] F-2.4 [CLI]: README.md (установка, конфигурация, troubleshooting)
+- [x] F-1.8 [CLI]: Playbook support — diagram, plan, comparison (3 playbook-а через upstream CLI)
+- [x] F-2.1 [API]: Subcommands design и export (design guidance, standalone HTML export)
+- [x] F-2.2 [DATA]: Конфигурация config.json (port, noOpen → env vars)
+- [x] F-2.3 [INTEG]: Windows-совместимость (where, paths, spawn, abort)
+- [x] F-2.4 [CLI]: README.md (установка, конфигурация, troubleshooting)
 
 ### P2 — Средние
 
-- [ ] F-3.1 [CLI]: FAN Store packaging и smoke-test (bundle .tar.gz, auto-discovery, e2e)
+- [x] F-3.1 [CLI]: FAN Store packaging и smoke-test (bundle .tar.gz, auto-discovery, e2e)
 
 ---
 
