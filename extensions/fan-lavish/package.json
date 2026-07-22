@@ -5,8 +5,13 @@
   "type": "module",
   "main": "index.ts",
   "fan": {
-    "extensions": ["./index.ts"],
-    "skills": true
+    "name": "fan-lavish",
+    "type": "extension",
+    "main": "index.ts",
+    "displayName": "FAN Lavish",
+    "description": "Lavish Editor integration — visual HTML artifact review with human feedback loop",
+    "version": "1.0.0",
+    "tags": ["lavish", "html", "artifacts", "review", "visualization", "axi"]
   },
   "keywords": [
     "fan",
@@ -15,13 +20,11 @@
     "artifacts",
     "review",
     "visualization",
-    "axi",
-    "bundle"
+    "axi"
   ],
   "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/seaagents/fan"
+  "dependencies": {
+    "@sinclair/typebox": "^0.34.0"
   },
   "engines": {
     "node": ">=18"
