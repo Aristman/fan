@@ -132,3 +132,39 @@
 *Создано: feature-pipeline skill*
 *Ветка: FAN-NEW-EXT-LAVISH*
 *Коммитов: 3 (abf1f26, 38740b5, 124fd20)*
+
+---
+
+## Post-pipeline: Bundle Restructuring
+
+**Коммит:** `85c976e` — `refactor(fan-lavish): restructure as FAN Store bundle`
+
+Исходный код переструктурирован в bundle-формат:
+
+```
+extensions/fan-lavish/
+├── package.json              (bundle metadata)
+├── README.md                 (bundle docs)
+├── extensions/
+│   └── fan-lavish/
+│       ├── index.ts          (extension code)
+│       ├── package.json      (extension manifest + @sinclair/typebox dep)
+│       ├── config.example.json
+│       └── README.md
+└── skills/
+    └── lavish/
+        └── SKILL.md          (skill guidance)
+```
+
+### Почему
+
+FAN Store `installer.detectType()` определяет bundle по наличию поддиректорий `extensions/` и `skills/` в корне архива. Плоская структура (index.ts + SKILL.md рядом) детектировалась как `extension` — и SKILL.md терялся при установке (skill loader ищет только в `~/.fan/agent/skills/`).
+
+### Что изменилось
+
+| До | После |
+|----|-------|
+| Плоская: `fan-lavish/{index.ts, SKILL.md, package.json}` | Bundle: `fan-lavish/{extensions/fan-lavish/, skills/lavish/}` |
+| `fan.extensions: ["./index.ts"]` + `fan.skills: true` | Extension: `fan.type: "extension"` + `fan.main: "index.ts"` |
+| Нет `dependencies` → typebox не устанавливался | `dependencies: { "@sinclair/typebox": "^0.34.0" }` → auto-install |
+| SKILL.md терялся при `fan store install` | SKILL.md копируется в `~/.fan/agent/skills/lavish/` |
