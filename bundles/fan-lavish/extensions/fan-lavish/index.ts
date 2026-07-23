@@ -36,98 +36,113 @@ let cachedCli: CliInfo | undefined;
 export function detectCli(): CliInfo {
   if (cachedCli) return cachedCli;
 
-  // Step 0: Check local node_modules (installed as dependency by FAN Store)
   const __dirname = dirname(fileURLToPath(import.meta.url));
+  const isWin = process.platform === "win32";
+  const whichCmd = isWin ? "where" : "which";
+  const extDir = __dirname;
 
-  // 0a: .bin/lavish-axi.cmd (Windows npm/bun) or .bin/lavish-axi (Unix)
-  const binCandidates = process.platform === "win32"
-    ? [
-        join(__dirname, "node_modules", ".bin", "lavish-axi.cmd"),
-        join(__dirname, "node_modules", ".bin", "lavish-axi"),
-      ]
-    : [join(__dirname, "node_modules", ".bin", "lavish-axi")];
+  // Helper: resolve a command via where/which, return full path or null
+  const resolveCmd = (cmd: string): string | null => {
+    try {
+      const r = spawnSync(whichCmd, [cmd], {
+        encoding: "utf-8",
+        timeout: 3000,
+        shell: isWin,
+      });
+      if (r.status === 0 && r.stdout.trim()) {
+        return r.stdout.trim().split(/\r?\n/)[0].trim();
+      }
+    } catch { /* ignore */ }
+    return null;
+  };
 
-  for (const candidate of binCandidates) {
+  // ── Step 0: Local node_modules (installed by FAN Store bun install) ──
+
+  // 0a: Check .bin/ entries
+  const binDir = join(extDir, "node_modules", ".bin");
+  const binCandidates = isWin
+    ? ["lavish-axi.cmd", "lavish-axi.exe", "lavish-axi.ps1", "lavish-axi"]
+    : ["lavish-axi"];
+
+  for (const name of binCandidates) {
+    const candidate = join(binDir, name);
     if (existsSync(candidate)) {
       cachedCli = { bin: candidate, args: [], source: "local" };
       return cachedCli;
     }
   }
 
-  // 0b: Direct entry point — node_modules/lavish-axi/dist/cli.mjs
-  const directEntry = join(__dirname, "node_modules", "lavish-axi", "dist", "cli.mjs");
+  // 0b: Direct entry — node_modules/lavish-axi/dist/cli.mjs
+  //     Try process.execPath first (works when FAN runs as bun binary),
+  //     then where node, where bun
+  const directEntry = join(extDir, "node_modules", "lavish-axi", "dist", "cli.mjs");
   if (existsSync(directEntry)) {
-    // Find node or bun to run it
-    const whichCmd = process.platform === "win32" ? "where" : "which";
+    // Try process.execPath (the runtime that loaded this extension)
+    const execPath = process.execPath;
+    if (execPath && existsSync(execPath)) {
+      cachedCli = { bin: execPath, args: [directEntry], source: "local" };
+      return cachedCli;
+    }
+    // Fallback: find node or bun in PATH
     for (const runtime of ["node", "bun"]) {
-      const r = spawnSync(whichCmd, [runtime], {
-        encoding: "utf-8",
-        timeout: 2000,
-        shell: process.platform === "win32",
-      });
-      if (r.status === 0 && r.stdout.trim()) {
-        const runtimePath = r.stdout.trim().split(/\r?\n/)[0].trim();
-        cachedCli = { bin: runtimePath, args: [directEntry], source: "local" };
+      const resolved = resolveCmd(runtime);
+      if (resolved) {
+        cachedCli = { bin: resolved, args: [directEntry], source: "local" };
         return cachedCli;
       }
     }
   }
 
-  // Step 1: Check PATH
-  const whichCmd = process.platform === "win32" ? "where" : "which";
-  const pathResult = spawnSync(whichCmd, ["lavish-axi"], {
-    encoding: "utf-8",
-    timeout: 2000,
-    shell: process.platform === "win32",
-  });
-
-  if (pathResult.status === 0 && pathResult.stdout.trim()) {
-    const resolvedPath = pathResult.stdout.trim().split(/\r?\n/)[0].trim();
-    cachedCli = { bin: resolvedPath, args: [], source: "path" };
+  // ── Step 1: PATH ──
+  const pathResolved = resolveCmd("lavish-axi");
+  if (pathResolved) {
+    cachedCli = { bin: pathResolved, args: [], source: "path" };
     return cachedCli;
   }
 
-  // Step 2: Check global npm
-  const npmRootResult = spawnSync("npm", ["root", "-g"], {
-    encoding: "utf-8",
-    timeout: 2000,
-    shell: process.platform === "win32",
-  });
-
-  if (npmRootResult.status === 0 && npmRootResult.stdout.trim()) {
-    const globalDir = npmRootResult.stdout.trim();
-    if (existsSync(join(globalDir, "lavish-axi"))) {
-      // Resolve full path via where/which (bare name fails on Windows)
-      const resolveResult = spawnSync(whichCmd, ["lavish-axi"], {
-        encoding: "utf-8",
-        timeout: 2000,
-        shell: process.platform === "win32",
-      });
-      if (resolveResult.status === 0 && resolveResult.stdout.trim()) {
-        const resolvedPath = resolveResult.stdout.trim().split(/\r?\n/)[0].trim();
-        cachedCli = { bin: resolvedPath, args: [], source: "global" };
-        return cachedCli;
+  // ── Step 2: Global npm ──
+  try {
+    const npmRootResult = spawnSync("npm", ["root", "-g"], {
+      encoding: "utf-8",
+      timeout: 3000,
+      shell: isWin,
+    });
+    if (npmRootResult.status === 0 && npmRootResult.stdout.trim()) {
+      const globalDir = npmRootResult.stdout.trim();
+      if (existsSync(join(globalDir, "lavish-axi"))) {
+        const resolved = resolveCmd("lavish-axi");
+        if (resolved) {
+          cachedCli = { bin: resolved, args: [], source: "global" };
+          return cachedCli;
+        }
       }
     }
-  }
+  } catch { /* ignore */ }
 
-  // Step 3: Fallback to npx — verify it exists first
-  const npxResult = spawnSync(whichCmd, ["npx"], {
-    encoding: "utf-8",
-    timeout: 2000,
-    shell: process.platform === "win32",
-  });
-
-  if (npxResult.status === 0 && npxResult.stdout.trim()) {
-    const npxPath = npxResult.stdout.trim().split(/\r?\n/)[0].trim();
-    cachedCli = { bin: npxPath, args: ["-y", "lavish-axi"], source: "npx" };
+  // ── Step 3: npx fallback ──
+  const npxResolved = resolveCmd("npx");
+  if (npxResolved) {
+    cachedCli = { bin: npxResolved, args: ["-y", "lavish-axi"], source: "npx" };
     return cachedCli;
   }
 
-  // Nothing found — throw a clear error
+  // ── Nothing found — diagnostic error ──
+  const diag: string[] = [];
+  diag.push(`extDir: ${extDir}`);
+  diag.push(`binDir exists: ${existsSync(binDir)}`);
+  if (existsSync(binDir)) {
+    try {
+      const files = require("fs").readdirSync(binDir);
+      diag.push(`binDir contents: ${files.join(", ")}`);
+    } catch { /* ignore */ }
+  }
+  diag.push(`directEntry exists: ${existsSync(directEntry)}`);
+  diag.push(`process.execPath: ${process.execPath}`);
+  diag.push(`PATH: ${(process.env.PATH || "").split(isWin ? ";" : ":").slice(0, 5).join(isWin ? ";" : ":")}...`);
+
   throw new Error(
-    "lavish-axi not found. Install it with: npm install -g lavish-axi\n" +
-    "Also ensure npm/npx are in your PATH.",
+    `lavish-axi not found. Install it with: npm install -g lavish-axi\n\n` +
+    `Diagnostic:\n${diag.map(d => `  ${d}`).join("\n")}`,
   );
 }
 
