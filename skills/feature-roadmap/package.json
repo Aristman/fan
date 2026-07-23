@@ -1,19 +1,19 @@
 {
   "name": "feature-roadmap",
-  "version": "1.0.0",
-  "description": "Генерирует TDD-роадмапу в стиле чеклиста на основе спецификации фичи. Парсит спецификацию, извлекает функции, определяет приоритеты и зависимости, группирует по этапам разработки и создаёт roadmap.md с TDD-тестами и критериями приёмки для каждой функции.",
+  "version": "1.2.0",
+  "description": "Генерирует TDD-роадмапу в стиле чеклиста на основе спецификации фичи. Парсит спецификацию, извлекает функции, проверяет обособленность фич (одна фича = один логический слой: API ИЛИ UI ИЛИ storage ИЛИ модель данных), лимит этапов — 8 (при превышении делегирует часть в /skill:research-spec-generator). Определяет приоритеты и зависимости, группирует по этапам и создаёт roadmap.md с SMART-формулировками TDD-тестов и критериев приёмки.",
   "type": "module",
-  "keywords": ["fan-package", "fan-skill", "roadmap", "tdd", "specification"],
+  "keywords": ["fan-package", "fan-skill", "roadmap", "tdd", "specification", "delegation", "smart"],
   "author": "FAN Team",
   "license": "MIT",
   "fan": {
     "name": "feature-roadmap",
     "type": "skill",
     "displayName": "Feature Roadmap",
-    "description": "Генерирует TDD-роадмапу в стиле чеклиста на основе спецификации фичи",
-    "version": "1.0.0",
+    "description": "Генерирует TDD-роадмапу в стиле чеклиста на основе спецификации фичи с проверкой обособленности фич и лимитом 8 этапов",
+    "version": "1.2.0",
     "main": "SKILL.md",
     "author": "FAN Team",
-    "tags": ["roadmap", "tdd", "specification", "planning", "checklist"]
+    "tags": ["roadmap", "tdd", "specification", "planning", "checklist", "delegation"]
   }
 }
