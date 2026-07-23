@@ -60,14 +60,38 @@ export function detectCli(): CliInfo {
   if (npmRootResult.status === 0 && npmRootResult.stdout.trim()) {
     const globalDir = npmRootResult.stdout.trim();
     if (existsSync(join(globalDir, "lavish-axi"))) {
-      cachedCli = { bin: "lavish-axi", args: [], source: "global" };
-      return cachedCli;
+      // Resolve full path via where/which (bare name fails on Windows)
+      const resolveResult = spawnSync(whichCmd, ["lavish-axi"], {
+        encoding: "utf-8",
+        timeout: 2000,
+        shell: process.platform === "win32",
+      });
+      if (resolveResult.status === 0 && resolveResult.stdout.trim()) {
+        const resolvedPath = resolveResult.stdout.trim().split(/\r?\n/)[0].trim();
+        cachedCli = { bin: resolvedPath, args: [], source: "global" };
+        return cachedCli;
+      }
     }
   }
 
-  // Step 3: Fallback to npx
-  cachedCli = { bin: "npx", args: ["-y", "lavish-axi"], source: "npx" };
-  return cachedCli;
+  // Step 3: Fallback to npx — verify it exists first
+  const npxResult = spawnSync(whichCmd, ["npx"], {
+    encoding: "utf-8",
+    timeout: 2000,
+    shell: process.platform === "win32",
+  });
+
+  if (npxResult.status === 0 && npxResult.stdout.trim()) {
+    const npxPath = npxResult.stdout.trim().split(/\r?\n/)[0].trim();
+    cachedCli = { bin: npxPath, args: ["-y", "lavish-axi"], source: "npx" };
+    return cachedCli;
+  }
+
+  // Nothing found — throw a clear error
+  throw new Error(
+    "lavish-axi not found. Install it with: npm install -g lavish-axi\n" +
+    "Also ensure npm/npx are in your PATH.",
+  );
 }
 
 // ── Config ───────────────────────────────────────────────────────────────────
@@ -341,6 +365,16 @@ export default function fanLavish(fan: ExtensionAPI) {
       ),
     }),
     async execute(toolCallId, params, signal, onUpdate, _ctx) {
+      // Pre-flight: ensure CLI is available
+      try {
+        detectCli();
+      } catch (err) {
+        return {
+          content: [{ type: "text", text: `Lavish unavailable: ${(err as Error).message}` }],
+          details: undefined,
+        };
+      }
+
       const args: string[] = [];
 
       switch (params.command) {
