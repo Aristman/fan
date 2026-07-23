@@ -9,6 +9,7 @@
  */
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
@@ -41,8 +42,16 @@ export function detectCli(): CliInfo {
   const whichCmd = isWin ? "where" : "which";
   const extDir = __dirname;
 
-  // Helper: resolve a command via where/which, return full path or null
+  // macOS Homebrew paths (Apple Silicon + Intel)
+  const homebrewDirs = [
+    "/opt/homebrew/bin",   // Apple Silicon
+    "/usr/local/bin",      // Intel
+    join(homedir(), ".bun", "bin"),  // bun standalone
+  ];
+
+  // Helper: resolve a command via where/which + known paths, return full path or null
   const resolveCmd = (cmd: string): string | null => {
+    // 1. Try where/which
     try {
       const r = spawnSync(whichCmd, [cmd], {
         encoding: "utf-8",
@@ -53,6 +62,15 @@ export function detectCli(): CliInfo {
         return r.stdout.trim().split(/\r?\n/)[0].trim();
       }
     } catch { /* ignore */ }
+
+    // 2. Check well-known paths (macOS Homebrew, bun standalone)
+    if (!isWin) {
+      for (const dir of homebrewDirs) {
+        const candidate = join(dir, cmd);
+        if (existsSync(candidate)) return candidate;
+      }
+    }
+
     return null;
   };
 
@@ -73,17 +91,20 @@ export function detectCli(): CliInfo {
   }
 
   // 0b: Direct entry — node_modules/lavish-axi/dist/cli.mjs
-  //     Try process.execPath first (works when FAN runs as bun binary),
-  //     then where node, where bun
+  //     Need a JS runtime (node or bun) to run .mjs files.
+  //     process.execPath may be the fan binary itself, not a JS runtime.
   const directEntry = join(extDir, "node_modules", "lavish-axi", "dist", "cli.mjs");
   if (existsSync(directEntry)) {
-    // Try process.execPath (the runtime that loaded this extension)
+    // Try process.execPath only if it looks like a JS runtime
     const execPath = process.execPath;
-    if (execPath && existsSync(execPath)) {
+    const execBase = (execPath || "").toLowerCase();
+    if (execPath && existsSync(execPath) &&
+        (execBase.includes("node") || execBase.includes("bun")) &&
+        !execBase.includes("fan")) {
       cachedCli = { bin: execPath, args: [directEntry], source: "local" };
       return cachedCli;
     }
-    // Fallback: find node or bun in PATH
+    // Find node or bun in PATH + known paths (Homebrew, ~/.bun/bin)
     for (const runtime of ["node", "bun"]) {
       const resolved = resolveCmd(runtime);
       if (resolved) {
