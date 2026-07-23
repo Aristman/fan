@@ -19,7 +19,7 @@ import { Type } from "@sinclair/typebox";
 export interface CliInfo {
   bin: string;
   args: string[];
-  source: "path" | "global" | "npx";
+  source: "local" | "path" | "global" | "npx";
 }
 
 export interface LavishConfig {
@@ -35,6 +35,16 @@ let cachedCli: CliInfo | undefined;
 
 export function detectCli(): CliInfo {
   if (cachedCli) return cachedCli;
+
+  // Step 0: Check local node_modules/.bin (installed as dependency)
+  const __dirname = dirname(fileURLToPath(import.meta.url));
+  const localBin = process.platform === "win32"
+    ? join(__dirname, "node_modules", ".bin", "lavish-axi.cmd")
+    : join(__dirname, "node_modules", ".bin", "lavish-axi");
+  if (existsSync(localBin)) {
+    cachedCli = { bin: localBin, args: [], source: "local" };
+    return cachedCli;
+  }
 
   // Step 1: Check PATH
   const whichCmd = process.platform === "win32" ? "where" : "which";
