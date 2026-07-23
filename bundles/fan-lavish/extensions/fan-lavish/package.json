@@ -1,6 +1,6 @@
 {
   "name": "fan-lavish",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Lavish Editor integration for FAN — visual HTML artifact review with human feedback loop",
   "type": "module",
   "main": "index.ts",
@@ -10,7 +10,7 @@
     "main": "index.ts",
     "displayName": "FAN Lavish",
     "description": "Lavish Editor integration — visual HTML artifact review with human feedback loop",
-    "version": "1.0.4",
+    "version": "1.0.5",
     "tags": ["lavish", "html", "artifacts", "review", "visualization", "axi"]
   },
   "keywords": ["fan", "lavish", "html", "artifacts", "review", "visualization", "axi"],

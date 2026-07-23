@@ -1,6 +1,6 @@
 {
   "name": "fan-lavish",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Lavish Editor integration for FAN — bundle (extension + skill)",
   "license": "MIT",
   "keywords": ["fan", "lavish", "html", "artifacts", "review", "visualization", "axi", "bundle"]

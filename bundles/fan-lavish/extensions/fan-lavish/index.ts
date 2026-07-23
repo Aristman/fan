@@ -36,14 +36,41 @@ let cachedCli: CliInfo | undefined;
 export function detectCli(): CliInfo {
   if (cachedCli) return cachedCli;
 
-  // Step 0: Check local node_modules/.bin (installed as dependency)
+  // Step 0: Check local node_modules (installed as dependency by FAN Store)
   const __dirname = dirname(fileURLToPath(import.meta.url));
-  const localBin = process.platform === "win32"
-    ? join(__dirname, "node_modules", ".bin", "lavish-axi.cmd")
-    : join(__dirname, "node_modules", ".bin", "lavish-axi");
-  if (existsSync(localBin)) {
-    cachedCli = { bin: localBin, args: [], source: "local" };
-    return cachedCli;
+
+  // 0a: .bin/lavish-axi.cmd (Windows npm/bun) or .bin/lavish-axi (Unix)
+  const binCandidates = process.platform === "win32"
+    ? [
+        join(__dirname, "node_modules", ".bin", "lavish-axi.cmd"),
+        join(__dirname, "node_modules", ".bin", "lavish-axi"),
+      ]
+    : [join(__dirname, "node_modules", ".bin", "lavish-axi")];
+
+  for (const candidate of binCandidates) {
+    if (existsSync(candidate)) {
+      cachedCli = { bin: candidate, args: [], source: "local" };
+      return cachedCli;
+    }
+  }
+
+  // 0b: Direct entry point — node_modules/lavish-axi/dist/cli.mjs
+  const directEntry = join(__dirname, "node_modules", "lavish-axi", "dist", "cli.mjs");
+  if (existsSync(directEntry)) {
+    // Find node or bun to run it
+    const whichCmd = process.platform === "win32" ? "where" : "which";
+    for (const runtime of ["node", "bun"]) {
+      const r = spawnSync(whichCmd, [runtime], {
+        encoding: "utf-8",
+        timeout: 2000,
+        shell: process.platform === "win32",
+      });
+      if (r.status === 0 && r.stdout.trim()) {
+        const runtimePath = r.stdout.trim().split(/\r?\n/)[0].trim();
+        cachedCli = { bin: runtimePath, args: [directEntry], source: "local" };
+        return cachedCli;
+      }
+    }
   }
 
   // Step 1: Check PATH
