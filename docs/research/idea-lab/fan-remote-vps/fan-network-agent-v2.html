@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FAN Network Agent — исследование v2</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #171a23;
+    --surface-2: #1e2230;
+    --border: #2a2f42;
+    --text: #e6e9f2;
+    --text-dim: #9aa3b8;
+    --accent: #7c8cf8;
+    --accent-soft: rgba(124,140,248,.14);
+    --green: #4ade80;
+    --green-soft: rgba(74,222,128,.12);
+    --orange: #fb923c;
+    --orange-soft: rgba(251,146,60,.12);
+    --red: #f87171;
+    --red-soft: rgba(248,113,113,.12);
+    --blue-soft: rgba(96,165,250,.12);
+    --blue: #60a5fa;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 32px 20px 80px;
+    background: var(--bg); color: var(--text);
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    line-height: 1.6;
+  }
+  .page { max-width: 1080px; margin: 0 auto; }
+  header.hero {
+    padding: 32px; border-radius: 16px;
+    background: linear-gradient(135deg, var(--surface-2), var(--surface));
+    border: 1px solid var(--border);
+    margin-bottom: 32px;
+  }
+  .hero h1 { margin: 0 0 8px; font-size: 30px; }
+  .hero .sub { color: var(--text-dim); font-size: 16px; max-width: 760px; }
+  .badges { margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .badge {
+    font-size: 12.5px; padding: 4px 12px; border-radius: 999px;
+    border: 1px solid var(--border); color: var(--text-dim); background: var(--surface);
+  }
+  .badge.hot { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+  h2 { font-size: 22px; margin: 40px 0 6px; padding-top: 8px; }
+  h2 .num { color: var(--accent); margin-right: 10px; font-weight: 700; }
+  .section-lead { color: var(--text-dim); margin: 0 0 20px; max-width: 820px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  @media (max-width: 860px) { .grid2, .grid3 { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; padding: 20px;
+  }
+  .card h3 { margin: 0 0 10px; font-size: 17px; }
+  .card ul { margin: 8px 0 0; padding-left: 20px; }
+  .card li { margin: 4px 0; font-size: 14.5px; }
+  .card.before { border-color: var(--orange); }
+  .card.before h3 { color: var(--orange); }
+  .card.after { border-color: var(--green); }
+  .card.after h3 { color: var(--green); }
+  .arrow-row { text-align: center; color: var(--text-dim); font-size: 22px; margin: 12px 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; margin: 12px 0; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--text-dim); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; }
+  tr:hover td { background: var(--surface-2); }
+  .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .pill.s { background: var(--green-soft); color: var(--green); }
+  .pill.m { background: var(--orange-soft); color: var(--orange); }
+  .pill.l { background: var(--red-soft); color: var(--red); }
+  .pill.done { background: var(--green-soft); color: var(--green); }
+  .pill.gap { background: var(--red-soft); color: var(--red); }
+  .pill.info { background: var(--blue-soft); color: var(--blue); }
+  .option-card { position: relative; }
+  .option-card.recommended { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), 0 8px 30px rgba(124,140,248,.12); }
+  .rec-tag {
+    position: absolute; top: -12px; right: 16px;
+    background: var(--accent); color: #0b0d14; font-size: 12px; font-weight: 700;
+    padding: 3px 12px; border-radius: 999px;
+  }
+  .stars { color: var(--accent); letter-spacing: 1px; white-space: nowrap; }
+  .mermaid {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; padding: 24px; margin: 16px 0;
+    display: flex; justify-content: center;
+  }
+  details {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 14px 18px; margin: 10px 0;
+  }
+  details summary { cursor: pointer; font-weight: 600; color: var(--accent); }
+  details[open] summary { margin-bottom: 10px; }
+  .quote {
+    border-left: 3px solid var(--accent); padding: 10px 16px;
+    background: var(--accent-soft); border-radius: 0 10px 10px 0;
+    color: var(--text); font-style: italic; margin: 16px 0;
+  }
+  .risk-high { color: var(--red); font-weight: 600; }
+  .risk-med { color: var(--orange); font-weight: 600; }
+  .risk-low { color: var(--green); font-weight: 600; }
+  .phase {
+    display: grid; grid-template-columns: 70px 1fr; gap: 16px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; padding: 18px 20px; margin: 12px 0;
+  }
+  .phase .ph-num {
+    width: 46px; height: 46px; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; font-weight: 800; background: var(--accent-soft); color: var(--accent);
+  }
+  .phase h3 { margin: 0 0 4px; font-size: 16.5px; }
+  .phase .ph-meta { color: var(--text-dim); font-size: 13.5px; margin-bottom: 6px; }
+  .phase p { margin: 4px 0 0; font-size: 14.5px; color: var(--text-dim); }
+  .phase .result { color: var(--green); font-size: 14px; margin-top: 8px; }
+  .swot { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 860px) { .swot { grid-template-columns: 1fr; } }
+  .swot .card h3 { font-size: 15.5px; }
+  .swot .s h3 { color: var(--blue); } .swot .w h3 { color: var(--orange); }
+  .swot .o h3 { color: var(--green); } .swot .t h3 { color: var(--red); }
+  .review-box {
+    border: 1px dashed var(--accent); border-radius: 14px;
+    padding: 20px; background: var(--accent-soft); margin-top: 16px;
+  }
+  .review-box h3 { margin-top: 0; color: var(--accent); }
+  code {
+    background: var(--surface-2); padding: 2px 7px; border-radius: 6px;
+    font-size: 13px; color: var(--accent); font-family: 'Cascadia Code', Consolas, monospace;
+  }
+  .footer { margin-top: 48px; color: var(--text-dim); font-size: 13px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="hero">
+    <h1>🌐 FAN Network Agent</h1>
+    <div class="sub">
+      Исследование v2: FAN как <b>сетевой инструмент</b> — не привязанный к машине, работающий на VPS,
+      с разными проектами и любыми задачами, а не только с кодом.
+      Рецензируемый документ — аннотируй любой блок.
+    </div>
+    <div class="badges">
+      <span class="badge hot">v2 · заменяет рамку v1</span>
+      <span class="badge">Тип: техническая</span>
+      <span class="badge">Глубина: стандартная</span>
+      <span class="badge">Дата: 2026-07-24</span>
+      <span class="badge hot">Уверенность рекомендации: 0.87</span>
+    </div>
+  </header>
+
+  <h2><span class="num">1</span>Решение, которое рецензируем</h2>
+  <p class="section-lead">
+    В v1 идея была «робот для GitHub»: cron → ветки → PR. В v2 рамка шире —
+    <b>FAN как персональный облачный агент</b>: единая точка доступа ко всем проектам и задачам с любого устройства.
+    Это меняет категорию, архитектуру и приоритеты.
+  </p>
+  <div class="grid2">
+    <div class="card before">
+      <h3>v1 — FAN Remote (робот для GitHub)</h3>
+      <ul>
+        <li>Главный сценарий: автономные задачи по cron → PR</li>
+        <li>Категория: GitHub-автоматизация (code-automator, OpenHands resolver)</li>
+        <li>Проекты: «несколько репо на инстансе» — без переключения</li>
+        <li>Задачи: код → ветки → PR</li>
+        <li>Пользователь — редкий гость, который ревьюит PR</li>
+      </ul>
+    </div>
+    <div class="card after">
+      <h3>v2 — FAN Network Agent (сетевой агент)</h3>
+      <ul>
+        <li>Главный сценарий: живая работа из любой точки, с любого устройства</li>
+        <li>Категория: agent-native personal cloud (code-server, Coder, Devin)</li>
+        <li>Проекты: полноценные workspaces с переключением в Web UI</li>
+        <li>Задачи: код + исследования + документы + автоматизация — всё</li>
+        <li>Пользователь — постоянный оператор; автономность — поздняя фаза</li>
+      </ul>
+    </div>
+  </div>
+  <div class="quote">
+    «Не столько средство работы с гитхабом, сколько сделать FAN сетевым инструментом…
+    работал на VPS… с разными проектами. И не только с кодом, но и другими задачами.»
+  </div>
+
+  <h2><span class="num">2</span>Категория и место на рынке</h2>
+  <p class="section-lead">
+    V2 перемещает идею из ниши «ботов для PR» в нишу «удалённых сред разработки» — но с агентом в центре, а не IDE.
+  </p>
+  <table>
+    <tr><th>Решение</th><th>Что это</th><th>Чем FAN отличается</th></tr>
+    <tr>
+      <td><b>code-server</b></td>
+      <td>VS Code в браузере на своём сервере; «один контейнер, один порт»</td>
+      <td>Это IDE, агент — сторонний. У FAN агент — центр системы</td>
+    </tr>
+    <tr>
+      <td><b>Coder</b></td>
+      <td>Self-hosted cloud dev environments; «для разработчиков и их агентов»</td>
+      <td>Про provisioning сред для команд. FAN — персональный, агентный, без k8s</td>
+    </tr>
+    <tr>
+      <td><b>Gitpod / Codespaces</b></td>
+      <td>Эфемерные облачные среды</td>
+      <td>Облако вендора; FAN — твой VPS, твои модели, твои данные</td>
+    </tr>
+    <tr>
+      <td><b>Devin / Replit Agent</b></td>
+      <td>Проприетарные агентные облака</td>
+      <td>Закрытые, подписочные. FAN — self-hosted, мульти-модельный</td>
+    </tr>
+    <tr>
+      <td><b>OpenHands</b></td>
+      <td>Open-source автономный агент, 76K★</td>
+      <td>Заточен под issue→PR. FAN — универсальный runtime со скиллами и оркестратором</td>
+    </tr>
+  </table>
+  <p class="section-lead">
+    Вывод: ниша «agent-native personal cloud» заметно пустее, чем «cloud IDE». Отличия FAN —
+    мульти-модельность с маршрутизацией и бюджетами, 8 скиллов, оркестратор, FAN Store.
+  </p>
+
+  <h2><span class="num">3</span>Целевая архитектура</h2>
+  <p class="section-lead">
+    Один процесс FAN на VPS обслуживает все проекты. Клиент — браузер (или телефон). Workspace = директория;
+    git опционален — этим покрываются и не-код задачи.
+  </p>
+
+  <div class="mermaid">
+flowchart TD
+    subgraph Clients["Клиенты — из любой точки"]
+        B["💻 Браузер (Web UI)"]
+        P["📱 Телефон"]
+        T["🖥️ TUI / IDE-плагины"]
+    end
+
+    subgraph VPS["VPS — один инстанс FAN"]
+        N["nginx\nTLS + домен + basic auth"]
+        F["FAN server\nREST + WebSocket + dashboard"]
+        REG["Реестр проектов\n~/.fan/agent/projects.json"]
+        DB[("~/.fan/agent\nБД · сессии · скиллы · память")]
+        N --> F
+        F --> REG
+        F --> DB
+    end
+
+    subgraph WS["Workspaces на VPS — ~/projects/*"]
+        W1["📁 project-alpha\n(git-клон, код)"]
+        W2["📁 project-beta\n(git-клон, код)"]
+        W3["📁 research\n(не-код: ресёрч, документы)"]
+        W4["📁 automation\n(скрипты, данные)"]
+    end
+
+    GH["GitHub\n(клоны ↔ push, bot-identity)"]
+
+    Clients -->|"HTTPS"| N
+    F -->|"переключение\nworkspaces"| W1 & W2 & W3 & W4
+    W1 & W2 <-->|"git"| GH
+  </div>
+
+  <details>
+    <summary>Ключевой инсайт аудита: workspace-модель уже наполовину заложена в код</summary>
+    <ul>
+      <li>Сессии <b>уже группируются по проектам</b>: <code>~/.fan/agent/sessions/--encoded-cwd--/</code> — у каждого проекта своя директория сессий (<code>session-manager.ts</code>)</li>
+      <li><code>SessionManager.listAll()</code> уже умеет сканировать все проекты; <code>SessionInfo</code> содержит <code>cwd</code></li>
+      <li>Все ресурсы уже двухуровневые: глобальные <code>~/.fan/agent/</code> + проектные <code>&lt;проект&gt;/.fan/</code> (скиллы, extensions, MCP, контекстные файлы)</li>
+      <li>Инструменты резолвят пути через <code>resolveToCwd()</code> — cwd приходит замыканием, не глобальным состоянием</li>
+    </ul>
+    <p>Это не редизайн — это «дорыть» уже заложенную модель.</p>
+  </details>
+
+  <h2><span class="num">4</span>Что готово vs блокеры</h2>
+  <div class="grid2">
+    <div class="card">
+      <h3>✅ Уже готово</h3>
+      <ul>
+        <li><span class="pill done">есть</span> REST API (16 endpoints) + WebSocket</li>
+        <li><span class="pill done">есть</span> Dashboard SPA, раздаётся сервером</li>
+        <li><span class="pill done">есть</span> Мульти-токенная auth, daemon, budget API</li>
+        <li><span class="pill done">есть</span> Группировка сессий по проектам на диске</li>
+        <li><span class="pill done">есть</span> Двухуровневые ресурсы (глобал + проект)</li>
+        <li><span class="pill done">есть</span> Универсальность: скиллы для не-код задач</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>⛔ Блокеры v2</h3>
+      <ul>
+        <li><span class="pill gap">нет</span> TLS/auth-контур (из v1, фаза 0)</li>
+        <li><span class="pill gap">нет</span> Одна активная сессия + <code>process.chdir()</code> — глобальное состояние</li>
+        <li><span class="pill gap">нет</span> API не знает о проектах (нет <code>?project=</code>, <code>GET /api/projects</code>)</li>
+        <li><span class="pill gap">нет</span> Dashboard без переключателя проектов</li>
+        <li><span class="pill gap">нет</span> Prisma <code>Session</code> не хранит <code>cwd</code></li>
+        <li><span class="pill gap">нет</span> Переключение проекта = полный пересоздание сервисов (медленно без кеша)</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2><span class="num">5</span>Три варианта мультипроектности</h2>
+  <p class="section-lead">Главное архитектурное решение v2. Рекомендуется вариант A — доказательства ниже.</p>
+  <div class="grid3">
+    <div class="card option-card recommended">
+      <span class="rec-tag">РЕКОМЕНДУЕТСЯ</span>
+      <h3>A. Workspace-режим в ядре</h3>
+      <p style="font-size:14px; color:var(--text-dim)">Один процесс FAN обслуживает N проектов. API workspace-aware, dashboard с переключателем, кеш сервисов по cwd.</p>
+      <ul>
+        <li>✅ Один инстанс: общие БД, токены, бюджет</li>
+        <li>✅ Полезно и локально (TUI, dashboard)</li>
+        <li>✅ Естественно покрывает не-код задачи</li>
+        <li>❌ Правки ядра: 14 точек, 2 крупные</li>
+        <li>❌ Одна активная сессия сохраняется</li>
+      </ul>
+      <p style="font-size:13.5px"><b>Срок:</b> ~2–3 недели</p>
+    </div>
+    <div class="card option-card">
+      <h3>B. Инстанс на проект</h3>
+      <p style="font-size:14px; color:var(--text-dim)">Отдельный процесс/контейнер FAN на проект, nginx маршрутизирует, launcher поднимает по требованию.</p>
+      <ul>
+        <li>✅ Ноль правок ядра</li>
+        <li>✅ Изоляция проектов</li>
+        <li>❌ Каждый инстанс — память/ресурсы VPS</li>
+        <li>❌ Фрагментация: свои сессии, бюджеты, настройки у каждого</li>
+        <li>❌ Launcher — новый сервис для поддержки</li>
+      </ul>
+      <p style="font-size:13.5px"><b>Срок:</b> ~1–2 недели + операционная сложность</p>
+    </div>
+    <div class="card option-card">
+      <h3>C. Гибрид: B сейчас, A потом</h3>
+      <p style="font-size:14px; color:var(--text-dim)">Быстрый старт на launcher'е, workspace-режим в ядре — позже.</p>
+      <ul>
+        <li>✅ Доступ «из любой точки» на первой неделе</li>
+        <li>❌ Дважды платим за архитектуру</li>
+        <li>❌ Launcher потом жалко выбрасывать</li>
+        <li>❌ Откладывает правильное решение</li>
+      </ul>
+      <p style="font-size:13.5px"><b>Срок:</b> суммарно больше всех</p>
+    </div>
+  </div>
+
+  <table>
+    <tr><th>Критерий</th><th>A. Workspace в ядре</th><th>B. Инстанс на проект</th><th>C. Гибрид</th></tr>
+    <tr><td>Скорость до результата</td><td class="stars">★★★</td><td class="stars">★★★★★</td><td class="stars">★★★★</td></tr>
+    <tr><td>Чистота архитектуры</td><td class="stars">★★★★★</td><td class="stars">★★★</td><td class="stars">★★</td></tr>
+    <tr><td>Ресурсы VPS</td><td class="stars">★★★★★</td><td class="stars">★★</td><td class="stars">★★★</td></tr>
+    <tr><td>Универсальность (не-код)</td><td class="stars">★★★★★</td><td class="stars">★★★</td><td class="stars">★★★★</td></tr>
+    <tr><td>Ценность для локального FAN</td><td class="stars">★★★★★</td><td class="stars">★</td><td class="stars">★★</td></tr>
+    <tr><td>Операционная простота</td><td class="stars">★★★★</td><td class="stars">★★</td><td class="stars">★★</td></tr>
+    <tr><td><b>Итого</b></td><td><b>4.3</b></td><td>2.8</td><td>3.0</td></tr>
+  </table>
+
+  <h2><span class="num">6</span>План фаз</h2>
+  <p class="section-lead">Каждая фаза — самостоятельный рабочий результат. Автономность (v1) осознанно отодвинута в фазу 4.</p>
+
+  <div class="phase">
+    <div class="ph-num">0</div>
+    <div>
+      <h3>Сетевой контур <span class="pill info">из v1</span></h3>
+      <div class="ph-meta">~5 дней · обязательный фундамент</div>
+      <p>Патч auth (публичный режим — сейчас server mode сам отключает auth!), env PORT/HOST, Docker + nginx + TLS, деплой на VPS.</p>
+      <div class="result">→ FAN доступен из браузера откуда угодно, один проект</div>
+    </div>
+  </div>
+  <div class="phase">
+    <div class="ph-num">1</div>
+    <div>
+      <h3>Workspace-aware API</h3>
+      <div class="ph-meta">~5 дней · 7 точек изменений (5 маленьких, 2 средние)</div>
+      <p>Prisma <code>cwd</code>, project-aware endpoints, <code>GET /api/projects</code>, SessionAdapter, реестр проектов, стартовый workspace root.</p>
+      <div class="result">→ Скрипты и клиенты работают с любым проектом через API — даже без UI</div>
+    </div>
+  </div>
+  <div class="phase">
+    <div class="ph-num">2</div>
+    <div>
+      <h3>Workspace UX</h3>
+      <div class="ph-meta">~5–7 дней · кеш сервисов + dashboard</div>
+      <p>Кеш сервисов <code>Map&lt;cwd, services&gt;</code>, переключатель проектов в dashboard, группировка сессий, per-project settings/MCP reload.</p>
+      <div class="result">→ Полноценная работа с разными проектами из Web UI</div>
+    </div>
+  </div>
+  <div class="phase">
+    <div class="ph-num">3</div>
+    <div>
+      <h3>Универсальные задачи</h3>
+      <div class="ph-meta">~3–5 дней · формализация не-код сценариев</div>
+      <p>Типы workspaces (код / ресёрч / автоматизация), шаблоны, не-код задачи как первоклассный сценарий в UI.</p>
+      <div class="result">→ FAN как универсальный сетевой агент, не только кодинг</div>
+    </div>
+  </div>
+  <div class="phase">
+    <div class="ph-num">4</div>
+    <div>
+      <h3>Автономность <span class="pill info">из v1</span></h3>
+      <div class="ph-meta">~5–8 дней · поверх workspace-режима</div>
+      <p>Scheduler-сервис (cron → FAN API), git/PR-политика (bot-identity, feature-ветки).</p>
+      <div class="result">→ Фоновые задачи по расписанию в любом workspace</div>
+    </div>
+  </div>
+  <div class="phase">
+    <div class="ph-num">5</div>
+    <div>
+      <h3>Конкурентность <span class="pill m">опционально</span></h3>
+      <div class="ph-meta">отдельный проект · пока не нужно</div>
+      <p>Очередь сообщений, удаление <code>process.chdir()</code>, per-project токены.</p>
+      <div class="result">→ Несколько клиентов одновременно без гонок</div>
+    </div>
+  </div>
+
+  <details>
+    <summary>Детализация: 14 точек изменений в ядре (фазы 1–2 и далее)</summary>
+    <table>
+      <tr><th>#</th><th>Изменение</th><th>Сложность</th><th>Фаза</th></tr>
+      <tr><td>1</td><td>Prisma: поле <code>cwd</code> в Session + миграция</td><td><span class="pill s">S</span></td><td>1</td></tr>
+      <tr><td>2</td><td>API: <code>?project=</code>, <code>cwd</code> в create, <code>GET /api/projects</code></td><td><span class="pill m">M</span></td><td>1</td></tr>
+      <tr><td>3</td><td>SessionAdapter: project-aware операции</td><td><span class="pill m">M</span></td><td>1</td></tr>
+      <tr><td>4</td><td>Per-session cwd вместо зависимости от <code>process.cwd()</code></td><td><span class="pill m">M</span></td><td>1</td></tr>
+      <tr><td>5</td><td>Реестр проектов <code>~/.fan/agent/projects.json</code></td><td><span class="pill s">S</span></td><td>1</td></tr>
+      <tr><td>6</td><td>Стартовый cwd = workspace root (<code>~/projects</code>)</td><td><span class="pill s">S</span></td><td>1</td></tr>
+      <tr><td>7</td><td><code>listAll()</code> → проброс <code>cwd</code> в API</td><td><span class="pill s">S</span></td><td>1</td></tr>
+      <tr><td>8</td><td>Кеш сервисов <code>Map&lt;cwd, AgentSessionServices&gt;</code></td><td><span class="pill l">L</span></td><td>2</td></tr>
+      <tr><td>9</td><td>Dashboard: переключатель проектов + группировка</td><td><span class="pill l">L</span></td><td>2</td></tr>
+      <tr><td>10</td><td>Dashboard API client: project-параметры</td><td><span class="pill s">S</span></td><td>2</td></tr>
+      <tr><td>11</td><td>Settings reload при смене проекта</td><td><span class="pill m">M</span></td><td>2</td></tr>
+      <tr><td>12</td><td>MCP reconnect при смене проекта</td><td><span class="pill m">M</span></td><td>2</td></tr>
+      <tr><td>13</td><td>Mutex на sendMessage</td><td><span class="pill m">M</span></td><td>5</td></tr>
+      <tr><td>14</td><td>Per-project токены</td><td><span class="pill m">M</span></td><td>5</td></tr>
+    </table>
+  </details>
+
+  <h2><span class="num">7</span>SWOT</h2>
+  <div class="swot">
+    <div class="card s">
+      <h3>Strengths — сильные стороны</h3>
+      <ul>
+        <li>Workspace-модель заложена в фундамент: сессии по cwd, двухуровневые ресурсы — «дорыть», не редизайн</li>
+        <li>Универсальность из коробки: скиллы уже делают не-код задачи</li>
+        <li>Сетевая часть (REST+WS, dashboard, токены) готова и проверена аудитом</li>
+      </ul>
+    </div>
+    <div class="card w">
+      <h3>Weaknesses — слабые стороны</h3>
+      <ul>
+        <li>Одна активная сессия + <code>process.chdir()</code> — главный архитектурный долг</li>
+        <li>Переключение проекта без кеша = полный reload сервисов</li>
+        <li>Dashboard не знает о проектах — UI с нуля</li>
+      </ul>
+    </div>
+    <div class="card o">
+      <h3>Opportunities — возможности</h3>
+      <ul>
+        <li>Ниша «agent-native personal cloud» пустее, чем cloud IDE</li>
+        <li>VPS как единая точка правды: сессии, скиллы, память — с любого устройства</li>
+        <li>Workspace-режим полезен и локально — улучшение ядра, не VPS-only костыль</li>
+      </ul>
+    </div>
+    <div class="card t">
+      <h3>Threats — угрозы</h3>
+      <ul>
+        <li>Scope creep: «инструмент для всего» легко стать бесконечным проектом</li>
+        <li>Публичный агент с shell — мишень (тот же класс угроз, что в v1)</li>
+        <li>Один VPS = единая точка отказа для всех проектов</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2><span class="num">8</span>Риски и митигации</h2>
+  <table>
+    <tr><th>Риск</th><th>Вероятность</th><th>Влияние</th><th>Митигация</th></tr>
+    <tr>
+      <td>Удаление <code>process.chdir()</code> сломает неочевидные места (extensions, MCP, читающие cwd процесса)</td>
+      <td class="risk-med">Средняя</td><td class="risk-med">Среднее</td>
+      <td>Регрессионные тесты; chdir при switch оставить как временную меру до фазы 5</td>
+    </tr>
+    <tr>
+      <td>Scope creep «инструмента для всего»</td>
+      <td class="risk-high">Высокая</td><td class="risk-high">Критичное</td>
+      <td>Жёсткая фазность; фаза = рабочий результат; Won't-лист: multi-user, k8s, параллельные сессии</td>
+    </tr>
+    <tr>
+      <td>Публичный агент с shell скомпрометирован</td>
+      <td class="risk-med">Средняя</td><td class="risk-high">Критичное</td>
+      <td>Фаза 0 обязательна: auth patch, nginx, bot-identity для git, budget caps</td>
+    </tr>
+    <tr>
+      <td>Медленное переключение проектов</td>
+      <td class="risk-high">Высокая без кеша</td><td class="risk-low">Низкое</td>
+      <td>Кеш сервисов по cwd — фаза 2</td>
+    </tr>
+    <tr>
+      <td>Единая точка отказа (один VPS)</td>
+      <td class="risk-low">Низкая</td><td class="risk-med">Среднее</td>
+      <td>Бэкапы <code>~/.fan/agent</code>; код всегда на GitHub</td>
+    </tr>
+  </table>
+
+  <h2><span class="num">9</span>Что прошу отрецензировать</h2>
+  <div class="review-box">
+    <h3>🎯 Точки для аннотаций</h3>
+    <ol>
+      <li><b>Вариант мультипроектности (секция 5)</b> — согласен с A, или видишь смысл в B/C?</li>
+      <li><b>Порядок фаз (секция 6)</b> — автономность отодвинута в фазу 4. Правильно, или она важнее workspace UX?</li>
+      <li><b>Одна активная сессия</b> — принимаем как ограничение на обозримое будущее. ОК для твоих сценариев?</li>
+      <li><b>Не-код workspaces (секция 3)</b> — модель «workspace = директория, git опционален» покрывает твоё «всё подряд»?</li>
+      <li><b>Scope</b> — что выкинуть, чтобы не раздувать? Чего критично не хватает?</li>
+    </ol>
+  </div>
+
+  <div class="footer">
+    FAN Network Agent · исследование v2 · idea-lab skill · 2026-07-24<br>
+    Полный текст: <code>docs/research/idea-lab/fan-remote-vps/FAN Network Agent — FAN как сетевой инструмент (v2).md</code>
+  </div>
+
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'dark',
+    themeVariables: {
+      darkMode: true,
+      background: '#171a23',
+      primaryColor: '#1e2230',
+      primaryTextColor: '#e6e9f2',
+      primaryBorderColor: '#2a2f42',
+      lineColor: '#7c8cf8',
+      secondaryColor: '#171a23',
+      tertiaryColor: '#171a23'
+    },
+    flowchart: { htmlLabels: true, curve: 'basis' }
+  });
+</script>
+</body>
+</html>
