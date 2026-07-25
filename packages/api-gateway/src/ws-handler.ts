@@ -207,3 +207,116 @@ export function attachWebSocketHandler(options: WsHandlerOptions): { close: () =
 		},
 	};
 }
+
+// ============================================================================
+// Bun-native WebSocket bridge
+// ============================================================================
+//
+// attachWebSocketHandler() hooks the raw Node http.Server "upgrade" event
+// (ws package). Under Bun.serve there is no http.Server — upgrades go
+// through server.upgrade() + the `websocket` serve option. The Docker image
+// runs the gateway under Bun (`bun packages/coding-agent/dist/cli.js server`),
+// so without this bridge WebSocket connections never upgraded and fell
+// through to the SPA fallback (HTTP 200 HTML instead of 101).
+//
+// The bridge mirrors the same protocol as the ws-based handler:
+//   ws://host/api/ws/<sessionId>?token=<token>
+//   → welcome frame { type: "connected" }, ping → pong, agent_event frames.
+
+interface BunWebSocketData {
+	sessionId: string;
+}
+
+interface BunWebSocket {
+	data: BunWebSocketData;
+	send(data: string): void;
+	close(code?: number, reason?: string): void;
+}
+
+export interface BunServerLike {
+	upgrade(req: Request, options: { data: BunWebSocketData }): boolean;
+}
+
+export interface BunWebSocketBridge {
+	/** Route handler for /api/ws/* — returns a Response to send, or undefined
+	 *  when the upgrade succeeded (Bun then answers 101 Switching Protocols). */
+	handleFetch(req: Request, server: BunServerLike, url: URL): Promise<Response | undefined>;
+	/** Value for the `websocket` option of Bun.serve(). */
+	websocket: {
+		open(ws: BunWebSocket): void;
+		message(ws: BunWebSocket, message: string | Buffer): void;
+		close(ws: BunWebSocket): void;
+	};
+}
+
+export function createBunWebSocketBridge(sessionAdapter: SessionAdapter, pathPrefix = "/api/ws/"): BunWebSocketBridge {
+	const unsubscribes = new Map<BunWebSocket, () => void>();
+
+	return {
+		async handleFetch(req, server, url) {
+			const sessionId = url.pathname.slice(pathPrefix.length);
+			if (!sessionId) {
+				return new Response("Not Found", { status: 404 });
+			}
+
+			// Same auth policy as the ws-based handler: ?token= query param,
+			// skipped entirely when auth is disabled (never in public mode).
+			const queryToken = url.searchParams.get("token");
+			if (!isAuthDisabled() && !queryToken) {
+				return new Response("Unauthorized", { status: 401 });
+			}
+			if (queryToken) {
+				const clientToken = await validateToken(queryToken);
+				if (!clientToken) {
+					return new Response("Forbidden", { status: 403 });
+				}
+			}
+
+			const upgraded = server.upgrade(req, { data: { sessionId } });
+			return upgraded ? undefined : new Response("Expected a WebSocket upgrade request", { status: 426 });
+		},
+		websocket: {
+			open(ws) {
+				const { sessionId } = ws.data;
+				const unsubscribe = sessionAdapter.subscribeToSession(sessionId, (event: any) => {
+					const message: WsOutgoingMessage = {
+						type: "agent_event",
+						sessionId,
+						timestamp: new Date().toISOString(),
+						event,
+					};
+					ws.send(JSON.stringify(message));
+				});
+				unsubscribes.set(ws, unsubscribe);
+				// Welcome frame — same shape as the ws-based handler.
+				ws.send(
+					JSON.stringify({
+						type: "connected",
+						sessionId,
+						timestamp: new Date().toISOString(),
+					}),
+				);
+			},
+			message(ws, message) {
+				try {
+					const msg = JSON.parse(message.toString()) as WsIncomingMessage;
+					if (msg.type === "ping") {
+						ws.send(
+							JSON.stringify({
+								type: "pong",
+								sessionId: ws.data.sessionId,
+								timestamp: new Date().toISOString(),
+							}),
+						);
+					}
+				} catch {
+					// Ignore malformed messages
+				}
+			},
+			close(ws) {
+				unsubscribes.get(ws)?.();
+				unsubscribes.delete(ws);
+			},
+		},
+	};
+}

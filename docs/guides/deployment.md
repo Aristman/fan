@@ -52,6 +52,7 @@ dig +short agent.sea-agents.ru
 | `docker-compose.yml` | Service `fan`, loopback port binding, volumes, env |
 | `deploy/nginx/agent.sea-agents.ru.conf` | nginx server block (443 + 80→443 redirect, WS upgrade) |
 | `deploy/scripts/setup-tls.sh` | Idempotent certbot setup/verification script (F-0.8), run on the VPS |
+| `deploy/scripts/e2e-local.sh` | Automated E2E smoke test on local Docker / VPS loopback (F-0.11-E2E, section 7) |
 | `docs/guides/deployment.md` | This guide |
 
 ## 3. Copy files to the VPS
@@ -218,10 +219,19 @@ TC-F-0.7-1 / TC-F-0.7-2 and the auth smoke checks. Run from any machine
 - [ ] **Authorized request works**
 
   ```bash
-  # create a token on the VPS inside the container
-  ssh root@185.219.41.46 "docker exec fan-agent bun dist/index.js token create"
+  # Bootstrap: POST /api/tokens is itself token-protected and there is no
+  # `fan token create` CLI — create the first token directly in the DB
+  # inside the container via the app's own @fan/db Prisma layer
+  # (see "Token bootstrap" in section 7):
+  TOKEN=$(ssh root@185.219.41.46 "docker exec -w /app/packages/coding-agent fan-agent bun -e '
+import { getPrismaClient } from \"@fan/db\";
+import { randomBytes, randomUUID } from \"node:crypto\";
+const p = getPrismaClient();
+const t = randomBytes(32).toString(\"hex\");
+await p.clientToken.create({ data: { id: randomUUID(), name: \"manual\", token: t } });
+await p.\$disconnect();
+console.log(t);'" | grep -oE '[0-9a-f]{64}')
 
-  TOKEN=<token>
   curl -s -X POST https://agent.sea-agents.ru/api/sessions \
     -H "Authorization: Bearer $TOKEN" \
     -H "Content-Type: application/json" -d '{}'
@@ -258,7 +268,111 @@ TC-F-0.7-1 / TC-F-0.7-2 and the auth smoke checks. Run from any machine
   ```
   Expected: connection refused / timeout.
 
-## 7. Updates (re-deploy)
+## 7. E2E verification after deploy (F-0.11-E2E)
+
+Two layers: an **automated script** for the full local-Docker cycle (also
+runnable on the VPS against the loopback port) and a **manual checklist**
+for the VPS-specific parts the script cannot cover (HTTPS/TLS through
+nginx, `wss://`, certbot).
+
+### 7.1 Automated: `deploy/scripts/e2e-local.sh`
+
+Runs the whole stack locally exactly as on the VPS (same Dockerfile,
+docker-compose.yml, `FAN_PUBLIC=1`, `ALLOWED_ORIGINS`) and verifies the
+contour end to end:
+
+```bash
+bash deploy/scripts/e2e-local.sh
+```
+
+What it does:
+
+1. `docker compose up -d --build`, then polls `GET /api/health` until 200
+   (timeout `E2E_HEALTH_TIMEOUT`, default 180s).
+2. **Health** — 200 + `db:"up"` in the body.
+3. **Auth enforced** — `GET /api/sessions` without a token → 401
+   (proves `FAN_PUBLIC=1` keeps auth on, F-0.3).
+4. **Token bootstrap** — creates a token inside the container (see 7.2).
+5. **Sessions** — `POST /api/sessions` with the token → 201; the session is
+   retrievable via `GET /api/sessions/<id>` and reported as active by
+   `/api/health`; `GET /api/sessions` → 200 with a sessions array.
+   (A new session appears in the *list* only after its first assistant
+   message is persisted — SessionManager creates the JSONL file on the
+   first assistant response by design.)
+6. **CORS** — `Origin: https://evil.com` gets no
+   `Access-Control-Allow-Origin`; `https://agent.sea-agents.ru` does (F-0.4).
+7. **File logging** — `/data/logs/app.log` exists and is non-empty (F-0.10).
+8. **WebSocket** (optional — needs `bun` or `wscat` on the host) — upgrade
+   to `/api/ws/<sessionId>?token=…` succeeds and the `connected` welcome
+   frame arrives.
+9. `docker compose down` via `trap` on exit (volumes are kept).
+
+Exit code is 0 only when every check passes; each check prints a colored
+`[PASS]`/`[FAIL]`/`[SKIP]` line.
+
+**On the VPS after deploy:** the API is bound to `127.0.0.1:3456`, so the
+same script works unchanged over SSH:
+
+```bash
+ssh root@185.219.41.46 "cd /opt/fan-agent && bash deploy/scripts/e2e-local.sh"
+```
+
+### 7.2 Token bootstrap (first token with auth enabled)
+
+`POST /api/tokens` is protected by the same `tokenAuth` middleware as every
+other `/api/*` route, and there is no `fan token create` CLI command — so
+the first token cannot be created over HTTP (chicken-and-egg). The working
+path is operator-side provisioning directly into the SQLite DB inside the
+container, using the app's own `@fan/db` Prisma layer (this does **not**
+weaken runtime auth — it is the equivalent of inserting a row into the
+`ClientToken` table by hand):
+
+```bash
+docker exec -w /app/packages/coding-agent fan-agent bun -e '
+import { getPrismaClient } from "@fan/db";
+import { randomBytes, randomUUID } from "node:crypto";
+const prisma = getPrismaClient();
+const token = randomBytes(32).toString("hex");
+await prisma.clientToken.create({ data: { id: randomUUID(), name: "bootstrap", token } });
+await prisma.$disconnect();
+console.log(token);
+'
+```
+
+Notes:
+
+- `-w /app/packages/coding-agent` is required: bun's isolated install links
+  workspace packages into the consuming package's `node_modules`, so
+  `@fan/db` does not resolve from the `/app` cwd.
+- The DB lives at `/data/.fan/agent/filin.db` (volume `fan-data`).
+- `e2e-local.sh` performs this step automatically (check 3).
+
+### 7.3 VPS manual checklist (TC-F-0.11-E2E-1/2/3)
+
+The script covers HTTP on loopback; the following must be verified by hand
+on the VPS because they involve nginx + TLS:
+
+- [ ] **TC-F-0.11-E2E-1 — stack up**: `docker ps` shows `fan-agent`
+  `(healthy)`; `ss -tlnp | grep -E ':(80|443)\b'` shows nginx;
+  `nginx -t` is clean.
+- [ ] **TC-F-0.11-E2E-2 — HTTPS health**: `curl -sk https://agent.sea-agents.ru/api/health`
+  → 200 with `db:"up"` (valid certificate, no `-k` needed from outside).
+- [ ] **TC-F-0.11-E2E-2 — WebSocket over TLS**: `wscat -c "wss://agent.sea-agents.ru/api/ws/<sessionId>?token=$TOKEN"`
+  → `Connected`; a `{"type":"connected",...}` welcome frame arrives.
+  Negative: without `?token=` → `Unexpected server response: 401`.
+- [ ] **TC-F-0.11-E2E-2 — session over HTTPS**: `curl -sk -X POST https://agent.sea-agents.ru/api/sessions -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{}'`
+  → 201; `curl -sk https://agent.sea-agents.ru/api/sessions/<id> -H "Authorization: Bearer $TOKEN"` → 200.
+- [ ] **TC-F-0.11-E2E-3 — auth cannot be disabled**: with `FAN_PUBLIC=1`
+  (and even `FAN_NO_AUTH=1` set), `curl -sk https://agent.sea-agents.ru/api/sessions`
+  → 401.
+- [ ] **Certificate validity** (TC-F-0.8-1):
+  `openssl x509 -in /etc/letsencrypt/live/agent.sea-agents.ru/fullchain.pem -noout -dates`
+  → `notAfter` in the future (90-day LE cert); re-check anytime with
+  `bash /opt/fan-agent/deploy/scripts/setup-tls.sh` (prints days left).
+- [ ] **Renewal works** (TC-F-0.8-2): `systemctl status certbot.timer`
+  → active; `certbot renew --dry-run` → exit 0.
+
+## 8. Updates (re-deploy)
 
 ```bash
 rsync -avz --delete --exclude node_modules --exclude .git --exclude dist \
@@ -269,7 +383,7 @@ ssh root@185.219.41.46 "cd /opt/fan-agent && docker compose up -d --build"
 Data (SQLite `fan.db`, JSONL sessions, tokens) persists in the named
 volumes `fan-data` / `fan-repos` across rebuilds.
 
-## 8. Rollback
+## 9. Rollback
 
 nginx layer (takes agent.sea-agents.ru offline, FAN Store unaffected):
 
@@ -288,7 +402,7 @@ docker compose down            # volumes are kept; add -v to also wipe data
 Full rollback = both steps. Certificates and `/etc/letsencrypt` do not need
 to be removed — they simply become unused.
 
-## 9. Security notes
+## 10. Security notes
 
 - **Single auth layer:** FAN ClientToken (Bearer token / `?token=` for WS),
   enforced by `FAN_PUBLIC=1` in `docker-compose.yml`. HTTP Basic Auth at the

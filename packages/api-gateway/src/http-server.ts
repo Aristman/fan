@@ -31,7 +31,7 @@ import type {
 	UpdateModelSettingsRequest,
 	UpdateModelSettingsResponse,
 } from "./types.js";
-import { attachWebSocketHandler } from "./ws-handler.js";
+import { attachWebSocketHandler, type BunServerLike, createBunWebSocketBridge } from "./ws-handler.js";
 
 // Version is passed via ServerOptions to avoid __dirname resolution issues
 // in compiled Bun binaries where __dirname points inside the runtime.
@@ -394,13 +394,25 @@ export async function startServer(
 	const hasBun = typeof (globalThis as any).Bun !== "undefined";
 
 	if (hasBun) {
-		// Bun native serve
+		// Bun native serve. Bun.serve has no raw http.Server "upgrade" event,
+		// so the ws-package handler cannot be attached here — WebSocket support
+		// goes through server.upgrade() + the `websocket` option instead
+		// (see createBunWebSocketBridge). Without this, /api/ws/* requests fell
+		// through to the SPA fallback (HTTP 200 HTML instead of 101).
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const bunGlobal = (globalThis as any).Bun as any;
+		const wsBridge = createBunWebSocketBridge(sessionAdapter);
 		const server = bunGlobal.serve({
 			port,
 			hostname: host,
-			fetch: app.fetch,
+			fetch(req: Request, srv: BunServerLike) {
+				const url = new URL(req.url);
+				if (url.pathname.startsWith("/api/ws/")) {
+					return wsBridge.handleFetch(req, srv, url);
+				}
+				return app.fetch(req);
+			},
+			websocket: wsBridge.websocket,
 		});
 		stop = async () => server.stop();
 	} else {

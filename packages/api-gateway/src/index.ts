@@ -15,4 +15,4 @@ export type { ServerOptions, SessionAdapter } from "./http-server.js";
 export { createApp, startServer } from "./http-server.js";
 export * from "./types.js";
 export type { WsHandlerOptions } from "./ws-handler.js";
-export { attachWebSocketHandler } from "./ws-handler.js";
+export { attachWebSocketHandler, createBunWebSocketBridge } from "./ws-handler.js";
