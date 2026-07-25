@@ -55,6 +55,7 @@ import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { ExtensionSelectorComponent } from "./modes/interactive/components/extension-selector.js";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.js";
 import { handleConfigCommand, handlePackageCommand } from "./package-manager-cli.js";
+import { installFileLogger } from "./utils/file-logger.js";
 import { isLocalPath } from "./utils/paths.js";
 
 async function handleInitCommand(args: string[]): Promise<boolean> {
@@ -793,6 +794,9 @@ async function promptForMissingSessionCwd(
 
 export async function main(args: string[]) {
 	resetTimings();
+	// F-0.10: tee console output to <LOG_DIR>/app.log with size-based rotation.
+	// No-op unless LOG_DIR is set (only the container sets it).
+	installFileLogger();
 	try {
 		cleanupOldBinaries();
 	} catch {

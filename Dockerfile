@@ -118,8 +118,12 @@ RUN set -e; \
 # Mount a volume at /data to persist them.
 #   FAN_CODING_AGENT_DIR — used by config.ts getAgentDir()
 #   FAN_AGENT_DIR        — used by packages/db client.ts for DATABASE_URL default
+# LOG_DIR enables file logging (F-0.10): console output is teed to
+# /data/logs/app.log with size-based rotation; LOG_LEVEL (default info)
+# controls file verbosity. Mount a volume at /data/logs to persist logs.
 ENV FAN_CODING_AGENT_DIR=/data/.fan/agent \
 	FAN_AGENT_DIR=/data/.fan/agent \
+	LOG_DIR=/data/logs \
 	HOST=0.0.0.0 \
 	PORT=3456 \
 	NODE_ENV=production

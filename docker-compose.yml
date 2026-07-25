@@ -32,11 +32,19 @@ services:
       # Data directory: fan.db (SQLite) + JSONL sessions live here (F-0.5).
       FAN_CODING_AGENT_DIR: /data/.fan/agent
       FAN_AGENT_DIR: /data/.fan/agent
+      # File logging (F-0.10): console output is teed to /data/logs/app.log
+      # with size-based rotation (LOG_MAX_SIZE / LOG_MAX_FILES, defaults
+      # 10 MB / 5 files). LOG_LEVEL controls file verbosity
+      # (error|warn|info|debug); docker logs is unaffected.
+      LOG_DIR: /data/logs
+      LOG_LEVEL: "${LOG_LEVEL:-info}"
     volumes:
       # Persistent agent data: SQLite DB (fan.db), sessions, settings, tokens.
       - fan-data:/data/.fan/agent
       # Workspace root for future phases (repositories the agent works on).
       - fan-repos:/data/repos
+      # Rotated application logs (app.log, app.log.1, ...) — F-0.10.
+      - fan-logs:/data/logs
     restart: unless-stopped
     healthcheck:
       # The slim runtime image has no curl/wget — probe via bun fetch.
@@ -58,3 +66,4 @@ services:
 volumes:
   fan-data:
   fan-repos:
+  fan-logs:
