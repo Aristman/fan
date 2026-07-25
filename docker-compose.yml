@@ -1,0 +1,58 @@
+# =============================================================================
+# FAN (Fast Agents Network) — production compose
+#
+# Single service `fan` built from the repo Dockerfile (multi-stage).
+# The API gateway listens on 0.0.0.0:3456 inside the container but is
+# published on loopback only — external traffic arrives via nginx
+# (reverse proxy on agent.sea-agents.ru → 127.0.0.1:3456).
+#
+# Usage:
+#   docker compose up -d --build
+#   docker compose logs -f fan
+#   docker compose down
+# =============================================================================
+
+services:
+  fan:
+    build: .
+    image: fan-agent:latest
+    container_name: fan-agent
+    ports:
+      # Loopback-only bind: the API is not reachable from the network
+      # directly; nginx proxies to 127.0.0.1:3456.
+      - "127.0.0.1:3456:3456"
+    environment:
+      # Server bind (HOST=0.0.0.0 is set in the Dockerfile — required so the
+      # process is reachable through the Docker port mapping).
+      PORT: "3456"
+      # Public mode: token auth is mandatory, FAN_NO_AUTH is ignored (F-0.3).
+      FAN_PUBLIC: "1"
+      # CORS whitelist (comma-separated). Production: nginx origin only (F-0.4).
+      ALLOWED_ORIGINS: "https://agent.sea-agents.ru"
+      # Data directory: fan.db (SQLite) + JSONL sessions live here (F-0.5).
+      FAN_CODING_AGENT_DIR: /data/.fan/agent
+      FAN_AGENT_DIR: /data/.fan/agent
+    volumes:
+      # Persistent agent data: SQLite DB (fan.db), sessions, settings, tokens.
+      - fan-data:/data/.fan/agent
+      # Workspace root for future phases (repositories the agent works on).
+      - fan-repos:/data/repos
+    restart: unless-stopped
+    healthcheck:
+      # The slim runtime image has no curl/wget — probe via bun fetch.
+      # /api/health is exempt from auth and always answers 200 when up.
+      test:
+        [
+          "CMD",
+          "bun",
+          "-e",
+          "fetch('http://127.0.0.1:3456/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  fan-data:
+  fan-repos:
