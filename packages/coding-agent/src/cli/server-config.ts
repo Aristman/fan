@@ -1,3 +1,5 @@
+import { isPublicMode } from "@fan/api-gateway";
+
 /**
  * Server configuration resolution (server mode).
  *
@@ -43,4 +45,28 @@ export function resolveHost(cliHost?: string, envHost: string | undefined = proc
 		return trimmed;
 	}
 	return DEFAULT_SERVER_HOST;
+}
+
+/**
+ * Public mode check. Re-exported from `@fan/api-gateway`; see its JSDoc for
+ * the accepted `FAN_PUBLIC` values and fail-closed semantics.
+ */
+export { isPublicMode };
+
+/**
+ * Apply the auth policy for server mode.
+ *
+ * - Public mode (`FAN_PUBLIC=1`): auth is mandatory — `FAN_NO_AUTH` is removed
+ *   from the environment so it is ignored even if set explicitly.
+ * - Local mode (default): `FAN_NO_AUTH=1` is set automatically unless already
+ *   present (legacy behavior — local server requires no auth).
+ */
+export function applyAuthPolicy(env: NodeJS.ProcessEnv = process.env): void {
+	if (isPublicMode(env.FAN_PUBLIC)) {
+		delete env.FAN_NO_AUTH;
+		return;
+	}
+	if (!env.FAN_NO_AUTH) {
+		env.FAN_NO_AUTH = "1";
+	}
 }

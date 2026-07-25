@@ -73,14 +73,55 @@ export async function revokeToken(id: string): Promise<boolean> {
 // Hono Middleware
 // ============================================================================
 
-/** Check if auth is disabled via environment variable */
+const PUBLIC_TRUE = new Set(["1", "true", "yes", "on"]);
+const PUBLIC_FALSE = new Set(["0", "false", "no", "off"]);
+
+/**
+ * Check if public server mode is enabled (`FAN_PUBLIC`).
+ *
+ * Public mode is intended for internet-facing deployments: authentication
+ * becomes mandatory and `FAN_NO_AUTH` is ignored entirely.
+ *
+ * Values are normalized with `trim().toLowerCase()`:
+ * - public: "1", "true", "yes", "on"
+ * - local: undefined, empty/whitespace, "0", "false", "no", "off"
+ * - any other non-empty value is treated as public (fail-closed) and a warning
+ *   is written to stderr.
+ */
+export function isPublicMode(envPublic: string | undefined = process.env.FAN_PUBLIC): boolean {
+	if (envPublic === undefined) {
+		return false;
+	}
+	const normalized = envPublic.trim().toLowerCase();
+	if (normalized === "") {
+		return false;
+	}
+	if (PUBLIC_TRUE.has(normalized)) {
+		return true;
+	}
+	if (PUBLIC_FALSE.has(normalized)) {
+		return false;
+	}
+	process.stderr.write(
+		`FAN_PUBLIC имеет нераспознанное значение ${JSON.stringify(envPublic)}, трактуется как включённый публичный режим\n`,
+	);
+	return true;
+}
+
+/** Check if auth is disabled via environment variable.
+ *  FAN_NO_AUTH is ignored in public mode (FAN_PUBLIC=1): auth cannot be
+ *  disabled on an internet-facing deployment, even if set explicitly.
+ */
 export function isAuthDisabled(): boolean {
+	if (isPublicMode()) {
+		return false;
+	}
 	return process.env.FAN_NO_AUTH === "1" || process.env.FAN_NO_AUTH === "true";
 }
 
 /** Hono middleware for token-based authentication.
  *  Checks Authorization: Bearer <token> header or ?token=<token> query param.
- *  Skipped entirely if FAN_NO_AUTH=1.
+ *  Skipped entirely if FAN_NO_AUTH=1 (ignored when FAN_PUBLIC=1).
  */
 export const tokenAuth: MiddlewareHandler = async (c, next) => {
 	if (isAuthDisabled()) {

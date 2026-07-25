@@ -3,7 +3,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
-import { generateToken as createToken, listTokens, revokeToken, tokenAuth } from "./auth.js";
+import { generateToken as createToken, isAuthDisabled, listTokens, revokeToken, tokenAuth } from "./auth.js";
 import type {
 	ApiError,
 	ApiMcpStatusResponse,
@@ -391,7 +391,7 @@ export async function startServer(
 	console.log(`[api-gateway] Server running at http://${host}:${port}`);
 	console.log(`[api-gateway] Health: http://${host}:${port}/api/health`);
 	console.log(`[api-gateway] Docs: http://${host}:${port}/api/health`);
-	if (process.env.FAN_NO_AUTH) {
+	if (isAuthDisabled()) {
 		console.warn(`[api-gateway] ⚠️  Auth disabled (FAN_NO_AUTH=${process.env.FAN_NO_AUTH})`);
 	}
 

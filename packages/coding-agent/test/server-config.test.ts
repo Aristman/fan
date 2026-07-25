@@ -1,5 +1,12 @@
-import { afterEach, describe, expect, test } from "vitest";
-import { DEFAULT_SERVER_HOST, DEFAULT_SERVER_PORT, resolveHost, resolvePort } from "../src/cli/server-config.js";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import {
+	applyAuthPolicy,
+	DEFAULT_SERVER_HOST,
+	DEFAULT_SERVER_PORT,
+	isPublicMode,
+	resolveHost,
+	resolvePort,
+} from "../src/cli/server-config.js";
 
 describe("resolvePort (F-0.1)", () => {
 	const originalPort = process.env.PORT;
@@ -122,5 +129,110 @@ describe("resolveHost (F-0.2)", () => {
 
 	test("DEFAULT_SERVER_HOST is localhost", () => {
 		expect(DEFAULT_SERVER_HOST).toBe("localhost");
+	});
+});
+
+describe("isPublicMode (F-0.3)", () => {
+	const originalPublic = process.env.FAN_PUBLIC;
+
+	afterEach(() => {
+		if (originalPublic === undefined) {
+			delete process.env.FAN_PUBLIC;
+		} else {
+			process.env.FAN_PUBLIC = originalPublic;
+		}
+	});
+
+	test("returns false when FAN_PUBLIC is not set", () => {
+		delete process.env.FAN_PUBLIC;
+		expect(isPublicMode()).toBe(false);
+	});
+
+	test("treats 1/true/yes/on (case/space insensitive) as public mode", () => {
+		for (const value of ["1", "true", "TRUE", "True", "yes", "YES", "on", " 1 ", " true "]) {
+			expect(isPublicMode(value)).toBe(true);
+		}
+	});
+
+	test("treats 0/false/no/off/empty/undefined as local mode", () => {
+		for (const value of ["0", "false", "FALSE", "no", "off", "", "   "]) {
+			expect(isPublicMode(value)).toBe(false);
+		}
+		expect(isPublicMode(undefined)).toBe(false);
+	});
+
+	test("treats unrecognized non-empty values as public mode (fail-closed) and warns", () => {
+		const stderrWrite = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+		try {
+			for (const value of ["2", "enbale", "yes please"]) {
+				expect(isPublicMode(value)).toBe(true);
+				expect(stderrWrite).toHaveBeenCalledWith(
+					expect.stringContaining(`FAN_PUBLIC имеет нераспознанное значение ${JSON.stringify(value)}`),
+				);
+			}
+		} finally {
+			stderrWrite.mockRestore();
+		}
+	});
+
+	test("explicit env argument takes precedence over process.env", () => {
+		delete process.env.FAN_PUBLIC;
+		expect(isPublicMode("1")).toBe(true);
+	});
+});
+
+describe("applyAuthPolicy (F-0.3)", () => {
+	const originalPublic = process.env.FAN_PUBLIC;
+	const originalNoAuth = process.env.FAN_NO_AUTH;
+
+	afterEach(() => {
+		if (originalPublic === undefined) {
+			delete process.env.FAN_PUBLIC;
+		} else {
+			process.env.FAN_PUBLIC = originalPublic;
+		}
+		if (originalNoAuth === undefined) {
+			delete process.env.FAN_NO_AUTH;
+		} else {
+			process.env.FAN_NO_AUTH = originalNoAuth;
+		}
+	});
+
+	test("TC-F-0.3-1: FAN_PUBLIC=1 + FAN_NO_AUTH=1 → FAN_NO_AUTH is removed (auth mandatory)", () => {
+		process.env.FAN_PUBLIC = "1";
+		process.env.FAN_NO_AUTH = "1";
+		applyAuthPolicy();
+		expect(process.env.FAN_NO_AUTH).toBeUndefined();
+	});
+
+	test("TC-F-0.3-2: without FAN_PUBLIC → FAN_NO_AUTH=1 is set automatically (legacy behavior)", () => {
+		delete process.env.FAN_PUBLIC;
+		delete process.env.FAN_NO_AUTH;
+		applyAuthPolicy();
+		expect(process.env.FAN_NO_AUTH).toBe("1");
+	});
+
+	test("TC-F-0.3-3: only FAN_PUBLIC=1 → FAN_NO_AUTH is not set (token required)", () => {
+		process.env.FAN_PUBLIC = "1";
+		delete process.env.FAN_NO_AUTH;
+		applyAuthPolicy();
+		expect(process.env.FAN_NO_AUTH).toBeUndefined();
+	});
+
+	test("without FAN_PUBLIC, pre-set FAN_NO_AUTH is preserved", () => {
+		delete process.env.FAN_PUBLIC;
+		process.env.FAN_NO_AUTH = "true";
+		applyAuthPolicy();
+		expect(process.env.FAN_NO_AUTH).toBe("true");
+	});
+
+	test("operates on the provided env object instead of process.env", () => {
+		const env: NodeJS.ProcessEnv = { FAN_PUBLIC: "1", FAN_NO_AUTH: "1" };
+		applyAuthPolicy(env);
+		expect(env.FAN_NO_AUTH).toBeUndefined();
+
+		const localEnv: NodeJS.ProcessEnv = {};
+		applyAuthPolicy(localEnv);
+		expect(localEnv.FAN_NO_AUTH).toBe("1");
 	});
 });

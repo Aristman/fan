@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Use vi.hoisted to create stable mock references that persist across getPrismaClient() calls
 const { mockClientToken, mockRandomBytes } = vi.hoisted(() => ({
@@ -28,7 +28,15 @@ vi.mock("node:crypto", () => ({
 // Set FAN_NO_AUTH to prevent real auth checks during tests
 process.env.FAN_NO_AUTH = "1";
 
-import { generateToken, isAuthDisabled, listTokens, revokeToken, validateToken } from "../auth.js";
+import {
+	generateToken,
+	isAuthDisabled,
+	isPublicMode,
+	listTokens,
+	revokeToken,
+	tokenAuth,
+	validateToken,
+} from "../auth.js";
 
 describe("Auth module", () => {
 	beforeEach(() => {
@@ -53,6 +61,114 @@ describe("Auth module", () => {
 		it("should return false when FAN_NO_AUTH is not set", () => {
 			delete process.env.FAN_NO_AUTH;
 			expect(isAuthDisabled()).toBe(false);
+		});
+	});
+
+	describe("public mode (F-0.3)", () => {
+		const originalPublic = process.env.FAN_PUBLIC;
+		const originalNoAuth = process.env.FAN_NO_AUTH;
+
+		afterEach(() => {
+			if (originalPublic === undefined) {
+				delete process.env.FAN_PUBLIC;
+			} else {
+				process.env.FAN_PUBLIC = originalPublic;
+			}
+			if (originalNoAuth === undefined) {
+				delete process.env.FAN_NO_AUTH;
+			} else {
+				process.env.FAN_NO_AUTH = originalNoAuth;
+			}
+		});
+
+		const makeContext = (url: string, headers: Record<string, string> = {}) =>
+			({
+				req: { header: (name: string) => headers[name], url },
+				json: (body: unknown, status: number) => ({ body, status }),
+				set: vi.fn(),
+			}) as unknown as Parameters<typeof tokenAuth>[0];
+
+		it("treats 1/true/yes/on (case/space insensitive) as public mode", () => {
+			for (const value of ["1", "true", "TRUE", "True", "yes", "YES", "on", " 1 ", " true "]) {
+				process.env.FAN_PUBLIC = value;
+				expect(isPublicMode()).toBe(true);
+			}
+		});
+
+		it("treats 0/false/no/off/empty/undefined as local mode", () => {
+			for (const value of ["0", "false", "FALSE", "no", "off", "", "   "]) {
+				process.env.FAN_PUBLIC = value;
+				expect(isPublicMode()).toBe(false);
+			}
+			delete process.env.FAN_PUBLIC;
+			expect(isPublicMode()).toBe(false);
+		});
+
+		it("treats unrecognized non-empty values as public mode (fail-closed) and warns", () => {
+			const stderrWrite = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+			try {
+				for (const value of ["2", "enbale", "yes please"]) {
+					process.env.FAN_PUBLIC = value;
+					expect(isPublicMode()).toBe(true);
+					expect(stderrWrite).toHaveBeenCalledWith(
+						expect.stringContaining(`FAN_PUBLIC имеет нераспознанное значение ${JSON.stringify(value)}`),
+					);
+				}
+			} finally {
+				stderrWrite.mockRestore();
+			}
+		});
+
+		it("TC-F-0.3-1: FAN_PUBLIC=1 ignores FAN_NO_AUTH — request without token gets 401", async () => {
+			process.env.FAN_PUBLIC = "1";
+			process.env.FAN_NO_AUTH = "1";
+			expect(isAuthDisabled()).toBe(false);
+
+			const next = vi.fn();
+			const result = (await tokenAuth(makeContext("http://localhost/api/sessions"), next)) as {
+				status: number;
+			};
+			expect(next).not.toHaveBeenCalled();
+			expect(result.status).toBe(401);
+		});
+
+		it("TC-F-0.3-3: FAN_PUBLIC=1 without FAN_NO_AUTH — token is required", async () => {
+			process.env.FAN_PUBLIC = "1";
+			delete process.env.FAN_NO_AUTH;
+			expect(isAuthDisabled()).toBe(false);
+
+			const next = vi.fn();
+			const result = (await tokenAuth(makeContext("http://localhost/api/sessions"), next)) as {
+				status: number;
+			};
+			expect(next).not.toHaveBeenCalled();
+			expect(result.status).toBe(401);
+		});
+
+		it("legacy: without FAN_PUBLIC, FAN_NO_AUTH=1 still disables auth", async () => {
+			delete process.env.FAN_PUBLIC;
+			process.env.FAN_NO_AUTH = "1";
+			expect(isAuthDisabled()).toBe(true);
+
+			const next = vi.fn();
+			await tokenAuth(makeContext("http://localhost/api/sessions"), next);
+			expect(next).toHaveBeenCalled();
+		});
+
+		it("valid Bearer token passes in public mode", async () => {
+			process.env.FAN_PUBLIC = "1";
+			process.env.FAN_NO_AUTH = "1";
+			mockClientToken.update.mockResolvedValue({
+				id: "token-123",
+				name: "Test Client",
+				token: "valid-hex",
+				createdAt: new Date(),
+				lastUsed: new Date(),
+			});
+
+			const next = vi.fn();
+			await tokenAuth(makeContext("http://localhost/api/sessions", { Authorization: "Bearer valid-hex" }), next);
+			expect(next).toHaveBeenCalled();
 		});
 	});
 

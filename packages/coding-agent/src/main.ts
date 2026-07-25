@@ -19,7 +19,7 @@ import { processFileArguments } from "./cli/file-processor.js";
 import { buildInitialMessage } from "./cli/initial-message.js";
 import { listModels } from "./cli/list-models.js";
 import { cleanupOldBinaries, handleUpdateCommand } from "./cli/self-update.js";
-import { resolveHost, resolvePort } from "./cli/server-config.js";
+import { applyAuthPolicy, resolveHost, resolvePort } from "./cli/server-config.js";
 import { selectSession } from "./cli/session-picker.js";
 import { getAgentDir, getModelsPath, isBunBinary, VERSION } from "./config.js";
 import {
@@ -1138,10 +1138,9 @@ export async function main(args: string[]) {
 
 	if (appMode === "server") {
 		printTimings();
-		// Local server — no auth required (only accessible from localhost)
-		if (!process.env.FAN_NO_AUTH) {
-			process.env.FAN_NO_AUTH = "1";
-		}
+		// Auth policy: public mode (FAN_PUBLIC=1) enforces auth and ignores
+		// FAN_NO_AUTH; local server mode auto-disables auth (legacy behavior).
+		applyAuthPolicy();
 		const modelManager = runtime.session.modelManager;
 		if (!modelManager) {
 			console.error("Error: ModelManager is not available. Server mode requires model management to be enabled.");
