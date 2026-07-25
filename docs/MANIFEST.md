@@ -17,7 +17,8 @@
 | `docs/guides/configuration.md` | ✅ | Full settings reference |
 | `docs/guides/orchestrator.md` | ✅ | Orchestrator user guide (v7.10.0: `/orchestrator models`, named presets, permission approval, slot pools, Pipeline Mode v3.1.0) |
 | `docs/guides/dashboard.md` | ✅ | Dashboard user guide |
-| `docs/guides/api-reference.md` | ✅ | REST API + WebSocket protocol reference |
+| `docs/guides/api-reference.md` | ✅ | REST API + WebSocket protocol reference (health readiness, 200/503) |
+| `docs/guides/deployment.md` | ✅ | Деплой FAN на VPS: Docker, nginx + TLS, certbot, healthcheck |
 | `docs/guides/mcp.md` | ✅ | MCP integration guide (Russian) — transports, config, OAuth, Worker Proxy, security |
 | `docs/mcp.md` | ✅ | MCP in FAN — comprehensive English reference (TOC, config, widget, commands, filtering, examples, troubleshooting, architecture, security) |
 | `docs/mcp.ru.md` | ✅ | MCP в FAN — полный русский перевод (содержание, конфигурация, виджет, команды, фильтрация, примеры, решение проблем, архитектура, безопасность) |
@@ -44,6 +45,16 @@
 | `docs/specs/spec_fan-network-agent_phase4-autonomy_2026-07-25.md` | ✅ | Фаза 4 — Автономность (scheduler, git/PR policy, budget caps) |
 | `docs/specs/spec_fan-network-agent_phase5-concurrency_2026-07-25.md` | ✅ | Фаза 5 — Конкурентность (опционально, chdir removal, persistent queue) |
 | `docs/orchestrator-comparison.md` | ⚠️ | Pi Sample vs FAN Copy comparison — содержит удалённые фичи (parallel/chain), исправлено частично |
+
+## Deployment (Phase 0 — Network Contour)
+| File | Status | Description |
+|------|--------|-------------|
+| `Dockerfile` | ✅ | Мультистейдж сборка (slim runtime image) |
+| `docker-compose.yml` | ✅ | Продакшен compose: сервис `fan`, порт на loopback, volume `/data` |
+| `.dockerignore` | ✅ | Исключения из build-контекста |
+| `deploy/nginx/agent.sea-agents.ru.conf` | ✅ | nginx reverse proxy: TLS termination, WS upgrade → 127.0.0.1:3456 |
+| `deploy/scripts/setup-tls.sh` | ✅ | Идемпотентный certbot setup-скрипт |
+| `deploy/scripts/e2e-local.sh` | ✅ | Локальная E2E-проверка цепочки деплоя (build → health → auth → WS) |
 
 ## Release & Process
 | File | Status | Description |
@@ -77,6 +88,7 @@
 | `docs/roadmaps/roadmap-idea-plugin-v2-from-orf.md` | ⚠️ | IDEA plugin v2 1st edition (superseded) |
 | `docs/roadmaps/roadmap-idea-plugin-v2-from-orf-ed2.md` | ⚠️ | IDEA plugin v2 2nd edition (superseded) |
 | `docs/features/phase0-network-contour/roadmap.md` | ✅ | TDD roadmap: фаза 0 — Сетевой контур (TLS/auth/Docker/nginx), 11 фич, 4 этапа + 1 E2E |
+| `docs/features/phase0-network-contour/pipeline-report.md` | ✅ | Отчёт пайплайна фазы 0: 11 фич + fix, 10 коммитов (`684de18..006ef96`) |
 | `docs/features/phase1-workspace-api/roadmap.md` | ✅ | TDD roadmap: фаза 1 — Workspace-aware API (cwd/project/whitelist), 14 фич, 6 этапов + 1 E2E |
 | `docs/features/phase2-workspace-ux/roadmap.md` | ✅ | TDD roadmap: фаза 2 — Workspace UX (Service Registry/queue/dashboard switcher), 15 фич, 5 этапов + 1 E2E |
 | `docs/features/phase3-universal-tasks/roadmap.md` | ✅ | TDD roadmap: фаза 3 — Universal Tasks (templates/detection/prompts/skills), 12 фич, 4 этапа + 2 E2E |
@@ -126,7 +138,9 @@
 
 All 5 package READMEs have been created — status updated to ✅.
 
-Total: **58 tracked documents** (56 ✅, 6 ⚠️, 0 ❌)
+Total: **66 tracked documents** (60 ✅, 6 ⚠️, 0 ❌)
+
+*Фаза 0 network-contour финализирована (2026-07-25):* Dockerfile, docker-compose.yml, .dockerignore, deploy/nginx/, deploy/scripts/ (setup-tls.sh, e2e-local.sh), docs/guides/deployment.md, pipeline-report.md; обновлены README.md, configuration.md (env vars), api-reference.md (health readiness), CHANGELOG.md [2.3.6]
 
 *TDD roadmaps (phase 0, 1, 2, 3) — 2026-07-25*
 *Новые roadmaps:* `phase2-workspace-ux` (15 фич, 5 этапов, 1 E2E), `phase3-universal-tasks` (12 фич, 4 этапа, 2 E2E)

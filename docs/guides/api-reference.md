@@ -82,21 +82,40 @@ GET /api/health
 
 No authentication required.
 
+Readiness probe (F-0.9): returns HTTP `200` when all checks pass, HTTP `503` when the database is unreachable (used by the Docker healthcheck).
+
 **Response `200`:**
 
 ```json
 {
   "status": "ok",
   "version": "1.0.0",
-  "uptime": 1847
+  "uptime": 1847,
+  "db": "up",
+  "session": { "active": true, "id": "sess_abc123" }
 }
 ```
 
-| Field    | Type     | Description                       |
-|----------|----------|-----------------------------------|
-| status   | `string` | `"ok"` when server is operational |
-| version  | `string` | FAN version number                |
-| uptime   | `number` | Server uptime in seconds          |
+**Response `503`** (DB probe failed or timed out after 1.5 s):
+
+```json
+{
+  "status": "degraded",
+  "version": "1.0.0",
+  "uptime": 1847,
+  "db": "down",
+  "session": { "active": false, "id": null }
+}
+```
+
+| Field          | Type      | Description                                             |
+|----------------|-----------|---------------------------------------------------------|
+| status         | `string`  | `"ok"` when all checks pass, `"degraded"` when any fails |
+| version        | `string`  | FAN version number                                      |
+| uptime         | `number`  | Server uptime in seconds                                |
+| db             | `string`  | Database (Prisma/SQLite) reachability: `"up"` / `"down"` |
+| session.active | `boolean` | Whether a session is currently active                   |
+| session.id     | `string?` | Active session ID (`null` when none)                    |
 
 ---
 

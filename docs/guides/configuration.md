@@ -53,6 +53,21 @@ Keys can also be set per-provider in `models.json` via `apiKey` (takes precedenc
 | `FAN_CLEAR_ON_SHRINK` | `"0"` | `"1"` to clear empty rows on shrink |
 | `FAN_HARDWARE_CURSOR` | `"0"` | `"1"` to show hardware cursor |
 
+### Server & Deployment
+
+Server-mode variables (`fan server` / `fan --web` / Docker). Implementation: `packages/coding-agent/src/cli/server-config.ts`, `packages/api-gateway/src/cors-config.ts`, `packages/coding-agent/src/utils/file-logger.ts`. See [Deployment Guide](deployment.md).
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `3456` | Server port. `--port` flag overrides; unset/invalid values fall back to the default |
+| `HOST` | `"localhost"` | Bind host. `--host` flag overrides; use `0.0.0.0` inside containers |
+| `FAN_PUBLIC` | unset | Public mode: `"1"`/`"true"`/`"yes"`/`"on"` makes token auth mandatory and ignores `FAN_NO_AUTH`. Unrecognized values fail closed (treated as public, with a stderr warning) |
+| `ALLOWED_ORIGINS` | `"*"` | CORS whitelist — comma-separated origins (whitespace trimmed, empty entries dropped). `"*"` = fully open (local dev) |
+| `LOG_DIR` | unset | File logging directory (`app.log` + rotation). Unset/empty = file logging disabled (console only). Container sets it to `/data/logs` |
+| `LOG_LEVEL` | `"info"` | File log verbosity: `error` \| `warn` \| `info` \| `debug`. Console output always passes through unchanged |
+| `LOG_MAX_SIZE` | `10485760` (10 MB) | Rotate `app.log` when it reaches this size. Plain bytes or `k`/`m`/`g` suffix (e.g. `"5m"`) |
+| `LOG_MAX_FILES` | `5` | Rotated files to keep: `app.log.1` … `app.log.N` (oldest dropped) |
+
 ## Settings Reference
 
 ### Model Configuration

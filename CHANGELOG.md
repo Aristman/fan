@@ -1,5 +1,47 @@
 # Changelog
 
+## [2.3.6] — 2026-07-25
+
+### Фаза 0 — Сетевой контур (network-contour)
+
+Продакшен-деплой FAN API gateway на VPS: Docker-контур, nginx с TLS,
+публичный режим с обязательной аутентификацией, файловое логирование
+с ротацией. Реализовано 11 фич + 1 fix (10 коммитов `684de18..006ef96`).
+Спецификация: `docs/specs/spec_fan-network-agent_phase0-network-contour_2026-07-25.md`,
+отчёт: `docs/features/phase0-network-contour/pipeline-report.md`.
+
+#### Добавлено
+
+- **Env-конфигурация сервера** — `PORT` (дефолт 3456) и `HOST` (дефолт
+  `localhost`) читаются из окружения; приоритет `--port`/`--host` > env >
+  дефолт (`packages/coding-agent/src/cli/server-config.ts`)
+- **Публичный режим `FAN_PUBLIC`** — `1`/`true`/`yes`/`on`: токен-аутентификация
+  обязательна, `FAN_NO_AUTH` игнорируется; нераспознанные значения трактуются
+  как публичный режим (fail-closed, warning в stderr)
+- **CORS whitelist** — `ALLOWED_ORIGINS` (comma-separated), дефолт `*`
+  (`packages/api-gateway/src/cors-config.ts`)
+- **Docker** — мультистейдж `Dockerfile` (slim runtime image), `.dockerignore`,
+  `docker-compose.yml` (публикация порта только на loopback, volume `/data`)
+- **nginx + TLS** — `deploy/nginx/agent.sea-agents.ru.conf` (TLS termination,
+  WebSocket upgrade, proxy на `127.0.0.1:3456`), идемпотентный скрипт
+  `deploy/scripts/setup-tls.sh` (certbot), руководство
+  `docs/guides/deployment.md`
+- **Health readiness** — `GET /api/health` возвращает поля `db` (up/down,
+  probe `SELECT 1` с таймаутом 1.5 с) и `session` (active/id); HTTP 503 при
+  недоступной БД для docker healthcheck
+- **Файловое логирование с ротацией** — `LOG_DIR`, `LOG_LEVEL`,
+  `LOG_MAX_SIZE` (10 MB, суффиксы k/m/g), `LOG_MAX_FILES` (5); tee
+  `console.*` → `<LOG_DIR>/app.log` без влияния на stdout
+  (`packages/coding-agent/src/utils/file-logger.ts`)
+- **E2E-деплой** — `deploy/scripts/e2e-local.sh` (локальная проверка всей
+  цепочки: build → health → auth → WS)
+
+#### Исправлено
+
+- **WebSocket в Bun-ветке** — bridge `createBunWebSocketBridge` для Bun.serve
+- **Token scrubbing** — токен из query-параметра вырезается из access-логов
+  до попадания в stdout / `docker logs` / `/data/logs/app.log`
+
 ## [2.3.1] — 2026-07-16
 
 ### MCP Интеграция — Полный цикл (Phase 1 + 2 + 3)

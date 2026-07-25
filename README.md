@@ -195,6 +195,17 @@ Key endpoints: `GET /api/health`, `POST /api/sessions/:id/messages`,
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) and [docs/guides/api-reference.md](docs/guides/api-reference.md) for details.
 
+### Docker / VPS Deployment
+
+FAN ships with a production Docker setup — multi-stage `Dockerfile`, `docker-compose.yml`, and an nginx reverse-proxy config with TLS (`deploy/nginx/`):
+
+```bash
+docker compose up -d --build   # build & start the fan-agent container
+docker compose logs -f fan     # follow logs
+```
+
+Key env vars: `PORT`, `HOST`, `FAN_PUBLIC=1` (mandatory token auth), `ALLOWED_ORIGINS`, `LOG_DIR`/`LOG_LEVEL`. The gateway binds to loopback inside the container; nginx terminates TLS and proxies HTTP + WebSocket. Full walkthrough: [docs/guides/deployment.md](docs/guides/deployment.md).
+
 ## Development
 
 ### Git Workflow
