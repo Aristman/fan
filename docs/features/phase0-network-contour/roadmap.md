@@ -10,7 +10,7 @@
 
 | Приоритет | Кол-во фич | Описание |
 |-----------|-----------|----------|
-| P0 (Must) | 8 | Порт/хост env, FAN_PUBLIC, Dockerfile, compose, CORS, nginx, certbot, E2E smoke |
+| P0 (Must) | 9 | Порт/хост env, FAN_PUBLIC, Dockerfile, compose, CORS, nginx, certbot, E2E smoke |
 | P1 (Should) | 2 | Health endpoint, logging to volume |
 | P2–P3 | 0 | Нет |
 
@@ -64,7 +64,7 @@
   - [ ] **TC-F-0.1-2:** CLI-флаг перебивает env
     - *Условие:* `PORT=9999` + `--port 7777`
     - *Шаги:* Запустить; проверить порт в логе
-    - *Ожидаемый результат:* Порт = 7777 (CLI wins over env)
+    - *Ожидаемый результат:* Порт = 7777 (CLI-флаг побеждает env)
 - **Критерии приёмки:**
   1. `PORT` из env успешно парсится и применяется при старте сервера
   2. Отсутствие `PORT` → fallback на дефолт 3456
@@ -83,7 +83,7 @@
     - *Условие:* `HOST=0.0.0.0`
     - *Шаги:* Запустить `fan server`; проверить bind address
     - *Ожидаемый результат:* Сервер привязан к 0.0.0.0
-  - [ ] **TC-F-0.2-2:** Non-numeric host string treated correctly
+  - [ ] **TC-F-0.2-2:** Нечисловая строка host обрабатывается корректно
     - *Условие:* `HOST=localhost.localdomain`
     - *Шаги:* Запустить; убедиться что строка передана без изменений
     - *Ожидаемый результат:* Host = «localhost.localdomain»
@@ -141,7 +141,7 @@
     - *Ожидаемый результат:* `Access-Control-Allow-Origin: *`; полная открытость
 - **Критерии приёмки:**
   1. CORS конфиг читает `ALLOWED_ORIGINS` из env, парсит через `split(',')`
-  2. Проверка Origin производится через includes/array lookup
+  2. Проверка Origin производится через поиск в массиве разрешённых origin
   3. Default `['*']` сохраняет поведение для локального dev
 - **Ожидаемый результат:** Изменённый `packages/api-gateway/src/http-server.ts` (~line 131)
 - **Оценка объёма:** S
@@ -190,7 +190,7 @@
   - [ ] **TC-F-0.6-2:** Данные сохраняются при перезапуске
     - *Условие:* Контейнер работает, создана хотя бы одна сессия
     - *Шаги:* `docker-compose down` → `docker-compose up -d`; проверить наличие БД
-    - *Ожидаемый результат:* `/data/.fan/agent/fan.db` существует после рестарта; сессии intact
+    - *Ожидаемый результат:* `/data/.fan/agent/fan.db` существует после рестарта; сессии не повреждены
   - [ ] **TC-F-0.6-3:** Порт привязан только к loopback
     - *Условие:* Контейнер запущен
     - *Шаги:* `netstat -tlnp | grep 3456` (внутри контейнера / на хосте)
@@ -250,26 +250,30 @@
 - **Критерии приёмки:**
   1. Сертификат лежит в `/etc/letsencrypt/live/agent.sea-agents.ru/`
   2. nginx config ссылается на корректные пути к сертификатам
-  3. Certbot renew configured и working
+  3. Certbot renew настроен и работает
 - **Ожидаемый результат:** Сертификаты на VPS + проверка в деплой-документации
 - **Оценка объёма:** S
 
-#### ⏳ F-0.9: Health endpoint для мониторинга
+#### ⏳ F-0.9: Readiness-поля health endpoint для мониторинга
 
 - **Приоритет:** P1
 - **Слой:** [API]
-- **Описание:** Эндпоинт `GET /api/health` — быстрая проверка здоровья сервиса. Возвращает `{ status: "ok", uptime: <ms>, version: "<semver>" }`. Используется для readiness/liveness probes в docker-compose healthcheck и внешних мониторинг систем.
+- **Описание:** Эндпоинт `GET /api/health` уже существует (`packages/api-gateway/src/http-server.ts:134`) и возвращает `{ status: "ok", version, uptime }`. Задача — дополнить ответ readiness-полями (проверка доступности БД Prisma и активной сессии) для использования в docker-compose healthcheck и внешних системах мониторинга. Новый endpoint не добавляется — расширяется существующий.
 - **Зависимости:** (none)
 - **TDD-тесты:**
-  - [ ] **TC-F-0.9-1:** Health returns ok
-    - *Условие:* Сервер запущен
+  - [ ] **TC-F-0.9-1:** Health возвращает ok с readiness-полями
+    - *Условие:* Сервер запущен, БД доступна
     - *Шаги:* `curl http://localhost:3456/api/health`
-    - *Ожидаемый результат:* HTTP 200; body содержит `{ "status": "ok", ... }`
+    - *Ожидаемый результат:* HTTP 200; body содержит `{ "status": "ok", ... }` и readiness-поля (например `db: "up"`)
+  - [ ] **TC-F-0.9-2:** Недоступная БД отражается в readiness
+    - *Условие:* Сервер запущен, подключение к БД разорвано
+    - *Шаги:* `curl http://localhost:3456/api/health`
+    - *Ожидаемый результат:* Readiness-поле БД сигнализирует о сбое (например `db: "down"`); docker healthcheck переходит в unhealthy
 - **Критерии приёмки:**
-  1. Endpoint добавлен в api-gateway router
+  1. Существующий route в api-gateway расширен readiness-полями (БД/сессии)
   2. Возвращает статус + uptime без блокирующих операций
-  3. Работает с аутентификацией и без
-- **Ожидаемый результат:** Новый route в `packages/api-gateway/src/http-server.ts`
+  3. Работает с аутентификацией и без; пригоден для docker healthcheck
+- **Ожидаемый результат:** Обновлённый route `GET /api/health` в `packages/api-gateway/src/http-server.ts`
 - **Оценка объёма:** S
 
 #### ⏳ F-0.10: Логирование в volume
@@ -301,7 +305,7 @@
 - **Описание:** Сквозной сценарий деплоя с чистого VPS до работающего агента. Проверяет все компоненты фазы 0 целиком. Выполнимо скриптом или вручную.
 - **Зависимости:** F-0.1..F-0.8
 - **TDD-тесты:**
-  - [ ] **TC-F-0.11-E2E-1:** End-to-end deploy pipeline
+  - [ ] **TC-F-0.11-E2E-1:** Сквозной пайплайн деплоя
     - *Условие:* Чистый VPS (185.219.41.46), домен зарегистрирован, Docker installed
     - *Шаги:*
       1. Скопировать Dockerfile + docker-compose.yml на VPS
@@ -311,7 +315,7 @@
       5. `docker-compose up -d --build`
       6. Ждать 30s; проверить `docker ps`
     - *Ожидаемый результат:* Контейнер running, nginx слушает 443, Docker image построен
-  - [ ] **TC-F-0.11-E2E-2:** Post-deploy verification
+  - [ ] **TC-F-0.11-E2E-2:** Проверка после деплоя
     - *Условие:* Деплой завершён, контейнер запущен
     - *Шаги:*
       1. `curl -sk https://agent.sea-agents.ru/api/health` → должен вернуть 200 OK
@@ -320,7 +324,7 @@
       4. `curl -sk -X POST https://agent.sea-agents.ru/api/sessions -H "Authorization: Bearer <token>" -d '{}'` → 201 Created
       5. `curl -sk https://agent.sea-agents.ru/api/sessions -H "Authorization: Bearer <token>"` → 200 OK, содержит созданную сессию
     - *Ожидаемый результат:* Все 5 проверок проходят; сессия создана и получена обратно через HTTPS
-  - [ ] **TC-F-0.11-E2E-3:** FAN_PUBLIC blocks unauthenticated access
+  - [ ] **TC-F-0.11-E2E-3:** FAN_PUBLIC блокирует неаутентифицированный доступ
     - *Условие:* FAN_PUBLIC=1, FAN_NO_AUTH=1
     - *Шаги:* `curl -sk https://agent.sea-agents.ru/api/sessions` (без токена)
     - *Ожидаемый результат:* HTTP 401 Unauthorized; `FAN_NO_AUTH` проигнорирован
@@ -365,7 +369,7 @@ F-0.7 (nginx)                    F-0.8 (certbot)
 
 ## Полный чеклист по приоритетам
 
-### P0 (Must Have) — 8 фич
+### P0 (Must Have) — 9 фич
 
 - [ ] ☐ F-0.1 Чтение PORT из env
 - [ ] ☐ F-0.2 Чтение HOST из env
@@ -374,6 +378,7 @@ F-0.7 (nginx)                    F-0.8 (certbot)
 - [ ] ☐ F-0.5 Dockerfile (мультистейдж)
 - [ ] ☐ F-0.6 docker-compose.yml
 - [ ] ☐ F-0.7 Nginx конфиг + WebSocket
+- [ ] ☐ F-0.8 Certbot SSL сертификаты
 - [ ] ☐ F-0.11-E2E Полная цепочка деплоя с нуля
 
 ### P1 (Should Have) — 2 фич
@@ -388,7 +393,7 @@ F-0.7 (nginx)                    F-0.8 (certbot)
 | Мера | Значение |
 |------|---------|
 | Всего фич | 11 (10 реализаций + 1 E2E) |
-| P0 фич | 8 |
+| P0 фич | 9 |
 | P1 фич | 2 |
 | Этапов | 4 (ядро, контейнеризация, инфраструктура, E2E) |
 | Оценка P0 | ~2.5 дня (ядро: 3h + контейнеры: 8h + infra: 6h + E2E: 4h) |

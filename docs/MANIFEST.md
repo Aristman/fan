@@ -78,10 +78,10 @@
 | `docs/roadmaps/roadmap-idea-plugin-v2-from-orf-ed2.md` | ⚠️ | IDEA plugin v2 2nd edition (superseded) |
 | `docs/features/phase0-network-contour/roadmap.md` | ✅ | TDD roadmap: фаза 0 — Сетевой контур (TLS/auth/Docker/nginx), 11 фич, 4 этапа + 1 E2E |
 | `docs/features/phase1-workspace-api/roadmap.md` | ✅ | TDD roadmap: фаза 1 — Workspace-aware API (cwd/project/whitelist), 14 фич, 6 этапов + 1 E2E |
-| `docs/features/phase2-workspace-ux/roadmap.md` | ✅ | TDD roadmap: фаза 2 — Workspace UX (Service Registry/queue/dashboard switcher), 14 фич, 5 этапов + 1 E2E |
+| `docs/features/phase2-workspace-ux/roadmap.md` | ✅ | TDD roadmap: фаза 2 — Workspace UX (Service Registry/queue/dashboard switcher), 15 фич, 5 этапов + 1 E2E |
 | `docs/features/phase3-universal-tasks/roadmap.md` | ✅ | TDD roadmap: фаза 3 — Universal Tasks (templates/detection/prompts/skills), 12 фич, 4 этапа + 2 E2E |
-| `docs/features/phase4-autonomy/roadmap.md` | ✅ | TDD roadmap: фаза 4 — Автономность (scheduler/git-PR/budget caps), 15 фич, 6 этапов + 1 E2E |
-| `docs/features/phase5-concurrency/roadmap.md` | ✅ | ⚠️ Опциональная фаза: конкурентность (chdir removal/persistent queue/per-project tokens), 8 фич, 3 этапа + 1 E2E |
+| `docs/features/phase4-autonomy/roadmap.md` | ✅ | TDD roadmap: фаза 4 — Автономность (scheduler/git-PR/budget caps), 16 фич, 6 этапов + 1 E2E |
+| `docs/features/phase5-concurrency/roadmap.md` | ✅ | ⚠️ Опциональная фаза: конкурентность (chdir removal/persistent queue/per-project tokens), 8 фич, 5 этапов + 1 E2E |
 | `docs/research/orchestrator-v4.1-analysis.md` | ✅ | Orchestrator v4.1.0 architecture analysis |
 | `docs/research/idea-lab/confluence-extension/` | ✅ | fan-confluence extension research (русский) |
 | `docs/research/idea-lab/loop-extension/` | ✅ | fan-loop extension research (русский) |
@@ -129,8 +129,8 @@ All 5 package READMEs have been created — status updated to ✅.
 Total: **58 tracked documents** (56 ✅, 6 ⚠️, 0 ❌)
 
 *TDD roadmaps (phase 0, 1, 2, 3) — 2026-07-25*
-*Новые roadmaps:* `phase2-workspace-ux` (14 фич, 5 этапов, 2 E2E), `phase3-universal-tasks` (12 фич, 4 этапа, 2 E2E)
-*Новые roadmaps:* `phase4-autonomy` (15 фич, 5 этапов, 1 E2E), `phase5-concurrency` (8 фич, 3 этапа, 1 E2E, опциональная фаза)
+*Новые roadmaps:* `phase2-workspace-ux` (15 фич, 5 этапов, 1 E2E), `phase3-universal-tasks` (12 фич, 4 этапа, 2 E2E)
+*Новые roadmaps:* `phase4-autonomy` (16 фич, 6 этапов, 1 E2E), `phase5-concurrency` (8 фич, 5 этапов, 1 E2E, опциональная фаза)
 
 ### Новый пакет спецификаций (2026-07-25)
 | Документ | Статус |

@@ -2,7 +2,7 @@
 
 > **Дата создания:** 2026-07-25
 > **Источник:** [spec_fan-network-agent_phase2-workspace-ux_2026-07-25.md](../../specs/spec_fan-network-agent_phase2-workspace-ux_2026-07-25.md) · [родительская spec](../../specs/spec_fan-network-agent_2026-07-25.md)
-> **Фич:** 14 | **Этапов:** 5 | **E2E-сценариев:** 1
+> **Фич:** 15 | **Этапов:** 5 | **E2E-сценариев:** 1
 
 ---
 
@@ -10,8 +10,8 @@
 
 | Приоритет | Кол-во фич | Описание |
 |-----------|-----------|----------|
-| P0 (Must) | 9 | Service Registry LRU, queue + mutex, project switcher, session grouping, API client project params, settings reload, MCP reconnect, E2E #1 |
-| P1 (Should) | 5 | Queue position UI, error handling, config auto-invalidation, MCP reconnect, settings reload |
+| P0 (Must) | 10 | Service Registry LRU, queue + mutex, project switcher, session grouping, API client project params, settings reload, E2E |
+| P1 (Should) | 5 | MCP reconnect, config auto-invalidation, queue position UI, error handling, queue overflow protection |
 | P2 (Could) | 0 | Нет |
 | P3 (Won't Have) | 0 | Нет |
 
@@ -48,7 +48,7 @@
 
 ## Этап 2.1 — Бэкенд: Service Registry + Mutex
 
-**Цель SMART:** Реализовать `ServiceRegistry` (инфракрасный класс с LRU-кешем `Map<cwd, AgentSessionServices>`, лимит 5) и `InMemoryMutex` с методами `withLock()`. Кеш позволяет избежать полного teardown/recreate сервисов при каждом switch проекта. Время переключения <2 сек при активном кеше. Базируется на workspace API фазы 1 (`packages/coding-agent/src/core/session-manager.ts`).
+**Цель SMART:** Реализовать `ServiceRegistry` (инфраструктурный класс с LRU-кешем `Map<cwd, AgentSessionServices>`, лимит 5) и `InMemoryMutex` с методами `withLock()`. Кеш позволяет избежать полного teardown/recreate сервисов при каждом switch проекта. Время переключения <2 сек при активном кеше. Базируется на workspace API фазы 1 (`packages/coding-agent/src/core/session-manager.ts`).
 
 ### Фичи
 
@@ -68,7 +68,7 @@
     - *Шаги:* clear(); проверить size
     - *Ожидаемый результат:* cache.size === 0; все сервисы завершены (cleanup вызван)
 - **Критерии приёмки:**
-  1. Методы get/set/invalidate/clear работают как specified в spec (раздел 2.1)
+  1. Методы get/set/invalidate/clear работают как описано в spec (раздел 2.1)
   2. `get()` обновляет `lastAccess` для LRU учёта
   3. `clear()` вызывает cleanup для каждого entry перед удалением
 - **Ожидаемый результат:** `packages/coding-agent/src/workspace/service-registry.ts` + unit tests в `service-registry.test.ts`
@@ -76,7 +76,7 @@
 
 #### ☐ F-2.2: LRU eviction при достижении лимита
 
-- **приоритет:** P0
+- **Приоритет:** P0
 - **Слой:** [INFRA]
 - **Описание:** Метод `set()` проверяет `cache.size >= maxItems`. Если full — находит entry с минимальным `lastAccess` через итерацию Map, вызывает `evict(oldestKey)` (= delete + cleanup). Элемент не попадает в кеш пока старый не удалён. Гарантирует, что кеш никогда не превышает maxItems.
 - **Зависимости:** F-2.1 (базовый ServiceRegistry)
@@ -90,9 +90,9 @@
     - *Шаги:* set('/c', svcC); get('/a'); get('/b')
     - *Ожидаемый результат:* '/b' вытеснен (последний access без обновления); '/a' остаётся в кеше
 - **Критерии приёмки:**
-  1. При `size >= maxItems` всегда evicts entry с наименьшим `lastAccess`
+  1. При `size >= maxItems` всегда вытесняется entry с наименьшим `lastAccess`
   2. Cleanup вызывается для вытесненного entry
-  3. new entry добавляется после evict (atomic operation)
+  3. Новый entry добавляется после вытеснения (атомарная операция)
 - **Ожидаемый результат:** Дополнение `service-registry.ts`: метод `set()` c eviction logic
 - **Оценка объёма:** S
 
@@ -103,9 +103,9 @@
 - **Описание:** Минимальный асинхронный мьютекс: `class Mutex { private locked = false; private queue: PromiseResolver[] = []; async acquire() { ... } async release() { ... } withLock(fn) { ... } }`. `withLock()` — удобный wrapper для критических секций. Используется MessageQueue для защиты очередей per-session.
 - **Зависимости:** (none)
 - **TDD-тесты:**
-  - [ ] **TC-F-2.3-1:** Sequential calls serialized
+  - [ ] **TC-F-2.3-1:** Последовательные вызовы сериализуются
     - *Условие:* new Mutex(), две параллельные withLock()
-    - *Шаги:* запустить concurrently; записать порядок вызова fn
+    - *Шаги:* запустить параллельно; записать порядок вызова fn
     - *Ожидаемый результат:* Порядок строго последовательный; второй вызов ждёт освобождения
   - [ ] **TC-F-2.3-2:** withLock возвращает значение из функции
     - *Условие:* new Mutex(), withLock(() => 42)
@@ -113,7 +113,7 @@
     - *Ожидаемый результат:* result === 42
 - **Критерии приёмки:**
   1. `acquire/release` управляют состоянием locked
-  2. FIFO очередь ожидания (FIFO wait queue)
+  2. FIFO-очередь ожидания
   3. `withLock(fn)` — синхронизирует + возвращает результат
 - **Ожидаемый результат:** `packages/coding-agent/src/workspace/mutex.ts` (новый модуль)
 - **Оценка объёма:** S
@@ -143,7 +143,7 @@
     - *Ожидаемый результат:* sess-1: все свои; dequeue('sess-2') возвращает null если пусто
 - **Критерии приёмки:**
   1. `enqueue` пушит элемент в конец массива под sessionId
-  2. `dequeue` шифрует (shifts) первый элемент
+  2. `dequeue` извлекает (shift) первый элемент
   3. `size` возвращает длину массива (0 если нет очереди)
 - **Ожидаемый результат:** `packages/api-gateway/src/message-queue.ts` + unit tests
 - **Оценка объёма:** M
@@ -189,10 +189,10 @@
     - *Условие:* .projects=[{path:'/a',name:'Alpha'},{path:'/b',name:'Beta'}], .currentProject='/a'
     - *Шаги:* render component; проверить shadow DOM
     - *Ожидаемый результат:* Два пункта списка; Alpha подсвечен как active
-  - [ ] **TC-F-2.6-2:** @project-select fires на клик
+  - [ ] **TC-F-2.6-2:** @project-select срабатывает на клик
     - *Условие:* Component рендерен с проектами
     - *Шаги:* кликнуть на Beta; слушать event
-    - *Ожидаемый результат:* Event fired с detail `{ path: '/b' }`; bubbles=true
+    - *Ожидаемый результат:* Событие вызвано с detail `{ path: '/b' }`; bubbles=true
 - **Критерии приёмки:**
   1. Компонент зарегистрирован как custom element `<fan-project-switcher>`
   2. Dropdown рендерит проекты из props, currentProject подсвечен
@@ -219,7 +219,7 @@
   1. Группировка выполняется по unique cwd values
   2. Toggle работает для каждой группы независимо
   3. Статусы отображаются цветовыми индикаторами согласно spec
-- **Ожидаемый результат:** Обновлённый `packages/dashboard/src/components/session-list.ts`
+- **Ожидаемый результат:** Обновлённый `packages/dashboard/src/components/session-sidebar.ts`
 - **Оценка объёма:** M
 
 #### ☐ F-2.8: Project-aware API client
@@ -238,7 +238,7 @@
     - *Шаги:* intercept fetch URL
     - *Ожидаемый результат:* URL = `/api/sessions` (без query params)
 - **Критерии приёмки:**
-  1. Все fetch-вызовы session endpoints поддерживают опциональный `project` parameter
+  1. Все fetch-вызовы session endpoints поддерживают опциональный параметр `project`
   2. Параметр кодируется через `URLSearchParams`
   3. backward compatibility: отсутствие параметра = прежний запрос
 - **Ожидаемый результат:** Обновлённый `packages/dashboard/src/api/client.ts`
@@ -254,16 +254,16 @@
 
 #### ⏳ F-2.9: Settings reload при смене проекта
 
-- **Приоритет:** P1
+- **Приоритет:** P0
 - **Слой:** [INTEG]
 - **Описание:** `packages/coding-agent/src/core/settings-manager.ts`: метод `loadProjectSettings(cwd)` читает `<cwd>/.fan/settings.json` (fs.readFileSync/parsе). Merge overlay: project-level > global-level. Метод `applyOverlay(settings)` передаёт merged config ресурсозависимым сервисам. Метод `resetToGlobal()` сбрасывает overlay обратно к глобальным настройкам. File path resolved from cwd: `path.join(cwd, '.fan', 'settings.json')`. Handle missing file gracefully (return default empty object).
 - **Зависимости:** F-2.1 (ServiceRegistry для инвалидации кеша при changes settings)
 - **TDD-тесты:**
-  - [ ] **TC-F-2.9-1:** Load project settings from file
+  - [ ] **TC-F-2.9-1:** Загрузка настроек проекта из файла
     - *Условие:* /a/.fan/settings.json существует с {"model":"gpt-4"}
     - *Шаги:* loadProjectSettings('/a')
     - *Ожидаемый результат:* Возвращает { model: 'gpt-4' }; без ошибок
-  - [ ] **TC-F-2.9-2:** Missing file returns empty object
+  - [ ] **TC-F-2.9-2:** Отсутствующий файл возвращает пустой объект
     - *Условие:* /missing/.fan/settings.json не существует
     - *Шаги:* loadProjectSettings('/missing')
     - *Ожидаемый результат:* Возвращает {}; не бросает исключение
@@ -281,17 +281,17 @@
 - **Описание:** `packages/coding-agent/src/mcp/mcp-connection-manager.ts`: `switchMcpServers(fromCwd, toCwd)` — если пути совпадают, return. Иначе: проверить наличие `<toCwd>/.fan/mcp.json`. Серверы остаются живыми в ServiceRegistry кеше. Reconnect происходит только при первом access к новому cwd (lazy init). Close old connections только если новый cwd не кэширован. Псевдокод из spec (раздел 2.5): сравнение paths, conditional init.
 - **Зависимости:** F-2.1 (ServiceRegistry кеш), фазовые MCP server configs
 - **TDD-тесты:**
-  - [ ] **TC-F-2.10-1:** Same cwd — no reconnect
+  - [ ] **TC-F-2.10-1:** Одинаковый cwd — без переподключения
     - *Условие:* fromCwd === toCwd === '/a'
     - *Шаги:* switchMcpServers('/a', '/a')
     - *Ожидаемый результат:* Возврат немедленно; ни одно MCP-соединение не закрыто
-  - [ ] **TC-F-2.10-2:** New cwd triggers lazy init if not cached
+  - [ ] **TC-F-2.10-2:** Новый cwd вызывает ленивую инициализацию, если не закеширован
     - *Условие:* '/b' не в кеше ServiceRegistry
     - *Шаги:* switchMcpServers('/a', '/b')
-    - *Ожидаемый результат:* Инициализация MCP серверов из /b/.fan/mcp.json; старые соединения сохраняются (не killed)
+    - *Ожидаемый результат:* Инициализация MCP серверов из /b/.fan/mcp.json; старые соединения сохраняются (не разрываются)
 - **Критерии приёмки:**
-  1. Если cwd совпадает — no-op
-  2. Если новый cwd кэширован в ServiceRegistry — использовать cached MCP
+  1. Если cwd совпадает — холостая операция
+  2. Если новый cwd кэширован в ServiceRegistry — использовать кешированный MCP
   3. Если новый cwd не кэширован — lazy init из .fan/mcp.json
 - **Ожидаемый результат:** Обновлённый `mcp-connection-manager.ts` (или новый модуль в packages/coding-agent/src/mcp/)
 - **Оценка объёма:** M
@@ -303,14 +303,14 @@
 - **Описание:** В `ServiceRegistry` добавить `watchForConfigChanges(targetCwd)` — мониторинг mtime файла `<cwd>/.fan/settings.json`. Сравнить stat.mtime с последним известным. Если изменилось — вызвать `invalidate(cwd)`. Background watcher (fs.watch или polling с интервалом 5s). Предотвращает работу со старыми настройками. Оптимизация: watch запускается при first access к cwd, останавливается при LRU eviction.
 - **Зависимости:** F-2.1 (ServiceRegistry), F-2.2 (LRU eviction)
 - **TDD-тесты:**
-  - [ ] **TC-F-2.11-1:** Cache invalidated when settings.json modified
+  - [ ] **TC-F-2.11-1:** Кеш инвалидируется при изменении settings.json
     - *Условие:* Сервис кэширован для '/a'; mtime settings.json изменён (touch)
     - *Шаги:* Подождать poll interval; затем get('/a')
     - *Ожидаемый результат:* get('/a') возвращает null (invalidated)
 - **Критерии приёмки:**
   1. Watcher отслеживает изменения mtime конфигурации
   2. Invalidate вызывается автоматически при обнаружении изменений
-  3. Watcher останавливается при eviction (resource leak prevention)
+  3. Watcher останавливается при eviction (предотвращение утечки ресурсов)
 - **Ожидаемый результат:** Дополнение `service-registry.ts` с fs.watch или polling
 - **Оценка объёма:** M
 
@@ -322,46 +322,6 @@
 
 ### Фичи
 
-#### ⏳ F-2.12: Индикатор позиции в очереди в UI
-
-- **Приоритет:** P1
-- **Слой:** [UI]
-- **Описание:** В чат-компоненте dashboard показывать текст "В очереди, позиция N" при получении `{ type: 'queued', position: N }` от сервера. Стилизация: жёлтый блок над полем ввода. Автоматическое скрытие когда очередь пуста (server отправляет `{ type: 'dequeued' }` или сообщение доставлено). Component update: `chat-input.ts` в `packages/dashboard/src/components/`.
-- **Зависимости:** F-2.5 (WS handler integration)
-- **TDD-тесты:**
-  - [ ] **TC-F-2.12-1:** Position indicator shown on queued message
-    - *Условие:* Chat input компонент рендерен, получил message {type:'queued', position:2}
-    - *Шаги:* Проверить отрендеренный текст
-    - *Ожидаемый результат:* Текст "В очереди, позиция 2" отображён; style=yellow alert block
-- **Критерии приёмки:**
-  1. Indicator показывается при получении WS message с type='queued'
-  2. Номер позиции соответствует значению из server response
-  3. Indicator исчезает когда очередь обработана
-- **Ожидаемый результат:** Обновлённый `chat-input.ts`
-- **Оценка объёма:** S
-
-#### ⏳ F-2.13: Error handling — недоступный проект на диске
-
-- **Приоритет:** P1
-- **Слой:** [BIZ]
-- **Описание:** Обработка ситуации когда проект удалён с диска: при `GET /api/projects` или `GET /api/sessions?project=<path>` проверять существование directory. Если отсутствует — вернуть `{ error: 'PROJECT_NOT_FOUND', path }`. Dashboard: сообщение "Проект не найден на диске" + кнопка «Удалить из реестра». Уведомление пользователя о потере данных.
-- **Зависимости:** Phase 1 (project registry в ~/.fan/agent/projects.json)
-- **TDD-тесты:**
-  - [ ] **TC-F-2.13-1:** API returns error for missing project
-    - *Условие:* Directory '/deleted-proj' не существует, но записан в projects.json
-    - *Шаги:* GET /api/projects
-    - *Ожидаемый результат:* Entry имеет `error: 'PROJECT_NOT_FOUND'` или фильтр исключает такой проект
-  - [ ] **TC-F-2.13-2:** Dashboard shows recovery option
-    - *Условие:* Запрос к отсутствующему проекту
-    - *Шаги:* Рендер UI
-    - *Ожидаемый результат:* Text "Проект не найден на диске"; кнопка «Удалить из реестра»
-- **Критерии приёмки:**
-  1. Проверка существования директории при запросе проекта
-  2. Возврат informative error через API
-  3. Dashboard предлагает удаление из реестра
-- **Ожидаемый результат:** Обновлённый `ws-handler.ts` + `session-list.ts`
-- **Оценка объёма:** M
-
 #### ☐ F-2.14-E2E: Многопроектная работа с очередью задач
 
 - **Приоритет:** P0
@@ -369,7 +329,7 @@
 - **Описание:** Сквозной сценарий работы с несколькими проектами одновременно. Проверяет весь стек: service registry кеш, очередь сообщений, правильную маршрутизацию ответов в сессии разных проектов. Выполняемость: ручная через Web UI или скриптовая через curl+wscat.
 - **Зависимости:** F-2.1..F-2.5 (все core features)
 - **TDD-тесты:**
-  - [ ] **TC-F-2.14-E2E-1:** Multi-project sequential execution via web UI
+  - [ ] **TC-F-2.14-E2E-1:** Многопроектное последовательное выполнение через Web UI
     - *Условие:* Два проекта в registry: proj-A и proj-B. Оба имеют хотя бы одну completed сессию. WebSocket подключение активен с auth token.
     - *Шаги:*
       1. Через Web UI выбрать проект proj-A → открыть активную сессию
@@ -379,7 +339,7 @@
       5. Проверить: сообщение proj-B взято из очереди и выполнено
       6. Проверить: ответ proj-B пришёл в сессию proj-B (не proj-A)
     - *Ожидаемый результат:* Proj-A задача выполнена первой → ответ в сессии A; Proj-B задача из очереди → выполнена → ответ в сессии B. Обе ответы в правильных сессиях
-  - [ ] **TC-F-2.14-E2E-2:** Switch between 3 projects — performance and settings isolation
+  - [ ] **TC-F-2.14-E2E-2:** Переключение между 3 проектами — производительность и изоляция настроек
     - *Условие:* Три проекта: alpha (/proj/alpha), beta (/proj/beta), gamma (/proj/gamma). Каждый имеет уникальные settings.model. Service registry initialized.
     - *Шаги:*
       1. Открыть alpha → record switch time t1 (performance marker)
@@ -393,6 +353,63 @@
   3. Время переключения между кэшированными проектами < 2 секунды
 - **Ожидаемый результат:** Ручной тест или automation script (curl+wscat); результаты фиксируются в PR
 - **Оценка объёма:** M
+
+#### ⏳ F-2.12: Индикатор позиции в очереди в UI
+
+- **Приоритет:** P1
+- **Слой:** [UI]
+- **Описание:** В чат-компоненте dashboard показывать текст "В очереди, позиция N" при получении `{ type: 'queued', position: N }` от сервера. Стилизация: жёлтый блок над полем ввода. Автоматическое скрытие когда очередь пуста (server отправляет `{ type: 'dequeued' }` или сообщение доставлено). Component update: `chat-view.ts` в `packages/dashboard/src/components/`.
+- **Зависимости:** F-2.5 (WS handler integration)
+- **TDD-тесты:**
+  - [ ] **TC-F-2.12-1:** Индикатор позиции показывается при сообщении в очереди
+    - *Условие:* Chat input компонент рендерен, получил message {type:'queued', position:2}
+    - *Шаги:* Проверить отрендеренный текст
+    - *Ожидаемый результат:* Текст "В очереди, позиция 2" отображён; style=yellow alert block
+- **Критерии приёмки:**
+  1. Indicator показывается при получении WS message с type='queued'
+  2. Номер позиции соответствует значению из server response
+  3. Indicator исчезает когда очередь обработана
+- **Ожидаемый результат:** Обновлённый `chat-view.ts`
+- **Оценка объёма:** S
+
+#### ⏳ F-2.13: Error handling — недоступный проект на диске
+
+- **Приоритет:** P1
+- **Слой:** [BIZ]
+- **Описание:** Обработка ситуации когда проект удалён с диска: при `GET /api/projects` или `GET /api/sessions?project=<path>` проверять существование directory. Если отсутствует — вернуть `{ error: 'PROJECT_NOT_FOUND', path }`. Dashboard: сообщение "Проект не найден на диске" + кнопка «Удалить из реестра». Уведомление пользователя о потере данных.
+- **Зависимости:** Phase 1 (project registry в ~/.fan/agent/projects.json)
+- **TDD-тесты:**
+  - [ ] **TC-F-2.13-1:** API возвращает ошибку для отсутствующего проекта
+    - *Условие:* Directory '/deleted-proj' не существует, но записан в projects.json
+    - *Шаги:* GET /api/projects
+    - *Ожидаемый результат:* Entry имеет `error: 'PROJECT_NOT_FOUND'` или фильтр исключает такой проект
+- **Критерии приёмки:**
+  1. Проверка существования директории при запросе проекта
+  2. Возврат informative error через API
+- **Ожидаемый результат:** Обновлённый `packages/api-gateway/src/http-server.ts`
+- **Оценка объёма:** M
+
+#### ⏳ F-2.15: Защита очереди от overflow (>50 сообщений)
+
+- **Приоритет:** P1
+- **Слой:** [API]
+- **Описание:** Защита `InMemoryMessageQueue` от переполнения согласно spec (раздел 3.3): при достижении 50 сообщений в очереди сессии новые сообщения отклоняются, пользователю отправляется предупреждение. Лимит configurable (default 50). При отклонении клиент получает `{ type: 'queue_full', error: 'QUEUE_OVERFLOW', limit: 50 }`.
+- **Зависимости:** F-2.4 (MessageQueue), F-2.5 (WS handler integration)
+- **TDD-тесты:**
+  - [ ] **TC-F-2.15-1:** При 50+ сообщениях новые отклоняются с ошибкой
+    - *Условие:* Очередь сессии содержит 50 сообщений
+    - *Шаги:* enqueue 51-го сообщения
+    - *Ожидаемый результат:* Сообщение отклонено; клиент получает `{ type: 'queue_full', error: 'QUEUE_OVERFLOW' }`; размер очереди остаётся 50
+  - [ ] **TC-F-2.15-2:** Пользователь предупреждён при отклонении
+    - *Условие:* Очередь заполнена до лимита
+    - *Шаги:* Отправить сообщение через WS при полной очереди
+    - *Ожидаемый результат:* WS-ответ содержит warning с кодом `QUEUE_OVERFLOW` и текущим лимитом
+- **Критерии приёмки:**
+  1. Лимит очереди (default 50) enforced при enqueue
+  2. При overflow новые сообщения отклоняются с измеримым кодом ошибки
+  3. Пользователь уведомляется предупреждением через WS-ответ
+- **Ожидаемый результат:** Обновлённый `packages/api-gateway/src/message-queue.ts` + `ws-handler.ts`
+- **Оценка объёма:** S
 
 ---
 
@@ -436,7 +453,8 @@
                                    │
 ┌───────── ЭТАП 2.5: E2E + POLISH ────────────────────────────────┐
 │                                                                  │
-│   F-2.12 Queue Indicator   F-2.13 Error Handling     F-2.14-E2E  │
+│   F-2.14-E2E   F-2.12 Queue Indicator   F-2.13 Error Handling   │
+│                    F-2.15 Queue Overflow Protection             │
 │        │                       │                        │        │
 │        └───────────────────────┴────────┬───────────────┘        │
 │                                  (E2E scenarios validate       │
@@ -450,7 +468,7 @@
 
 ## Полный чеклист по приоритетам
 
-### P0 (Must Have) — 9 фич
+### P0 (Must Have) — 10 фич
 
 - [ ] ☐ F-2.1 ServiceRegistry — кеш сервисов по cwd
 - [ ] ☐ F-2.2 LRU eviction при достижении лимита
@@ -460,15 +478,16 @@
 - [ ] ☐ F-2.6 `<fan-project-switcher>` компонент
 - [ ] ☐ F-2.7 `<fan-session-list>` tree grouping по cwd
 - [ ] ☐ F-2.8 Project-aware API client
+- [ ] ⏳ F-2.9 Settings reload при смене проекта
 - [ ] ☐ F-2.14-E2E Многопроектная работа с очередью задач
 
 ### P1 (Should Have) — 5 фич
 
-- [ ] ⏳ F-2.9 Settings reload при смене проекта
 - [ ] ⏳ F-2.10 MCP reconnect при смене проекта
 - [ ] ⏳ F-2.11 Auto-invalidation кеша по mtime settings
 - [ ] ⏳ F-2.12 Индикатор позиции в очереди в UI
 - [ ] ⏳ F-2.13 Error handling — недоступный проект на диске
+- [ ] ⏳ F-2.15 Защита очереди от overflow (>50 сообщений)
 
 ---
 
@@ -476,8 +495,8 @@
 
 | Мера | Значение |
 |------|---------|
-| Всего фич | 14 (13 реализаций + 1 E2E) |
-| P0 фич | 9 |
+| Всего фич | 15 (14 реализаций + 1 E2E) |
+| P0 фич | 10 |
 | P1 фич | 5 |
 | P2 фич | 0 |
 | Этапов | 5 (registry+mutex, queue, dashboard, integration, E2E+polish) |

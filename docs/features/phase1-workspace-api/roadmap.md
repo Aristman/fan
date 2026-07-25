@@ -10,9 +10,9 @@
 
 | Приоритет | Кол-во фич | Описание |
 |-----------|-----------|----------|
-| P0 (Must) | 11 | Prisma cwd, session filter, POST cwd, projects endpoint, whitelist, SessionAdapter, project registry, E2E |
+| P0 (Must) | 12 | Prisma cwd, session filter, POST cwd, projects endpoint, whitelist, SessionAdapter, project registry, E2E |
 | P1 (Should) | 2 | Auto-registration, CLI register command |
-| P2–P3 | 1 | Auto-detect project type |
+| P2–P3 | 0 | Нет |
 
 ---
 
@@ -59,15 +59,15 @@
 - **Описание:** Добавить nullable поле `cwd: String?` в модель Session в `packages/db/prisma/schema.prisma`. Поле хранит абсолютный путь рабочей директории проекта. Nullable для обратной совместимости.
 - **Зависимости:** (none)
 - **TDD-тесты:**
-  - [ ] **TC-F-1.1-1:** Schema парсится без ошибок
+  - [ ] **TC-F-1.1-1:** Схема парсится без ошибок
     - *Условие:* `cwd: String?` добавлен в model Session
     - *Шаги:* `bunx prisma validate`
     - *Ожидаемый результат:* Exit code 0; нет ошибок парсинга schema
   - [ ] **TC-F-1.1-2:** Migration применяется успешно
-    - *Условие:* Schema vалидна
+    - *Условие:* Схема валидна
     - *Шаги:* `bunx prisma migrate dev --name add_session_cwd`
     - *Ожидаемый результат:* Exit code 0; new migration file created; SQLite DB updated
-  - [ ] **TC-F-1.1-3:** Старая сессия с null cwd loading
+  - [ ] **TC-F-1.1-3:** Старая сессия с null cwd загружается
     - *Условие:* Сессия с cwd = null существует в БД
     - *Шаги:* Загрузить сессию через SessionManager; проверить восстановление cwd
     - *Ожидаемый результат:* cwd восстановлен из dirname path (`--encoded-cwd--`) или установлен в null → fallback
@@ -107,8 +107,8 @@
     - *Ожидаемый результат:* HTTP 200; body.sessions.length === 0; пустой массив
 - **Критерии приёмки:**
   1. Query parameter `project` читается из URL search params
-  2. Если `project` present — фильтр по `cwd` в Prisma query
-  3. Response всегда содержит field `cwd` (nullable)
+  2. Если `project` задан — фильтр по `cwd` в Prisma query
+  3. Ответ всегда содержит поле `cwd` (nullable)
 - **Ожидаемый результат:** Обновлённый `packages/api-gateway/src/http-server.ts`; GET /api/sessions handler
 - **Оценка объёма:** M
 
@@ -127,14 +127,14 @@
     - *Условие:* Нет поля cwd в body
     - *Шаги:* `POST /api/sessions` с `{}`
     - *Ожидаемый результат:* HTTP 201; response.cwd = process.cwd() (текущая директория сервера)
-  - [ ] **TC-F-1.3-3:** Invalid JSON body returns 400
+  - [ ] **TC-F-1.3-3:** Невалидный JSON в теле возвращает 400
     - *Условие:* malformed JSON
-    - *Шаги:* `POST /api/sessions` with invalid body
-    - *Ожидаемый результат:* HTTP 400 Bad Request; error message in body
+    - *Шаги:* `POST /api/sessions` с невалидным телом
+    - *Ожидаемый результат:* HTTP 400 Bad Request; сообщение об ошибке в теле
 - **Критерии приёмки:**
-  1. Body parsing extracts `cwd` field if present
-  2. `cwd` passed to Session creation flow
-  3. Backward compatible when field absent
+  1. Парсинг тела извлекает поле `cwd`, если оно задано
+  2. `cwd` передаётся в поток создания сессии
+  3. Обратная совместимость при отсутствии поля
 - **Ожидаемый результат:** Модифицированный `http-server.ts`; POST /api/sessions handler update
 - **Оценка объёма:** M
 
@@ -158,9 +158,9 @@
     - *Шаги:* `DELETE /api/sessions/<id>`
     - *Ожидаемый результат:* HTTP 204; сессия удалена независимо от проекта
 - **Критерии приёмки:**
-  1. Если `?project=` present — fetch session, compare cwd
-  2. Mismatch → 403; match → delete as usual
-  3. Absent parameter → no cross-check (legacy behavior)
+  1. Если `?project=` задан — загрузить сессию, сравнить cwd
+  2. Несовпадение → 403; совпадение → удаление как обычно
+  3. Отсутствие параметра → без перекрёстной проверки (прежнее поведение)
 - **Ожидаемый результат:** Обновлённый `http-server.ts`; DELETE handler
 - **Оценка объёма:** S
 
@@ -193,8 +193,8 @@
     - *Ожидаемый результат:* name = `"my-project"` (basename от path)
 - **Критерии приёмки:**
   1. Endpoint route зарегистрирован в api-gateway router
-  2. Чтение projects.json + session count aggregation
-  3. Response structure matches contract
+  2. Чтение projects.json + агрегация количества сессий
+  3. Структура ответа соответствует контракту
 - **Ожидаемый результат:** Новый handler в `packages/api-gateway/src/http-server.ts`; route `GET /api/projects`
 - **Оценка объёма:** M
 
@@ -205,22 +205,22 @@
 - **Описание:** Создать утилиты для управления `~/.fan/agent/projects.json`: чтение, запись (атомарная: write temp + rename), добавление. Формат: `[{"path": "/abs/path", "name": "basename", "type": "code|research|automation|unknown", "addedAt": "ISO8601"}]`. Атомарная запись предотвращает race condition при concurrent access.
 - **Зависимости:** (none)
 - **TDD-тесты:**
-  - [ ] **TC-F-1.6-1:** Project added atomically
+  - [ ] **TC-F-1.6-1:** Проект добавляется атомарно
     - *Условие:* projects.json существует (пустой [])
     - *Шаги:* Вызвать addToProjects(`/data/repos/new`, `"new"`); read файл
     - *Ожидаемый результат:* Array содержит entry с корректными path/name/type/timestamp; файл валиден JSON
-  - [ ] **TC-F-1.6-2:** Duplicate path ignored
+  - [ ] **TC-F-1.6-2:** Дублирующий путь игнорируется
     - *Условие:* Path уже существует в реестре
     - *Шаги:* Вызвать addToProjects(existingPath, newName)
     - *Ожидаемый результат:* Array unchanged; entry not duplicated
-  - [ ] **TC-F-1.6-3:** Corrupted file — graceful fallback
+  - [ ] **TC-F-1.6-3:** Повреждённый файл — корректная обработка без краша
     - *Условие:* projects.json содержит невалидный JSON
     - *Шаги:* Вызвать listProjects()
     - *Ожидаемый результат:* Возвращает пустой массив []; логирование warning; без краша
 - **Критерии приёмки:**
-  1. Atomic write: tmp file → rename to target
-  2. Duplicate detection by path comparison
-  3. Graceful handling of missing/corrupted files
+  1. Атомарная запись: tmp-файл → rename в целевой
+  2. Детект дублей по сравнению путей
+  3. Корректная обработка отсутствующих/повреждённых файлов
 - **Ожидаемый результат:** Новый модуль утилит для реестра (e.g. `packages/coding-agent/src/core/project-registry.ts` или в main.ts util секции)
 - **Оценка объёма:** M
 
@@ -231,18 +231,18 @@
 - **Описание:** При создании сессии в непустой директории (не null, не temporary) — автоматически добавить проект в реестр. Тип определяется: наличие `.git` → `code`, наличие `docs/` → `research`, иначе `unknown`. Проверяется только если cwd не пустой и не находится в системных путях.
 - **Зависимости:** F-1.6 (registry utils)
 - **TDD-тесты:**
-  - [ ] **TC-F-1.7-1:** Git repo auto-registered as 'code'
+  - [ ] **TC-F-1.7-1:** Git-репозиторий автоматически регистрируется как 'code'
     - *Условие:* Сессия в `/data/repos/repo-with-git` (есть .git dir)
     - *Шаги:* Создать сессию с этим cwd
     - *Ожидаемый результат:* projects.json содержит entry type='code'; basename извлечён корректно
-  - [ ] **TC-F-1.7-2:** System paths excluded from registration
+  - [ ] **TC-F-1.7-2:** Системные пути исключены из регистрации
     - *Условие:* CWD = `/tmp` or system directory
     - *Шаги:* Создать сессию
     - *Ожидаемый результат:* Не зарегистрировано в реестре
 - **Критерии приёмки:**
   1. Проверка выполняется при CREATE SESSION
-  2. Only non-empty, non-system dirs registered
-  3. Type inference uses filesystem checks (.git, docs/)
+  2. Регистрируются только непустые, несистемные директории
+  3. Вывод типа использует проверки файловой системы (.git, docs/)
 - **Ожидаемый результат:** Hook в Session creation flow (inside `http-server.ts` or service layer)
 - **Оценка объёма:** M
 
@@ -253,17 +253,17 @@
 - **Описание:** Команда `fan project register <path>` для ручной регистрации проекта. Автоматически определяет тип (если не передан --type). Поддерживает `fan project list` для просмотра реестра.
 - **Зависимости:** F-1.6 (registry utils)
 - **TDD-тесты:**
-  - [ ] **TC-F-1.8-1:** Command registers project manually
+  - [ ] **TC-F-1.8-1:** Команда регистрирует проект вручную
     - *Условие:* projects.json пустой
     - *Шаги:* `fan project register /data/repos/manual-test`
     - *Ожидаемый результат:* Exit 0; projects.json содержит entry; output confirms registration
-  - [ ] **TC-F-1.8-2:** List shows all registered projects
+  - [ ] **TC-F-1.8-2:** Список показывает все зарегистрированные проекты
     - *Условие:* Несколько проектов в реестре
     - *Шаги:* `fan project list`
     - *Ожидаемый результат:* Выводит таблицу: PATH | NAME | TYPE | ADDED AT
 - **Критерии приёмки:**
-  1. Command parses argument and calls registry
-  2. Output human-readable confirmation
+  1. Команда парсит аргумент и вызывает реестр
+  2. Выводит человекочитаемое подтверждение
   3. `project list` formats data as table
 - **Ожидаемый результат:** Новый CLI command handler в `packages/coding-agent/src/cli/`
 - **Оценка объёма:** S
@@ -283,22 +283,22 @@
 - **Описание:** Интерфейс SessionAdapter (`packages/api-gateway/src/http-server.ts` внутри `packages/coding-agent/src/main.ts`, ~строки 163–227 аудита) расширяется: методы принимают optional `projectPath?: string`. Без параметра — операции глобальные. С параметром — filtered by cwd. Включая `createSession(cwd?)`, `listSessions(projectPath?)`, `getSessionById(id, projectPath?)`, `deleteSession(id, projectPath?)`.
 - **Зависимости:** F-1.2..F-1.4 (API patterns established), F-1.1 (cwd field)
 - **TDD-тесты:**
-  - [ ] **TC-F-1.9-1:** createSession with cwd initializes services
+  - [ ] **TC-F-1.9-1:** createSession с cwd инициализирует сервисы
     - *Условие:* Новый cwd не в кеше сервисов
     - *Шаги:* call adapter.createSession('/data/repos/x')
     - *Ожидаемый результат:* SessionInfo returned with cwd='/data/repos/x'; resources loaded for that workspace
-  - [ ] **TC-F-1.9-2:** listSessions without projectPath returns all
+  - [ ] **TC-F-1.9-2:** listSessions без projectPath возвращает все
     - *Условие:* 2 проекта с сессиями
     - *Шаги:* adapter.listSessions() (no arg)
     - *Ожидаемый результат:* All sessions returned; length equals sum across both projects
-  - [ ] **TC-F-1.9-3:** getSessionById verifies project membership
+  - [ ] **TC-F-1.9-3:** getSessionById проверяет принадлежность проекту
     - *Условие:* Session belongs to project A
     - *Шаги:* adapter.getSessionById(id, '/data/repos/B')
     - *Ожидаемый результат:* Возвращает null или выбрасывает ошибку 403 (сессия не найдена в запрошенном проекте)
 - **Критерии приёмки:**
-  1. Optional projectPath parameter on all CRUD methods
-  2. Null/undefined → legacy global operations
-  3. Provided path → filter/filter by Session.cwd
+  1. Опциональный параметр projectPath на всех CRUD-методах
+  2. Null/undefined → прежние глобальные операции
+  3. Заданный путь → фильтрация по Session.cwd
 - **Ожидаемый результат:** Updated `packages/coding-agent/src/main.ts`; interface extension
 - **Оценка объёма:** M
 
@@ -309,20 +309,20 @@
 - **Описание:** `agent-session-runtime.ts` модифицирован: ResourceLoader и SettingsManager получают cwd из сессии а не из процесса. При switchSession — chdir сохраняется, но сервисы пересоздаются с новым cwd. Полное удаление `process.chdir()` оставлено для фазы 5.
 - **Зависимости:** F-1.9 (adapter methods), F-1.1 (cwd field)
 - **TDD-тесты:**
-  - [ ] **TC-F-1.10-1:** Services loaded per workspace
+  - [ ] **TC-F-1.10-1:** Сервисы загружаются для каждого workspace
     - *Условие:* Workspace имеет `.fan/settings.json` специфичный
     - *Шаги:* createSession with specific cwd; trigger settings load
     - *Ожидаемый результат:* Settings loaded from `<cwd>/.fan/settings.json` not global `~/.fan/agent/settings.json`
-  - [ ] **TC-F-1.10-2:** Switch preserves chdir but reinitializes
+  - [ ] **TC-F-1.10-2:** Переключение сохраняет chdir, но переинициализирует сервисы
     - *Условие:* Active session in project A
     - *Шаги:* switchSession to project B; check chdir(); check resources
     - *Ожидаемый результат:* process.cwd() changed to B; resources reloaded for B
-  - [ ] **TC-F-1.10-3:** Single-project flow unbroken
+  - [ ] **TC-F-1.10-3:** Однопроектный поток не нарушен
     - *Условие:* Одна сессия, один проект (как сейчас)
     - *Шаги:* Normal TUI flow — start session, send message, receive response
     - *Ожидаемый результат:* Works exactly as before; no regression
 - **Критерии приёмки:**
-  1. `createServicesForWorkspace(session.cwd ?? process.cwd())` pattern adopted
+  1. Применён паттерн `createServicesForWorkspace(session.cwd ?? process.cwd())`
   2. ResourceLoader respects per-session cwd
   3. `process.chdir()` preserved at switch time (not removed)
 - **Ожидаемый результат:** Обновлённый `packages/coding-agent/src/core/agent-session-runtime.ts`
@@ -335,22 +335,22 @@
 - **Описание:** При запуске `fan server` без cwd в запросе — используется default workspace root. Env var `FAN_WORKSPACE_ROOT` переопределяет дефолт (`~/projects`). В docker-compose: `FAN_WORKSPACE_ROOT=/data/repos`.
 - **Зависимости:** F-1.10 (per-session cwd pattern)
 - **TDD-тесты:**
-  - [ ] **TC-F-1.11-1:** Default workspace root used when no cwd provided
+  - [ ] **TC-F-1.11-1:** Дефолтный workspace root используется, когда cwd не задан
     - *Условие:* Без FAN_WORKSPACE_ROOT env
     - *Шаги:* Start `fan server`; POST /api/sessions без cwd
     - *Ожидаемый результат:* Session cwd = os.homedir() + '/projects'
-  - [ ] **TC-F-1.11-2:** FAN_WORKSPACE_ROOT overrides default
+  - [ ] **TC-F-1.11-2:** FAN_WORKSPACE_ROOT переопределяет дефолт
     - *Условие:* FAN_WORKSPACE_ROOT=/data/custom
     - *Шаги:* Start server; create session without cwd
     - *Ожидаемый результат:* Session cwd = `/data/custom`
-  - [ ] **TC-F-1.11-3:** Explicit cwd in request overrides startup root
+  - [ ] **TC-F-1.11-3:** Явный cwd в запросе переопределяет стартовый root
     - *Условие:* FAN_WORKSPACE_ROOT=/data/default
     - *Шаги:* POST /api/sessions with `{ cwd: '/data/explicit' }`
     - *Ожидаемый результат:* Session cwd = `/data/explicit` (request wins over env)
 - **Критерии приёмки:**
   1. Fallback chain: explicit cwd → FAN_WORKSPACE_ROOT → ~/projects
-  2. Configured in docker-compose environment section
-  3. Works in both local and containerized modes
+  2. Настроено в секции environment docker-compose
+  3. Работает и в локальном, и в контейнерном режимах
 - **Ожидаемый результат:** Обновлённый `packages/coding-agent/src/main.ts`; docker-compose.yml env vars
 - **Оценка объёма:** S
 
@@ -361,16 +361,16 @@
 - **Описание:** `SessionManager.listAll()` уже возвращает cwd в SessionInfo. Обеспечить проброс в ответ API endpoint. GET /api/sessions должен включать `cwd` в каждый элемент массива sessions. Filter по ?project= применяется после listAll().
 - **Зависимости:** F-1.2 (GET filtering), F-1.11 (startup cwd set)
 - **TDD-тесты:**
-  - [ ] **TC-F-1.12-1:** CWD included in session list response
+  - [ ] **TC-F-1.12-1:** CWD включён в ответ списка сессий
     - *Условие:* listAll возвращает SessionInfo[] с cwd populated
     - *Шаги:* GET /api/sessions
     - *Ожидаемый результат:* Каждый элемент response.sessions содержит поле cwd со значением
-  - [ ] **TC-F-1.12-2:** Filter applied after listAll
+  - [ ] **TC-F-1.12-2:** Фильтр применяется после listAll
     - *Условие:* Multi-project setup
     - *Шаги:* GET /api/sessions?project=/data/repos/X
     - *Ожидаемый результат:* Только сессии с cwd = X; cwd поле присутствует
 - **Критерии приёмки:**
-  1. listAll results mapped to API response format
+  1. Результаты listAll маппятся в формат ответа API
   2. Each session summary includes cwd field
   3. Filter logic operates on returned data (in-memory) or via indexed DB query
 - **Ожидаемый результат:** Обновлённый mapping в `http-server.ts` GET handler
@@ -389,25 +389,23 @@
 - **Приоритет:** P0
 - **Слой:** [BIZ]
 - **Описание:** Функция `validateCwd(path: string, allowedRoots: string[]): ValidationResult`. Нормализует путь (path.resolve + symlink check). Проверяет что canonical path начинается с одного из allowed roots. Результат: `{ valid: boolean, reason: string? }`. При отказе → HTTP 403. Логируется attempt.
-- **Зависимости:** F-1.3 (POST accepts cwd), F-1.6 (allowed roots from env)
+- **Зависимости:** F-1.3 (POST принимает cwd), F-1.11 (allowed roots из FAN_WORKSPACE_ROOT)
 - **TDD-тесты:**
   - [ ] **TC-F-1.13-1:** Valid path within whitelist + empty whitelist bypass
     - *Условие:* allowedRoots = ['/data/repos']; path = '/data/repos/my-project/secrets.txt'; ИЛИ allowedRoots = []
     - *Шаги:* validateCwd(path, ['/data/repos']); затем validateCwd('/any/path', [])
     - *Ожидаемый результат:* Оба: { valid: true }; при пустом whitelist — все пути проходят (локальный режим)
-  - [ ] **TC-F-1.13-2:** Path outside whitelist rejected
+  - [ ] **TC-F-1.13-2:** Путь вне whitelist отклонён
     - *Условие:* allowedRoots = ['/data/repos']; path = '/etc/passwd'
     - *Шаги:* validateCwd(path, allowedRoots)
     - *Ожидаемый результат:* { valid: false, reason: 'path outside allowed roots' }; срабатывает 403
-  - [ ] **TC-F-1.13-3:** Symlink traversal detected and blocked
+  - [ ] **TC-F-1.13-3:** Обход через symlink обнаружен и заблокирован
     - *Условие:* Path resolves through symlink to outside whitelist
     - *Шаги:* validateCwd('/data/repos/link-to-etc', allowedRoots)
     - *Ожидаемый результат:* { valid: false, reason: 'symlink traversal detected' }; срабатывает 403
 - **Критерии приёмки:**
-  1. path.normalize + real realpath check for symlinks
-  2. startsWith against each allowed root
-  3. Middleware integrated into POST /api/sessions and any endpoint accepting cwd
-  4. Audit log entry on rejection
+  1. Нормализация пути (path.resolve + realpath для symlink) и проверка startsWith по каждому разрешённому корню
+  2. Middleware интегрирован в POST /api/sessions и любой endpoint, принимающий cwd; при отказе — запись в audit log
 - **Ожидаемый результат:** Новый модуль `packages/api-gateway/src/workspace-validation.ts` или расширение `auth.ts`; middleware integration в http-server.ts
 - **Оценка объёма:** L
 
@@ -422,7 +420,7 @@
 - **Описание:** Сквозной сценарий: через API создан проект → создана сессия в проекте A и B → переключение между ними → попытка path traversal отклонена. Проверяет всю цепочку: реестр → сессия → filter → безопасность.
 - **Зависимости:** F-1.1..F-1.13
 - **TDD-тесты:**
-  - [ ] **TC-F-1.14-E2E-1:** End-to-end multi-project API flow
+  - [ ] **TC-F-1.14-E2E-1:** Сквозной мультипроектный API-поток
     - *Условие:* FAN запущен, FAN_PUBLIC=1, whitelist configured (`FAN_WORKSPACE_ROOT=/data/repos`)
     - *Шаги:*
       1. `POST /api/projects` (или CLI register) → регистрация `/data/repos/project-a`
@@ -435,19 +433,18 @@
       8. `DELETE /api/sessions/<a-id>?project=/data/repos/project-a` → удалить сессию A
       9. Убедиться: GET /api/sessions без filter → осталась только сессия B
     - *Ожидаемый результат:* Все шаги завершаются успешно; фильтры корректны; удаление только своей сессии
-  - [ ] **TC-F-1.14-E2E-2:** Cross-project deletion blocked
+  - [ ] **TC-F-1.14-E2E-2:** Межпроектное удаление заблокировано
     - *Условие:* Сессия A в проекте A
     - *Шаги:* `DELETE /api/sessions/<a-id>?project=/data/repos/project-b`
     - *Ожидаемый результат:* HTTP 403 Forbidden; session NOT deleted
-  - [ ] **TC-F-1.14-E2E-3:** Path traversal blocked
+  - [ ] **TC-F-1.14-E2E-3:** Обход путей (path traversal) заблокирован
     - *Условие:* Whitelist = `/data/repos`
     - *Шаги:* `POST /api/sessions` с `{ cwd: "/etc/passwd" }`
     - *Ожидаемый результат:* HTTP 403 Forbidden; body contains error message; no session created; attempt logged
 - **Критерии приёмки:**
-  1. Все CRUD операции работают с project context
-  2. Фильтрация по ?project= точна
-  3. Security: path traversal blocked, cross-project operations denied
-  4. Backward compatible: API без project params работает
+  1. Все CRUD операции работают с project context; фильтрация по ?project= точна
+  2. Безопасность: path traversal заблокирован, межпроектные операции отклонены
+  3. Обратная совместимость: API без project-параметров работает
 - **Ожидаемый результат:** Ручной или автоматический test script; результаты фиксируются
 - **Оценка объёма:** M
 
@@ -467,7 +464,7 @@ Phase 1 Dependencies:
 │
 ├── F-1.9 (SessionAdapter) ──→ F-1.10 (Per-session cwd) ──→ F-1.11 (Startup cwd)
 │
-├── F-1.3 + F-1.6 ──→ F-1.13 (Whitelist validation)
+├── F-1.3 + F-1.11 ──→ F-1.13 (Whitelist validation)
 │
 └── All P0 above ──→ F-1.14-E2E (Multi-project workflow)
 ```
@@ -478,7 +475,7 @@ Phase 1 Dependencies:
 
 ## Полный чеклист по приоритетам
 
-### P0 (Must Have) — 11 фич
+### P0 (Must Have) — 12 фич
 
 - [ ] ☐ F-1.1 Prisma cwd в Session + migration
 - [ ] ☐ F-1.2 GET /api/sessions с фильтром ?project=
@@ -498,9 +495,9 @@ Phase 1 Dependencies:
 - [ ] ⏳ F-1.7 Авто-регистрация при первом сеансе
 - [ ] ⏳ F-1.8 CLI команда `fan project register`
 
-### P2 (Could Have) — 1 фич
+### P2 (Could Have) — 0 фич
 
-- [ ] ❌ F-??? (auto-detect project type — minor enhancement, folded into F-1.7)
+_Нет фич._
 
 ---
 
@@ -509,9 +506,9 @@ Phase 1 Dependencies:
 | Мера | Значение |
 |------|---------|
 | Всего фич | 14 (13 реализаций + 1 E2E) |
-| P0 фич | 11 (10 реализаций + 1 E2E) |
+| P0 фич | 12 (11 реализаций + 1 E2E) |
 | P1 фич | 2 |
-| P2 фич | 1 (отложен) |
+| P2 фич | 0 |
 | Этапов | 6 (data layer, session endpoints, projects, core/runtime, security, E2E) |
 | Оценка P0 | ~3 дня (data: 2h + endpoints: 8h + core: 8h + security: 4h + E2E: 4h) |
 | Оценка полная | ~5 дней (с учётом P1) |

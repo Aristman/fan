@@ -2,7 +2,7 @@
 
 > **Дата создания:** 2026-07-25
 > **Источник:** [spec_fan-network-agent_phase3-universal-tasks_2026-07-25.md](../../specs/spec_fan-network-agent_phase3-universal-tasks_2026-07-25.md) · [родительская spec](../../specs/spec_fan-network-agent_2026-07-25.md)
-> **Фич:** 12 | **Этапов:** 4 | **E2E-сценариев:** 1
+> **Фич:** 12 | **Этапов:** 4 | **E2E-сценариев:** 2
 
 ---
 
@@ -10,10 +10,10 @@
 
 | Приоритет | Кол-во фич | Описание |
 |-----------|-----------|----------|
-| P0 (Must) | 8 | Типы workspaces, автодетекция, шаблоны, endpoint создания, prompt templates, E2E research, code template, dashboard icons |
+| P0 (Must) | 9 | Типы workspaces, автодетекция, шаблоны, endpoint создания, prompt templates, E2E research, code template, dashboard icons, E2E multi-type |
 | P1 (Should) | 2 | Slash command autocomplete, custom system prompt override |
 | P2 (Could) | 1 | Manual type change via UI |
-| P3 (Won't Have) | 1 | Workspace analytics |
+| P3 (Won't Have) | 0 | Нет |
 
 ---
 
@@ -46,7 +46,7 @@
 
 ---
 
-## Этап 3.1 — DATA: Шаблоны директоровий + автодетекция типов
+## Этап 3.1 — DATA: Шаблоны директорий + автодетекция типов
 
 **Цель SMART:** Определить 4 типа workspaces (code/research/automation/unknown), реализовать автодетекцию по структуре директории в `~/.fan/agent/projects.json` (добавление поля `type`). Создать три шаблонных структуры (Code Project, Research Lab, Automation Hub) в `packages/coding-agent/src/workspace/templates/`. Детекция работает при регистрации нового проекта или при сканировании реестра проектов. Покрытие: 95% сценариев из spec (раздел 2.1).
 
@@ -64,11 +64,11 @@
   Schema update в Prisma (если projects хранятся там) + backward compatibility migration (default 'unknown').
 - **Зависимости:** Phase 1 (projects.json format из spec parent, раздел 3 «Модель данных»)
 - **TDD-тесты:**
-  - [ ] **TC-F-3.1-1:** Type field exists in project record
+  - [ ] **TC-F-3.1-1:** Поле type существует в записи проекта
     - *Условие:* Projects schema updated with `type` field
     - *Шаги:* Query projects from DB/file
     - *Ожидаемый результат:* Каждый entry содержит string `type`; default = 'unknown' if not set
-  - [ ] **TC-F-3.1-2:** Unknown type assigned by default to new entries
+  - [ ] **TC-F-3.1-2:** Тип unknown назначается по умолчанию новым записям
     - *Условие:* Новый проект в реестре без указания type
     - *Шаги:* Записать в registry; прочитать
     - *Ожидаемый результат:* type = 'unknown'
@@ -99,22 +99,22 @@
   Вызывается при регистрации нового проекта (`POST /api/projects`) и при фоновом сканировании реестра.
 - **Зависимости:** (none)
 - **TDD-тесты:**
-  - [ ] **TC-F-3.2-1:** Code project detected correctly
+  - [ ] **TC-F-3.2-1:** Кодовый проект определяется корректно
     - *Условие:* tmp dir с .git/ и src/
     - *Шаги:* detectWorkspaceType(tmpDir)
     - *Ожидаемый результат:* Возвращает 'code'
-  - [ ] **TC-F-3.2-2:** Research project detected correctly
+  - [ ] **TC-F-3.2-2:** Исследовательский проект определяется корректно
     - *Условие:* tmp dir с docs/research/
     - *Шаги:* detectWorkspaceType(tmpDir)
     - *Ожидаемый результат:* Возвращает 'research'
-  - [ ] **TC-F-3.2-3:** Unknown type for empty directory
+  - [ ] **TC-F-3.2-3:** Тип unknown для пустой директории
     - *Условие:* Пустой tmp dir
     - *Шаги:* detectWorkspaceType(tmpDir)
     - *Ожидаемый результат:* Возвращает 'unknown'
 - **Критерии приёмки:**
   1. Функция проверяет все три паттерна согласно spec
   2. Priority order: code > research > automation > unknown
-  3. Graceful handling: missing directories don't throw errors
+  3. Корректная обработка: отсутствующие директории не вызывают ошибок
 - **Ожидаемый результат:** `packages/coding-agent/src/workspace/detector.ts` + unit tests
 - **Оценка объёма:** S
 
@@ -134,11 +134,11 @@
   Создаётся при регистрации проекта с `template: 'code'`. `fs.mkdirSync` рекурсивно. Пустые директории создаются для immediate usability.
 - **Зависимости:** (none)
 - **TDD-тесты:**
-  - [ ] **TC-F-3.3-1:** Template creates expected directory structure
+  - [ ] **TC-F-3.3-1:** Шаблон создаёт ожидаемую структуру директорий
     - *Условие:* targetDir не существует
     - *Шаги:* applyTemplate('code', targetDir)
     - *Ожидаемый результат:* .fan/settings.json, src/, tests/, docs/, package.json созданы
-  - [ ] **TC-F-3.3-2:** Existing files are not overwritten
+  - [ ] **TC-F-3.3-2:** Существующие файлы не перезаписываются
     - *Условие:* targetDir уже имеет существующую src/ с файлом
     - *Шаги:* applyTemplate('code', targetDir)
     - *Ожидаемый результат:* Существующий файл сохранён; новые директории созданы
@@ -159,18 +159,18 @@
   Модули: `research-lab.ts`, `automation-hub.ts` в том же каталоге. Экспорт через `templates/index.ts`. Обёртка `createProject(template, name, rootPath)` объединяет логику.
 - **Зависимости:** F-3.3 (паттерн template application)
 - **TDD-тесты:**
-  - [ ] **TC-F-3.4-1:** Research template creates correct structure
+  - [ ] **TC-F-3.4-1:** Шаблон research создаёт корректную структуру
     - *Условие:* targetDir не существует
     - *Шаги:* applyTemplate('research', targetDir)
     - *Ожидаемый результат:* .fan/prompts/, .fan/settings.json, docs/research/, data/, reports/ созданы
-  - [ ] **TC-F-3.4-2:** Automation template creates correct structure
+  - [ ] **TC-F-3.4-2:** Шаблон automation создаёт корректную структуру
     - *Условие:* targetDir не существует
     - *Шаги:* applyTemplate('automation', targetDir)
     - *Ожидаемый результат:* .fan/settings.json, scripts/, config/, output/, logs/ созданы
 - **Критерии приёмки:**
   1. Оба шаблона создают правильную иерархию согласно spec
   2. Index export позволяет импортировать по имени ('code'|'research'|'automation')
-  3. createProject() orchestrates template + type detection + registry update
+  3. createProject() оркестрирует шаблон + детекцию типа + обновление реестра
 - **Ожидаемый результат:** `packages/coding-agent/src/workspace/templates/research-lab.ts`, `automation-hub.ts`, `index.ts`
 - **Оценка объёма:** S
 
@@ -189,15 +189,15 @@
 - **Описание:** Endpoint в api-gateway router: `POST /api/projects`. Принимает body с полями `name`, `template`, `rootPath` (optional, default `~/projects`). Последовательность: 1) resolve full path (`rootPath + name`), 2) apply template via `templates/index.ts`, 3) auto-detect type via `detectWorkspaceType()`, 4) add to registry (projects.json), 5) return metadata `{ path, name, type, template }`. Template validation: reject unknown template names with 400 Bad Request. Auth required (token-based). Path whitelist validation (phase 1) applies here too.
 - **Зависимости:** F-3.1..F-3.4 (schema, detector, templates), phase 1 project registry
 - **TDD-тесты:**
-  - [ ] **TC-F-3.5-1:** Valid template creates project and returns metadata
+  - [ ] **TC-F-3.5-1:** Валидный шаблон создаёт проект и возвращает метаданные
     - *Условие:* POST /api/projects с { name:'test', template:'code', rootPath:'/tmp' }, valid auth token
-    - *Шаги:* Send request; check response and filesystem
+    - *Шаги:* Отправить запрос; проверить ответ и файловую систему
     - *Ожидаемый результат:* Response { path: '/tmp/test', name: 'test', type: 'code', template: 'code' }; directory structure created
-  - [ ] **TC-F-3.5-2:** Invalid template returns 400
+  - [ ] **TC-F-3.5-2:** Невалидный шаблон возвращает 400
     - *Условие:* POST /api/projects с { template:'nonexistent' }
-    - *Шаги:* Send request
+    - *Шаги:* Отправить запрос
     - *Ожидаемый результат:* HTTP 400; body { error: 'Unknown template: nonexistent' }
-  - [ ] **TC-F-3.5-3:** Auto-detected type matches actual content
+  - [ ] **TC-F-3.5-3:** Автодетектированный тип соответствует содержимому
     - *Условие:* Template 'research' applied to new dir
     - *Шаги:* POST → check returned type
     - *Ожидаемый результат:* type = 'research' (because docs/research/ was created by template)
@@ -219,11 +219,11 @@
   Пользователь может переопределить через `<cwd>/.fan/prompts/system.md`. Система загружает базовый шаблон → проверяет наличие custom override → merge: custom > template default. Prompt переменные: `{workspace_path}`, `{project_name}`.
 - **Зависимости:** F-3.4 (templates exist), фаза 2 settings-manager
 - **TDD-тесты:**
-  - [ ] **TC-F-3.6-1:** Default prompt loaded for known type
+  - [ ] **TC-F-3.6-1:** Дефолтный промпт загружается для известного типа
     - *Условие:* code workspace, no custom .fan/prompts/system.md
     - *Шаги:* loadSystemPrompt('/myproj')
     - *Ожидаемый результат:* Возвращает code template prompt с подставленным {workspace_path}
-  - [ ] **TC-F-3.6-2:** Custom override replaces default
+  - [ ] **TC-F-3.6-2:** Пользовательский override заменяет дефолт
     - *Условие:* custom .fan/prompts/system.md exists
     - *Шаги:* loadSystemPrompt('/myproj')
     - *Ожидаемый результат:* Custom content returned, not template default
@@ -249,11 +249,11 @@
 - **Описание:** В `packages/dashboard/src/components/project-switcher.ts` (обновление): каждый проект отображается с иконкой типа. CSS классы: `.type-code` (💻), `.type-research` (🔬), `.type-automation` (⚙️), `.type-unknown` (❓). Icon рендерится как SVG Lucide или unicode emoji перед именем проекта. Иконка берётся из `project.type` в данных API. Обновлённый tree view session list тоже показывает иконки проектов.
 - **Зависимости:** F-3.1 (type field in projects.json), F-2.6 (project switcher component)
 - **TDD-тесты:**
-  - [ ] **TC-F-3.7-1:** Icon rendered based on type
+  - [ ] **TC-F-3.7-1:** Иконка рендерится по типу
     - *Условие:* project={name:'Alpha', type:'research'}
     - *Шаги:* Render project item in switcher
     - *Ожидаемый результат:* 🔬 icon displayed before 'Alpha'; class='type-research'
-  - [ ] **TC-F-3.7-2:** Unknown type shows question mark
+  - [ ] **TC-F-3.7-2:** Тип unknown показывает знак вопроса
     - *Условие:* project={name:'Beta', type:'unknown'}
     - *Шаги:* Render project item
     - *Ожидаемый результат:* ❓ icon displayed
@@ -264,18 +264,18 @@
 - **Ожидаемый результат:** Обновлённый `project-switcher.ts` + CSS стили
 - **Оценка объёма:** S
 
-#### ⏳ F-3.8: Форма создания проекта с выбором шаблона
+#### ☐ F-3.8: Форма создания проекта с выбором шаблона
 
 - **Приоритет:** P0
 - **Слой:** [UI]
 - **Описание:** Modal/dialog компонент `<fan-create-project-dialog>` в `packages/dashboard/src/components/create-project-dialog.ts`. Содержимое из spec (раздел 4.2): название проекта, radio-кнопки шаблонов (Код-проект / Исследование / Автоматизация / Пустая папка), поле расположения (path input). Данные отправляются через `POST /api/projects` с полем `template`. Validation: name required, template selected, path valid. После успешного создания — обновить список проектов (re-fetch GET /api/projects), закрыть диалог.
 - **Зависимости:** F-3.5 (POST /api/projects endpoint), F-3.3..F-3.4 (templates available)
 - **TDD-тесты:**
-  - [ ] **TC-F-3.8-1:** Dialog renders all template options
+  - [ ] **TC-F-3.8-1:** Диалог рендерит все варианты шаблонов
     - *Условие:* Component mounted
     - *Шаги:* Проверить shadow DOM на наличие radio-кнопок шаблонов
     - *Ожидаемый результат:* 4 radio options visible: Code, Research, Automation, Empty folder
-  - [ ] **TC-F-3.8-2:** Create button sends correct payload
+  - [ ] **TC-F-3.8-2:** Кнопка создания отправляет корректный payload
     - *Условие:* Form filled: name='MyProj', template='research', root='/tmp'
     - *Шаги:* Click Create
     - *Ожидаемый результат:* POST /api/projects отправлен с корректным body; диалог закрывается при успехе
@@ -286,18 +286,18 @@
 - **Ожидаемый результат:** `packages/dashboard/src/components/create-project-dialog.ts`
 - **Оценка объёма:** M
 
-#### ⏰ F-3.9: Slash command autocomplete в чате
+#### ☐ F-3.9: Slash command autocomplete в чате
 
 - **Приоритет:** P1
 - **Слой:** [UI]
-- **Описание:** В поле ввода чата (`chat-input.ts`) добавить autocomplete dropdown при вводе `/`. Команды загружаются из активных скиллов в текущем проекте. Для research workspace: `/idea-lab:*` и `/research-spec:*`. Для code workspace: стандартные команды (bash-related). Dropdown показывается при вводе символа `/`, фильтруется по введённому тексту, выбирается Enter. Референс: spec раздел 4.3 «Быстрые команды». Интеграция с existing skill registry from phase 1–2.
+- **Описание:** В поле ввода чата (`chat-view.ts`) добавить autocomplete dropdown при вводе `/`. Команды загружаются из активных скиллов в текущем проекте. Для research workspace: `/idea-lab:*` и `/research-spec:*`. Для code workspace: стандартные команды (bash-related). Dropdown показывается при вводе символа `/`, фильтруется по введённому тексту, выбирается Enter. Референс: spec раздел 4.3 «Быстрые команды». Интеграция с existing skill registry from phase 1–2.
 - **Зависимости:** F-2.8 (API client), существующий skill registry
 - **TDD-тесты:**
-  - [ ] **TC-F-3.9-1:** Autocomplete dropdown appears on '/' input
+  - [ ] **TC-F-3.9-1:** Dropdown автодополнения появляется при вводе '/'
     - *Условие:* Chat input focused, typing '/'
     - *Шаги:* Observe DOM
     - *Ожидаемый результат:* Dropdown visible with available slash commands for current project type
-  - [ ] **TC-F-3.9-2:** Selected command inserts into input
+  - [ ] **TC-F-3.9-2:** Выбранная команда вставляется в поле ввода
     - *Условие:* Dropdown open, commands ['idea-lab:analyze', 'research-spec:generate']
     - *Шаги:* Select first command
     - *Ожидаемый результат:* Input text = '/idea-lab:analyze '; cursor after space
@@ -305,17 +305,17 @@
   1. Autocomplete вызывается при вводе '/' в чат
   2. Список команд соответствует активным скиллам проекта
   3. Выбор команды вставляет текст в input
-- **Ожидаемый результат:** Обновлённый `chat-input.ts`
+- **Ожидаемый результат:** Обновлённый `chat-view.ts`
 - **Оценка объёма:** M
 
-#### ⏰ F-3.10: Ручная смена типа проекта через API/UI
+#### ☐ F-3.10: Ручная смена типа проекта через API/UI
 
 - **Приоритет:** P2
 - **Слой:** [API]
 - **Описание:** Дополнение endpoint: `PUT /api/projects/:path` с телом `{ type: 'code'|'research'|'automation' }`. Обновляет type в projects.json. UI: контекстное меню проекта в sidebar (правый клик) → «Изменить тип» → dropdown для выбора. Используется когда автодетекция ошиблась (risk: medium probability per spec section 5). Invalidation ServiceRegistry cache после обновления type (раздел 2.1 spec).
 - **Зависимости:** F-3.1 (type field), F-2.1 (ServiceRegistry invalidation)
 - **TDD-тесты:**
-  - [ ] **TC-F-3.10-1:** PUT updates type in registry
+  - [ ] **TC-F-3.10-1:** PUT обновляет тип в реестре
     - *Условие:* Project type='unknown'
     - *Шаги:* PUT /api/projects/{path} { type: 'research' }
     - *Ожидаемый результат:* projects.json updated; type='research'; GET returns new type
@@ -338,10 +338,10 @@
 
 - **Приоритет:** P0
 - **Слой:** [E2E]
-- **Описание:** Сквозной сценарий создания не-git workspace для ресёрча, запуска idea-lab сценария, сохранения документа. Проверяет весь стек: template creation → type detection → skill integration → document generation. Выполнимо вручную через Web UI или скриптом.
+- **Описание:** Сквозной сценарий создания не-git workspace для исследования, запуска idea-lab сценария, сохранения документа. Проверяет весь стек: template creation → type detection → skill integration → document generation. Выполнимо вручную через Web UI или скриптом.
 - **Зависимости:** F-3.1..F-3.9 (все core features)
 - **TDD-тесты:**
-  - [ ] **TC-F-3.11-E2E-1:** Non-git workspace creation + idea-lab execution
+  - [ ] **TC-F-3.11-E2E-1:** Создание не-git workspace + выполнение idea-lab
     - *Условие:* FAN Network Agent running, dashboard connected, no pre-existing research workspace
     - *Шаги:*
       1. Нажать «+ Новый проект» → выбрать шаблон «Research Lab» → имя `market-analysis-q3`
@@ -353,7 +353,7 @@
       7. Проверить: файл `docs/research/swot-ai-code-review.md` создан
       8. Проверить: документ содержит SWOT секции (Strengths, Weaknesses, Opportunities, Threats)
     - *Ожидаемый результат:* Документ спецификации полностью сгенерирован, сохранён в правильной директории, доступен в файловой системе проекта
-  - [ ] **TC-F-3.11-E2E-2:** Research spec generator workflow
+  - [ ] **TC-F-3.11-E2E-2:** Workflow генератора research-спецификаций
     - *Условие:* Исследовательский workspace active, research-spec-generator skill installed
     - *Шаги:*
       1. В чат: `/research-spec:generate "Distributed task queue architecture"`
@@ -364,8 +364,7 @@
 - **Критерии приёмки:**
   1. Исследовательский workspace создан автоматически с правильной структурой директорий
   2. idea-lab и research-spec-generator работают в не-git workspace
-  3. Результаты сохраняются в ожидаемые директории (`docs/research/`, `reports/`)
-  4. Документы содержат релевантное содержимое (не пустые файлы)
+  3. Результаты сохраняются в ожидаемые директории (`docs/research/`, `reports/`); документы не пустые
 - **Ожидаемый результат:** Ручной тест через Web UI или automation script; документы в workspace подтверждают успешность
 - **Оценка объёма:** M
 
@@ -376,7 +375,7 @@
 - **Описание:** Создание трёх проектов разных типов → выполнение задач в каждом → проверка результатов. Проверяет isolation между проектами, корректность типов, шаблонов и prompt templates.
 - **Зависимости:** F-3.1..F-3.11-E2E (все core features + E2E validation of previous scenario)
 - **TDD-тесты:**
-  - [ ] **TC-F-3.12-E2E-1:** Full lifecycle across three project types
+  - [ ] **TC-F-3.12-E2E-1:** Полный жизненный цикл трёх типов проектов
     - *Условие:* Чистая среда, FAN running, no pre-existing projects
     - *Шаги:*
       1. Создать код-проект «backend-api» (шаблон code)
@@ -389,7 +388,7 @@
       8. Вернуться к «competitor-analysis»: проверить что research doc существует
       9. Вернуться к «backup-pipeline»: проверить что скрипт существует
     - *Ожидаемый результат:* Все три проекта созданы с правильными типами и структурами; задачи в каждом создали правильные файлы; контексты изолированы (возврат к проекту показывает его данные)
-  - [ ] **TC-F-3.12-E2E-2:** System prompts match workspace type
+  - [ ] **TC-F-3.12-E2E-2:** Системные промпты соответствуют типу workspace
     - *Условие:* Три проекта разных типов активны поочерёдно
     - *Шаги:*
       1. Включить debug mode (или посмотреть системный промпт в UI)
@@ -403,7 +402,7 @@
   1. Все три шаблона создают корректные директории
   2. Системные промпты применяются корректно к каждому типу
   3. Изоляция контекста: возврат к проекту восстанавливает его состояние
-- **Ожидаемый результат:** Ручной or scripted test; confirms multi-project universal task support
+- **Ожидаемый результат:** Ручной или скриптовый тест; подтверждает поддержку универсальных задач в нескольких проектах
 - **Оценка объёма:** M
 
 ---
@@ -468,7 +467,7 @@
 
 ## Полный чеклист по приоритетам
 
-### P0 (Must Have) — 8 фич
+### P0 (Must Have) — 9 фич
 
 - [ ] ☐ F-3.1 Определение типов workspaces в projects.json
 - [ ] ☐ F-3.2 Автодетекция типа по структуре директории
@@ -478,19 +477,20 @@
 - [ ] ☐ F-3.7 Dashboard icons для типов workspace
 - [ ] ☐ F-3.8 Форма создания проекта с выбором шаблона
 - [ ] ☐ F-3.11-E2E Исследовательский workspace — полный цикл
+- [ ] ☐ F-3.12-E2E Многошаговый жизненный цикл проектов разных типов
 
 ### P1 (Should Have) — 2 фич
 
 - [ ] ⏳ F-3.6 Custom system prompt override (.fan/prompts/)
-- [ ] ⏰ F-3.9 Slash command autocomplete в чате
+- [ ] ☐ F-3.9 Slash command autocomplete в чате
 
 ### P2 (Could Have) — 1 фич
 
-- [ ] ⏰ F-3.10 Ручная смена типа проекта через API/UI
+- [ ] ☐ F-3.10 Ручная смена типа проекта через API/UI
 
-### P3 (Won't Have) — 1 фич
+### P3 (Won't Have) — 0 фич
 
-- [ ] ❌ Workspace analytics (отклонено для MVP)
+_Нет фич._
 
 ---
 
@@ -499,10 +499,10 @@
 | Мера | Значение |
 |------|---------|
 | Всего фич | 12 (10 реализаций + 2 E2E) |
-| P0 фич | 8 |
+| P0 фич | 9 |
 | P1 фич | 2 |
 | P2 фич | 1 |
-| P3 фич | 1 (отклонено) |
+| P3 фич | 0 |
 | Этапов | 4 (templates+detection, API endpoints, dashboard integration, E2E) |
 | Оценка P0 | ~2.5 дня (templates: 4h + API: 6h + dashboard: 6h + E2E: 6h) |
 | Оценка полная | ~3–5 дней (с учётом P1/P2) |

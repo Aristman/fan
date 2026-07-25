@@ -2,7 +2,9 @@
 
 > **Дата создания:** 2026-07-25
 > **Источник:** [spec_fan-network-agent_phase4-autonomy_2026-07-25.md](../../specs/spec_fan-network-agent_phase4-autonomy_2026-07-25.md) · [родительская spec](../../specs/spec_fan-network-agent_2026-07-25.md)
-> **Фич:** 15 | **Этапов:** 6 | **E2E-сценариев:** 1
+> **Фич:** 16 | **Этапов:** 6 | **E2E-сценариев:** 1
+
+> ⚠️ **Предупреждение:** число фич (16) превышает мягкий лимит скилла (15) — допущено осознанно после аудита: добавлена карточка F-4.15 (бэкап fan.db) по требованию спеки §2.2. Разбиение не требуется — фичи обособлены.
 
 ---
 
@@ -11,7 +13,7 @@
 | Приоритет | Кол-во фич | Описание |
 |-----------|-----------|----------|
 | P0 (Must) | 10 | Scheduler-сервис, YAML config, API client, очередь, cron loop, bot-identity, ветки, gh CLI PR, budget caps, E2E |
-| P1 (Should) | 5 | Persistent queue, retry/backoff, structured logging, chat interruption, health endpoint |
+| P1 (Should) | 6 | Persistent queue, retry/backoff, structured logging, chat interruption, health endpoint, DB backup |
 | P2 (Could) | 0 | Отложено (workspace clone — вне roadmap) |
 | P3 | 0 | Нет |
 
@@ -51,7 +53,7 @@
 
 ## Этап 4.0 — Базовая инфраструктура scheduler'а
 
-**Цель SMART:** До конца этапа пакет `tools/fan-scheduler/` существует со структурой из 4 файлов (`scheduler.ts`, `config.yaml`, `lib/client.ts`, `lib/logger.ts`), парсит YAML-конфиг, формирует `TaskConfig` объекты, подключается к FAN API (GET /api/health) и запускается через `bun run`. Сборка без ошибок, интеграция с родительским monorepo проверена.
+**Цель SMART:** До конца этапа пакет `tools/fan-scheduler/` существует со структурой из 6 файлов (`scheduler.ts`, `config.yaml`, `package.json`, `lib/queue.ts`, `lib/client.ts`, `lib/logger.ts`), парсит YAML-конфиг, формирует `TaskConfig` объекты, подключается к FAN API (GET /api/health) и запускается через `bun run`. Сборка без ошибок, интеграция с родительским monorepo проверена.
 
 ### Фичи
 
@@ -62,26 +64,18 @@
 - **Описание:** Инициализация нового пакета в `tools/fan-scheduler/` (отдельный Bun package) и реализация парсинга YAML-конфига. Структура: `scheduler.ts` (главный цикл), `lib/queue.ts` (очередь), `lib/client.ts` (FAN API client), `lib/logger.ts` (логирование), `package.json` (Bun), `config.yaml` (cron-конфигурация). Загрузчик `config.yaml` читает секцию `tasks[]`, каждую запись конвертирует в `TaskConfig { name, schedule, workspace, message, budget_limit?, timeout? }`. Валидация cron-строки. Дефолты: `budget_limit = null`, `timeout = 3600`.
 - **Зависимости:** (none) — но зависит от готовности API gateway (фаза 0).
 - **TDD-тесты:**
-  - [ ] **TC-F-4.1-1:** Пакет собирается и запускается
-    - *Условие:* `tools/fan-scheduler/package.json` существует, содержит `"main": "dist/scheduler.js"`, `"scripts": {"build": "tsc", "start": "bun dist/scheduler.js"}`
-    - *Шаги:* `cd tools/fan-scheduler && bun install && bun run build`; `bun run start`
-    - *Ожидаемый результат:* Exit code 0; в логе сообщение «Scheduler started» или аналогичное
-  - [ ] **TC-F-4.1-2:** Yaml конфиг загружается корректно
-    - *Условие:* `config.yaml` с одним task; пакет запущен
-    - *Шаги:* Проверить парсинг в конструкторе Scheduler
-    - *Ожидаемый результат:* `tasks.length === 1`; поля `name`, `schedule`, `workspace`, `message` распарсены
-  - [ ] **TC-F-4.1-3:** Корректный YAML → TaskConfig[]
-    - *Условие:* `config.yaml` содержит 2 таска с full fields
-    - *Шаги:* `loadTasks('config.yaml')`
-    - *Ожидаемый результат:* Array of length 2; каждый имеет `name`, `schedule`, `workspace`, `message`; `budget_limit` и `timeout` применены из конфига
-  - [ ] **TC-F-4.1-4:** Missing optional fields use defaults
-    - *Условие:* Таск без `budget_limit` и `timeout`
-    - *Шаги:* Загрузить; проверить поля
-    - *Ожидаемый результат:* `budget_limit === null`, `timeout === 3600`
-  - [ ] **TC-F-4.1-5:** Invalid YAML throws error
+  - [ ] **TC-F-4.1-1:** Пакет собирается и YAML-конфиг загружается
+    - *Условие:* `tools/fan-scheduler/package.json` существует, содержит `"main": "dist/scheduler.js"`, `"scripts": {"build": "tsc", "start": "bun dist/scheduler.js"}`; `config.yaml` с одним task
+    - *Шаги:* `cd tools/fan-scheduler && bun install && bun run build`; `bun run start`; проверить парсинг в конструкторе Scheduler
+    - *Ожидаемый результат:* Exit code 0; в логе сообщение «Scheduler started» или аналогичное; `tasks.length === 1`; поля `name`, `schedule`, `workspace`, `message` распарсены
+  - [ ] **TC-F-4.1-2:** Корректный YAML → TaskConfig[] с дефолтами
+    - *Условие:* `config.yaml` содержит 2 таска: один с full fields, другой без `budget_limit` и `timeout`
+    - *Шаги:* `loadTasks('config.yaml')`; проверить поля обоих
+    - *Ожидаемый результат:* Array of length 2; у первого `budget_limit` и `timeout` применены из конфига; у второго дефолты `budget_limit === null`, `timeout === 3600`
+  - [ ] **TC-F-4.1-3:** Невалидный YAML выбрасывает ошибку
     - *Условие:* Некорректный YAML
     - *Шаги:* Вызвать загрузчик
-    - *Ожидаемый результат:* Error thrown with descriptive message containing line number
+    - *Ожидаемый результат:* Выброшена ошибка с описательным сообщением, содержащим номер строки
 - **Критерии приёмки:**
   1. Директория `tools/fan-scheduler/` создана со всеми файлами; `bun run build` без ошибок
   2. YAML парсится; все обязательные поля валидируются
@@ -119,22 +113,22 @@
 
 ### Фичи
 
-#### ☐ F-4.4: TaskQueue — однопоточное выполнение
+#### ☐ F-4.3: TaskQueue — однопоточное выполнение
 
 - **Приоритет:** P0
 - **Слой:** [DATA]
 - **Описание:** Класс `TaskQueue` с методами: `enqueue(task: TaskConfig)`, `runNext()`, `pauseCurrent()`, `isRunning: boolean`. Очередь pending-задач (array), но выполняется строго одна за раз. После завершения текущей задачи автоматически запускается следующая. State machine: `idle` ↔ `running` ↔ `paused`.
 - **Зависимости:** F-4.1 (загрузка config → TaskConfig[])
 - **TDD-тесты:**
-  - [ ] **TC-F-4.4-1:** Одновременное выполнение запрещено
+  - [ ] **TC-F-4.3-1:** Одновременное выполнение запрещено
     - *Условие:* Два `enqueue` вызваны подряд
     - *Шаги:* Первый enqueue → check isRunning=true; затем второй enqueue → добавить в pending
     - *Ожидаемый результат:* isRunning=true; pending.length=1; после завершения первого — pending[0] взят
-  - [ ] **TC-F-4.4-2:** Auto-start next after completion
+  - [ ] **TC-F-4.3-2:** Автозапуск следующей задачи после завершения
     - *Условие:* Pending queue содержит 2 задачи
     - *Шаги:* Запустить first → завершить → wait for auto-start
     - *Ожидаемый результат:* Second task starts automatically; isRunning stays consistent
-  - [ ] **TC-F-4.4-3:** Pause stops current but preserves pending
+  - [ ] **TC-F-4.3-3:** Пауза останавливает текущую, сохраняя очередь
     - *Условие:* Running task
     - *Шаги:* `pauseCurrent()`
     - *Ожидаемый результат:* isRunning=false; pending unchanged; task position preserved
@@ -145,7 +139,7 @@
 - **Ожидаемый результат:** Файл `tools/fan-scheduler/lib/queue.ts`
 - **Оценка объёма:** S
 
-#### ☐ F-4.5: Execution pipeline — session + message + budget
+#### ☐ F-4.4: Execution pipeline — session + message + budget
 
 - **Приоритет:** P0
 - **Слой:** [INTEG]
@@ -155,13 +149,13 @@
   3. `await waitForCompletion(session.id, task.timeout)` — polling or WS subscription
   4. `await fanClient.updateBudget({ project: task.workspace, limit: task.budget_limit })`
   5. Логирование результата: `{ taskId, status, durationMs, tokensUsed }`
-- **Зависимости:** F-4.2 (API Client), F-4.4 (TaskQueue skeleton)
+- **Зависимости:** F-4.2 (API Client), F-4.3 (TaskQueue skeleton)
 - **TDD-тесты:**
-  - [ ] **TC-F-4.5-1:** Full pipeline executes in order
+  - [ ] **TC-F-4.4-1:** Полный пайплайн выполняется по порядку
     - *Условие:* Mock API: createSession → sendMessage → getBudgetUsage returns usage < limit
     - *Шаги:* `await executeTask(sampleTask)`
     - *Ожидаемый результат:* Все 4 шага выполнены последовательно; длительность = время выполнения каждого шага в сумме; лог содержит статус 'completed'
-  - [ ] **TC-F-4.5-2:** Timeout aborts execution
+  - [ ] **TC-F-4.4-2:** Таймаут прерывает выполнение
     - *Условие:* `task.timeout = 2`; mock sendMessage blocks for 5 seconds
     - *Шаги:* `executeTask(sampleTask)`
     - *Ожидаемый результат:* Error thrown after 2s; status = 'timeout'; pending queue continues
@@ -172,18 +166,18 @@
 - **Ожидаемый результат:** Дополнение `tools/fan-scheduler/lib/queue.ts` — метод `executeTask`
 - **Оценка объёма:** M
 
-#### ☐ F-4.6: Cron scheduling loop
+#### ☐ F-4.5: Cron scheduling loop
 
 - **Приоритет:** P0
 - **Слой:** [CLI]
 - **Описание:** Главный цикл `scheduler.ts`: загружает `config.yaml`, парсит tasks, планирует каждую задачу через cron-lib. При наступлении времени запуска — добавляет задачу в TaskQueue. Обработчики SIGINT/SIGTERM для graceful shutdown. Periodic scan config file для hot-reload изменений расписания.
-- **Зависимости:** F-4.1 (config loading), F-4.4 (TaskQueue)
+- **Зависимости:** F-4.1 (config loading), F-4.3 (TaskQueue)
 - **TDD-тесты:**
-  - [ ] **TC-F-4.6-1:** Cron trigger enqueues matching task
+  - [ ] **TC-F-4.5-1:** Cron-триггер ставит задачу в очередь
     - *Условие:* Config с task schedule `"* * * * *"`; таймер запущен
     - *Шаги:* Ждать следующего минутного boundary
     - *Ожидаемый результат:* Task добавлен в queue.pending; scheduler.log содержит `[scheduled] task-name`
-  - [ ] **TC-F-4.6-2:** Graceful shutdown releases resources
+  - [ ] **TC-F-4.5-2:** Корректное завершение освобождает ресурсы
     - *Условие:* Scheduler running with active task
     - *Шаги:* Send SIGTERM
     - *Ожидаемый результат:* Process exits cleanly; running task marked as paused (not lost)
@@ -202,18 +196,18 @@
 
 ### Фичи
 
-#### ☐ F-4.7: Bot Identity — GitHub PAT configuration
+#### ☐ F-4.6: Bot Identity — GitHub PAT configuration
 
 - **Приоритет:** P0
 - **Слой:** [BIZ]
 - **Описание:** Настройка separate GitHub account (или GitHub App) для autonomous actions. Env var `GITHUB_TOKEN` содержит PAT с minimum scope `repo` (scoped к конкретным репозиториям через repo selection на GitHub). Документация по созданию bot account и PAT. PAT stored in docker-compose env vars (не hardcoded). Branch protection rule on main: no direct push required.
 - **Зависимости:** (none) — external GitHub setup prerequisite
 - **TDD-тесты:**
-  - [ ] **TC-F-4.7-1:** PAT validates against GitHub API
+  - [ ] **TC-F-4.6-1:** PAT валидируется через GitHub API
     - *Условие:* Valid GITHUB_TOKEN with repo scope
     - *Шаги:* `fetch('https://api.github.com/user', { headers: { Authorization: `Bearer ${token}` } })`
     - *Ожидаемый результат:* HTTP 200; response.user.login === 'fan-bot' (или configured username); permissions.repo === true
-  - [ ] **TC-F-4.7-2:** Missing token fails gracefully
+  - [ ] **TC-F-4.6-2:** Отсутствие токена обрабатывается корректно
     - *Условие:* No GITHUB_TOKEN env var
     - *Шаги:* Initiate any git+PR action
     - *Ожидаемый результат:* Error thrown: 'GITHUB_TOKEN not configured'; scheduler logs warning; task not scheduled
@@ -224,18 +218,18 @@
 - **Ожидаемый результат:** Обновлённый `tools/fan-scheduler/lib/client.ts` (+github methods); docs/guides/scheduler.md section
 - **Оценка объёма:** S
 
-#### ☐ F-4.8: Feature branch policy — fan-auto/<id>-<timestamp>
+#### ☐ F-4.7: Feature branch policy — fan-auto/<id>-<timestamp>
 
 - **Приоритет:** P0
 - **Слой:** [INTEG]
 - **Описание:** Policy enforcement: каждая автономная задача создаёт уникальную feature-ветку. Naming convention: `fan-auto/<task-id>-<YYYYMMDD-HHmmss>`. Commits ONLY to feature branches. NEVER to main/master. System prompt template для agent в autonomous mode включает правило branch policy. Branch created via `git checkout -b fan-auto/task-X-20260725-120000` executed through bash tool.
-- **Зависимости:** F-4.7 (bot identity available)
+- **Зависимости:** F-4.6 (bot identity available)
 - **TDD-тесты:**
-  - [ ] **TC-F-4.8-1:** Branch name follows convention
+  - [ ] **TC-F-4.7-1:** Имя ветки соответствует соглашению
     - *Условие:* task.id='review-1', timestamp='20260725-090000'
     - *Шаги:* GenerateBranchName(task)
     - *Ожидаемый результат:* String 'fan-auto/review-1-20260725-090000'; regex match /^fan-auto\/[\w-]+-\d{8}-\d{6}$/
-  - [ ] **TC-F-4.8-2:** Never targets main/master
+  - [ ] **TC-F-4.7-2:** Никогда не целится в main/master
     - *Условие:* task.name contains 'merge' or 'fix-master'
     - *Шаги:* GenerateBranchName(task)
     - *Ожидаемый результат:* Branch name DOES NOT equal 'main' or 'master'; sanitized if needed
@@ -246,18 +240,18 @@
 - **Ожидаемый результат:** Файл `tools/fan-scheduler/lib/branch-policy.ts`; документация в `docs/guides/scheduler.md`
 - **Оценка объёма:** S
 
-#### ☐ F-4.9: PR creation via gh CLI
+#### ☐ F-4.8: PR creation via gh CLI
 
 - **Приоритет:** P0
 - **Слой:** [INTEG]
 - **Описание:** Автоматическое создание Pull Request после успешного завершения задачи. Агент использует `gh pr create` через bash tool: base=main, head=fan-auto/<branch>, title="auto: <task summary>", body="Automated fix generated by FAN agent. Closes #<issue>". Post-commit flow: `git add .` → `git commit -m "auto: ..."` → `git push origin fan-auto/<branch>` → `gh pr create --base main --head fan-auto/<branch> --title "auto: ..." --body "..."`.
-- **Зависимости:** F-4.8 (feature branch policy), F-4.7 (GitHub PAT)
+- **Зависимости:** F-4.7 (feature branch policy), F-4.6 (GitHub PAT)
 - **TDD-тесты:**
-  - [ ] **TC-F-4.9-1:** PR created with correct params
+  - [ ] **TC-F-4.8-1:** PR создаётся с корректными параметрами
     - *Условие:* Mock gh CLI returns `{ url: "https://github.com/.../pull/42" }`
     - *Шаги:* `createPR({ repo: 'my-project', branch: 'fan-auto/test-1', taskName: 'code-review' })`
     - *Ожидаемый результат:* Command `gh pr create --base main --head fan-auto/test-1 --title "auto: code-review" --body "Automated fix..."` executed; PR URL returned
-  - [ ] **TC-F-4.9-2:** gh CLI unavailable → graceful error
+  - [ ] **TC-F-4.8-2:** gh CLI недоступен → корректная ошибка
     - *Условие:* `gh` binary not found
     - *Шаги:* Attempt PR creation
     - *Ожидаемый результат:* Error: 'gh CLI not found — ensure GitHub CLI installed and authenticated'; task completes without PR (status flag = 'partial')
@@ -265,7 +259,7 @@
   1. `gh pr create` executed with exactly 4 flags (--base, --head, --title, --body)
   2. Branch pushed before PR creation (order enforced)
   3. Failure modes documented and recoverable
-- **Ожидаемый результат:** Функция `createPullRequest()` в `tools/fan-scheduler/lib/gh-client.ts`; новые файл
+- **Ожидаемый результат:** Функция `createPullRequest()` в `tools/fan-scheduler/lib/gh-client.ts`; новые файлы
 - **Оценка объёма:** M
 
 ---
@@ -276,44 +270,44 @@
 
 ### Фичи
 
-#### ☐ F-4.10: Budget cap per task — enforce и monitor
+#### ☐ F-4.9: Budget cap per task — enforce и monitor
 
 - **Приоритет:** P0
 - **Слой:** [BIZ]
 - **Описание:** Before each task execution: call `fanClient.setProjectBudget(workspace, budgetLimit)`. During execution: poll `fanClient.getBudgetUsage(workspace)` every N seconds. Upon reaching limit: stop current agent execution, log alert, mark task as `budget_exceeded`. After task completion: optional reset or increase of general limit. Log format: `{ event: 'budget_monitor', project, used, limit, percentage }`.
-- **Зависимости:** F-4.5 (execution pipeline), F-4.2 (API Client budget methods)
+- **Зависимости:** F-4.4 (execution pipeline), F-4.2 (API Client budget methods)
 - **TDD-тесты:**
-  - [ ] **TC-F-4.10-1:** Budget cap set before task runs
+  - [ ] **TC-F-4.9-1:** Budget cap установлен до запуска задачи
     - *Условие:* task.budget_limit = 500; task.workspace = '/proj'
     - *Шаги:* Start task execution
     - *Ожидаемый результат:* PUT /api/budget?project=/proj&limit=500 called before sendMessage; log entry recorded
-  - [ ] **TC-F-4.10-2:** Task stopped when budget exceeded
+  - [ ] **TC-F-4.9-2:** Задача остановлена при превышении бюджета
     - *Условие:* Mock getBudgetUsage returns { used: 500, limit: 500 }
     - *Шаги:* Execute task with budget monitoring enabled
     - *Ожидаемый результат:* Task status = 'budget_exceeded'; logger outputs warning; no further tokens spent
-  - [ ] **TC-F-4.10-3:** Budget below cap — normal completion
+  - [ ] **TC-F-4.9-3:** Бюджет ниже лимита — нормальное завершение
     - *Условие:* getBudgetUsage returns { used: 200, limit: 500 }
     - *Шаги:* Execute task to completion
     - *Ожидаемый результат:* Task status = 'completed'; log shows usage report: 'used 200 / 500 tokens'
 - **Критерии приёмки:**
   1. Budget set перед sendMessage, monitored во время выполнения
-  2. Graceful shutdown при превышении (без errors/warnings)
+  2. Graceful shutdown при превышении бюджета, в логе warning, exit code 0
   3. Мониторинг интервал configurable (default каждые 30 секунд)
 - **Ожидаемый результат:** Enhanced `executeTaskWithBudget()` method в `tools/fan-scheduler/lib/queue.ts`
 - **Оценка объёма:** M
 
-#### ☐ F-4.11: Retry with exponential backoff
+#### ☐ F-4.10: Retry with exponential backoff
 
 - **Приоритет:** P1
 - **Слой:** [INFRA]
 - **Описание:** При ошибках выполнения задачи (network failure, gh CLI unavailable, API timeout) — повторная попытка до 3 раз с exponential backoff: 2s, 4s, 8s. After all retries exhausted — mark task as failed, log error, continue to next pending task. Backoff config: `maxRetries: 3, baseDelayMs: 2000`.
-- **Зависимости:** F-4.4 (TaskQueue)
+- **Зависимости:** F-4.3 (TaskQueue)
 - **TDD-тесты:**
-  - [ ] **TC-F-4.11-1:** Retry succeeds on second attempt
+  - [ ] **TC-F-4.10-1:** Повторная попытка успешна со второго раза
     - *Условие:* API returns error first time, success second time
     - *Шаги:* Execute task; track retry count
     - *Ожидаемый результат:* Total attempts = 2; second attempt succeeds; backoff delay ~2s between attempts
-  - [ ] **TC-F-4.11-2:** Max retries exhausted → task failed
+  - [ ] **TC-F-4.10-2:** Попытки исчерпаны → задача провалена
     - *Условие:* API always returns 500
     - *Шаги:* Execute task
     - *Ожидаемый результат:* 3 retries attempted; delays = 2s, 4s, 8s; final status = 'failed'; pending queue advances
@@ -324,18 +318,18 @@
 - **Ожидаемый результат:** Function `withRetry<T>(fn, options)` utility + integration в `executeTask` wrapper
 - **Оценка объёма:** S
 
-#### ☐ F-4.12: Structured JSON logging
+#### ☐ F-4.11: Structured JSON logging
 
 - **Приоритет:** P1
 - **Слой:** [INFRA]
 - **Описание:** All scheduler log entries formatted as JSON lines (one JSON object per line). Fields: `timestamp` (ISO 8601), `level` (info/warn/error/debug), `module` (scheduler/queue/client/gh), `event` (action description), `taskId` (optional), `message` (human readable). Output to stdout/stderr. Compatible with Docker logging drivers and log aggregation tools.
 - **Зависимости:** F-4.1 (scheduler package structure)
 - **TDD-тесты:**
-  - [ ] **TC-F-4.12-1:** Log line is valid JSON
+  - [ ] **TC-F-4.11-1:** Строка лога — валидный JSON
     - *Условие:* Logger.info('test event') called
     - *Шаги:* Capture stdout; parse as JSON
     - *Ожидаемый результат:* Parseable JSON object with keys: timestamp, level, module, event, message; levels = ['info', 'warn', 'error', 'debug']
-  - [ ] **TC-F-4.12-2:** LogLevel filter works
+  - [ ] **TC-F-4.11-2:** Фильтр уровня логирования работает
     - *Условие:* LOG_LEVEL=warn; logger.debug('skip this')
     - *Шаги:* Call logger methods
     - *Ожидаемый результат:* debug output NOT printed; warn/error output IS printed
@@ -346,18 +340,18 @@
 - **Ожидаемый результат:** Rewritten `tools/fan-scheduler/lib/logger.ts`; updated everywhere
 - **Оценка объёма:** S
 
-#### ☐ F-4.13: Chat interruption — pause autonomous tasks
+#### ☐ F-4.12: Chat interruption — pause autonomous tasks
 
 - **Приоритет:** P1
 - **Слой:** [API]
 - **Описание:** В `ws-handler.ts` API Gateway: incoming `sendMessage` от пользователя (chat) прерывает running autonomous task. Implementation: API Gateway sends signal to scheduler (HTTP POST `/api/scheduler/pause`) OR scheduler polls for chat messages via WS. Pause saves task state, resumes after user's message processed. Priority model: `chat > autonomous tasks`.
-- **Зависимости:** F-4.4 (TaskQueue.pauseCurrent), F-4.2 (client methods available)
+- **Зависимости:** F-4.3 (TaskQueue.pauseCurrent), F-4.2 (client methods available)
 - **TDD-тесты:**
-  - [ ] **TC-F-4.13-1:** Chat interrupts running task
+  - [ ] **TC-F-4.12-1:** Чат прерывает запущенную задачу
     - *Условие:* Autonomous task running (isRunning=true)
     - *Шаги:* WS client sends `{ type: 'sendMessage', priority: 'chat', sessionId, content }`
     - *Ожидаемый результат:* scheduler.pauseCurrent() called; isRunning=false; user message processed; scheduler.log: 'Paused autonomous task for live chat'
-  - [ ] **TC-F-4.13-2:** Task resumes after chat
+  - [ ] **TC-F-4.12-2:** Задача возобновляется после чата
     - *Условие:* User's message completed
     - *Шаги:* Проверить состояние scheduler'а
     - *Ожидаемый результат:* Next pending task starts (auto-runNext); or original task resumes (if implemented)
@@ -372,22 +366,22 @@
 
 ## Этап 4.4 — Мониторинг и восстановление
 
-**Цель SMART:** Health endpoint `GET /api/scheduler/health` возвращает `{ running: bool, pendingCount: number, lastStatus: string }`. Persistent queue сериализует всеpending задачи в JSON файл при старте и восстановливает при рестарте. Backup скрипт копирует `~/.fan/agent/fan.db` daily. Всё протестировано через smoke-тесты.
+**Цель SMART:** Health endpoint `GET /api/scheduler/health` возвращает `{ running: bool, pendingCount: number, lastStatus: string }`. Persistent queue сериализует все pending задачи в JSON файл при старте и восстанавливает при рестарте. Backup скрипт копирует `~/.fan/agent/fan.db` daily. Всё протестировано через smoke-тесты.
 
 ### Фичи
 
-#### ⏳ F-4.14: Persistent queue — file-based durability
+#### ⏳ F-4.13: Persistent queue — file-based durability
 
 - **Приоритет:** P1
 - **Слой:** [DATA]
 - **Описание:** In-memory `pendingTasks[]` сериализуется в `~/.fan/agent/scheduler-pending.json` при каждом изменении очереди. При старте scheduler'а — восстанавливает очередь из файла. Формат: `{ version: 1, tasks: [{ name, schedule, workspace, message, budget_limit, timeout }] }`. File lock предотвращает race conditions при записи.
-- **Зависимости:** F-4.4 (TaskQueue)
+- **Зависимости:** F-4.3 (TaskQueue)
 - **TDD-тесты:**
-  - [ ] **TC-F-4.14-1:** Queue persists across scheduler restart
+  - [ ] **TC-F-4.13-1:** Очередь сохраняется при перезапуске scheduler'а
     - *Условие:* Queue has 2 pending tasks; write to disk
     - *Шаги:* Убить scheduler; перезапустить; прочитать очередь
     - *Ожидаемый результат:* 2 задачи восстановлены; pending.length === 2; order preserved
-  - [ ] **TC-F-4.14-2:** Empty queue clears file
+  - [ ] **TC-F-4.13-2:** Пустая очередь очищает файл
     - *Условие:* Queue empty; file exists with old data
     - *Шаги:* Start scheduler
     - *Ожидаемый результат:* Old file cleaned up или содержит пустой массив tasks; no stale tasks
@@ -398,18 +392,18 @@
 - **Ожидаемый результат:** Enhanced `tools/fan-scheduler/lib/queue.ts` + `persistent-storage.ts` utility
 - **Оценка объёма:** M
 
-#### ⏳ F-4.15: Health & metrics endpoint
+#### ⏳ F-4.14: Health & metrics endpoint
 
 - **Приоритет:** P1
 - **Слой:** [API]
 - **Описание:** Scheduler exposes internal health endpoint (accessible via API Gateway proxy or directly). Response: `{ status: "ok" | "degraded", running: boolean, pendingCount: number, lastTaskStatus: "completed" | "failed" | "budget_exceeded" | null, uptimeSeconds: number, queueVersion: 1 }`. Used by Docker healthcheck, monitoring systems, and dashboard widgets (phase 4 could-have).
 - **Зависимости:** (none) — self-contained
 - **TDD-тесты:**
-  - [ ] **TC-F-4.15-1:** Возвращает актуальное состояние scheduler'а
+  - [ ] **TC-F-4.14-1:** Возвращает актуальное состояние scheduler'а
     - *Условие:* Scheduler with 1 running task, 2 pending
     - *Шаги:* GET /api/scheduler/health (via local port)
     - *Ожидаемый результат:* `{ running: true, pendingCount: 2, uptimeSeconds: N > 0, queueVersion: 1 }`; status = 'ok'
-  - [ ] **TC-F-4.15-2:** Degraded when queue corrupted
+  - [ ] **TC-F-4.14-2:** Статус degraded при повреждённой очереди
     - *Условие:* Pending file exists but unparseable
     - *Шаги:* Start scheduler; GET health
     - *Ожидаемый результат:* status = 'degraded'; error noted in logs
@@ -420,20 +414,42 @@
 - **Ожидаемый результат:** Route added to `packages/api-gateway/src/http-server.ts`; scheduler state provider
 - **Оценка объёма:** S
 
+#### ☐ F-4.15: DB backup fan.db — daily cron
+
+- **Приоритет:** P1
+- **Слой:** [INFRA]
+- **Описание:** Backup `~/.fan/agent/fan.db` по расписанию (daily cron) согласно спецификации phase4 (§2.2). Скрипт копирует SQLite БД в директорию бэкапов с timestamp-именем (`fan-YYYYMMDD.db`), ротация старых копий (хранить последние 7). Реализация: cron-запись на VPS или задача в scheduler config.
+- **Зависимости:** F-4.5 (cron scheduling loop) или системный cron VPS
+- **TDD-тесты:**
+  - [ ] **TC-F-4.15-1:** Backup создаётся по расписанию
+    - *Условие:* `~/.fan/agent/fan.db` существует; cron-задача настроена
+    - *Шаги:* Триггер cron (или ручной запуск скрипта); проверить директорию бэкапов
+    - *Ожидаемый результат:* Файл `fan-YYYYMMDD.db` создан; копия побайтово совпадает с оригиналом
+  - [ ] **TC-F-4.15-2:** Ротация хранит последние 7 копий
+    - *Условие:* В директории бэкапов уже 7 файлов
+    - *Шаги:* Запустить backup ещё раз
+    - *Ожидаемый результат:* Создана новая копия; самая старая удалена; всего файлов = 7
+- **Критерии приёмки:**
+  1. Backup `fan.db` выполняется ежедневно автоматически
+  2. Ротация ограничивает число копий (default 7)
+  3. Сбой backup логируется и не влияет на работу scheduler'а
+- **Ожидаемый результат:** Backup-скрипт + cron-конфигурация; документация в `docs/guides/scheduler.md`
+- **Оценка объёма:** S
+
 <!-- Workspace clone перенесена в блок «Вне roadmap (future)» — см. внизу документа -->
 
 ---
 
 ## E2E-сценарии фазы 4
 
-#### ☐ F-4.16: E2E — Cron-задача из YAML: полный цикл + budget alarm
+#### ☐ F-4.16-E2E: E2E — Cron-задача из YAML: полный цикл + budget alarm
 
 - **Приоритет:** P0
 - **Слой:** [E2E]
-- **Описание:** Сквозной сценарий: cron-задача из config.yaml срабатывает → scheduler клонирует/обновляет репозиторий → создаёт сессию через FAN API → агент делает ветку, коммит, push → открыт PR через gh → при превышении бюджета задача остановлена с алертом. Проверяет весь chain: scheduler → API → agent → git → PR → budget.
-- **Зависимости:** F-4.1..F-4.10
+- **Описание:** Сквозной сценарий: cron-задача из config.yaml срабатывает → scheduler обновляет существующий клон репозитория (git fetch/pull; первичное клонирование — предусловие, вне roadmap) → создаёт сессию через FAN API → агент делает ветку, коммит, push → открыт PR через gh → при превышении бюджета задача остановлена с алертом. Проверяет весь chain: scheduler → API → agent → git → PR → budget.
+- **Зависимости:** F-4.1..F-4.9
 - **TDD-тесты:**
-  - [ ] **TC-F-4.16-1:** Full autonomous cycle — success path
+  - [ ] **TC-F-4.16-E2E-1:** Полный автономный цикл — успешный путь
     - *Условие:* Config с daily-code-review task; FAN API запущен; GITHUB_TOKEN настроен; workspace существует
     - *Шаги:*
       1. Подождать cron trigger (или simulate trigger)
@@ -446,14 +462,14 @@
       8. Убедиться: git push executed to feature branch
       9. Убедиться: PR created via `gh pr create` (проверить API или GH UI)
     - *Ожидаемый результат:* Task status = 'completed'; PR URL в логах; budget used ≤ budget_limit; no errors
-  - [ ] **TC-F-4.16-2:** Budget exceeded → graceful stop
+  - [ ] **TC-F-4.16-E2E-2:** Превышение бюджета → корректная остановка
     - *Условие:* Task с budget_limit=100 (минимальный для тестирования); agent расходует токены быстро
     - *Шаги:*
       1. Запустить задачу
       2. Monitor budget_usage via GET /api/budget
       3. Когда used ≥ limit, проверить поведение scheduler
     - *Ожидаемый результат:* Task status = 'budget_exceeded'; log: `Task daily-code-review stopped: budget exceeded (100 tokens)`; no tokens wasted beyond limit; pending queue unaffected
-  - [ ] **TC-F-4.16-3:** Two cron tasks at same time — serialization
+  - [ ] **TC-F-4.16-E2E-3:** Две cron-задачи одновременно — сериализация
     - *Условие:* Config с двумя задачами, обе расписаны на одно время
     - *Шаги:*
       1. Оба trigger события происходят одновременно
@@ -478,27 +494,28 @@
 │   └── F-4.2: FAN API Client (INTEG) ──────────────────────┤
 │                                                           │
 ├── Этап 4.1: Очередь задач и жизненный цикл                │
-│   ├── F-4.4: TaskQueue (DATA) ←───────────────────────────┼──►
-│   ├── F-4.5: Execution pipeline (INTEG) ←── F-4.1,F-4.2   │
-│   └── F-4.6: Cron scheduling loop (CLI) ←── F-4.1,F-4.4   │
+│   ├── F-4.3: TaskQueue (DATA) ←───────────────────────────┼──►
+│   ├── F-4.4: Execution pipeline (INTEG) ←── F-4.1,F-4.2   │
+│   └── F-4.5: Cron scheduling loop (CLI) ←── F-4.1,F-4.3   │
 │                                                           │
 ├── Этап 4.2: Git/PR политика                               │
-│   ├── F-4.7: Bot identity (BIZ)                           │
-│   ├── F-4.8: Feature branch policy (INTEG) ←── F-4.7      │
-│   └── F-4.9: PR creation via gh (INTEG) ←── F-4.7,F-4.8   │
+│   ├── F-4.6: Bot identity (BIZ)                           │
+│   ├── F-4.7: Feature branch policy (INTEG) ←── F-4.6      │
+│   └── F-4.8: PR creation via gh (INTEG) ←── F-4.6,F-4.7   │
 │                                                           │
 ├── Этап 4.3: Контроль бюджета и надёжность                 │
-│   ├── F-4.10: Budget cap (BIZ) ←── F-4.5,F-4.2            │
-│   ├── F-4.11: Retry/backoff (INFRA) ←── F-4.4             │
-│   ├── F-4.12: Structured logging (INFRA) ←── F-4.1        │
-│   └── F-4.13: Chat interruption (API) ←── F-4.4           │
+│   ├── F-4.9: Budget cap (BIZ) ←── F-4.4,F-4.2            │
+│   ├── F-4.10: Retry/backoff (INFRA) ←── F-4.3             │
+│   ├── F-4.11: Structured logging (INFRA) ←── F-4.1        │
+│   └── F-4.12: Chat interruption (API) ←── F-4.3           │
 │                                                           │
 ├── Этап 4.4: Мониторинг и восстановление                    │
-│   ├── F-4.14: Persistent queue (DATA) ←── F-4.4           │
-│   └── F-4.15: Health endpoint (API)                       │
+│   ├── F-4.13: Persistent queue (DATA) ←── F-4.3           │
+│   ├── F-4.14: Health endpoint (API)                       │
+│   └── F-4.15: DB backup fan.db (INFRA) ←── F-4.5          │
 │                                                           │
 └── E2E                                                     │
-    └── F-4.16: Full cycle + budget alarm ←── ALL above     │
+    └── F-4.16-E2E: Full cycle + budget alarm ←── ALL above     │
 
 Проверка циклов: Циклов нет. DAG ✓
 ```
@@ -507,30 +524,31 @@
 
 ## Полный чеклист по приоритетам
 
-### P0 (Must Have) — 11 фич
+### P0 (Must Have) — 10 фич
 
 - [ ] ☐ F-4.1 Создание пакета `tools/fan-scheduler/` + парсинг YAML
 - [ ] ☐ F-4.2 FAN API Client — базовый интерфейс
-- [ ] ☐ F-4.4 TaskQueue — однопоточное выполнение
-- [ ] ☐ F-4.5 Execution pipeline — session + message + budget
-- [ ] ☐ F-4.6 Cron scheduling loop
-- [ ] ☐ F-4.7 Bot Identity — GitHub PAT configuration
-- [ ] ☐ F-4.8 Feature branch policy
-- [ ] ☐ F-4.9 PR creation via gh CLI
-- [ ] ☐ F-4.10 Budget cap per task
-- [ ] ☐ F-4.16 E2E: cron-задача полный цикл + budget alarm
+- [ ] ☐ F-4.3 TaskQueue — однопоточное выполнение
+- [ ] ☐ F-4.4 Execution pipeline — session + message + budget
+- [ ] ☐ F-4.5 Cron scheduling loop
+- [ ] ☐ F-4.6 Bot Identity — GitHub PAT configuration
+- [ ] ☐ F-4.7 Feature branch policy
+- [ ] ☐ F-4.8 PR creation via gh CLI
+- [ ] ☐ F-4.9 Budget cap per task
+- [ ] ☐ F-4.16-E2E E2E: cron-задача полный цикл + budget alarm
 
-### P1 (Should Have) — 5 фич
+### P1 (Should Have) — 6 фич
 
-- [ ] ⏳ F-4.11 Retry with exponential backoff
-- [ ] ⏳ F-4.12 Structured JSON logging
-- [ ] ⏳ F-4.13 Chat interruption — pause tasks
-- [ ] ⏳ F-4.14 Persistent queue
-- [ ] ⏳ F-4.15 Health & metrics endpoint
+- [ ] ⏳ F-4.10 Retry with exponential backoff
+- [ ] ⏳ F-4.11 Structured JSON logging
+- [ ] ⏳ F-4.12 Chat interruption — pause tasks
+- [ ] ⏳ F-4.13 Persistent queue
+- [ ] ⏳ F-4.14 Health & metrics endpoint
+- [ ] ☐ F-4.15 DB backup fan.db — daily cron
 
-### P2 (Could Have) — 1 фич
+### P2 (Could Have) — 0 фич
 
-- [ ] ☐ DB backup (отложено)
+_Нет фич._
 
 ---
 
@@ -544,9 +562,9 @@
 
 | Мера | Значение |
 |------|---------|
-| Всего фич | 15 (10 реализаций + 1 E2E + 5 P1) |
+| Всего фич | 16 (10 реализаций + 1 E2E + 6 P1) |
 | P0 фич | 10 (9 реализаций + 1 E2E) |
-| P1 фич | 5 |
+| P1 фич | 6 |
 | P2 фич | 0 (workspace clone — вне roadmap) |
 | Этапов | 6 (инфраструктура, очередь, git/PR, бюджет/надёжность, мониторинг, E2E) |
 | Оценка P0 | ~3 дня (infra: 4h + queue: 8h + git/PR: 8h + budget: 6h + E2E: 4h) |
