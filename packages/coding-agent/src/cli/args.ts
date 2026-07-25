@@ -266,7 +266,7 @@ ${chalk.bold("Options:")}
   --system-prompt <text>         System prompt (default: coding assistant prompt)
   --append-system-prompt <text>  Append text or file contents to the system prompt
   --mode <mode>                  Output mode: text (default), json, rpc, or server
-  --port <port>                  Server port (default: 3456, used with --mode server)
+  --port <port>                  Server port (default: 3456, falls back to PORT env var, used with --mode server)
   --host <host>                  Server bind address (default: localhost, used with --mode server)
   --temperature <number>         Sampling temperature (0.0-1.0) for the model
   --web                          Start web server with dashboard (opens browser)
@@ -390,6 +390,7 @@ ${chalk.bold("Environment Variables:")}
   ${ENV_AGENT_DIR.padEnd(32)} - Session storage directory (default: ~/${CONFIG_DIR_NAME}/agent)
   FAN_PACKAGE_DIR                   - Override package directory (for Nix/Guix store paths)
   FAN_OFFLINE                       - Disable startup network operations when set to 1/true/yes
+  PORT                              - Default server port (used when --port is not set, range 1-65535)
   FAN_SHARE_VIEWER_URL              - Base URL for /share command (default: https://fan.dev/session/)
   FAN_AI_ANTIGRAVITY_VERSION        - Override Antigravity User-Agent version (e.g., 1.23.0)
 

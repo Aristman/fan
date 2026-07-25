@@ -19,6 +19,7 @@ import { processFileArguments } from "./cli/file-processor.js";
 import { buildInitialMessage } from "./cli/initial-message.js";
 import { listModels } from "./cli/list-models.js";
 import { cleanupOldBinaries, handleUpdateCommand } from "./cli/self-update.js";
+import { resolvePort } from "./cli/server-config.js";
 import { selectSession } from "./cli/session-picker.js";
 import { getAgentDir, getModelsPath, isBunBinary, VERSION } from "./config.js";
 import {
@@ -1149,7 +1150,7 @@ export async function main(args: string[]) {
 		const adapter = createSessionAdapter(runtime);
 		await adapter.bindSessionExtensions();
 		const { port, stop } = await startServer(modelManager, adapter, {
-			port: parsed.port || 3456,
+			port: resolvePort(parsed.port),
 			host: parsed.host || "localhost",
 			dashboardDir: getDashboardDir(),
 			version: VERSION,
