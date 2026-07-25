@@ -36,6 +36,13 @@
 | `docs/specs/spec_feature-pipeline_2026-05-29.md` | ✅ | Feature-pipeline skill specification |
 | `docs/specs/migrate-store-url-2026-05-11.md` | ✅ | FAN Store server URL migration spec |
 | `docs/specs/MVP-SPEC.md` | ⚠️ | Archived (superseded by runtime-agent spec, web SaaS concept) |
+| `docs/specs/spec_fan-network-agent_2026-07-25.md` | ✅ | Родительская спецификация пакета «FAN Network Agent» (фазы 0–5) |
+| `docs/specs/spec_fan-network-agent_phase0-network-contour_2026-07-25.md` | ✅ | Фаза 0 — Сетевой контур (TLS, auth, Docker, nginx) |
+| `docs/specs/spec_fan-network-agent_phase1-workspace-api_2026-07-25.md` | ✅ | Фаза 1 — Workspace-aware API (Prisma cwd, project endpoints, whitelist validation) |
+| `docs/specs/spec_fan-network-agent_phase2-workspace-ux_2026-07-25.md` | ✅ | Фаза 2 — Workspace UX (Service Registry, queue, dashboard switcher) |
+| `docs/specs/spec_fan-network-agent_phase3-universal-tasks_2026-07-25.md` | ✅ | Фаза 3 — Универсальные задачи (type templates, prompts, non-code scenarios) |
+| `docs/specs/spec_fan-network-agent_phase4-autonomy_2026-07-25.md` | ✅ | Фаза 4 — Автономность (scheduler, git/PR policy, budget caps) |
+| `docs/specs/spec_fan-network-agent_phase5-concurrency_2026-07-25.md` | ✅ | Фаза 5 — Конкурентность (опционально, chdir removal, persistent queue) |
 | `docs/orchestrator-comparison.md` | ⚠️ | Pi Sample vs FAN Copy comparison — содержит удалённые фичи (parallel/chain), исправлено частично |
 
 ## Release & Process
@@ -69,6 +76,12 @@
 | `docs/roadmaps/roadmap-idea-plugin-v2-unified.md` | ✅ | IDEA plugin v2 unified roadmap (current) |
 | `docs/roadmaps/roadmap-idea-plugin-v2-from-orf.md` | ⚠️ | IDEA plugin v2 1st edition (superseded) |
 | `docs/roadmaps/roadmap-idea-plugin-v2-from-orf-ed2.md` | ⚠️ | IDEA plugin v2 2nd edition (superseded) |
+| `docs/features/phase0-network-contour/roadmap.md` | ✅ | TDD roadmap: фаза 0 — Сетевой контур (TLS/auth/Docker/nginx), 11 фич, 4 этапа + 1 E2E |
+| `docs/features/phase1-workspace-api/roadmap.md` | ✅ | TDD roadmap: фаза 1 — Workspace-aware API (cwd/project/whitelist), 14 фич, 6 этапов + 1 E2E |
+| `docs/features/phase2-workspace-ux/roadmap.md` | ✅ | TDD roadmap: фаза 2 — Workspace UX (Service Registry/queue/dashboard switcher), 14 фич, 5 этапов + 1 E2E |
+| `docs/features/phase3-universal-tasks/roadmap.md` | ✅ | TDD roadmap: фаза 3 — Universal Tasks (templates/detection/prompts/skills), 12 фич, 4 этапа + 2 E2E |
+| `docs/features/phase4-autonomy/roadmap.md` | ✅ | TDD roadmap: фаза 4 — Автономность (scheduler/git-PR/budget caps), 15 фич, 6 этапов + 1 E2E |
+| `docs/features/phase5-concurrency/roadmap.md` | ✅ | ⚠️ Опциональная фаза: конкурентность (chdir removal/persistent queue/per-project tokens), 8 фич, 3 этапа + 1 E2E |
 | `docs/research/orchestrator-v4.1-analysis.md` | ✅ | Orchestrator v4.1.0 architecture analysis |
 | `docs/research/idea-lab/confluence-extension/` | ✅ | fan-confluence extension research (русский) |
 | `docs/research/idea-lab/loop-extension/` | ✅ | fan-loop extension research (русский) |
@@ -113,4 +126,16 @@
 
 All 5 package READMEs have been created — status updated to ✅.
 
-Total: **46 tracked documents** (44 ✅, 6 ⚠️, 0 ❌)
+Total: **58 tracked documents** (56 ✅, 6 ⚠️, 0 ❌)
+
+*TDD roadmaps (phase 0, 1, 2, 3) — 2026-07-25*
+*Новые roadmaps:* `phase2-workspace-ux` (14 фич, 5 этапов, 2 E2E), `phase3-universal-tasks` (12 фич, 4 этапа, 2 E2E)
+*Новые roadmaps:* `phase4-autonomy` (15 фич, 5 этапов, 1 E2E), `phase5-concurrency` (8 фич, 3 этапа, 1 E2E, опциональная фаза)
+
+### Новый пакет спецификаций (2026-07-25)
+| Документ | Статус |
+|----------|--------|
+| `spec_fan-network-agent_2026-07-25.md` + 6 дочерних | Родительская + фазы 0–5 пакета «FAN Network Agent» |
+| Исходные материалы в `docs/research/idea-lab/fan-remote-vps/` | v1 и v2 исследования идеи |
+| Code research отчёт `.fan/reports/research-fan-workspace-mode.md` | Аудит workspace-модели |
+| Server audit `.fan/reports/explore-fan-server-vps-audit.md` | Аудит server mode для VPS |
