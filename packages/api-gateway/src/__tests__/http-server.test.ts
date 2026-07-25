@@ -1,13 +1,14 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Use vi.hoisted to create stable mock references that persist across getPrismaClient() calls
-const { mockClientToken } = vi.hoisted(() => ({
+const { mockClientToken, mockQueryRawUnsafe } = vi.hoisted(() => ({
 	mockClientToken: {
 		create: vi.fn(),
 		update: vi.fn(),
 		findMany: vi.fn(),
 		delete: vi.fn(),
 	},
+	mockQueryRawUnsafe: vi.fn(),
 }));
 
 const mockModelManager = {
@@ -28,6 +29,7 @@ const mockSessionAdapter = {
 	subscribeToSession: vi.fn().mockReturnValue(() => {}),
 	getAvailableModels: vi.fn().mockResolvedValue([]),
 	bindSessionExtensions: vi.fn().mockResolvedValue(undefined),
+	getActiveSessionId: vi.fn().mockReturnValue(null),
 };
 
 vi.mock("@fan/model-manager", () => ({
@@ -37,6 +39,7 @@ vi.mock("@fan/model-manager", () => ({
 vi.mock("@fan/db", () => ({
 	getPrismaClient: () => ({
 		clientToken: mockClientToken,
+		$queryRawUnsafe: mockQueryRawUnsafe,
 	}),
 }));
 
@@ -77,6 +80,8 @@ describe("HTTP Server", () => {
 		mockSessionAdapter.deleteSession.mockResolvedValue(false);
 		mockSessionAdapter.sendMessage.mockResolvedValue(true);
 		mockSessionAdapter.getAvailableModels.mockResolvedValue([]);
+		mockSessionAdapter.getActiveSessionId.mockReturnValue(null);
+		mockQueryRawUnsafe.mockResolvedValue([{ 1: 1 }]);
 		mockRandomBytes.mockReturnValue({
 			toString: vi.fn().mockReturnValue("mocked-random-token-hex"),
 		});
@@ -95,6 +100,53 @@ describe("HTTP Server", () => {
 			expect(data.status).toBe("ok");
 			expect(data).toHaveProperty("version");
 			expect(data).toHaveProperty("uptime");
+		});
+
+		// TC-F-0.9-1: server up, DB reachable → 200 with readiness fields
+		it("should return 200 with db:'up' and session info when DB is reachable", async () => {
+			mockQueryRawUnsafe.mockResolvedValueOnce([{ 1: 1 }]);
+			mockSessionAdapter.getActiveSessionId.mockReturnValueOnce("sess-42");
+			const app = await getApp();
+			const res = await app.request("/api/health");
+			expect(res.status).toBe(200);
+			const data = await json<{
+				status: string;
+				db: string;
+				session: { active: boolean; id: string | null };
+			}>(res);
+			expect(data.status).toBe("ok");
+			expect(data.db).toBe("up");
+			expect(data.session).toEqual({ active: true, id: "sess-42" });
+		});
+
+		// TC-F-0.9-2: DB unreachable → db:'down', status 'degraded', HTTP 503
+		// (docker healthcheck uses r.ok → container becomes unhealthy)
+		it("should return 503 with db:'down' when DB probe fails", async () => {
+			mockQueryRawUnsafe.mockRejectedValueOnce(new Error("SQLITE_CANTOPEN: unable to open database file"));
+			const app = await getApp();
+			const res = await app.request("/api/health");
+			expect(res.status).toBe(503);
+			const data = await json<{
+				status: string;
+				db: string;
+				session: { active: boolean; id: string | null };
+			}>(res);
+			expect(data.status).toBe("degraded");
+			expect(data.db).toBe("down");
+			expect(data.session).toEqual({ active: false, id: null });
+		});
+
+		// TC-F-0.9-2 (variant): DB probe throws synchronously (broken client) → db:'down'
+		it("should return 503 with db:'down' when Prisma client is broken", async () => {
+			mockQueryRawUnsafe.mockImplementationOnce(() => {
+				throw new Error("PrismaClientInitializationError");
+			});
+			const app = await getApp();
+			const res = await app.request("/api/health");
+			expect(res.status).toBe(503);
+			const data = await json<{ status: string; db: string }>(res);
+			expect(data.status).toBe("degraded");
+			expect(data.db).toBe("down");
 		});
 	});
 

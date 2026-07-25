@@ -443,6 +443,11 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 		},
 
 		bindSessionExtensions,
+
+		// --- getActiveSessionId (F-0.9: /api/health readiness) ---
+		getActiveSessionId() {
+			return runtime.session?.sessionId ?? null;
+		},
 	};
 }
 

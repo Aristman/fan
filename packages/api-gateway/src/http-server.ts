@@ -1,3 +1,4 @@
+import { getPrismaClient } from "@fan/db";
 import type { ModelManager, RoutingRuleData } from "@fan/model-manager";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
@@ -58,6 +59,8 @@ export interface SessionAdapter {
 	getAvailableModels(): Promise<ModelInfo[]>;
 	/** Bind extensions to the current session (called after session switch/create) */
 	bindSessionExtensions(): Promise<void>;
+	/** Get the id of the currently active session (null if none). Optional — used by /api/health readiness. */
+	getActiveSessionId?(): string | null;
 }
 
 // ============================================================================
@@ -119,6 +122,27 @@ function classifyErrorCode(err: unknown): string {
 
 const startTime = Date.now();
 
+/** Max time to wait for the DB readiness probe before reporting "down" */
+const DB_CHECK_TIMEOUT_MS = 1500;
+
+/**
+ * Lightweight DB readiness probe: `SELECT 1` via Prisma with a hard timeout.
+ * Never throws — returns "down" on error or timeout so /api/health stays fast.
+ */
+async function checkDatabase(): Promise<"up" | "down"> {
+	try {
+		const prisma = getPrismaClient();
+		const query = prisma.$queryRawUnsafe("SELECT 1").then(
+			() => "up" as const,
+			() => "down" as const,
+		);
+		const timeout = new Promise<"down">((resolve) => setTimeout(() => resolve("down"), DB_CHECK_TIMEOUT_MS));
+		return await Promise.race([query, timeout]);
+	} catch {
+		return "down";
+	}
+}
+
 async function createApp(
 	modelManager: ModelManager,
 	sessionAdapter: SessionAdapter,
@@ -134,13 +158,19 @@ async function createApp(
 	app.use("*", cors({ origin: resolveCorsOrigin() }));
 
 	// --- Health (no auth required) ---
-	app.get("/api/health", (c) => {
+	// F-0.9: readiness probe. HTTP 200 when all checks pass; HTTP 503 when the DB
+	// is unreachable so docker healthcheck (r.ok) transitions to unhealthy.
+	app.get("/api/health", async (c) => {
+		const db = await checkDatabase();
+		const sessionId = sessionAdapter.getActiveSessionId?.() ?? null;
 		const resp: HealthResponse = {
-			status: "ok",
+			status: db === "up" ? "ok" : "degraded",
 			version: _version,
 			uptime: Math.floor((Date.now() - startTime) / 1000),
+			db,
+			session: { active: sessionId !== null, id: sessionId },
 		};
-		return c.json(resp);
+		return c.json(resp, db === "up" ? 200 : 503);
 	});
 
 	// --- All /api/ routes require auth (except health) ---

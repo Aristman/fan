@@ -40,7 +40,9 @@ services:
     restart: unless-stopped
     healthcheck:
       # The slim runtime image has no curl/wget — probe via bun fetch.
-      # /api/health is exempt from auth and always answers 200 when up.
+      # /api/health is exempt from auth. It answers 200 when ready and 503
+      # when a readiness check fails (e.g. db:"down", F-0.9) — r.ok is false
+      # for 503, so the container transitions to unhealthy on DB failure.
       test:
         [
           "CMD",

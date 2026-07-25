@@ -12,11 +12,19 @@ export interface ApiError {
 	code: string;
 }
 
-/** Health check response */
+/** Health check response (F-0.9: readiness fields) */
 export interface HealthResponse {
+	/** "ok" when all readiness checks pass, "degraded" when any check fails */
 	status: "ok" | "degraded";
 	version: string;
 	uptime: number;
+	/** Database (Prisma/SQLite) reachability */
+	db: "up" | "down";
+	/** Active session info from the SessionAdapter */
+	session: {
+		active: boolean;
+		id: string | null;
+	};
 }
 
 // --- Sessions ---
