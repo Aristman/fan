@@ -1,0 +1,47 @@
+# VCS
+.git
+.gitignore
+
+# Dependencies (installed inside the builder stage)
+node_modules
+**/node_modules
+
+# Local build artifacts (rebuilt inside the image)
+**/dist
+**/*.tsbuildinfo
+
+# FAN local data / config
+.fan
+**/.fan
+
+# Docs & dev-only content
+docs
+*.md
+!packages/*/README.md
+
+# Tooling / infra not needed for the build
+tools
+scripts
+skills
+.vscode
+.idea
+.husky
+
+# Docker itself
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+*.log
+
+# Release binaries (built artifacts, ~840MB)
+binaries
+packages/coding-agent/binaries
+dist
+extensions
+idea-plugin
+lending
+bundles
