@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { generateToken as createToken, isAuthDisabled, listTokens, revokeToken, tokenAuth } from "./auth.js";
+import { resolveCorsOrigin } from "./cors-config.js";
 import type {
 	ApiError,
 	ApiMcpStatusResponse,
@@ -128,7 +129,9 @@ async function createApp(
 
 	// Middleware
 	app.use("*", logger());
-	app.use("*", cors({ origin: "*" }));
+	// F-0.4: CORS origins from ALLOWED_ORIGINS env (comma-separated);
+	// default "*" — full openness for local dev (backward compatibility).
+	app.use("*", cors({ origin: resolveCorsOrigin() }));
 
 	// --- Health (no auth required) ---
 	app.get("/api/health", (c) => {

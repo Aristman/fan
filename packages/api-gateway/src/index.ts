@@ -10,6 +10,7 @@ export {
 	tokenAuth,
 	validateToken,
 } from "./auth.js";
+export { DEFAULT_ALLOWED_ORIGINS, resolveAllowedOrigins, resolveCorsOrigin } from "./cors-config.js";
 export type { ServerOptions, SessionAdapter } from "./http-server.js";
 export { createApp, startServer } from "./http-server.js";
 export * from "./types.js";
