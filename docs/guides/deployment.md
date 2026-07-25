@@ -51,6 +51,7 @@ dig +short agent.sea-agents.ru
 | `Dockerfile` | Multi-stage build → slim runtime image |
 | `docker-compose.yml` | Service `fan`, loopback port binding, volumes, env |
 | `deploy/nginx/agent.sea-agents.ru.conf` | nginx server block (443 + 80→443 redirect, WS upgrade) |
+| `deploy/scripts/setup-tls.sh` | Idempotent certbot setup/verification script (F-0.8), run on the VPS |
 | `docs/guides/deployment.md` | This guide |
 
 ## 3. Copy files to the VPS
@@ -73,32 +74,99 @@ scp deploy/nginx/agent.sea-agents.ru.conf \
 > what matters is that `Dockerfile` and `docker-compose.yml` end up in the
 > same directory (e.g. `/opt/fan-agent/`).
 
-## 4. Obtain the TLS certificate (before enabling the nginx block)
+## 4. TLS certificate — certbot (F-0.8)
 
 The 443 server block references
 `/etc/letsencrypt/live/agent.sea-agents.ru/…` — nginx will fail `nginx -t`
-until the certificate exists. Issue it first (F-0.8):
+until the certificate exists. Issue it **before** enabling the nginx block.
+
+### 4.1 Automated: `deploy/scripts/setup-tls.sh` (preferred)
+
+The script covers TC-F-0.8-1 / TC-F-0.8-2 end to end and is **idempotent**
+(safe to re-run — an existing valid certificate is never re-issued):
+
+```bash
+ssh root@185.219.41.46
+cd /opt/fan-agent
+bash deploy/scripts/setup-tls.sh
+# or fully non-interactive:
+CERTBOT_EMAIL=admin@sea-agents.ru bash deploy/scripts/setup-tls.sh
+```
+
+Steps performed by the script:
+
+1. DNS check — `agent.sea-agents.ru` must resolve to `185.219.41.46`
+   (aborts early if the A record is missing/wrong).
+2. certbot installation check (installs `certbot python3-certbot-nginx`
+   via apt if missing).
+3. `certbot certonly --nginx -d agent.sea-agents.ru` — skipped if
+   `/etc/letsencrypt/live/agent.sea-agents.ru/fullchain.pem` already exists.
+4. certbot renewal timer check — enables `certbot.timer` if not active.
+5. `certbot renew --dry-run` — verifies renewal works.
+6. Prints certificate subject/issuer/dates + days left until expiry.
+
+### 4.2 Manual fallback
+
+If you prefer to run the steps by hand:
 
 ```bash
 ssh root@185.219.41.46
 
+# prerequisite: DNS A record agent.sea-agents.ru → 185.219.41.46
+dig +short agent.sea-agents.ru
+
 certbot certonly --nginx -d agent.sea-agents.ru
-```
 
-Certbot spins up a temporary ACME challenge block on port 80 (FAN Store is
-unaffected). Verify:
-
-```bash
 openssl x509 -in /etc/letsencrypt/live/agent.sea-agents.ru/fullchain.pem -noout -dates
 ```
 
-Auto-renewal uses the existing certbot systemd timer (already present for
-fan.sea-agents.ru):
+Certbot spins up a temporary ACME challenge block on port 80 (FAN Store is
+unaffected).
+
+### 4.3 Where the certificates live
+
+| Path | Content |
+|------|---------|
+| `/etc/letsencrypt/live/agent.sea-agents.ru/fullchain.pem` | Cert + chain (symlink → `../../archive/…`), referenced by nginx `ssl_certificate` |
+| `/etc/letsencrypt/live/agent.sea-agents.ru/privkey.pem` | Private key, referenced by nginx `ssl_certificate_key` |
+| `/etc/letsencrypt/archive/agent.sea-agents.ru/` | All historical cert versions |
+| `/etc/letsencrypt/renewal/agent.sea-agents.ru.conf` | Renewal params (authenticator = nginx) |
+
+Both nginx and certbot must keep access to these paths — do not move them.
+
+### 4.4 Automatic renewal
+
+The certbot apt package ships a **systemd timer** that runs
+`certbot renew` twice daily; certificates are renewed when <30 days remain
+(Let's Encrypt issues 90-day certs). The same timer already serves
+`fan.sea-agents.ru` (FAN Store) — one timer handles all domains on the host.
 
 ```bash
-systemctl status certbot.timer
-certbot renew --dry-run
+systemctl status certbot.timer   # expected: active (waiting), enabled
+certbot renew --dry-run          # expected: exit 0, "Congratulations, all simulated renewals succeeded"
 ```
+
+The nginx authenticator performs the HTTP-01 challenge through nginx itself
+(port 80 must stay reachable from the Internet for renewals to work — the
+`location /.well-known/acme-challenge/` block in the nginx config also
+supports the webroot flow).
+
+### 4.5 If the certificate expires or renewal fails
+
+Symptoms: browsers show `NET::ERR_CERT_DATE_INVALID`, curl fails with
+`certificate has expired`, `openssl x509 … -enddate` shows a past date.
+
+1. Re-run the setup script — it re-checks DNS, re-issues if the live cert
+   is missing, and reports days left:
+   `bash /opt/fan-agent/deploy/scripts/setup-tls.sh`
+2. Inspect renewal errors: `certbot renew --dry-run` and
+   `journalctl -u certbot.timer` / `less /var/log/letsencrypt/letsencrypt.log`.
+3. Common causes: DNS record changed/removed, port 80 blocked by a firewall,
+   nginx not running (the nginx authenticator needs it), or rate limits
+   (Let's Encrypt: 5 duplicate certs per domain per week — use
+   `--dry-run`/staging for experiments).
+4. Force re-issue if needed: `certbot certonly --nginx -d agent.sea-agents.ru --force-renewal`
+   then `systemctl reload nginx`.
 
 ## 5. Start the stack
 
