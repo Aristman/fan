@@ -5,6 +5,7 @@
  */
 
 export const DEFAULT_SERVER_PORT = 3456;
+export const DEFAULT_SERVER_HOST = "localhost";
 
 /**
  * Resolve the server port.
@@ -24,4 +25,22 @@ export function resolvePort(cliPort?: number, envPort: string | undefined = proc
 		}
 	}
 	return DEFAULT_SERVER_PORT;
+}
+
+/**
+ * Resolve the server bind host.
+ *
+ * Priority: `--host` CLI flag > `HOST` env var > default ("localhost").
+ * An unset, empty, or whitespace-only `HOST` is ignored.
+ * Any non-empty string is accepted as-is (hostname, IPv4, IPv6).
+ */
+export function resolveHost(cliHost?: string, envHost: string | undefined = process.env.HOST): string {
+	if (cliHost !== undefined) {
+		return cliHost;
+	}
+	const trimmed = envHost?.trim();
+	if (trimmed) {
+		return trimmed;
+	}
+	return DEFAULT_SERVER_HOST;
 }

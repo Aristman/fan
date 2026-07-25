@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "vitest";
-import { DEFAULT_SERVER_PORT, resolvePort } from "../src/cli/server-config.js";
+import { DEFAULT_SERVER_HOST, DEFAULT_SERVER_PORT, resolveHost, resolvePort } from "../src/cli/server-config.js";
 
 describe("resolvePort (F-0.1)", () => {
 	const originalPort = process.env.PORT;
@@ -71,5 +71,56 @@ describe("resolvePort (F-0.1)", () => {
 	test("valid numeric string PORT within range resolves correctly", () => {
 		process.env.PORT = "8080";
 		expect(resolvePort(undefined)).toBe(8080);
+	});
+});
+
+describe("resolveHost (F-0.2)", () => {
+	const originalHost = process.env.HOST;
+
+	afterEach(() => {
+		if (originalHost === undefined) {
+			delete process.env.HOST;
+		} else {
+			process.env.HOST = originalHost;
+		}
+	});
+
+	test("TC-F-0.2-1: HOST env overrides default when no --host flag", () => {
+		process.env.HOST = "0.0.0.0";
+		expect(resolveHost(undefined)).toBe("0.0.0.0");
+	});
+
+	test("TC-F-0.2-2: non-numeric HOST string is passed through unchanged", () => {
+		process.env.HOST = "localhost.localdomain";
+		expect(resolveHost(undefined)).toBe("localhost.localdomain");
+	});
+
+	test("CLI --host flag beats HOST env", () => {
+		process.env.HOST = "0.0.0.0";
+		expect(resolveHost("127.0.0.1")).toBe("127.0.0.1");
+	});
+
+	test("falls back to default localhost when neither CLI flag nor HOST env", () => {
+		delete process.env.HOST;
+		expect(resolveHost(undefined)).toBe("localhost");
+	});
+
+	test("empty HOST falls back to default localhost", () => {
+		process.env.HOST = "";
+		expect(resolveHost(undefined)).toBe("localhost");
+	});
+
+	test("whitespace-only HOST falls back to default localhost", () => {
+		process.env.HOST = "   ";
+		expect(resolveHost(undefined)).toBe("localhost");
+	});
+
+	test("HOST value is trimmed", () => {
+		process.env.HOST = "  0.0.0.0  ";
+		expect(resolveHost(undefined)).toBe("0.0.0.0");
+	});
+
+	test("DEFAULT_SERVER_HOST is localhost", () => {
+		expect(DEFAULT_SERVER_HOST).toBe("localhost");
 	});
 });

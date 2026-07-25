@@ -11,7 +11,7 @@ import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "
 import { join } from "node:path";
 import process from "node:process";
 import { getAgentDir } from "../config.js";
-import { resolvePort } from "./server-config.js";
+import { resolveHost, resolvePort } from "./server-config.js";
 
 const SERVER_PID_FILE = () => join(getAgentDir(), "server.pid");
 const SERVER_INFO_FILE = () => join(getAgentDir(), "server.json");
@@ -147,7 +147,7 @@ export async function serverStart(port?: number, host?: string): Promise<void> {
 
 	// Spawn detached background process
 	const serverPort = resolvePort(port);
-	const serverHost = host || "localhost";
+	const serverHost = resolveHost(host);
 
 	// We spawn the same binary with a special internal flag to run in background mode
 	const args = ["--_server-daemon"];

@@ -19,7 +19,7 @@ import { processFileArguments } from "./cli/file-processor.js";
 import { buildInitialMessage } from "./cli/initial-message.js";
 import { listModels } from "./cli/list-models.js";
 import { cleanupOldBinaries, handleUpdateCommand } from "./cli/self-update.js";
-import { resolvePort } from "./cli/server-config.js";
+import { resolveHost, resolvePort } from "./cli/server-config.js";
 import { selectSession } from "./cli/session-picker.js";
 import { getAgentDir, getModelsPath, isBunBinary, VERSION } from "./config.js";
 import {
@@ -1151,7 +1151,7 @@ export async function main(args: string[]) {
 		await adapter.bindSessionExtensions();
 		const { port, stop } = await startServer(modelManager, adapter, {
 			port: resolvePort(parsed.port),
-			host: parsed.host || "localhost",
+			host: resolveHost(parsed.host),
 			dashboardDir: getDashboardDir(),
 			version: VERSION,
 		});
@@ -1162,18 +1162,18 @@ export async function main(args: string[]) {
 			const serverInfo = {
 				pid: process.pid,
 				port,
-				host: parsed.host || "localhost",
+				host: resolveHost(parsed.host),
 				startTime: new Date().toISOString(),
 				dashboardDir: getDashboardDir(),
 			};
 			writeServerInfo(serverInfo);
 		}
 
-		console.log(`[fan] Server mode active — http://${parsed.host || "localhost"}:${port}`);
+		console.log(`[fan] Server mode active — http://${resolveHost(parsed.host)}:${port}`);
 
 		// Auto-open browser if --web flag was used (not in daemon mode)
 		if (parsed.web && process.env.FAN_SERVER_DAEMON !== "1") {
-			const url = `http://${parsed.host || "localhost"}:${port}`;
+			const url = `http://${resolveHost(parsed.host)}:${port}`;
 			console.log(`[fan] Opening dashboard in browser: ${url}`);
 			try {
 				const { exec } = await import("node:child_process");
