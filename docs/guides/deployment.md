@@ -412,3 +412,10 @@ to be removed — they simply become unused.
 - **CORS** is restricted to `https://agent.sea-agents.ru` via
   `ALLOWED_ORIGINS` (F-0.4).
 - The API gateway never binds to a public interface — `127.0.0.1:3456` only.
+- **Query-string tokens in logs:** the application logger scrubs the value
+  of any `?token=` / `&token=` parameter before it reaches
+  `/data/logs/app.log` or `docker logs`. nginx `access_log`, however, still
+  records the full request URI by default. On the VPS, avoid leaking tokens
+  into nginx logs by using a `log_format` that omits the query string
+  (for example log `$uri` instead of `$request_uri`) or by rotating/cleaning
+  access logs regularly.

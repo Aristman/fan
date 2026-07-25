@@ -116,6 +116,13 @@ function classifyErrorCode(err: unknown): string {
 	return "INTERNAL_ERROR";
 }
 
+/** Mask the value of any `token` query parameter in a log line.
+ *  Handles both `?token=...` and `&token=...` without affecting other params.
+ */
+function scrubTokenInLog(line: string): string {
+	return line.replace(/([?&])token=[^&\s]*/g, "$1token=***");
+}
+
 // ============================================================================
 // Create Hono App
 // ============================================================================
@@ -152,7 +159,12 @@ async function createApp(
 	const app = new Hono();
 
 	// Middleware
-	app.use("*", logger());
+	// F-0.10: scrub token query parameter from access logs before they reach
+	// stdout, docker logs and the persistent /data/logs/app.log volume.
+	app.use(
+		"*",
+		logger((line) => console.log(scrubTokenInLog(line))),
+	);
 	// F-0.4: CORS origins from ALLOWED_ORIGINS env (comma-separated);
 	// default "*" — full openness for local dev (backward compatibility).
 	app.use("*", cors({ origin: resolveCorsOrigin() }));

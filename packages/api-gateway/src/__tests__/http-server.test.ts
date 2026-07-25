@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Use vi.hoisted to create stable mock references that persist across getPrismaClient() calls
 const { mockClientToken, mockQueryRawUnsafe } = vi.hoisted(() => ({
@@ -456,6 +456,47 @@ describe("HTTP Server", () => {
 			const app = await getApp();
 			const res = await app.request("/random-path");
 			expect(res.status).toBe(404);
+		});
+	});
+
+	describe("Logger token scrubbing (F-0.10)", () => {
+		let logLines: string[] = [];
+		let logSpy: ReturnType<typeof vi.spyOn>;
+
+		beforeEach(() => {
+			logLines = [];
+			logSpy = vi.spyOn(console, "log").mockImplementation((msg: unknown) => {
+				logLines.push(String(msg));
+			});
+		});
+
+		afterEach(() => {
+			logSpy.mockRestore();
+		});
+
+		it("masks token query parameter values in access logs", async () => {
+			const app = await getApp();
+			const secret = "deadbeef".repeat(8);
+			const res = await app.request(`/api/sessions?token=${secret}`);
+			expect(res.status).toBe(200);
+			const pathLogs = logLines.filter((line) => line.includes("/api/sessions"));
+			expect(pathLogs.length).toBeGreaterThan(0);
+			for (const line of pathLogs) {
+				expect(line).toContain("token=***");
+				expect(line).not.toContain(secret);
+			}
+		});
+
+		it("leaves other query parameters unchanged when no token is present", async () => {
+			const app = await getApp();
+			const res = await app.request("/api/sessions?sessionId=my-session");
+			expect(res.status).toBe(200);
+			const pathLogs = logLines.filter((line) => line.includes("/api/sessions"));
+			expect(pathLogs.length).toBeGreaterThan(0);
+			for (const line of pathLogs) {
+				expect(line).toContain("sessionId=my-session");
+				expect(line).not.toContain("token=");
+			}
 		});
 	});
 });
