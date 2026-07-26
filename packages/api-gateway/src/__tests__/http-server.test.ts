@@ -371,13 +371,49 @@ describe("HTTP Server", () => {
 			expect(res.status).toBe(404);
 		});
 
-		it("DELETE /api/sessions/:id should return success if deleted", async () => {
+		// TC-F-1.4-3: без ?project — глобальное удаление, 204
+		it("DELETE /api/sessions/:id without ?project should return 204 and delete globally (TC-F-1.4-3)", async () => {
 			mockSessionAdapter.deleteSession.mockResolvedValueOnce(true);
 			const app = await getApp();
 			const res = await app.request("/api/sessions/s1", { method: "DELETE" });
-			expect(res.status).toBe(200);
-			const data = await json<{ success: boolean }>(res);
-			expect(data.success).toBe(true);
+			expect(res.status).toBe(204);
+			expect(mockSessionAdapter.deleteSession).toHaveBeenCalledWith("s1");
+			expect(mockSessionAdapter.getSession).not.toHaveBeenCalled();
+		});
+
+		// TC-F-1.4-1: совпадающий ?project → 204, сессия удалена
+		it("DELETE /api/sessions/:id?project=<match> should return 204 and delete (TC-F-1.4-1)", async () => {
+			mockSessionAdapter.getSession.mockResolvedValueOnce({
+				id: "s1",
+				title: "Session A",
+				createdAt: "2026-01-01",
+				updatedAt: "2026-01-01",
+				messages: [],
+				cwd: "/data/repos/a",
+			});
+			mockSessionAdapter.deleteSession.mockResolvedValueOnce(true);
+			const app = await getApp();
+			const res = await app.request("/api/sessions/s1?project=/data/repos/a", { method: "DELETE" });
+			expect(res.status).toBe(204);
+			expect(mockSessionAdapter.deleteSession).toHaveBeenCalledWith("s1");
+		});
+
+		// TC-F-1.4-2: чужой ?project → 403, сессия НЕ удалена
+		it("DELETE /api/sessions/:id?project=<other> should return 403 and not delete (TC-F-1.4-2)", async () => {
+			mockSessionAdapter.getSession.mockResolvedValueOnce({
+				id: "s1",
+				title: "Session A",
+				createdAt: "2026-01-01",
+				updatedAt: "2026-01-01",
+				messages: [],
+				cwd: "/data/repos/a",
+			});
+			const app = await getApp();
+			const res = await app.request("/api/sessions/s1?project=/data/repos/b", { method: "DELETE" });
+			expect(res.status).toBe(403);
+			const data = await json<{ error: string }>(res);
+			expect(data.error).toBe("session does not belong to this project");
+			expect(mockSessionAdapter.deleteSession).not.toHaveBeenCalled();
 		});
 	});
 

@@ -366,6 +366,7 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 					updatedAt: new Date().toISOString(),
 					messages: readDiskSessionMessages(runtime.session.sessionFile),
 					sessionFile: runtime.session.sessionFile,
+					cwd: runtime.session.sessionManager.getCwd(),
 				};
 			}
 
@@ -380,6 +381,7 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 				updatedAt: diskInfo.modified.toISOString(),
 				messages: readDiskSessionMessages(diskInfo.path),
 				sessionFile: diskInfo.path,
+				cwd: diskInfo.cwd,
 			};
 		},
 

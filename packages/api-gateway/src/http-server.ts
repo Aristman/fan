@@ -11,7 +11,6 @@ import type {
 	ApiMcpStatusResponse,
 	CreateSessionRequest,
 	CreateSessionResponse,
-	DeleteSessionResponse,
 	GenerateTokenResponse,
 	GetBudgetResponse,
 	GetModelSettingsResponse,
@@ -255,12 +254,25 @@ async function createApp(
 
 	app.delete("/api/sessions/:id", async (c) => {
 		const id = c.req.param("id");
+		// F-1.4: optional ?project=<path> — the session must belong to the given
+		// project (cwd match, normalized comparison) or deletion is rejected with
+		// 403. Without the param the delete is global (backward compatible).
+		const project = c.req.query("project");
+		if (project) {
+			const session = await sessionAdapter.getSession(id);
+			if (!session) {
+				return c.json({ error: "Session not found", code: "NOT_FOUND" } satisfies ApiError, 404);
+			}
+			const target = normalizeProjectPath(project);
+			if (session.cwd === undefined || normalizeProjectPath(session.cwd) !== target) {
+				return c.json({ error: "session does not belong to this project" }, 403);
+			}
+		}
 		const deleted = await sessionAdapter.deleteSession(id);
 		if (!deleted) {
 			return c.json({ error: "Session not found", code: "NOT_FOUND" } satisfies ApiError, 404);
 		}
-		const resp: DeleteSessionResponse = { success: true };
-		return c.json(resp);
+		return c.body(null, 204);
 	});
 
 	// --- Messages ---

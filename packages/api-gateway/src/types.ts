@@ -85,6 +85,8 @@ export interface GetSessionResponse {
 	messages: SessionMessage[];
 	/** Path to JSONL file on disk (for disk-based sessions) */
 	sessionFile?: string;
+	/** Working directory of the project the session belongs to (from JSONL session header) */
+	cwd?: string;
 }
 
 export interface DeleteSessionResponse {
