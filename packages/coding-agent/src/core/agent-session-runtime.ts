@@ -148,6 +148,8 @@ export class AgentSessionRuntime {
 
 	async newSession(options?: {
 		parentSession?: string;
+		/** F-1.3: target working directory for the new session (defaults to current runtime cwd) */
+		cwd?: string;
 		setup?: (sessionManager: SessionManager) => Promise<void>;
 	}): Promise<{ cancelled: boolean }> {
 		const beforeResult = await this.emitBeforeSwitch("new");
@@ -156,8 +158,12 @@ export class AgentSessionRuntime {
 		}
 
 		const previousSessionFile = this.session.sessionFile;
-		const sessionDir = this.session.sessionManager.getSessionDir();
-		const sessionManager = SessionManager.create(this.cwd, sessionDir);
+		const cwd = options?.cwd ?? this.cwd;
+		// When targeting a different cwd, derive the session dir from it so the
+		// session file lands in the <encoded-cwd> directory of the new project
+		// and the JSONL header records the new cwd.
+		const sessionDir = cwd === this.cwd ? this.session.sessionManager.getSessionDir() : undefined;
+		const sessionManager = SessionManager.create(cwd, sessionDir);
 		if (options?.parentSession) {
 			sessionManager.newSession({ parentSession: options.parentSession });
 		}
@@ -165,7 +171,7 @@ export class AgentSessionRuntime {
 		await this.teardownCurrent();
 		this.apply(
 			await this.createRuntime({
-				cwd: this.cwd,
+				cwd,
 				agentDir: this.services.agentDir,
 				sessionManager,
 				sessionStartEvent: { type: "session_start", reason: "new", previousSessionFile },

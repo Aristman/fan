@@ -384,14 +384,18 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 		},
 
 		// --- createSession: new session on disk via runtime ---
-		async createSession(opts?: { title?: string }) {
-			await runtime.newSession();
+		async createSession(opts?: { title?: string; cwd?: string }) {
+			// F-1.3: optional cwd — runtime.newSession targets the given working
+			// directory (JSONL header cwd + <encoded-cwd> session dir). Without it,
+			// the current runtime cwd is used (backward compatible).
+			await runtime.newSession({ cwd: opts?.cwd });
 			bindSessionExtensions();
 			diskCacheTime = 0;
 			resubscribeAfterSwitch();
 			return {
 				id: runtime.session.sessionId,
 				title: opts?.title || runtime.session.sessionName || "New Session",
+				cwd: runtime.session.sessionManager.getCwd(),
 				createdAt: new Date().toISOString(),
 				updatedAt: new Date().toISOString(),
 			};

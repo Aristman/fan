@@ -47,8 +47,8 @@ export interface SessionAdapter {
 	listSessions(): Promise<SessionSummary[]>;
 	/** Get session details with messages */
 	getSession(id: string): Promise<GetSessionResponse | null>;
-	/** Create a new session */
-	createSession(options?: { title?: string; parentSessionId?: string }): Promise<CreateSessionResponse>;
+	/** Create a new session (F-1.3: optional cwd — working directory of the new session) */
+	createSession(options?: { title?: string; parentSessionId?: string; cwd?: string }): Promise<CreateSessionResponse>;
 	/** Delete a session */
 	deleteSession(id: string): Promise<boolean>;
 	/** Send a message to a session (events stream via WebSocket) */
@@ -220,6 +220,12 @@ async function createApp(
 	// --- Sessions ---
 	app.post("/api/sessions", async (c) => {
 		const body = await c.req.json<CreateSessionRequest>();
+		// F-1.3: optional cwd — normalized for consistent storage/comparison.
+		// Whitelist validation is F-1.13; here the path is accepted as-is.
+		// Without cwd the adapter falls back to the server process cwd (backward compat).
+		if (body.cwd !== undefined) {
+			body.cwd = normalizeProjectPath(body.cwd);
+		}
 		const session = await sessionAdapter.createSession(body);
 		return c.json(session, 201);
 	});

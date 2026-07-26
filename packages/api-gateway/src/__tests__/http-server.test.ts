@@ -285,6 +285,63 @@ describe("HTTP Server", () => {
 			expect(data.id).toBe("s2");
 		});
 
+		// TC-F-1.3-1: POST { cwd } → 201, response.cwd === нормализованный путь
+		it("POST /api/sessions with cwd should create session in that directory", async () => {
+			mockSessionAdapter.createSession.mockImplementationOnce(async (opts?: { cwd?: string }) => ({
+				id: "s3",
+				title: "New Session",
+				cwd: opts?.cwd,
+				createdAt: "2026-01-01",
+				updatedAt: "2026-01-01",
+			}));
+			const app = await getApp();
+			const res = await app.request("/api/sessions", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ cwd: "/data/repos/my-project/" }),
+			});
+			expect(res.status).toBe(201);
+			const data = await json<{ id: string; cwd: string }>(res);
+			expect(data.cwd).toBe("/data/repos/my-project");
+			// cwd is passed to the adapter in normalized form
+			expect(mockSessionAdapter.createSession).toHaveBeenCalledWith(
+				expect.objectContaining({ cwd: "/data/repos/my-project" }),
+			);
+		});
+
+		// TC-F-1.3-2: POST {} → 201, response.cwd = process.cwd() (backward compat)
+		it("POST /api/sessions without cwd should fall back to process cwd", async () => {
+			mockSessionAdapter.createSession.mockImplementationOnce(async (opts?: { cwd?: string }) => ({
+				id: "s4",
+				title: "New Session",
+				cwd: opts?.cwd ?? process.cwd(),
+				createdAt: "2026-01-01",
+				updatedAt: "2026-01-01",
+			}));
+			const app = await getApp();
+			const res = await app.request("/api/sessions", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({}),
+			});
+			expect(res.status).toBe(201);
+			const data = await json<{ id: string; cwd: string }>(res);
+			expect(data.cwd).toBe(process.cwd());
+		});
+
+		// TC-F-1.3-3: malformed JSON → 400 с сообщением
+		it("POST /api/sessions with malformed JSON should return 400", async () => {
+			const app = await getApp();
+			const res = await app.request("/api/sessions", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: "{invalid json",
+			});
+			expect(res.status).toBe(400);
+			const data = await json<{ error: string; code: string }>(res);
+			expect(data.error).toBeTruthy();
+		});
+
 		it("GET /api/sessions/:id should return 404 for unknown session", async () => {
 			mockSessionAdapter.getSession.mockResolvedValueOnce(null);
 			const app = await getApp();

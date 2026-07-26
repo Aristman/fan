@@ -32,6 +32,8 @@ export interface HealthResponse {
 export interface CreateSessionRequest {
 	title?: string;
 	parentSessionId?: string;
+	/** F-1.3: optional working directory for the new session. Normalized by the server. */
+	cwd?: string;
 }
 
 export interface CreateSessionResponse {
@@ -41,6 +43,8 @@ export interface CreateSessionResponse {
 	provider?: string;
 	createdAt: string;
 	updatedAt: string;
+	/** Working directory of the new session (from JSONL session header) */
+	cwd?: string;
 }
 
 export interface SessionSummary {
