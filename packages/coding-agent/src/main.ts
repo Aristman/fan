@@ -165,8 +165,14 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 	// --- Disk cache (3s TTL) ---
 	let diskCacheTime = 0;
 	const DISK_CACHE_TTL = 3_000;
-	let cachedDiskSessions: Array<{ id: string; path: string; title: string; modified: Date; messageCount: number }> =
-		[];
+	let cachedDiskSessions: Array<{
+		id: string;
+		path: string;
+		title: string;
+		modified: Date;
+		messageCount: number;
+		cwd: string;
+	}> = [];
 
 	// --- WS subscription forwarding ---
 	// runtime has ONE AgentSession at a time. When runtime switches session,
@@ -286,6 +292,7 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 				title: s.name || s.firstMessage || "Untitled",
 				modified: s.modified,
 				messageCount: s.messageCount,
+				cwd: s.cwd,
 			}));
 			return cachedDiskSessions;
 		} catch (err) {
@@ -341,6 +348,7 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 					updatedAt: s.modified.toISOString(),
 					messageCount: s.messageCount,
 					sessionFile: s.path,
+					cwd: s.cwd,
 				}))
 				.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 		},

@@ -53,6 +53,8 @@ export interface SessionSummary {
 	messageCount: number;
 	/** Path to JSONL file on disk (for disk-based sessions) */
 	sessionFile?: string;
+	/** Working directory of the project the session belongs to (from JSONL session header) */
+	cwd?: string;
 }
 
 export interface ListSessionsResponse {

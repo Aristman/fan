@@ -162,6 +162,112 @@ describe("HTTP Server", () => {
 			expect(data.sessions).toHaveLength(1);
 		});
 
+		// --- F-1.2: GET /api/sessions с фильтром ?project= ---
+		const projectSessions = [
+			{
+				id: "a1",
+				title: "A1",
+				createdAt: "2026-01-01",
+				updatedAt: "2026-01-01",
+				messageCount: 1,
+				cwd: "/data/repos/a",
+			},
+			{
+				id: "a2",
+				title: "A2",
+				createdAt: "2026-01-02",
+				updatedAt: "2026-01-02",
+				messageCount: 2,
+				cwd: "/data/repos/a",
+			},
+			{
+				id: "a3",
+				title: "A3",
+				createdAt: "2026-01-03",
+				updatedAt: "2026-01-03",
+				messageCount: 3,
+				cwd: "/data/repos/a",
+			},
+			{
+				id: "b1",
+				title: "B1",
+				createdAt: "2026-01-04",
+				updatedAt: "2026-01-04",
+				messageCount: 4,
+				cwd: "/data/repos/b",
+			},
+			{
+				id: "b2",
+				title: "B2",
+				createdAt: "2026-01-05",
+				updatedAt: "2026-01-05",
+				messageCount: 5,
+				cwd: "/data/repos/b",
+			},
+		];
+
+		// TC-F-1.2-1: ?project=/data/repos/a → только сессии проекта A, все с cwd === /data/repos/a
+		it("GET /api/sessions?project= should return only sessions of that project", async () => {
+			mockSessionAdapter.listSessions.mockResolvedValueOnce(projectSessions);
+			const app = await getApp();
+			const res = await app.request(`/api/sessions?project=${encodeURIComponent("/data/repos/a")}`);
+			expect(res.status).toBe(200);
+			const data = await json<{ sessions: Array<{ id: string; cwd: string }> }>(res);
+			expect(data.sessions).toHaveLength(3);
+			for (const s of data.sessions) {
+				expect(s.cwd).toBe("/data/repos/a");
+			}
+		});
+
+		// TC-F-1.2-1 (variant): normalized comparison — trailing slash, backslashes, . segments
+		it("GET /api/sessions?project= should match normalized paths", async () => {
+			mockSessionAdapter.listSessions.mockResolvedValueOnce([
+				{
+					id: "w1",
+					title: "W1",
+					createdAt: "2026-01-01",
+					updatedAt: "2026-01-01",
+					messageCount: 1,
+					cwd: "C:\\repos\\proj",
+				},
+				{
+					id: "x1",
+					title: "X1",
+					createdAt: "2026-01-02",
+					updatedAt: "2026-01-02",
+					messageCount: 1,
+					cwd: "/data/repos/a",
+				},
+			]);
+			const app = await getApp();
+			// Windows-style path with trailing backslash + different case → same project
+			const res = await app.request(`/api/sessions?project=${encodeURIComponent("c:\\repos\\proj\\")}`);
+			expect(res.status).toBe(200);
+			const data = await json<{ sessions: Array<{ id: string; cwd: string }> }>(res);
+			expect(data.sessions).toHaveLength(1);
+			expect(data.sessions[0].id).toBe("w1");
+		});
+
+		// TC-F-1.2-2: без параметра → все сессии (backward compatible)
+		it("GET /api/sessions without ?project= should return all sessions", async () => {
+			mockSessionAdapter.listSessions.mockResolvedValueOnce(projectSessions);
+			const app = await getApp();
+			const res = await app.request("/api/sessions");
+			expect(res.status).toBe(200);
+			const data = await json<{ sessions: Array<{ id: string; cwd: string }> }>(res);
+			expect(data.sessions).toHaveLength(5);
+		});
+
+		// TC-F-1.2-3: ?project=/unknown → 200, пустой массив
+		it("GET /api/sessions?project= with unknown project should return empty array", async () => {
+			mockSessionAdapter.listSessions.mockResolvedValueOnce(projectSessions);
+			const app = await getApp();
+			const res = await app.request(`/api/sessions?project=${encodeURIComponent("/data/repos/unknown")}`);
+			expect(res.status).toBe(200);
+			const data = await json<{ sessions: unknown[] }>(res);
+			expect(data.sessions).toHaveLength(0);
+		});
+
 		it("POST /api/sessions should create a session", async () => {
 			mockSessionAdapter.createSession.mockResolvedValueOnce({
 				id: "s2",

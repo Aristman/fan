@@ -123,6 +123,35 @@ function scrubTokenInLog(line: string): string {
 	return line.replace(/([?&])token=[^&\s]*/g, "$1token=***");
 }
 
+/**
+ * Normalize a filesystem path for equality comparison (F-1.2 ?project= filter).
+ * Pure string-based (no fs access, platform-independent):
+ * backslashes → forward slashes, resolve `.`/`..` segments, strip trailing slash,
+ * lowercase drive letter on Windows-style paths (`C:\...`).
+ */
+function normalizeProjectPath(p: string): string {
+	let s = p.trim().replace(/\\/g, "/");
+	// Collapse duplicate slashes
+	s = s.replace(/\/{2,}/g, "/");
+	// Resolve . and .. segments
+	const isAbsolute = s.startsWith("/") || /^[A-Za-z]:\//.test(s);
+	const segments: string[] = [];
+	for (const seg of s.split("/")) {
+		if (seg === "" || seg === ".") continue;
+		if (seg === "..") {
+			if (segments.length > 0 && segments[segments.length - 1] !== "..") segments.pop();
+			else if (!isAbsolute) segments.push("..");
+			continue;
+		}
+		segments.push(seg);
+	}
+	let normalized = segments.join("/");
+	if (s.startsWith("/")) normalized = `/${normalized}`;
+	// Windows: case-insensitive filesystem — compare case-folded
+	if (/^[A-Za-z]:/.test(normalized)) normalized = normalized.toLowerCase();
+	return normalized;
+}
+
 // ============================================================================
 // Create Hono App
 // ============================================================================
@@ -196,7 +225,15 @@ async function createApp(
 	});
 
 	app.get("/api/sessions", async (c) => {
-		const sessions = await sessionAdapter.listSessions();
+		// F-1.2: optional ?project=<path> filter — only sessions whose cwd
+		// matches the project path (normalized comparison). Without the param
+		// the full list is returned (backward compatible).
+		const project = c.req.query("project");
+		let sessions = await sessionAdapter.listSessions();
+		if (project) {
+			const target = normalizeProjectPath(project);
+			sessions = sessions.filter((s) => s.cwd !== undefined && normalizeProjectPath(s.cwd) === target);
+		}
 		const resp: ListSessionsResponse = { sessions };
 		return c.json(resp);
 	});
