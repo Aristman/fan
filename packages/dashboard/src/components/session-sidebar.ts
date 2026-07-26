@@ -1,4 +1,21 @@
 // @fan/dashboard/components — <session-sidebar> element
+//
+// F-2.7: sessions are rendered as a tree grouped by `SessionSummary.cwd`:
+//   - Each unique cwd forms a collapsible group (toggle ▼/▶) with a session counter.
+//   - Legacy sessions without a cwd (header written before F-1.12) are collected
+//     into the "Без проекта" group (see NO_PROJECT_LABEL), rendered last.
+//   - Status colour coding (CSS classes .status-active / .status-completed /
+//     .status-error on the .status-dot element):
+//       🟢 active    — the session currently selected in the app (activeSessionId)
+//       🔵 completed — session has messages (messageCount > 0) and is not active
+//       🟡 draft/err — session has no messages yet (draft) — SessionSummary has no
+//                      explicit status field, so status is derived client-side.
+//
+// Project scoping UX (F-2.7 + F-2.8): the sidebar listens for the window event
+// "fan:project-changed" (dispatched by dashboard-app, F-2.6).
+//   - currentProject === null  → all sessions are loaded and grouped by cwd.
+//   - currentProject === path  → listSessions({ project }) is used (server-side
+//     filter); grouping still applies but yields a single cwd group.
 
 import type { SessionSummary } from "@fan/api-gateway/types";
 import { html, LitElement, nothing, svg } from "lit";
@@ -7,6 +24,42 @@ import { unsafeSVG } from "lit/directives/unsafe-svg.js";
 import type { IconNode } from "lucide";
 import { Clock, MessageSquare, Plus, Search, Trash2 } from "lucide";
 import type { FanApiClient } from "../api/client.js";
+
+// ---------------------------------------------------------------------------
+// F-2.7 grouping constants, types & helpers
+// ---------------------------------------------------------------------------
+
+/** Group key used for legacy sessions that have no cwd in their header. */
+const NO_PROJECT_KEY = "__no_project__";
+/** Display label for the legacy (cwd-less) group. */
+export const NO_PROJECT_LABEL = "Без проекта";
+
+/** A group of sessions sharing the same cwd (F-2.7). */
+interface SessionGroup {
+	/** Group identity: the cwd, or NO_PROJECT_KEY for legacy sessions. */
+	key: string;
+	/** Display label: basename of the cwd, or NO_PROJECT_LABEL. */
+	label: string;
+	/** Full cwd for the title tooltip; null for the legacy group. */
+	cwd: string | null;
+	sessions: SessionSummary[];
+}
+
+/** Basename of a path, tolerant of both / and \ separators. */
+function pathBasename(p: string): string {
+	const parts = p.split(/[\\/]/).filter(Boolean);
+	return parts.length > 0 ? parts[parts.length - 1] : p;
+}
+
+/**
+ * Derive the display status of a session (SessionSummary has no explicit
+ * status field — see header comment for the colour legend).
+ */
+function sessionStatus(session: SessionSummary, activeSessionId: string | null): "active" | "completed" | "error" {
+	if (session.id === activeSessionId) return "active";
+	if (session.messageCount > 0) return "completed";
+	return "error"; // draft — created but no messages yet
+}
 
 // ---------------------------------------------------------------------------
 // Icon helper — renders a lucide IconNode array as an inline <svg>
@@ -78,6 +131,10 @@ export class SessionSidebar extends LitElement {
 	@state() error: string | null = null;
 	@state() searchQuery = "";
 	@state() creating = false;
+	/** F-2.7: selected project path; null = all projects (mirrors dashboard-app state). */
+	@state() currentProject: string | null = null;
+	/** F-2.7: keys of collapsed tree groups (expanded by default). */
+	@state() collapsedGroups: Set<string> = new Set();
 
 	// -----------------------------------------------------------------------
 	// No shadow DOM — Tailwind styles need to penetrate
@@ -103,6 +160,41 @@ export class SessionSidebar extends LitElement {
 		return [...list].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 	}
 
+	/**
+	 * F-2.7: filtered sessions grouped by cwd.
+	 * Groups are sorted by their most recently updated session (desc);
+	 * the legacy "Без проекта" group is always rendered last.
+	 */
+	get sessionGroups(): SessionGroup[] {
+		const byKey = new Map<string, SessionSummary[]>();
+		for (const s of this.filteredSessions) {
+			const key = s.cwd ?? NO_PROJECT_KEY;
+			const arr = byKey.get(key);
+			if (arr) {
+				arr.push(s);
+			} else {
+				byKey.set(key, [s]);
+			}
+		}
+
+		const groups: SessionGroup[] = [...byKey.entries()].map(([key, sessions]) => ({
+			key,
+			label: key === NO_PROJECT_KEY ? NO_PROJECT_LABEL : pathBasename(key),
+			cwd: key === NO_PROJECT_KEY ? null : key,
+			sessions,
+		}));
+
+		groups.sort((a, b) => {
+			if (a.key === NO_PROJECT_KEY) return 1;
+			if (b.key === NO_PROJECT_KEY) return -1;
+			const aLatest = new Date(a.sessions[0].updatedAt).getTime();
+			const bLatest = new Date(b.sessions[0].updatedAt).getTime();
+			return bLatest - aLatest;
+		});
+
+		return groups;
+	}
+
 	// -----------------------------------------------------------------------
 	// Lifecycle
 	// -----------------------------------------------------------------------
@@ -115,6 +207,8 @@ export class SessionSidebar extends LitElement {
 		window.addEventListener("fan:session-created", this._onSessionRefresh);
 		window.addEventListener("fan:session-deleted", this._onSessionRefresh);
 		window.addEventListener("fan:session-updated", this._onSessionRefresh);
+		// F-2.7: re-scope the list when the project switcher selection changes
+		window.addEventListener("fan:project-changed", this._onProjectChanged);
 
 		await this.loadSessions();
 	}
@@ -124,6 +218,7 @@ export class SessionSidebar extends LitElement {
 		window.removeEventListener("fan:session-created", this._onSessionRefresh);
 		window.removeEventListener("fan:session-deleted", this._onSessionRefresh);
 		window.removeEventListener("fan:session-updated", this._onSessionRefresh);
+		window.removeEventListener("fan:project-changed", this._onProjectChanged);
 
 		super.disconnectedCallback();
 	}
@@ -140,6 +235,13 @@ export class SessionSidebar extends LitElement {
 		void this.loadSessions();
 	};
 
+	/** F-2.7: project switcher changed → reload sessions scoped to the project. */
+	private _onProjectChanged = (ev: Event): void => {
+		const path = (ev as CustomEvent).detail?.path ?? null;
+		this.currentProject = typeof path === "string" && path ? path : null;
+		void this.loadSessions();
+	};
+
 	// -----------------------------------------------------------------------
 	// Actions
 	// -----------------------------------------------------------------------
@@ -149,7 +251,9 @@ export class SessionSidebar extends LitElement {
 		this.error = null;
 
 		try {
-			const res = await this.apiClient.listSessions();
+			// F-2.8: scope to the selected project when one is active (server-side
+			// filter); null = full list, still grouped by cwd client-side (F-2.7).
+			const res = await this.apiClient.listSessions(this.currentProject ? { project: this.currentProject } : undefined);
 			this.sessions = res.sessions;
 		} catch (err: unknown) {
 			const message = err instanceof Error ? err.message : "Failed to load sessions";
@@ -218,12 +322,37 @@ export class SessionSidebar extends LitElement {
 		);
 	}
 
+	/** F-2.7: collapse/expand a tree group (independent per group). */
+	toggleGroup(key: string): void {
+		const next = new Set(this.collapsedGroups);
+		if (next.has(key)) {
+			next.delete(key);
+		} else {
+			next.add(key);
+		}
+		this.collapsedGroups = next;
+	}
+
 	// -----------------------------------------------------------------------
 	// Render
 	// -----------------------------------------------------------------------
 
 	override render() {
 		return html`
+      <!-- F-2.7: status dot colours (scoped class names; no shadow DOM) -->
+      <style>
+        .status-dot {
+          display: inline-block;
+          width: 0.5rem;
+          height: 0.5rem;
+          border-radius: 9999px;
+          flex-shrink: 0;
+        }
+        .status-active    { background-color: #22c55e; } /* 🟢 green  — selected/active session */
+        .status-completed { background-color: #3b82f6; } /* 🔵 blue   — has messages, not active  */
+        .status-error     { background-color: #eab308; } /* 🟡 yellow — draft (no messages) / error */
+      </style>
+
       <div class="flex flex-col gap-2">
         <!-- New session button -->
         <button
@@ -282,7 +411,7 @@ export class SessionSidebar extends LitElement {
                 `
 							: this.filteredSessions.length === 0
 								? this._renderEmptyState()
-								: this.filteredSessions.map((session) => this._renderSessionItem(session))
+								: this.sessionGroups.map((group) => this._renderGroup(group))
 				}
         </div>
       </div>
@@ -311,12 +440,52 @@ export class SessionSidebar extends LitElement {
     `;
 	}
 
+	/** F-2.7: one cwd group — header (toggle + label + counter) + child sessions. */
+	private _renderGroup(group: SessionGroup) {
+		const collapsed = this.collapsedGroups.has(group.key);
+
+		return html`
+      <div class="tree-group" data-group-key=${group.key}>
+        <button
+          class="tree-group-header w-full flex items-center gap-1.5 px-1.5 py-1.5 rounded-md
+                 text-xs font-semibold text-muted-foreground
+                 hover:text-foreground hover:bg-secondary/40 transition-colors"
+          aria-expanded=${collapsed ? "false" : "true"}
+          title=${group.cwd ?? NO_PROJECT_LABEL}
+          @click=${() => this.toggleGroup(group.key)}
+        >
+          <span class="toggle-icon w-3 text-center shrink-0 select-none">${collapsed ? "▶" : "▼"}</span>
+          <span class="tree-group-label flex-1 min-w-0 truncate text-left text-sm">
+            ${group.label}
+          </span>
+          <span
+            class="tree-group-count shrink-0 px-1.5 py-0 rounded bg-foreground/5 text-[10px] font-mono"
+            title="${group.sessions.length} session(s)"
+          >
+            ${group.sessions.length}
+          </span>
+        </button>
+
+        ${
+					collapsed
+						? nothing
+						: html`
+              <div class="tree-items flex flex-col gap-0.5 pl-2 border-l border-border/60 ml-2 mt-0.5">
+                ${group.sessions.map((session) => this._renderSessionItem(session))}
+              </div>
+            `
+				}
+      </div>
+    `;
+	}
+
 	private _renderSessionItem(session: SessionSummary) {
 		const isActive = session.id === this.activeSessionId;
+		const status = sessionStatus(session, this.activeSessionId);
 
 		return html`
       <button
-        class="group w-full text-left px-2.5 py-2 rounded-lg transition-colors
+        class="tree-item group w-full text-left px-2.5 py-2 rounded-lg transition-colors
                ${
 						isActive
 							? "bg-secondary/80 border-l-2 border-primary text-foreground"
@@ -326,6 +495,8 @@ export class SessionSidebar extends LitElement {
         title=${session.title}
       >
         <div class="flex items-center gap-2">
+          <!-- F-2.7: status colour dot (🟢 active / 🔵 completed / 🟡 draft) -->
+          <span class="status-dot status-${status}" title="Status: ${status}"></span>
           <div class="flex-1 min-w-0">
             <!-- Title -->
             <div class="text-sm font-medium truncate">
