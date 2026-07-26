@@ -298,6 +298,13 @@ export class DashboardApp extends LitElement {
 		SettingsDialog.open(this.apiClient, this.apiUrl, this.token);
 	}
 
+	/** F-3.9: workspace type of the currently selected project (for slash command ordering). */
+	private _currentProjectType(): string | null {
+		if (!this.currentProject) return null;
+		const project = this.projects.find((p) => p.path === this.currentProject);
+		return project?.type ?? null;
+	}
+
 	private _toggleSidebar(): void {
 		this.sidebarOpen = !this.sidebarOpen;
 	}
@@ -462,6 +469,7 @@ export class DashboardApp extends LitElement {
                     .apiClient=${this.apiClient}
                     .wsClient=${this.wsClient}
                     .sessionId=${this.currentSessionId}
+                    .projectType=${this._currentProjectType()}
                   ></chat-view>
                 `
 						: this.currentView === "budget"

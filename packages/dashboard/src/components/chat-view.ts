@@ -8,6 +8,12 @@ import { AlertTriangle, Brain, Check, ChevronRight, Clock, Copy, FileText, Loade
 import type { FanApiClient } from "../api/client.js";
 import type { FanWsClient } from "../api/ws-client.js";
 import { icon } from "../lib/icon.js";
+import {
+	filterSlashCommands,
+	getSlashCommands,
+	isSlashCommandContext,
+	type SlashCommand,
+} from "../lib/slash-commands.js";
 
 // ---------------------------------------------------------------------------
 // Local format helpers (avoid dependency on @seaagents/fan-web-ui internals)
@@ -36,6 +42,8 @@ export class ChatView extends LitElement {
 	@property({ attribute: false }) apiClient!: FanApiClient;
 	@property({ attribute: false }) wsClient!: FanWsClient;
 	@property({ attribute: false }) sessionId!: string;
+	/** F-3.9: workspace type of the current project — orders slash commands by relevance. */
+	@property({ attribute: false }) projectType: string | null = null;
 
 	// -----------------------------------------------------------------------
 	// State
@@ -55,6 +63,10 @@ export class ChatView extends LitElement {
 	@state() queuePosition: number | null = null;
 	/** F-2.15: queue capacity limit when the message was rejected (QUEUE_OVERFLOW), null otherwise */
 	@state() queueFullLimit: number | null = null;
+	/** F-3.9: highlighted index in the slash command dropdown */
+	@state() slashSelectedIndex = 0;
+	/** F-3.9: true after Esc until the next input change (dropdown stays closed) */
+	@state() slashDismissed = false;
 
 	// -----------------------------------------------------------------------
 	// Internal
@@ -390,6 +402,35 @@ export class ChatView extends LitElement {
 	}
 
 	private handleKeydown(e: KeyboardEvent): void {
+		// F-3.9: slash command dropdown navigation takes precedence
+		if (this.isSlashDropdownOpen()) {
+			const items = this.visibleSlashCommands();
+			switch (e.key) {
+				case "ArrowDown":
+					e.preventDefault();
+					this.slashSelectedIndex = (this.slashSelectedIndex + 1) % items.length;
+					return;
+				case "ArrowUp":
+					e.preventDefault();
+					this.slashSelectedIndex = (this.slashSelectedIndex - 1 + items.length) % items.length;
+					return;
+				case "Enter":
+					if (e.shiftKey) break; // Shift+Enter → newline (fall through)
+					e.preventDefault();
+					this.selectSlashCommand(items[this.slashSelectedIndex]);
+					return;
+				case "Tab":
+					e.preventDefault();
+					this.selectSlashCommand(items[this.slashSelectedIndex]);
+					return;
+				case "Escape":
+					e.preventDefault();
+					this.slashDismissed = true;
+					return;
+				default:
+					break;
+			}
+		}
 		if (e.key === "Enter" && !e.shiftKey) {
 			e.preventDefault();
 			this.sendMessage();
@@ -400,9 +441,78 @@ export class ChatView extends LitElement {
 		const target = e.target as HTMLTextAreaElement;
 		this.inputValue = target.value;
 
+		// F-3.9: reset dropdown state on every input change
+		this.slashSelectedIndex = 0;
+		this.slashDismissed = false;
+
 		// Auto-resize
 		target.style.height = "auto";
 		target.style.height = `${Math.min(target.scrollHeight, 200)}px`;
+	}
+
+	// -----------------------------------------------------------------------
+	// F-3.9: Slash command autocomplete
+	// -----------------------------------------------------------------------
+
+	/** Commands matching the text typed after "/" (ordered by project type). */
+	private visibleSlashCommands(): SlashCommand[] {
+		const query = this.inputValue.slice(1); // strip leading "/"
+		return filterSlashCommands(getSlashCommands(this.projectType), query);
+	}
+
+	private isSlashDropdownOpen(): boolean {
+		return !this.slashDismissed && isSlashCommandContext(this.inputValue) && this.visibleSlashCommands().length > 0;
+	}
+
+	private selectSlashCommand(cmd: SlashCommand | undefined): void {
+		if (!cmd) return;
+		this.inputValue = `/${cmd.name} `;
+		this.slashSelectedIndex = 0;
+		// Restore focus and place the cursor at the end (after the space)
+		if (this.messageInput) {
+			this.messageInput.focus();
+			const len = this.inputValue.length;
+			this.messageInput.setSelectionRange(len, len);
+		}
+	}
+
+	private renderSlashDropdown() {
+		if (!this.isSlashDropdownOpen()) return nothing;
+		const items = this.visibleSlashCommands();
+
+		return html`
+      <div
+        data-testid="slash-dropdown"
+        role="listbox"
+        aria-label="Slash commands"
+        class="absolute bottom-full left-0 right-0 mb-2 max-h-64 overflow-y-auto rounded-xl border border-border bg-background shadow-lg"
+      >
+        ${items.map(
+					(cmd, i) => html`
+            <button
+              type="button"
+              role="option"
+              aria-selected=${i === this.slashSelectedIndex ? "true" : "false"}
+              data-testid="slash-item-${cmd.name}"
+              class="flex w-full items-baseline gap-2 px-3 py-2 text-left text-sm transition-colors ${
+								i === this.slashSelectedIndex ? "bg-primary/10" : "hover:bg-foreground/5"
+							}"
+              @mousedown=${(e: Event) => {
+								// mousedown (not click) so selection happens before textarea blur
+								e.preventDefault();
+								this.selectSlashCommand(cmd);
+							}}
+              @mouseenter=${() => {
+								this.slashSelectedIndex = i;
+							}}
+            >
+              <span class="font-mono text-xs shrink-0">/${cmd.name}</span>
+              <span class="text-xs text-muted-foreground truncate">${cmd.description}</span>
+            </button>
+          `,
+				)}
+      </div>
+    `;
 	}
 
 	// -----------------------------------------------------------------------
@@ -781,8 +891,9 @@ export class ChatView extends LitElement {
         <div class="border-t border-border p-4">
           ${this.renderQueueIndicator()}
           <div
-            class="flex items-end gap-2 max-w-4xl mx-auto"
+            class="relative flex items-end gap-2 max-w-4xl mx-auto"
           >
+            ${this.renderSlashDropdown()}
             <textarea
               id="message-input"
               class="flex-1 resize-none rounded-xl border border-border bg-background px-4 py-2.5 text-sm
