@@ -92,7 +92,9 @@ describe("CronScheduler (TC-F-4.5-1)", () => {
 
 		expect(enqueued).toHaveLength(1);
 		expect(enqueued[0].name).toBe("daily-code-review");
-		expect(infoSpy).toHaveBeenCalledWith("[scheduled] daily-code-review");
+		expect(infoSpy).toHaveBeenCalledWith("task_triggered", "[scheduled] daily-code-review", {
+			taskId: "daily-code-review",
+		});
 
 		scheduler.stop();
 	});
@@ -292,6 +294,9 @@ describe("createShutdownHandler (TC-F-4.5-2)", () => {
 
 		expect(stopCron).toHaveBeenCalledTimes(1);
 		expect(exit).toHaveBeenCalledTimes(1);
-		expect(warnSpy).toHaveBeenCalledWith("[scheduler] received SIGTERM during shutdown — ignoring");
+		expect(warnSpy).toHaveBeenCalledWith(
+			"shutdown_signal_ignored",
+			"[scheduler] received SIGTERM during shutdown — ignoring",
+		);
 	});
 });

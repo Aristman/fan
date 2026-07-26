@@ -1,7 +1,9 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { isGitEnabled } from "./github-identity.js";
-import { logger } from "./logger.js";
+import { createLogger } from "./logger.js";
+
+const log = createLogger("gh");
 
 /**
  * PR creation via the GitHub CLI (F-4.8).
@@ -130,7 +132,11 @@ export async function createPullRequest(
 
 	if (!gitEnabled) {
 		const reason = "git/PR actions disabled (gitEnabled=false) — skipping pull request creation";
-		logger.warn(`[gh-client] ${reason} (repo=${params.repo}, branch=${params.branch})`);
+		log.warn("pr_skipped", `[gh-client] ${reason} (repo=${params.repo}, branch=${params.branch})`, {
+			repo: params.repo,
+			branch: params.branch,
+			reason,
+		});
 		return { status: "partial", reason };
 	}
 
@@ -141,7 +147,10 @@ export async function createPullRequest(
 		const reason = isNotFoundError(error)
 			? GH_CLI_NOT_FOUND_REASON
 			: `gh CLI probe failed: ${error instanceof Error ? error.message : String(error)}`;
-		logger.warn(`[gh-client] ${reason} — pull request not created (branch=${params.branch})`);
+		log.warn("pr_skipped", `[gh-client] ${reason} — pull request not created (branch=${params.branch})`, {
+			branch: params.branch,
+			reason,
+		});
 		return { status: "partial", reason };
 	}
 
@@ -171,7 +180,10 @@ export async function createPullRequest(
 		));
 	} catch (error) {
 		if (isNotFoundError(error)) {
-			logger.warn(`[gh-client] ${GH_CLI_NOT_FOUND_REASON} — pull request not created (branch=${params.branch})`);
+			log.warn("pr_skipped", `[gh-client] ${GH_CLI_NOT_FOUND_REASON} — pull request not created (branch=${params.branch})`, {
+				branch: params.branch,
+				reason: GH_CLI_NOT_FOUND_REASON,
+			});
 			return { status: "partial", reason: GH_CLI_NOT_FOUND_REASON };
 		}
 		throw new Error(
@@ -184,6 +196,10 @@ export async function createPullRequest(
 	// gh prints the PR URL to stdout; extract it defensively.
 	const match = stdout.match(/https:\/\/\S+\/pull\/\d+/);
 	const prUrl = match ? match[0] : stdout.trim();
-	logger.info(`[gh-client] pull request created: ${prUrl} (base=${base}, head=${params.branch})`);
+	log.info("pr_created", `[gh-client] pull request created: ${prUrl} (base=${base}, head=${params.branch})`, {
+		prUrl,
+		base,
+		branch: params.branch,
+	});
 	return { prUrl, status: "created" };
 }

@@ -208,7 +208,8 @@ describe("createTaskExecutor (F-4.4)", () => {
 
 		expect(result.status).toBe("completed");
 		expect(mocks.setProjectBudget).toHaveBeenCalledWith(task.workspace, 500);
-		expect(console.log).toHaveBeenCalledWith(expect.stringContaining("budget update failed (ignored)"));
+		// warn-level entries are routed to stderr (F-4.11).
+		expect(console.error).toHaveBeenCalledWith(expect.stringContaining("budget update failed (ignored)"));
 	});
 });
 
@@ -248,15 +249,15 @@ describe("budget monitor (F-4.9)", () => {
 		expect(result.status).toBe("budget_exceeded");
 		expect(result.tokensUsed).toBe(500);
 		expect(result.error).toContain("budget exceeded");
-		// Warning logged.
-		expect(console.log).toHaveBeenCalledWith(expect.stringContaining("budget exceeded (500/500 tokens)"));
-		// budget_monitor event logged as JSON: { event, project, used, limit, percentage }.
+		// Warning logged (warn → stderr, F-4.11).
+		expect(console.error).toHaveBeenCalledWith(expect.stringContaining("budget exceeded (500/500 tokens)"));
+		// budget_monitor event logged as a JSON line: { event, project, used, limit, percentage }.
 		const monitorCall = (console.log as ReturnType<typeof vi.fn>).mock.calls
 			.map((c) => String(c[0]))
 			.find((line) => line.includes('"event":"budget_monitor"'));
 		expect(monitorCall).toBeDefined();
 		const payload = JSON.parse(monitorCall?.slice(monitorCall.indexOf("{")) ?? "{}");
-		expect(payload).toEqual({ event: "budget_monitor", project: "/proj", used: 500, limit: 500, percentage: 100 });
+		expect(payload).toMatchObject({ event: "budget_monitor", project: "/proj", used: 500, limit: 500, percentage: 100 });
 	});
 
 	// TC-F-4.9-3: usage below the limit → normal completion + usage report.
@@ -294,7 +295,7 @@ describe("budget monitor (F-4.9)", () => {
 		const result = await promise;
 
 		expect(result.status).toBe("completed");
-		expect(console.log).toHaveBeenCalledWith(expect.stringContaining("budget poll failed (monitoring continues)"));
+		expect(console.error).toHaveBeenCalledWith(expect.stringContaining("budget poll failed (monitoring continues)"));
 	});
 });
 
@@ -327,8 +328,8 @@ describe("retry with exponential backoff (F-4.10)", () => {
 		expect(mocks.createSession).toHaveBeenCalledTimes(2);
 		// Exactly one backoff delay between attempts: baseDelayMs * 2^(1-1) = 2s.
 		expect(delays).toEqual([2000]);
-		expect(console.log).toHaveBeenCalledWith(expect.stringContaining("attempt 1/3 failed"));
-		expect(console.log).toHaveBeenCalledWith(expect.stringContaining("retrying in 2000ms"));
+		expect(console.error).toHaveBeenCalledWith(expect.stringContaining("attempt 1/3 failed"));
+		expect(console.error).toHaveBeenCalledWith(expect.stringContaining("retrying in 2000ms"));
 	});
 
 	// TC-F-4.10-2: all attempts fail → task failed, queue advances.
@@ -372,7 +373,7 @@ describe("retry with exponential backoff (F-4.10)", () => {
 		expect(results[1].taskName).toBe("next");
 		expect(results[1].status).toBe("completed");
 		expect(results[1].attempts).toBe(1);
-		expect(console.log).toHaveBeenCalledWith(expect.stringContaining("attempts exhausted"));
+		expect(console.error).toHaveBeenCalledWith(expect.stringContaining("attempts exhausted"));
 	});
 
 	it("HTTP 400 → 1 attempt, fails immediately without backoff", async () => {

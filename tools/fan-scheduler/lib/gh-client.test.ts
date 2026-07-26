@@ -47,10 +47,12 @@ function happyPathExec(): { exec: ExecMock; calls: Array<{ command: string; args
 	});
 }
 
-let logSpy: ReturnType<typeof vi.spyOn>;
+let errorSpy: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
-	logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+	// Silence info-level stdout logging; warn-level entries are routed to stderr (F-4.11).
+	vi.spyOn(console, "log").mockImplementation(() => {});
+	errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 });
 
 describe("TC-F-4.8-1: PR is created with correct parameters", () => {
@@ -141,8 +143,8 @@ describe("TC-F-4.8-2: gh CLI unavailable → descriptive error, status partial",
 		expect(calls).toHaveLength(1);
 		expect(calls[0]).toEqual({ command: "gh", args: ["--version"] });
 
-		const logged = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
-		expect(logged).toContain("WARN");
+		const logged = errorSpy.mock.calls.map((c) => String(c[0])).join("\n");
+		expect(logged).toContain('"level":"warn"');
 		expect(logged).toContain("gh CLI not found");
 	});
 });
@@ -160,8 +162,8 @@ describe("git disabled (F-4.6 gate)", () => {
 		expect(result.reason).toContain("gitEnabled=false");
 		expect(exec).not.toHaveBeenCalled();
 
-		const logged = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
-		expect(logged).toContain("WARN");
+		const logged = errorSpy.mock.calls.map((c) => String(c[0])).join("\n");
+		expect(logged).toContain('"level":"warn"');
 	});
 });
 

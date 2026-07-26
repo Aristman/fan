@@ -1,6 +1,8 @@
 import type { BudgetUsage, FanApiClient, FanSessionMessage } from "./client.js";
 import type { TaskConfig } from "./config-loader.js";
-import { logger } from "./logger.js";
+import { createLogger } from "./logger.js";
+
+const log = createLogger("executor");
 import type { TaskExecutor, TaskResult, TaskStatus } from "./queue.js";
 import {
 	DEFAULT_BASE_DELAY_MS,
@@ -64,14 +66,16 @@ function sumTokens(messages: FanSessionMessage[]): number {
 function logBudgetMonitor(usage: BudgetUsage): void {
 	const percentage =
 		usage.limit !== null && usage.limit > 0 ? Math.round((usage.used / usage.limit) * 100) : null;
-	logger.info(
-		JSON.stringify({
-			event: "budget_monitor",
+	log.info(
+		"budget_monitor",
+		`budget monitor: ${usage.project} used ${usage.used} / ${usage.limit ?? "unlimited"} tokens` +
+			(percentage !== null ? ` (${percentage}%)` : ""),
+		{
 			project: usage.project,
 			used: usage.used,
 			limit: usage.limit,
 			percentage,
-		}),
+		},
 	);
 }
 
@@ -157,9 +161,11 @@ export function createTaskExecutor(client: FanApiClient, options: TaskExecutorOp
 				} catch (error) {
 					if (error instanceof BudgetExceededError) throw error;
 					// Best-effort monitoring: a failed poll must not fail the task.
-					logger.warn(
+					log.warn(
+						"budget_poll_failed",
 						`[executor] task "${task.name}" budget poll failed (monitoring continues): ` +
 							(error instanceof Error ? error.message : String(error)),
+						{ taskId: task.name, error },
 					);
 				}
 			}
@@ -203,8 +209,16 @@ export function createTaskExecutor(client: FanApiClient, options: TaskExecutorOp
 				attempts,
 			};
 			if (error !== undefined) result.error = error;
-			logger.info(
+			log.info(
+				"task_result",
 				`[executor] task "${task.name}" status=${status} durationMs=${result.durationMs} tokensUsed=${tokensUsed ?? "unknown"} attempts=${attempts}`,
+				{
+					taskId: task.name,
+					status,
+					durationMs: result.durationMs,
+					tokensUsed: tokensUsed ?? null,
+					attempts,
+				},
 			);
 			return result;
 		};
@@ -217,12 +231,16 @@ export function createTaskExecutor(client: FanApiClient, options: TaskExecutorOp
 			if (task.budget_limit !== null) {
 				try {
 					await client.setProjectBudget(task.workspace, task.budget_limit);
-					logger.info(
+					log.info(
+						"budget_cap_set",
 						`[executor] task "${task.name}" budget cap set: ${task.budget_limit} tokens for ${task.workspace}`,
+						{ taskId: task.name, limit: task.budget_limit, workspace: task.workspace },
 					);
 				} catch (error) {
-					logger.warn(
+					log.warn(
+						"budget_update_failed",
 						`[executor] task "${task.name}" budget update failed (ignored): ${error instanceof Error ? error.message : String(error)}`,
+						{ taskId: task.name, error },
 					);
 				}
 			}
@@ -248,12 +266,16 @@ export function createTaskExecutor(client: FanApiClient, options: TaskExecutorOp
 			onRetry: ({ attempt, delayMs, error, willRetry }) => {
 				const message = error instanceof Error ? error.message : String(error);
 				if (willRetry) {
-					logger.warn(
+					log.warn(
+						"task_retry",
 						`[executor] task "${task.name}" attempt ${attempt}/${maxRetries} failed (${message}) — retrying in ${delayMs}ms`,
+						{ taskId: task.name, attempt, maxRetries, delayMs, error },
 					);
 				} else {
-					logger.warn(
+					log.warn(
+						"task_attempts_exhausted",
 						`[executor] task "${task.name}" attempt ${attempt}/${maxRetries} failed (${message}) — attempts exhausted`,
+						{ taskId: task.name, attempt, maxRetries, error },
 					);
 				}
 			},
@@ -274,23 +296,27 @@ export function createTaskExecutor(client: FanApiClient, options: TaskExecutorOp
 			if (error instanceof TaskTimeoutError) {
 				// No abort API exists — the agent keeps running server-side; we only
 				// mark the result and let the queue move on (documented limitation).
-				logger.warn(
+				log.warn(
+					"task_timeout",
 					`[executor] task "${task.name}" timed out after ${task.timeout}s — ` +
 						"no interruption endpoint in the gateway; the session continues running server-side",
+					{ taskId: task.name, timeout: task.timeout },
 				);
 				return buildResult("timeout", null, attempts, error.message);
 			}
 			if (error instanceof BudgetExceededError) {
 				// F-4.9: same no-interruption limitation as timeout (F-4.4) — the wait
 				// stops, the task is marked, but the agent is NOT aborted server-side.
-				logger.warn(
+				log.warn(
+					"budget_exceeded",
 					`[executor] task "${task.name}" stopped: budget exceeded (${error.used}/${error.limit} tokens) — ` +
 						"no interruption endpoint in the gateway; the session continues running server-side",
+					{ taskId: task.name, used: error.used, limit: error.limit },
 				);
 				return buildResult("budget_exceeded", error.used, attempts, error.message);
 			}
 			const message = error instanceof Error ? error.message : String(error);
-			logger.error(`[executor] task "${task.name}" failed: ${message}`);
+			log.error("task_failed", `[executor] task "${task.name}" failed: ${message}`, { taskId: task.name, error });
 			return buildResult("failed", null, attempts, message);
 		}
 
@@ -299,12 +325,16 @@ export function createTaskExecutor(client: FanApiClient, options: TaskExecutorOp
 			try {
 				const usage = await client.getBudgetUsage(task.workspace);
 				logBudgetMonitor(usage);
-				logger.info(
+				log.info(
+					"usage_report",
 					`[executor] task "${task.name}" usage report: used ${usage.used} / ${usage.limit ?? "unlimited"} tokens`,
+					{ taskId: task.name, used: usage.used, limit: usage.limit },
 				);
 			} catch (error) {
-				logger.warn(
+				log.warn(
+					"usage_report_failed",
 					`[executor] task "${task.name}" final usage report failed (ignored): ${error instanceof Error ? error.message : String(error)}`,
+					{ taskId: task.name, error },
 				);
 			}
 		}

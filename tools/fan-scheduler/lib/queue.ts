@@ -1,5 +1,7 @@
 import type { TaskConfig } from "./config-loader.js";
-import { logger } from "./logger.js";
+import { createLogger } from "./logger.js";
+
+const log = createLogger("queue");
 
 /**
  * Terminal status of an executed task.
@@ -112,11 +114,20 @@ export class TaskQueue {
 		this.queueState = "running";
 		this.activeTask = task;
 		this.activeStartedAt = Date.now();
-		logger.info(`[queue] task "${task.name}" started (${this.pending.length} pending)`);
+		log.info("task_started", `[queue] task "${task.name}" started (${this.pending.length} pending)`, {
+			taskId: task.name,
+			pending: this.pending.length,
+		});
 		try {
 			this.lastTaskResult = await this.executor(task);
-			logger.info(
+			log.info(
+				"task_finished",
 				`[queue] task "${task.name}" finished status=${this.lastTaskResult.status} durationMs=${this.lastTaskResult.durationMs}`,
+				{
+					taskId: task.name,
+					status: this.lastTaskResult.status,
+					durationMs: this.lastTaskResult.durationMs,
+				},
 			);
 		} catch (error) {
 			// Executor threw unexpectedly — record a failure and keep the queue alive.
@@ -129,7 +140,10 @@ export class TaskQueue {
 				finishedAt: new Date().toISOString(),
 				error: message,
 			};
-			logger.error(`[queue] task "${task.name}" failed with an unexpected error: ${message}`);
+			log.error("task_failed", `[queue] task "${task.name}" failed with an unexpected error: ${message}`, {
+				taskId: task.name,
+				error,
+			});
 		} finally {
 			this.activeTask = null;
 			if (this.queueState === "running") {
@@ -148,7 +162,11 @@ export class TaskQueue {
 	pauseCurrent(): void {
 		if (this.queueState === "running") {
 			this.queueState = "paused";
-			logger.info(`[queue] paused — task "${this.activeTask?.name}" will settle, next task will not auto-start`);
+			log.info(
+				"queue_paused",
+				`[queue] paused — task "${this.activeTask?.name}" will settle, next task will not auto-start`,
+				{ taskId: this.activeTask?.name },
+			);
 		}
 	}
 }

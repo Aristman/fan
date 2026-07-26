@@ -62,11 +62,15 @@ export class CronScheduler {
 		this.stop();
 		for (const task of tasks) {
 			const job = this.cronFactory(task.schedule, () => {
-				logger.info(`[scheduled] ${task.name}`);
+				logger.info("task_triggered", `[scheduled] ${task.name}`, { taskId: task.name });
 				this.queue.enqueue(task);
 			});
 			this.jobs.push(job);
-			logger.info(`[scheduler] task "${task.name}" scheduled [${task.schedule}] workspace=${task.workspace}`);
+			logger.info(
+				"task_scheduled",
+				`[scheduler] task "${task.name}" scheduled [${task.schedule}] workspace=${task.workspace}`,
+				{ taskId: task.name, schedule: task.schedule, workspace: task.workspace },
+			);
 		}
 	}
 
@@ -77,7 +81,9 @@ export class CronScheduler {
 				job.stop();
 			} catch (error) {
 				logger.warn(
+					"cron_job_stop_failed",
 					`[scheduler] failed to stop a cron job (ignored): ${error instanceof Error ? error.message : String(error)}`,
+					{ error },
 				);
 			}
 		}
@@ -128,7 +134,9 @@ export function createConfigWatcher(options: ConfigWatcherOptions): ConfigWatche
 			mtimeMs = statMtimeMs(options.configPath);
 		} catch (error) {
 			logger.warn(
+				"config_stat_failed",
 				`[watcher] failed to stat "${options.configPath}": ${error instanceof Error ? error.message : String(error)}`,
+				{ error, configPath: options.configPath },
 			);
 			return;
 		}
@@ -144,12 +152,16 @@ export function createConfigWatcher(options: ConfigWatcherOptions): ConfigWatche
 			tasks = loadFn(options.configPath);
 		} catch (error) {
 			logger.error(
+				"config_reload_failed",
 				`[watcher] failed to reload "${options.configPath}" — keeping the previous schedule: ` +
 					(error instanceof Error ? error.message : String(error)),
+				{ error, configPath: options.configPath },
 			);
 			return;
 		}
-		logger.info(`[watcher] config change detected — rescheduling ${tasks.length} task(s)`);
+		logger.info("config_reloaded", `[watcher] config change detected — rescheduling ${tasks.length} task(s)`, {
+			taskCount: tasks.length,
+		});
 		options.onReload(tasks);
 	}
 
@@ -160,7 +172,9 @@ export function createConfigWatcher(options: ConfigWatcherOptions): ConfigWatche
 				lastMtimeMs = statMtimeMs(options.configPath);
 			} catch (error) {
 				logger.warn(
+					"config_stat_failed",
 					`[watcher] failed to stat "${options.configPath}" on start: ${error instanceof Error ? error.message : String(error)}`,
+					{ error, configPath: options.configPath },
 				);
 				lastMtimeMs = null;
 			}
@@ -218,26 +232,30 @@ export function createShutdownHandler(options: ShutdownHandlerOptions): (signal:
 
 	return async function shutdown(signal: string): Promise<void> {
 		if (shuttingDown) {
-			logger.warn(`[scheduler] received ${signal} during shutdown — ignoring`);
+			logger.warn("shutdown_signal_ignored", `[scheduler] received ${signal} during shutdown — ignoring`);
 			return;
 		}
 		shuttingDown = true;
-		logger.info(`[scheduler] received ${signal} — starting graceful shutdown`);
+		logger.info("shutdown_started", `[scheduler] received ${signal} — starting graceful shutdown`);
 
 		options.stopCron();
 		options.queue.pauseCurrent();
 
 		const active = options.queue.currentTask;
 		if (active !== null) {
-			logger.info(`[scheduler] waiting for running task "${active.name}" to settle...`);
+			logger.info("shutdown_waiting", `[scheduler] waiting for running task "${active.name}" to settle...`, {
+				taskId: active.name,
+			});
 			while (options.queue.currentTask !== null) {
 				await sleep(pollIntervalMs);
 			}
 		}
 
 		logger.info(
+			"shutdown_complete",
 			`[scheduler] shutdown complete — ${options.queue.pending.length} task(s) left pending ` +
 				"(persistent queue state is F-4.13)",
+			{ pending: options.queue.pending.length },
 		);
 		exit(0);
 	};

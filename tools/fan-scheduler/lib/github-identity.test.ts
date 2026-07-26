@@ -67,7 +67,8 @@ describe("TC-F-4.6-1: valid PAT is validated via GitHub API and cached", () => {
 describe("TC-F-4.6-2: missing GITHUB_TOKEN is handled gracefully", () => {
 	it("returns gitEnabled=false without any network call and the scheduler keeps running", async () => {
 		vi.stubEnv("GITHUB_TOKEN", "");
-		const warnSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+		// warn-level entries are routed to stderr (F-4.11).
+		const warnSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
 		const identity = await validateGitHubIdentity();
 
@@ -78,7 +79,7 @@ describe("TC-F-4.6-2: missing GITHUB_TOKEN is handled gracefully", () => {
 
 		// warning logged, no exception thrown — scheduler continues
 		const logged = warnSpy.mock.calls.map((c) => String(c[0])).join("\n");
-		expect(logged).toContain("WARN");
+		expect(logged).toContain('"level":"warn"');
 		expect(logged).toContain("GITHUB_TOKEN not configured");
 		warnSpy.mockRestore();
 	});
@@ -154,14 +155,17 @@ describe("scope check", () => {
 		vi.stubEnv("GITHUB_TOKEN", TOKEN);
 		fetchMock.mockResolvedValue(userResponse({ login: "fan-bot" }, 200, { "x-oauth-scopes": "read:org" }));
 		const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+		// warn-level entries are routed to stderr (F-4.11).
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
 		const identity = await validateGitHubIdentity();
 
 		expect(identity.gitEnabled).toBe(true);
 		expect(identity.reason).toContain("repo");
-		const logged = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
-		expect(logged).toContain("WARN");
+		const logged = [...logSpy.mock.calls, ...errorSpy.mock.calls].map((c) => String(c[0])).join("\n");
+		expect(logged).toContain('"level":"warn"');
 		expect(logged).not.toContain(TOKEN);
 		logSpy.mockRestore();
+		errorSpy.mockRestore();
 	});
 });

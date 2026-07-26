@@ -1,4 +1,6 @@
-import { logger } from "./logger.js";
+import { createLogger } from "./logger.js";
+
+const log = createLogger("gh");
 
 /**
  * Bot Identity — GitHub PAT configuration (F-4.6).
@@ -121,12 +123,16 @@ export async function validateGitHubIdentity(fetchFn?: FetchLike): Promise<GitHu
 	const token = process.env.GITHUB_TOKEN;
 	const identity = await validateToken(token, fetchFn);
 	if (identity.gitEnabled) {
-		logger.info(`[github] identity validated: login=${identity.login ?? "unknown"} (token ${maskedToken(token ?? "")})`);
+		log.info(
+			"identity_validated",
+			`[github] identity validated: login=${identity.login ?? "unknown"} (token ${maskedToken(token ?? "")})`,
+			{ login: identity.login ?? "unknown", token: maskedToken(token ?? "") },
+		);
 		if (identity.reason) {
-			logger.warn(`[github] ${identity.reason}`);
+			log.warn("identity_scope_warning", `[github] ${identity.reason}`);
 		}
 	} else {
-		logger.warn(`[github] git/PR-dependent actions unavailable (gitEnabled=false): ${identity.reason}`);
+		log.warn("identity_unavailable", `[github] git/PR-dependent actions unavailable (gitEnabled=false): ${identity.reason}`);
 	}
 	return identity;
 }

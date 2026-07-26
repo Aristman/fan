@@ -38,7 +38,9 @@ export function main(): void {
 	// marks git/PR-dependent actions as unavailable (gitEnabled=false).
 	void validateGitHubIdentity().catch((error: unknown) => {
 		logger.warn(
+			"github_identity_validation_failed",
 			`[github] identity validation failed: ${error instanceof Error ? error.message : String(error)} — git/PR-dependent actions unavailable`,
+			{ error },
 		);
 	});
 
@@ -63,14 +65,21 @@ export function main(): void {
 	});
 	const onSignal = (signal: string): void => {
 		void shutdown(signal).catch((error: unknown) => {
-			logger.error(`[scheduler] shutdown failed: ${error instanceof Error ? error.message : String(error)}`);
+			logger.error(
+				"shutdown_failed",
+				`[scheduler] shutdown failed: ${error instanceof Error ? error.message : String(error)}`,
+				{ error },
+			);
 			process.exit(1);
 		});
 	};
 	process.on("SIGINT", onSignal);
 	process.on("SIGTERM", onSignal);
 
-	logger.info(`Scheduler started — ${tasks.length} task(s) scheduled from ${configPath}`);
+	logger.info("scheduler_started", `Scheduler started — ${tasks.length} task(s) scheduled from ${configPath}`, {
+		configPath,
+		taskCount: tasks.length,
+	});
 }
 
 const isMainModule = process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
