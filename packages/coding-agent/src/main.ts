@@ -5,7 +5,7 @@
  * createAgentSession() options. The SDK does the heavy lifting.
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { type SessionAdapter, startServer } from "@fan/api-gateway";
@@ -19,7 +19,7 @@ import { processFileArguments } from "./cli/file-processor.js";
 import { buildInitialMessage } from "./cli/initial-message.js";
 import { listModels } from "./cli/list-models.js";
 import { cleanupOldBinaries, handleUpdateCommand } from "./cli/self-update.js";
-import { applyAuthPolicy, resolveHost, resolvePort } from "./cli/server-config.js";
+import { applyAuthPolicy, resolveHost, resolvePort, resolveWorkspaceRoot } from "./cli/server-config.js";
 import { selectSession } from "./cli/session-picker.js";
 import { getAgentDir, getModelsPath, isBunBinary, VERSION } from "./config.js";
 import {
@@ -167,7 +167,7 @@ function isTruthyEnvFlag(value: string | undefined): boolean {
 	return value === "1" || value.toLowerCase() === "true" || value.toLowerCase() === "yes";
 }
 
-function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
+export function createSessionAdapter(runtime: AgentSessionRuntime, defaultCwd?: string): SessionAdapter {
 	// Single source of truth: JSONL files on disk.
 	// Runtime is only the execution engine — one active session at a time.
 
@@ -419,9 +419,11 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 		// --- createSession: new session on disk via runtime ---
 		async createSession(opts?: { title?: string; cwd?: string }) {
 			// F-1.3: optional cwd — runtime.newSession targets the given working
-			// directory (JSONL header cwd + <encoded-cwd> session dir). Without it,
-			// the current runtime cwd is used (backward compatible).
-			await runtime.newSession({ cwd: opts?.cwd });
+			// directory (JSONL header cwd + <encoded-cwd> session dir).
+			// F-1.11: without an explicit request cwd the default workspace root
+			// (FAN_WORKSPACE_ROOT → ~/projects, resolved at server startup) is
+			// used — not whatever project the runtime currently has active.
+			await runtime.newSession({ cwd: opts?.cwd ?? defaultCwd });
 			bindSessionExtensions();
 			diskCacheTime = 0;
 			resubscribeAfterSwitch();
@@ -968,7 +970,24 @@ export async function main(args: string[]) {
 		time("runMigrations (skipped – worker mode)");
 	}
 
-	const cwd = process.cwd();
+	// F-1.11: in server mode the startup cwd is the default workspace root
+	// (FAN_WORKSPACE_ROOT → ~/projects). TUI/local modes keep the process cwd
+	// (a local TUI session legitimately belongs to wherever fan was launched).
+	let cwd = process.cwd();
+	if (appMode === "server") {
+		cwd = resolveWorkspaceRoot();
+		if (!existsSync(cwd)) {
+			// The workspace root is not required to pre-exist: in container
+			// deployments it is created by a volume mount (docker-compose maps
+			// /data/repos); locally we create it on first use. If creation
+			// fails, warn but do not fail the startup over it.
+			try {
+				mkdirSync(cwd, { recursive: true });
+			} catch {
+				console.warn(chalk.yellow(`[fan] Workspace root does not exist and could not be created: ${cwd}`));
+			}
+		}
+	}
 	const agentDir = getAgentDir();
 	const startupSettingsManager = SettingsManager.create(cwd, agentDir);
 	reportDiagnostics(collectSettingsDiagnostics(startupSettingsManager, "startup session lookup"));
@@ -1222,7 +1241,7 @@ export async function main(args: string[]) {
 			console.error("Error: ModelManager is not available. Server mode requires model management to be enabled.");
 			process.exit(1);
 		}
-		const adapter = createSessionAdapter(runtime);
+		const adapter = createSessionAdapter(runtime, cwd);
 		await adapter.bindSessionExtensions();
 		const { port, stop } = await startServer(modelManager, adapter, {
 			port: resolvePort(parsed.port),

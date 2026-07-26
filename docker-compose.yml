@@ -32,6 +32,9 @@ services:
       # Data directory: fan.db (SQLite) + JSONL sessions live here (F-0.5).
       FAN_CODING_AGENT_DIR: /data/.fan/agent
       FAN_AGENT_DIR: /data/.fan/agent
+      # Default workspace root (F-1.11): sessions created via the API without
+      # an explicit cwd land here. Created by the fan-repos volume mount.
+      FAN_WORKSPACE_ROOT: /data/repos
       # File logging (F-0.10): console output is teed to /data/logs/app.log
       # with size-based rotation (LOG_MAX_SIZE / LOG_MAX_FILES, defaults
       # 10 MB / 5 files). LOG_LEVEL controls file verbosity

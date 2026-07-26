@@ -1,3 +1,5 @@
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { isPublicMode } from "@fan/api-gateway";
 
 /**
@@ -45,6 +47,32 @@ export function resolveHost(cliHost?: string, envHost: string | undefined = proc
 		return trimmed;
 	}
 	return DEFAULT_SERVER_HOST;
+}
+
+/**
+ * Resolve the default workspace root for server mode (F-1.11).
+ *
+ * Priority: `FAN_WORKSPACE_ROOT` env var > built-in default (`~/projects`).
+ * An unset, empty, or whitespace-only `FAN_WORKSPACE_ROOT` is ignored.
+ *
+ * Full fallback chain for session creation (applied at the call site):
+ * explicit `cwd` in the request > `FAN_WORKSPACE_ROOT` > `~/projects`.
+ *
+ * The resolved directory is NOT required to exist — in container deployments
+ * (docker-compose sets `FAN_WORKSPACE_ROOT=/data/repos`) the path is created
+ * by a volume mount. Callers should warn (never fail) when it is missing.
+ *
+ * `home` is injectable for tests.
+ */
+export function resolveWorkspaceRoot(
+	envValue: string | undefined = process.env.FAN_WORKSPACE_ROOT,
+	home: string = homedir(),
+): string {
+	const trimmed = envValue?.trim();
+	if (trimmed) {
+		return trimmed;
+	}
+	return join(home, "projects");
 }
 
 /**

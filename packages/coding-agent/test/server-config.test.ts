@@ -1,3 +1,5 @@
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import {
 	applyAuthPolicy,
@@ -6,6 +8,7 @@ import {
 	isPublicMode,
 	resolveHost,
 	resolvePort,
+	resolveWorkspaceRoot,
 } from "../src/cli/server-config.js";
 
 describe("resolvePort (F-0.1)", () => {
@@ -178,6 +181,53 @@ describe("isPublicMode (F-0.3)", () => {
 	test("explicit env argument takes precedence over process.env", () => {
 		delete process.env.FAN_PUBLIC;
 		expect(isPublicMode("1")).toBe(true);
+	});
+});
+
+describe("resolveWorkspaceRoot (F-1.11)", () => {
+	const originalRoot = process.env.FAN_WORKSPACE_ROOT;
+
+	afterEach(() => {
+		if (originalRoot === undefined) {
+			delete process.env.FAN_WORKSPACE_ROOT;
+		} else {
+			process.env.FAN_WORKSPACE_ROOT = originalRoot;
+		}
+	});
+
+	test("TC-F-1.11-1: without FAN_WORKSPACE_ROOT the default is <homedir>/projects", () => {
+		delete process.env.FAN_WORKSPACE_ROOT;
+		expect(resolveWorkspaceRoot(undefined)).toBe(join(homedir(), "projects"));
+	});
+
+	test("TC-F-1.11-2: FAN_WORKSPACE_ROOT overrides the default", () => {
+		process.env.FAN_WORKSPACE_ROOT = "/data/custom";
+		expect(resolveWorkspaceRoot(undefined)).toBe("/data/custom");
+	});
+
+	test("empty FAN_WORKSPACE_ROOT falls back to the default", () => {
+		expect(resolveWorkspaceRoot("")).toBe(join(homedir(), "projects"));
+	});
+
+	test("whitespace-only FAN_WORKSPACE_ROOT falls back to the default", () => {
+		expect(resolveWorkspaceRoot("   ")).toBe(join(homedir(), "projects"));
+	});
+
+	test("FAN_WORKSPACE_ROOT value is trimmed", () => {
+		expect(resolveWorkspaceRoot("  /data/repos  ")).toBe("/data/repos");
+	});
+
+	test("relative FAN_WORKSPACE_ROOT is passed through as-is", () => {
+		expect(resolveWorkspaceRoot("repos")).toBe("repos");
+	});
+
+	test("home parameter is injectable (default base for the fallback)", () => {
+		expect(resolveWorkspaceRoot(undefined, "/home/testuser")).toBe(join("/home/testuser", "projects"));
+	});
+
+	test("reads process.env.FAN_WORKSPACE_ROOT by default", () => {
+		process.env.FAN_WORKSPACE_ROOT = "/data/from-env";
+		expect(resolveWorkspaceRoot()).toBe("/data/from-env");
 	});
 });
 
