@@ -1,7 +1,8 @@
 // @fan/api-gateway — Client API Gateway for FAN
 
-export type { ClientTokenData } from "./auth.js";
+export type { ClientTokenData, ScopeCheckResult } from "./auth.js";
 export {
+	authorizeProjectScope,
 	generateToken,
 	isAuthDisabled,
 	isPublicMode,
@@ -26,6 +27,7 @@ export {
 	PersistentMessageQueue,
 	resolveQueuesDir,
 } from "./message-queue.js";
+export { normalizeProjectPath } from "./path-utils.js";
 export * from "./types.js";
 export type { CwdValidationResult } from "./workspace-validation.js";
 export { isWithinRoot, logCwdRejection, resolveAllowedRoots, validateCwd } from "./workspace-validation.js";

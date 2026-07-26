@@ -3,6 +3,7 @@ import type { WebSocket as WsWebSocket } from "ws";
 import { isAuthDisabled, validateToken } from "./auth.js";
 import type { SessionAdapter } from "./http-server.js";
 import { type DrainableMessageQueue, InMemoryMessageQueue, type QueuedMessage } from "./message-queue.js";
+import { normalizeProjectPath } from "./path-utils.js";
 import type { WsIncomingMessage, WsOutgoingMessage, WsQueuesRestored } from "./types.js";
 
 // ============================================================================
@@ -387,6 +388,18 @@ export function attachWebSocketHandler(options: WsHandlerOptions): { close: () =
 				socket.destroy();
 				return;
 			}
+			// F-5.7: scoped tokens may only subscribe to sessions of their own
+			// project. The WS URL carries no project context, so the project is
+			// resolved via a session lookup (session cwd). Unknown sessions and
+			// foreign projects are rejected with 403 (conservative default).
+			if (clientToken.projectScope) {
+				const session = await sessionAdapter.getSession(sessionId);
+				if (!session?.cwd || normalizeProjectPath(session.cwd) !== normalizeProjectPath(clientToken.projectScope)) {
+					socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
+					socket.destroy();
+					return;
+				}
+			}
 		}
 
 		// Dynamic import of 'ws' — lazy loaded to avoid import if not needed
@@ -586,6 +599,17 @@ export function createBunWebSocketBridge(
 				const clientToken = await validateToken(queryToken);
 				if (!clientToken) {
 					return new Response("Forbidden", { status: 403 });
+				}
+				// F-5.7: scoped tokens may only subscribe to sessions of their own
+				// project (session cwd lookup — same policy as the ws-based handler).
+				if (clientToken.projectScope) {
+					const session = await sessionAdapter.getSession(sessionId);
+					if (
+						!session?.cwd ||
+						normalizeProjectPath(session.cwd) !== normalizeProjectPath(clientToken.projectScope)
+					) {
+						return new Response("Forbidden", { status: 403 });
+					}
 				}
 			}
 

@@ -7,9 +7,17 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
-import { generateToken as createToken, isAuthDisabled, listTokens, revokeToken, tokenAuth } from "./auth.js";
+import {
+	type ClientTokenData,
+	generateToken as createToken,
+	isAuthDisabled,
+	listTokens,
+	revokeToken,
+	tokenAuth,
+} from "./auth.js";
 import { resolveCorsOrigin } from "./cors-config.js";
 import { type DrainableMessageQueue, InMemoryMessageQueue, PersistentMessageQueue } from "./message-queue.js";
+import { normalizeProjectPath, pathBasename } from "./path-utils.js";
 import { ProjectBudgetStore } from "./project-budgets.js";
 import type {
 	ApiError,
@@ -185,7 +193,7 @@ function classifyErrorStatus(err: unknown): number {
 
 	// Authentication / Authorization
 	if (msg.match(/unauthorized|invalid.*token|token.*expired|not authenticated/i)) return 401;
-	if (msg.match(/forbidden|insufficient.*permission|not authorized/i)) return 403;
+	if (msg.match(/forbidden|insufficient.*permission|not authorized|token not scoped to this project/i)) return 403;
 
 	// Not Found
 	if (msg.match(/not found|does not exist|no such/i)) return 404;
@@ -212,6 +220,35 @@ function classifyErrorCode(err: unknown): string {
 	return "INTERNAL_ERROR";
 }
 
+/**
+ * F-5.7: resource-level project scope check for single-session endpoints.
+ *
+ * Loads the session and verifies that a scoped token is only allowed to
+ * operate on sessions whose cwd matches the token scope. Returns the session
+ * on success; throws a typed error that the global error handler maps to:
+ *   - 404 when the session does not exist
+ *   - 403 when the session belongs to a different project or has no cwd
+ */
+async function assertSessionInScope(
+	sessionAdapter: SessionAdapter,
+	clientToken: ClientTokenData | undefined,
+	sessionId: string,
+): Promise<GetSessionResponse> {
+	const session = await sessionAdapter.getSession(sessionId);
+	if (!session) {
+		throw new Error("Session not found");
+	}
+	if (clientToken?.projectScope) {
+		if (!session.cwd) {
+			throw new Error("token not scoped to this project");
+		}
+		if (normalizeProjectPath(session.cwd) !== normalizeProjectPath(clientToken.projectScope)) {
+			throw new Error("token not scoped to this project");
+		}
+	}
+	return session;
+}
+
 /** Known project types (F-3.1; mirrors PROJECT_TYPES in coding-agent's
  *  project-registry — duplicated here to keep the gateway dependency-free). */
 const PROJECT_TYPES = ["code", "research", "automation", "unknown"] as const;
@@ -221,41 +258,6 @@ const PROJECT_TYPES = ["code", "research", "automation", "unknown"] as const;
  */
 function scrubTokenInLog(line: string): string {
 	return line.replace(/([?&])token=[^&\s]*/g, "$1token=***");
-}
-
-/**
- * Normalize a filesystem path for equality comparison (F-1.2 ?project= filter).
- * Pure string-based (no fs access, platform-independent):
- * backslashes → forward slashes, resolve `.`/`..` segments, strip trailing slash,
- * lowercase drive letter on Windows-style paths (`C:\...`).
- */
-function normalizeProjectPath(p: string): string {
-	let s = p.trim().replace(/\\/g, "/");
-	// Collapse duplicate slashes
-	s = s.replace(/\/{2,}/g, "/");
-	// Resolve . and .. segments
-	const isAbsolute = s.startsWith("/") || /^[A-Za-z]:\//.test(s);
-	const segments: string[] = [];
-	for (const seg of s.split("/")) {
-		if (seg === "" || seg === ".") continue;
-		if (seg === "..") {
-			if (segments.length > 0 && segments[segments.length - 1] !== "..") segments.pop();
-			else if (!isAbsolute) segments.push("..");
-			continue;
-		}
-		segments.push(seg);
-	}
-	let normalized = segments.join("/");
-	if (s.startsWith("/")) normalized = `/${normalized}`;
-	// Windows: case-insensitive filesystem — compare case-folded
-	if (/^[A-Za-z]:/.test(normalized)) normalized = normalized.toLowerCase();
-	return normalized;
-}
-
-/** Basename of a normalized path (pure string-based, no fs access). */
-function pathBasename(p: string): string {
-	const segments = p.split("/").filter((seg) => seg.length > 0);
-	return segments.length > 0 ? segments[segments.length - 1] : p;
 }
 
 // ============================================================================
@@ -415,24 +417,21 @@ async function createApp(
 
 	app.get("/api/sessions/:id", async (c) => {
 		const id = c.req.param("id");
-		const session = await sessionAdapter.getSession(id);
-		if (!session) {
-			return c.json({ error: "Session not found", code: "NOT_FOUND" } satisfies ApiError, 404);
-		}
+		// F-5.7: verify the session belongs to the token's project scope.
+		const session = await assertSessionInScope(sessionAdapter, c.get("clientToken"), id);
 		return c.json(session);
 	});
 
 	app.delete("/api/sessions/:id", async (c) => {
 		const id = c.req.param("id");
+		// F-5.7: resource-level scope check first (also covers scoped tokens
+		// without an explicit ?project= context).
+		const session = await assertSessionInScope(sessionAdapter, c.get("clientToken"), id);
 		// F-1.4: optional ?project=<path> — the session must belong to the given
 		// project (cwd match, normalized comparison) or deletion is rejected with
 		// 403. Without the param the delete is global (backward compatible).
 		const project = c.req.query("project");
 		if (project) {
-			const session = await sessionAdapter.getSession(id);
-			if (!session) {
-				return c.json({ error: "Session not found", code: "NOT_FOUND" } satisfies ApiError, 404);
-			}
 			const target = normalizeProjectPath(project);
 			if (session.cwd === undefined || normalizeProjectPath(session.cwd) !== target) {
 				return c.json({ error: "session does not belong to this project" }, 403);
@@ -667,6 +666,9 @@ async function createApp(
 	// --- Messages ---
 	app.post("/api/sessions/:id/messages", async (c) => {
 		const sessionId = c.req.param("id");
+		// F-5.7: verify the session belongs to the token's project scope before
+		// accepting a message (prevents prompt injection into foreign sessions).
+		await assertSessionInScope(sessionAdapter, c.get("clientToken"), sessionId);
 		const body = await c.req.json<SendMessageRequest>();
 		const sent = await sessionAdapter.sendMessage(sessionId, body.message, body.streamingBehavior);
 		if (!sent) {
@@ -799,16 +801,46 @@ async function createApp(
 
 	// --- Tokens ---
 	app.post("/api/tokens", async (c) => {
-		const body = await c.req.json<{ name: string }>();
+		const body = await c.req.json<{ name: string; projectScope?: string }>();
 		if (!body.name) {
 			return c.json({ error: "Token name is required", code: "BAD_REQUEST" } satisfies ApiError, 400);
 		}
-		const token = await createToken(body.name);
+		// F-5.7: optional projectScope — non-empty string when provided,
+		// normalized before persisting (same normalization as ?project= filters).
+		let projectScope: string | undefined;
+		if (body.projectScope !== undefined) {
+			if (typeof body.projectScope !== "string" || body.projectScope.trim().length === 0) {
+				return c.json(
+					{ error: "projectScope must be a non-empty string", code: "BAD_REQUEST" } satisfies ApiError,
+					400,
+				);
+			}
+			projectScope = normalizeProjectPath(body.projectScope);
+		}
+		// F-5.7: a scoped caller can only mint tokens for its own scope —
+		// minting a null-scope (full access) or differently-scoped token would
+		// be a privilege escalation. Omitted projectScope inherits the caller scope.
+		const caller = c.get("clientToken");
+		if (caller?.projectScope) {
+			const callerScope = normalizeProjectPath(caller.projectScope);
+			if (projectScope !== undefined && projectScope !== callerScope) {
+				return c.json(
+					{
+						error: "scoped token can only create tokens for its own project scope",
+						code: "FORBIDDEN",
+					} satisfies ApiError,
+					403,
+				);
+			}
+			projectScope = callerScope;
+		}
+		const token = await createToken(body.name, projectScope);
 		const resp: GenerateTokenResponse = {
 			token: {
 				id: token.id,
 				name: token.name,
 				token: token.token,
+				projectScope: token.projectScope,
 				createdAt: token.createdAt.toISOString(),
 				lastUsed: token.lastUsed?.toISOString(),
 			},
@@ -822,6 +854,7 @@ async function createApp(
 			tokens: tokens.map((t) => ({
 				id: t.id,
 				name: t.name,
+				projectScope: t.projectScope,
 				createdAt: t.createdAt.toISOString(),
 				lastUsed: t.lastUsed?.toISOString(),
 			})),

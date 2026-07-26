@@ -77,9 +77,14 @@ model Budget {
 }
 
 model ClientToken {
-	id        String    @id @default(cuid())
-	name      String
-	token     String    @unique
-	createdAt DateTime  @default(now())
-	lastUsed  DateTime?
+	id           String    @id @default(cuid())
+	name         String
+	token        String    @unique
+	// F-5.7: nullable per-project scope. null = full access (backward compat);
+	// a set value restricts the token to requests whose project context matches.
+	projectScope String?
+	createdAt    DateTime  @default(now())
+	lastUsed     DateTime?
+
+	@@index([projectScope])
 }

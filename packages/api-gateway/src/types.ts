@@ -310,6 +310,8 @@ export interface TokenInfo {
 	id: string;
 	name: string;
 	token: string;
+	/** F-5.7: per-project scope; null = full access (backward compat). */
+	projectScope?: string | null;
 	createdAt: string;
 	lastUsed?: string;
 }

@@ -114,6 +114,7 @@ const DDL_STATEMENTS = [
     "id" TEXT NOT NULL PRIMARY KEY,
     "name" TEXT NOT NULL,
     "token" TEXT NOT NULL,
+    "projectScope" TEXT,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "lastUsed" DATETIME
 )`,
@@ -124,6 +125,7 @@ const DDL_STATEMENTS = [
 	`CREATE UNIQUE INDEX IF NOT EXISTS "RoutingRule_name_key" ON "RoutingRule"("name")`,
 	`CREATE INDEX IF NOT EXISTS "Budget_provider_period_idx" ON "Budget"("provider", "period")`,
 	`CREATE UNIQUE INDEX IF NOT EXISTS "ClientToken_token_key" ON "ClientToken"("token")`,
+	`CREATE INDEX IF NOT EXISTS "ClientToken_projectScope_idx" ON "ClientToken"("projectScope")`,
 ];
 
 /**
@@ -230,6 +232,15 @@ async function ensureAdditiveColumns(client: PrismaClient): Promise<void> {
 		await client.$executeRawUnsafe(`ALTER TABLE "Session" ADD COLUMN "cwd" TEXT`);
 	}
 	await client.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "Session_cwd_idx" ON "Session"("cwd")`);
+
+	// F-5.7: ClientToken.projectScope — per-project token scope (null = full access)
+	const tokenColumns: Array<{ name: string }> = await client.$queryRawUnsafe(`PRAGMA table_info("ClientToken")`);
+	if (!tokenColumns.some((c) => c.name === "projectScope")) {
+		await client.$executeRawUnsafe(`ALTER TABLE "ClientToken" ADD COLUMN "projectScope" TEXT`);
+	}
+	await client.$executeRawUnsafe(
+		`CREATE INDEX IF NOT EXISTS "ClientToken_projectScope_idx" ON "ClientToken"("projectScope")`,
+	);
 }
 
 /** Close the Prisma connection */

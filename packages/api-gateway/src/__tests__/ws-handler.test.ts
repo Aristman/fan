@@ -13,14 +13,16 @@ vi.mock("ws", () => ({
 	})),
 }));
 
+const mockClientToken = {
+	create: vi.fn(),
+	update: vi.fn(),
+	findMany: vi.fn(),
+	delete: vi.fn(),
+};
+
 vi.mock("@fan/db", () => ({
 	getPrismaClient: () => ({
-		clientToken: {
-			create: vi.fn(),
-			update: vi.fn(),
-			findMany: vi.fn(),
-			delete: vi.fn(),
-		},
+		clientToken: mockClientToken,
 	}),
 }));
 
@@ -440,5 +442,86 @@ describe("WebSocket Handler", () => {
 				await fs.rm(queuesDir, { recursive: true, force: true });
 			}
 		});
+	});
+});
+
+describe("F-5.7: WebSocket project scope enforcement", () => {
+	const SCOPED_TOKEN = "scoped-ws-token";
+	const SCOPED_SCOPE = "/proj/a";
+
+	beforeEach(() => {
+		delete process.env.FAN_NO_AUTH;
+		mockClientToken.update.mockResolvedValue({
+			id: "scoped-ws",
+			name: "Scoped WS Client",
+			token: SCOPED_TOKEN,
+			projectScope: SCOPED_SCOPE,
+			createdAt: new Date(),
+			lastUsed: new Date(),
+		});
+	});
+
+	afterEach(() => {
+		process.env.FAN_NO_AUTH = "1";
+	});
+
+	function createMockAdapterWithSession(cwd: string | undefined) {
+		return {
+			listSessions: vi.fn().mockResolvedValue([]),
+			getSession: vi.fn().mockResolvedValue({
+				id: "sess-target",
+				title: "Target",
+				cwd,
+				messages: [],
+			}),
+			createSession: vi.fn().mockResolvedValue({ id: "s1", title: "Test" }),
+			deleteSession: vi.fn().mockResolvedValue(false),
+			sendMessage: vi.fn().mockResolvedValue(true),
+			subscribeToSession: vi.fn().mockReturnValue(() => {}),
+			getAvailableModels: vi.fn().mockResolvedValue([]),
+			bindSessionExtensions: vi.fn().mockResolvedValue(undefined),
+			listProjects: vi.fn().mockResolvedValue([]),
+			getActiveSessionId: vi.fn().mockReturnValue(null),
+			isExecuting: vi.fn().mockReturnValue(false),
+		};
+	}
+
+	function makeServerLike() {
+		return {
+			upgrade: vi.fn().mockReturnValue(true),
+		};
+	}
+
+	it("Bun bridge: scoped token + matching session cwd → upgrade", async () => {
+		const { createBunWebSocketBridge } = await import("../ws-handler.js");
+		const adapter = createMockAdapterWithSession(SCOPED_SCOPE);
+		const bridge = createBunWebSocketBridge(adapter);
+		const url = new URL(`http://localhost/api/ws/sess-target?token=${SCOPED_TOKEN}`);
+		const server = makeServerLike();
+		const res = await bridge.handleFetch({ url: url.toString() } as Request, server, url);
+		expect(res).toBeUndefined();
+		expect(server.upgrade).toHaveBeenCalled();
+	});
+
+	it("Bun bridge: scoped token + foreign session cwd → 403", async () => {
+		const { createBunWebSocketBridge } = await import("../ws-handler.js");
+		const adapter = createMockAdapterWithSession("/proj/b");
+		const bridge = createBunWebSocketBridge(adapter);
+		const url = new URL(`http://localhost/api/ws/sess-target?token=${SCOPED_TOKEN}`);
+		const server = makeServerLike();
+		const res = await bridge.handleFetch({ url: url.toString() } as Request, server, url);
+		expect(res?.status).toBe(403);
+		expect(server.upgrade).not.toHaveBeenCalled();
+	});
+
+	it("Bun bridge: scoped token + session without cwd → 403", async () => {
+		const { createBunWebSocketBridge } = await import("../ws-handler.js");
+		const adapter = createMockAdapterWithSession(undefined);
+		const bridge = createBunWebSocketBridge(adapter);
+		const url = new URL(`http://localhost/api/ws/sess-target?token=${SCOPED_TOKEN}`);
+		const server = makeServerLike();
+		const res = await bridge.handleFetch({ url: url.toString() } as Request, server, url);
+		expect(res?.status).toBe(403);
+		expect(server.upgrade).not.toHaveBeenCalled();
 	});
 });

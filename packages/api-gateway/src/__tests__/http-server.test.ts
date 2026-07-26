@@ -532,20 +532,35 @@ describe("HTTP Server", () => {
 		});
 
 		it("DELETE /api/sessions/:id should return 404 if not deleted", async () => {
+			mockSessionAdapter.getSession.mockResolvedValueOnce({
+				id: "nonexistent",
+				title: "Nonexistent",
+				createdAt: "2026-01-01",
+				updatedAt: "2026-01-01",
+				messages: [],
+				cwd: "/data/repos/a",
+			});
 			mockSessionAdapter.deleteSession.mockResolvedValueOnce(false);
 			const app = await getApp();
 			const res = await app.request("/api/sessions/nonexistent", { method: "DELETE" });
 			expect(res.status).toBe(404);
 		});
 
-		// TC-F-1.4-3: без ?project — глобальное удаление, 204
+		// TC-F-1.4-3: без ?project — resource-level check, затем глобальное удаление, 204
 		it("DELETE /api/sessions/:id without ?project should return 204 and delete globally (TC-F-1.4-3)", async () => {
-			mockSessionAdapter.deleteSession.mockResolvedValueOnce(true);
+			mockSessionAdapter.getSession.mockResolvedValue({
+				id: "s1",
+				title: "Session A",
+				createdAt: "2026-01-01",
+				updatedAt: "2026-01-01",
+				messages: [],
+				cwd: "/data/repos/a",
+			});
+			mockSessionAdapter.deleteSession.mockResolvedValue(true);
 			const app = await getApp();
 			const res = await app.request("/api/sessions/s1", { method: "DELETE" });
 			expect(res.status).toBe(204);
 			expect(mockSessionAdapter.deleteSession).toHaveBeenCalledWith("s1", undefined);
-			expect(mockSessionAdapter.getSession).not.toHaveBeenCalled();
 		});
 
 		// TC-F-1.4-1: совпадающий ?project → 204, сессия удалена
@@ -1065,7 +1080,17 @@ describe("HTTP Server", () => {
 	});
 
 	describe("Messages", () => {
+		function mockSession(id: string, cwd?: string) {
+			mockSessionAdapter.getSession.mockResolvedValueOnce({
+				id,
+				title: "Test",
+				cwd,
+				messages: [],
+			});
+		}
+
 		it("POST /api/sessions/:id/messages should send message", async () => {
+			mockSession("s1");
 			mockSessionAdapter.sendMessage.mockResolvedValueOnce(true);
 			const app = await getApp();
 			const res = await app.request("/api/sessions/s1/messages", {
@@ -1078,8 +1103,8 @@ describe("HTTP Server", () => {
 			expect(data.success).toBe(true);
 		});
 
-		it("POST /api/sessions/:id/messages should return 404 if session unavailable", async () => {
-			mockSessionAdapter.sendMessage.mockResolvedValueOnce(false);
+		it("POST /api/sessions/:id/messages should return 404 if session not found", async () => {
+			mockSessionAdapter.getSession.mockResolvedValueOnce(null);
 			const app = await getApp();
 			const res = await app.request("/api/sessions/unknown/messages", {
 				method: "POST",
@@ -1089,7 +1114,20 @@ describe("HTTP Server", () => {
 			expect(res.status).toBe(404);
 		});
 
+		it("POST /api/sessions/:id/messages should return 404 if session adapter reports unavailable", async () => {
+			mockSession("s1");
+			mockSessionAdapter.sendMessage.mockResolvedValueOnce(false);
+			const app = await getApp();
+			const res = await app.request("/api/sessions/s1/messages", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ message: "Hello" }),
+			});
+			expect(res.status).toBe(404);
+		});
+
 		it("POST /api/sessions/:id/messages should pass streamingBehavior", async () => {
+			mockSession("s1");
 			mockSessionAdapter.sendMessage.mockResolvedValueOnce(true);
 			const app = await getApp();
 			await app.request("/api/sessions/s1/messages", {
@@ -1377,6 +1415,41 @@ describe("HTTP Server", () => {
 			expect(res.status).toBe(400);
 		});
 
+		it("POST /api/tokens with projectScope should create a normalized scoped token (F-5.7)", async () => {
+			const mockToken = {
+				id: "t2",
+				name: "Scoped",
+				token: "hex-token-2",
+				projectScope: "/proj/a",
+				createdAt: new Date("2026-01-01"),
+				lastUsed: null,
+			};
+			mockClientToken.create.mockResolvedValueOnce(mockToken);
+			const app = await getApp();
+			const res = await app.request("/api/tokens", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ name: "Scoped", projectScope: "/proj/a/" }),
+			});
+			expect(res.status).toBe(201);
+			const data = await json<{ token: { projectScope: string | null } }>(res);
+			expect(data.token.projectScope).toBe("/proj/a");
+			expect(mockClientToken.create).toHaveBeenCalledWith({
+				data: { name: "Scoped", token: expect.any(String), projectScope: "/proj/a" },
+			});
+		});
+
+		it("POST /api/tokens should return 400 for an empty projectScope (F-5.7)", async () => {
+			const app = await getApp();
+			const res = await app.request("/api/tokens", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ name: "Scoped", projectScope: "   " }),
+			});
+			expect(res.status).toBe(400);
+			expect(mockClientToken.create).not.toHaveBeenCalled();
+		});
+
 		it("GET /api/tokens should list tokens", async () => {
 			mockClientToken.findMany.mockResolvedValueOnce([
 				{ id: "t1", name: "Test", token: "secret", createdAt: new Date("2026-01-01"), lastUsed: null },
@@ -1419,6 +1492,148 @@ describe("HTTP Server", () => {
 			const app = await getApp();
 			const res = await app.request("/random-path");
 			expect(res.status).toBe(404);
+		});
+	});
+
+	describe("F-5.7: resource-level project scope enforcement", () => {
+		const SCOPED_TOKEN = "scoped-token-hex";
+		const SCOPED_SCOPE = "/own";
+		const OWN_SESSION = { id: "sess-own", title: "Own", cwd: SCOPED_SCOPE, messages: [] };
+		const FOREIGN_SESSION = { id: "sess-foreign", title: "Foreign", cwd: "/foreign", messages: [] };
+
+		beforeEach(() => {
+			delete process.env.FAN_NO_AUTH;
+			mockClientToken.update.mockResolvedValue({
+				id: "scoped-token",
+				name: "Scoped Client",
+				token: SCOPED_TOKEN,
+				projectScope: SCOPED_SCOPE,
+				createdAt: new Date(),
+				lastUsed: new Date(),
+			});
+		});
+
+		afterEach(() => {
+			process.env.FAN_NO_AUTH = "1";
+		});
+
+		it("GET /api/sessions/:id?project=/own on a foreign session → 403", async () => {
+			mockSessionAdapter.getSession.mockResolvedValue(FOREIGN_SESSION);
+			const app = await getApp();
+			const res = await app.request(`/api/sessions/sess-foreign?project=${encodeURIComponent(SCOPED_SCOPE)}`, {
+				headers: { Authorization: `Bearer ${SCOPED_TOKEN}` },
+			});
+			expect(res.status).toBe(403);
+		});
+
+		it("POST /api/sessions/:id/messages?project=/own on a foreign session → 403 and no dispatch", async () => {
+			mockSessionAdapter.getSession.mockResolvedValue(FOREIGN_SESSION);
+			mockSessionAdapter.sendMessage.mockResolvedValue(true);
+			const app = await getApp();
+			const res = await app.request(
+				`/api/sessions/sess-foreign/messages?project=${encodeURIComponent(SCOPED_SCOPE)}`,
+				{
+					method: "POST",
+					headers: { Authorization: `Bearer ${SCOPED_TOKEN}`, "Content-Type": "application/json" },
+					body: JSON.stringify({ message: "prompt injection" }),
+				},
+			);
+			expect(res.status).toBe(403);
+			expect(mockSessionAdapter.sendMessage).not.toHaveBeenCalled();
+		});
+
+		it("GET /api/sessions/:id on an own session without ?project= → 200", async () => {
+			mockSessionAdapter.getSession.mockResolvedValue(OWN_SESSION);
+			const app = await getApp();
+			const res = await app.request("/api/sessions/sess-own", {
+				headers: { Authorization: `Bearer ${SCOPED_TOKEN}` },
+			});
+			expect(res.status).toBe(200);
+			const data = await json<{ id: string }>(res);
+			expect(data.id).toBe("sess-own");
+		});
+
+		it("GET /api/sessions/:id?project=/own on an own session → 200", async () => {
+			mockSessionAdapter.getSession.mockResolvedValue(OWN_SESSION);
+			const app = await getApp();
+			const res = await app.request(`/api/sessions/sess-own?project=${encodeURIComponent(SCOPED_SCOPE)}`, {
+				headers: { Authorization: `Bearer ${SCOPED_TOKEN}` },
+			});
+			expect(res.status).toBe(200);
+		});
+
+		it("POST /api/sessions/:id/messages on an own session without ?project= → 200", async () => {
+			mockSessionAdapter.getSession.mockResolvedValue(OWN_SESSION);
+			mockSessionAdapter.sendMessage.mockResolvedValue(true);
+			const app = await getApp();
+			const res = await app.request("/api/sessions/sess-own/messages", {
+				method: "POST",
+				headers: { Authorization: `Bearer ${SCOPED_TOKEN}`, "Content-Type": "application/json" },
+				body: JSON.stringify({ message: "hello" }),
+			});
+			expect(res.status).toBe(200);
+			expect(mockSessionAdapter.sendMessage).toHaveBeenCalledWith("sess-own", "hello", undefined);
+		});
+
+		it("POST /api/sessions/:id/messages?project=/own on an own session → 200", async () => {
+			mockSessionAdapter.getSession.mockResolvedValue(OWN_SESSION);
+			mockSessionAdapter.sendMessage.mockResolvedValue(true);
+			const app = await getApp();
+			const res = await app.request(`/api/sessions/sess-own/messages?project=${encodeURIComponent(SCOPED_SCOPE)}`, {
+				method: "POST",
+				headers: { Authorization: `Bearer ${SCOPED_TOKEN}`, "Content-Type": "application/json" },
+				body: JSON.stringify({ message: "hello" }),
+			});
+			expect(res.status).toBe(200);
+		});
+
+		it("DELETE /api/sessions/:id on an own session without ?project= → 204", async () => {
+			mockSessionAdapter.getSession.mockResolvedValue(OWN_SESSION);
+			mockSessionAdapter.deleteSession.mockResolvedValue(true);
+			const app = await getApp();
+			const res = await app.request("/api/sessions/sess-own", {
+				method: "DELETE",
+				headers: { Authorization: `Bearer ${SCOPED_TOKEN}` },
+			});
+			expect(res.status).toBe(204);
+		});
+
+		it("DELETE /api/sessions/:id on a foreign session without ?project= → 403", async () => {
+			mockSessionAdapter.getSession.mockResolvedValue(FOREIGN_SESSION);
+			mockSessionAdapter.deleteSession.mockResolvedValue(true);
+			const app = await getApp();
+			const res = await app.request("/api/sessions/sess-foreign", {
+				method: "DELETE",
+				headers: { Authorization: `Bearer ${SCOPED_TOKEN}` },
+			});
+			expect(res.status).toBe(403);
+			expect(mockSessionAdapter.deleteSession).not.toHaveBeenCalled();
+		});
+
+		it("legacy session without cwd + scoped token → 403", async () => {
+			mockSessionAdapter.getSession.mockResolvedValue({ id: "sess-legacy", title: "Legacy", messages: [] });
+			const app = await getApp();
+			const res = await app.request("/api/sessions/sess-legacy", {
+				headers: { Authorization: `Bearer ${SCOPED_TOKEN}` },
+			});
+			expect(res.status).toBe(403);
+		});
+
+		it("unscoped token still reaches foreign sessions globally (backward compat)", async () => {
+			mockClientToken.update.mockResolvedValue({
+				id: "unscoped-token",
+				name: "Unscoped Client",
+				token: SCOPED_TOKEN,
+				projectScope: null,
+				createdAt: new Date(),
+				lastUsed: new Date(),
+			});
+			mockSessionAdapter.getSession.mockResolvedValue(FOREIGN_SESSION);
+			const app = await getApp();
+			const res = await app.request("/api/sessions/sess-foreign", {
+				headers: { Authorization: `Bearer ${SCOPED_TOKEN}` },
+			});
+			expect(res.status).toBe(200);
 		});
 	});
 
