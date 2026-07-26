@@ -14,6 +14,8 @@
 #   → phase 0: 10 checks (health, auth 401, token bootstrap, sessions CRUD,
 #     CORS, file logging, WebSocket)
 #   → phase 1 (F-1.14-E2E): multi-project Workspace API workflow (section 8)
+#   → phase 2 (F-2.14-E2E): Workspace UX — WS dispatch path + 3-project
+#     switching performance (section 9)
 #   → docker compose down (trap on exit)
 #
 # Exit code 0 only if every check passes (check 7 is optional — skipped
@@ -75,7 +77,7 @@ cleanup() {
 	echo
 	# Best-effort workspace cleanup while the container is still up
 	# (no-op when the stack never started or the function is not defined yet).
-	phase1_cleanup || true
+	e2e_workspace_cleanup || true
 	info "Teardown: $COMPOSE down"
 	$COMPOSE down >/dev/null 2>&1 || true
 }
@@ -87,25 +89,40 @@ http_status() {
 	curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$@"
 }
 
-# --- Phase 1 (F-1.14-E2E) constants & idempotency cleanup ------------------
+# Float comparison for curl %{time_total} values: lt2 0.42 → true iff < 2.0s.
+# awk is used because bash cannot compare floats (bc is not always present).
+lt2() {
+	awk -v t="$1" 'BEGIN{exit !(t < 2.0)}'
+}
+
+# Timed POST /api/sessions for a project cwd. Prints "<body>\n<code>\n<time_total>".
+timed_post_session() {
+	curl -s --max-time 15 -w '\n%{http_code}\n%{time_total}' -X POST "$BASE_URL/api/sessions" \
+		-H "Authorization: Bearer $TOKEN" \
+		-H "Content-Type: application/json" -d "{\"cwd\": \"$1\"}"
+}
+
+# --- Sections 8+9 (F-1.14-E2E / F-2.14-E2E) constants & idempotency cleanup --
 # Fixed project names + thorough cleanup (start-of-section pre-clean AND
-# end-of-run/trap cleanup) keep the section idempotent against the
+# end-of-run/trap cleanup) keep the sections idempotent against the
 # PERSISTENT fan-data / fan-repos volumes: leftovers from a crashed previous
 # run are removed before re-creating anything.
 PROJ_A="/data/repos/e2e-proj-a"
 PROJ_B="/data/repos/e2e-proj-b"
+PROJ_C="/data/repos/e2e-proj-c"
 PROJ_A_NAME="e2e-proj-a"
 PROJ_B_NAME="e2e-proj-b"
 # Session dirs use SessionManager's --encoded-cwd-- scheme
 # (`--${cwd minus leading slash, slashes→dashes}--`, session-manager.ts).
 SESS_DIR_A="/data/.fan/agent/sessions/--data-repos-e2e-proj-a--"
 SESS_DIR_B="/data/.fan/agent/sessions/--data-repos-e2e-proj-b--"
+SESS_DIR_C="/data/.fan/agent/sessions/--data-repos-e2e-proj-c--"
 
 # Remove test workspaces, their session dirs and their projects.json
 # registry entries. Best-effort: never fails the script (used in the trap).
-phase1_cleanup() {
+e2e_workspace_cleanup() {
 	MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" \
-		rm -rf "$PROJ_A" "$PROJ_B" "$SESS_DIR_A" "$SESS_DIR_B" 2>/dev/null || true
+		rm -rf "$PROJ_A" "$PROJ_B" "$PROJ_C" "$SESS_DIR_A" "$SESS_DIR_B" "$SESS_DIR_C" 2>/dev/null || true
 	MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" bun -e '
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 const p = "/data/.fan/agent/projects.json";
@@ -113,7 +130,8 @@ if (existsSync(p)) {
 	try {
 		const list = JSON.parse(readFileSync(p, "utf8"));
 		if (Array.isArray(list)) {
-			const keep = list.filter((e) => e && !["/data/repos/e2e-proj-a", "/data/repos/e2e-proj-b"].includes(e.path));
+			const e2e = ["/data/repos/e2e-proj-a", "/data/repos/e2e-proj-b", "/data/repos/e2e-proj-c"];
+			const keep = list.filter((e) => e && !e2e.includes(e.path));
 			writeFileSync(p, JSON.stringify(keep, null, 2));
 		}
 	} catch { /* corrupted registry → app already treats it as empty */ }
@@ -332,7 +350,7 @@ if [ -z "$TOKEN" ]; then
 	fail "phase 1 checks skipped — no token (see check 3)"
 else
 	# 8.0. Pre-clean: wipe leftovers from a crashed previous run (volumes persist).
-	phase1_cleanup
+	e2e_workspace_cleanup
 
 	# 8.1. Workspace dirs in the container; .git in A → auto-register type=code (F-1.7).
 	if MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" mkdir -p "$PROJ_A/.git" "$PROJ_B" 2>/dev/null; then
@@ -463,7 +481,160 @@ console.log("SEEDED");
 
 	# 8.11. Post-clean: keep the run idempotent (also runs from the EXIT trap).
 	info "Cleanup: removing test workspaces, session dirs and registry entries"
-	phase1_cleanup
+	e2e_workspace_cleanup
+fi
+
+# =========================================================================
+section "9. Phase 2 — Workspace UX (F-2.14-E2E): multi-project work + queue"
+# =========================================================================
+# E2E SCOPE DECISION (documented; the roadmap TCs assume a live LLM, which
+# this stack deliberately does not have — no API keys in the container):
+#
+#  (a) WS sendMessage path — E2E-TESTABLE, checked here (9.3/9.4).
+#      Connect → welcome frame → ping/pong → sendMessage. The engine is
+#      IDLE (nothing streams without an LLM), so the dispatcher takes the
+#      direct-dispatch branch: sessionAdapter.sendMessage() → runtime
+#      .prompt() throws synchronously at provider validation
+#      (agent-session.ts: "No API key found …" / "No model selected")
+#      BEFORE any agent event is emitted. The only observable is therefore
+#      server-side: the dispatcher's .catch logs
+#      "[ws-handler] sendMessage failed for session <id>" (teed into
+#      /data/logs/app.log, F-0.10). Receiving that log line proves the
+#      full public WS path: upgrade + token auth + frame parse +
+#      dispatcher routing + adapter dispatch + provider stage reached.
+#      The expected failure is the provider error — a protocol/dispatch
+#      failure would never reach the adapter.
+#
+#  (b) Queue branches (queued / queue_full / dequeue) — NOT E2E-testable
+#      here, BY DESIGN. The dispatcher only enqueues when
+#      isExecuting()=true, and the engine can never become busy without an
+#      LLM (prompt() throws before streaming starts). These branches are
+#      covered at the vitest integration level with a mock busy adapter:
+#      packages/api-gateway/src/__tests__/ws-handler.test.ts
+#      (TC-F-2.5-1 queued+position, positions 1..N, global-FIFO dequeue on
+#      agent_end/finally, TC-F-2.15-2 queue_full QUEUE_OVERFLOW).
+#
+#  (c) Multi-project REST workflow + ?project= isolation — covered by
+#      section 8 (8.6/8.7 filter checks, 8.8 cross-project 403) and NOT
+#      duplicated here; 9.2.5 only re-verifies the filtered list cheaply
+#      as part of the timing measurement.
+#
+#  (d) 3-project switching performance (TC-F-2.14-E2E-2 approximation) —
+#      checked here (9.2). Public-API approximation of "switch project":
+#      timed POST /api/sessions {cwd} across A → B → C → A (each POST
+#      performs the runtime session switch) + one timed GET. Assert
+#      curl time_total < 2s per operation; measured values are reported
+#      (honest timing, cold switches included — ServiceRegistry is a
+#      standalone cache not wired into the runtime).
+#
+#  (e) Dashboard components (project-switcher, session tree, queue
+#      indicator) — vitest level only; there is no browser in this stack.
+PHASE2_SESSION_ID=""
+if [ -z "$TOKEN" ]; then
+	fail "phase 2 checks skipped — no token (see check 3)"
+else
+	# 9.0. Pre-clean: wipe leftovers from a crashed previous run (volumes persist).
+	e2e_workspace_cleanup
+
+	# 9.1. Three test workspaces in the container (A/B/C).
+	if MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" mkdir -p "$PROJ_A" "$PROJ_B" "$PROJ_C" 2>/dev/null; then
+		pass "three test workspaces created ($PROJ_A, $PROJ_B, $PROJ_C)"
+	else
+		fail "failed to create phase-2 test workspace directories in container"
+	fi
+
+	# 9.2. TC-F-2.14-E2E-2 (approximation): timed project switches A→B→C→A.
+	# Each POST /api/sessions {cwd} performs the runtime switch; assert
+	# time_total < 2s per operation and the returned cwd matches.
+	for target in "$PROJ_A" "$PROJ_B" "$PROJ_C" "$PROJ_A"; do		resp="$(timed_post_session "$target")"
+		t="$(echo "$resp" | tail -1)"
+		code="$(echo "$resp" | tail -2 | head -1)"
+		body="$(echo "$resp" | head -n -2)"
+		resp_cwd="$(echo "$body" | grep -o '"cwd"[: ]*"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"$/\1/')"
+		if [ "$code" = "201" ] && [ "$resp_cwd" = "$target" ] && lt2 "$t"; then
+			pass "switch to $target: POST /api/sessions → 201 in ${t}s (< 2s)"
+			# Remember the session id of the final switch (back to A) for the WS test.
+			if [ "$target" = "$PROJ_A" ]; then
+				PHASE2_SESSION_ID="$(echo "$body" | grep -o '"id"[: ]*"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"$/\1/')"
+			fi
+		else
+			fail "switch to $target: code=$code cwd=${resp_cwd:-<none>} time=${t}s (expected 201 + cwd + < 2s)"
+		fi
+	done
+
+	# 9.2.5. Timed GET on the filtered list (isolation itself is section 8
+	# territory — here we only re-verify shape + measure the read path).
+	get_resp="$(curl -s --max-time 15 -w '\n%{http_code}\n%{time_total}' "$BASE_URL/api/sessions?project=$PROJ_A" \
+		-H "Authorization: Bearer $TOKEN")"
+	get_t="$(echo "$get_resp" | tail -1)"
+	get_code="$(echo "$get_resp" | tail -2 | head -1)"
+	get_body="$(echo "$get_resp" | head -n -2)"
+	if [ "$get_code" = "200" ] && echo "$get_body" | grep -q '"sessions"' && lt2 "$get_t"; then
+		pass "GET /api/sessions?project=A → 200 in ${get_t}s (< 2s; isolation checks: see 8.6/8.7)"
+	else
+		fail "GET /api/sessions?project=A: code=$get_code time=${get_t}s body=$get_body"
+	fi
+
+	# 9.3. WS sendMessage protocol end-to-end (scope item a): connect to the
+	# active session A, expect welcome frame + pong, send sendMessage and
+	# confirm NO queue frames arrive (engine idle → direct dispatch, F-2.5).
+	if [ -z "$PHASE2_SESSION_ID" ]; then
+		fail "WS sendMessage check skipped — no phase-2 session id (see 9.2)"
+	elif ! command -v bun >/dev/null 2>&1; then
+		skip "WS sendMessage check skipped — bun not available on host (wscat cannot assert frame sequence)"
+	else
+		ws_out="$(E2E_WS_URL="ws://127.0.0.1:3456/api/ws/$PHASE2_SESSION_ID?token=$TOKEN" bun -e '
+const url = process.env.E2E_WS_URL;
+const result = { connected: false, pong: false, queueFrame: false, frames: [] };
+const timer = setTimeout(() => { console.log(JSON.stringify(result)); process.exit(0); }, 8000);
+try {
+	const ws = new WebSocket(url);
+	ws.onmessage = (e) => {
+		try {
+			const msg = JSON.parse(e.data);
+			result.frames.push(msg.type);
+			if (msg.type === "connected") {
+				result.connected = true;
+				ws.send(JSON.stringify({ type: "ping" }));
+				ws.send(JSON.stringify({ type: "sendMessage", content: "e2e phase2 ws probe" }));
+			} else if (msg.type === "pong") {
+				result.pong = true;
+			} else if (msg.type === "queued" || msg.type === "queue_full") {
+				result.queueFrame = true;
+			}
+		} catch { /* ignore non-JSON frames */ }
+	};
+	ws.onerror = () => { clearTimeout(timer); console.log("WS_ERROR"); process.exit(1); };
+} catch { clearTimeout(timer); console.log("WS_THROW"); process.exit(1); }
+' 2>/dev/null || true)"
+		info "WS frames: ${ws_out:-<none>}"
+		if echo "$ws_out" | grep -q '"connected":true' && echo "$ws_out" | grep -q '"pong":true' \
+			&& echo "$ws_out" | grep -q '"queueFrame":false'; then
+			pass "WS sendMessage: connected + pong received, no queued/queue_full (engine idle → direct dispatch, F-2.5)"
+		else
+			fail "WS sendMessage: expected connected+pong without queue frames, got ${ws_out:-no output}"
+		fi
+
+		# 9.4. Server-side evidence: the dispatch reached the adapter and failed
+		# at the provider stage (no LLM keys in the container — expected). The
+		# dispatcher logs the failure; console output is teed to app.log (F-0.10).
+		sleep 2
+		log_hit="$(MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" \
+			grep -F "sendMessage failed for session $PHASE2_SESSION_ID" /data/logs/app.log 2>/dev/null || true)"
+		if [ -z "$log_hit" ]; then
+			log_hit="$($COMPOSE logs --since 120s fan 2>/dev/null | grep -F "sendMessage failed for session $PHASE2_SESSION_ID" || true)"
+		fi
+		if [ -n "$log_hit" ]; then
+			pass "server log confirms dispatch → provider error for session $PHASE2_SESSION_ID (WS path end-to-end)"
+			info "log: $(echo "$log_hit" | head -1 | cut -c1-160)"
+		else
+			fail "server log: no 'sendMessage failed for session $PHASE2_SESSION_ID' entry (dispatch never reached the adapter)"
+		fi
+	fi
+
+	# 9.5. Post-clean: keep the run idempotent (also runs from the EXIT trap).
+	info "Cleanup: removing phase-2 test workspaces, session dirs and registry entries"
+	e2e_workspace_cleanup
 fi
 
 # =========================================================================
