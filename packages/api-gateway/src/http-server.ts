@@ -45,14 +45,23 @@ let _version = "unknown";
 
 /** Minimal interface for session management — injected by CLI entry point */
 export interface SessionAdapter {
-	/** List available sessions */
-	listSessions(): Promise<SessionSummary[]>;
-	/** Get session details with messages */
-	getSession(id: string): Promise<GetSessionResponse | null>;
+	/** List available sessions.
+	 *  F-1.9: optional projectPath — only sessions whose cwd belongs to that project
+	 *  (normalized comparison). Without it, all sessions (global, backward compat). */
+	listSessions(projectPath?: string): Promise<SessionSummary[]>;
+	/** Get session details with messages.
+	 *  F-1.9: optional projectPath — returns null when the session exists but belongs
+	 *  to a different project. Decision: null (not an error) — the adapter is
+	 *  transport-agnostic and has no notion of HTTP 403; the HTTP layer maps null
+	 *  to its own status codes. Without projectPath the lookup is global. */
+	getSession(id: string, projectPath?: string): Promise<GetSessionResponse | null>;
 	/** Create a new session (F-1.3: optional cwd — working directory of the new session) */
 	createSession(options?: { title?: string; parentSessionId?: string; cwd?: string }): Promise<CreateSessionResponse>;
-	/** Delete a session */
-	deleteSession(id: string): Promise<boolean>;
+	/** Delete a session.
+	 *  F-1.9: optional projectPath — refuses to delete (returns false, session kept)
+	 *  when the session belongs to a different project. Without projectPath the
+	 *  delete is global (backward compat). */
+	deleteSession(id: string, projectPath?: string): Promise<boolean>;
 	/** Send a message to a session (events stream via WebSocket) */
 	sendMessage(sessionId: string, message: string, streamingBehavior?: "steer" | "followUp"): Promise<boolean>;
 	/** Subscribe to session events for WebSocket forwarding */
@@ -244,8 +253,10 @@ async function createApp(
 		// F-1.2: optional ?project=<path> filter — only sessions whose cwd
 		// matches the project path (normalized comparison). Without the param
 		// the full list is returned (backward compatible).
+		// F-1.9: the filter is also pushed down into the adapter; the handler-side
+		// filter stays as defense-in-depth for adapters that ignore the param.
 		const project = c.req.query("project");
-		let sessions = await sessionAdapter.listSessions();
+		let sessions = await sessionAdapter.listSessions(project);
 		if (project) {
 			const target = normalizeProjectPath(project);
 			sessions = sessions.filter((s) => s.cwd !== undefined && normalizeProjectPath(s.cwd) === target);
@@ -279,7 +290,7 @@ async function createApp(
 				return c.json({ error: "session does not belong to this project" }, 403);
 			}
 		}
-		const deleted = await sessionAdapter.deleteSession(id);
+		const deleted = await sessionAdapter.deleteSession(id, project);
 		if (!deleted) {
 			return c.json({ error: "Session not found", code: "NOT_FOUND" } satisfies ApiError, 404);
 		}

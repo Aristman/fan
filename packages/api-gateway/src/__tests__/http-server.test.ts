@@ -270,6 +270,24 @@ describe("HTTP Server", () => {
 			expect(data.sessions).toHaveLength(0);
 		});
 
+		// F-1.9: ?project= is pushed down into the adapter (defense-in-depth:
+		// the handler-side filter stays for adapters that ignore the param).
+		it("GET /api/sessions?project= should pass projectPath to adapter.listSessions", async () => {
+			mockSessionAdapter.listSessions.mockResolvedValueOnce([]);
+			const app = await getApp();
+			await app.request(`/api/sessions?project=${encodeURIComponent("/data/repos/a")}`);
+			expect(mockSessionAdapter.listSessions).toHaveBeenCalledWith("/data/repos/a");
+		});
+
+		// F-1.9 (TC-F-1.9-2): without ?project= the adapter receives no filter
+		// and the full list is returned (global operation, backward compat).
+		it("GET /api/sessions without ?project= should call adapter.listSessions without a filter", async () => {
+			mockSessionAdapter.listSessions.mockResolvedValueOnce(projectSessions);
+			const app = await getApp();
+			await app.request("/api/sessions");
+			expect(mockSessionAdapter.listSessions).toHaveBeenCalledWith(undefined);
+		});
+
 		it("POST /api/sessions should create a session", async () => {
 			mockSessionAdapter.createSession.mockResolvedValueOnce({
 				id: "s2",
@@ -379,7 +397,7 @@ describe("HTTP Server", () => {
 			const app = await getApp();
 			const res = await app.request("/api/sessions/s1", { method: "DELETE" });
 			expect(res.status).toBe(204);
-			expect(mockSessionAdapter.deleteSession).toHaveBeenCalledWith("s1");
+			expect(mockSessionAdapter.deleteSession).toHaveBeenCalledWith("s1", undefined);
 			expect(mockSessionAdapter.getSession).not.toHaveBeenCalled();
 		});
 
@@ -397,7 +415,7 @@ describe("HTTP Server", () => {
 			const app = await getApp();
 			const res = await app.request("/api/sessions/s1?project=/data/repos/a", { method: "DELETE" });
 			expect(res.status).toBe(204);
-			expect(mockSessionAdapter.deleteSession).toHaveBeenCalledWith("s1");
+			expect(mockSessionAdapter.deleteSession).toHaveBeenCalledWith("s1", "/data/repos/a");
 		});
 
 		// TC-F-1.4-2: чужой ?project → 403, сессия НЕ удалена

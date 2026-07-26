@@ -40,6 +40,7 @@ import type { ModelRegistry } from "./core/model-registry.js";
 import { resolveCliModel, resolveModelScope, type ScopedModel } from "./core/model-resolver.js";
 import { restoreStdout, takeOverStdout } from "./core/output-guard.js";
 import { autoRegisterProject } from "./core/project-auto-register.js";
+import { sessionBelongsToProject } from "./core/project-path.js";
 import { listProjects } from "./core/project-registry.js";
 import type { CreateAgentSessionOptions } from "./core/sdk.js";
 import {
@@ -346,9 +347,12 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 
 	return {
 		// --- listSessions: ALL from disk (JSONL files, same as TUI /resume) ---
-		async listSessions() {
+		// F-1.9: optional projectPath — filter by session cwd (normalized comparison).
+		// Without it, all sessions across all projects (global, backward compat).
+		async listSessions(projectPath?: string) {
 			const diskSessions = await loadDiskSessions();
 			return diskSessions
+				.filter((s) => projectPath === undefined || sessionBelongsToProject(s.cwd, projectPath))
 				.map((s) => ({
 					id: s.id,
 					title: s.title,
@@ -362,10 +366,24 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 		},
 
 		// --- getSession: ALWAYS from disk (single source of truth) ---
-		async getSession(id: string) {
+		// F-1.9: optional projectPath — a session whose cwd belongs to another
+		// project is invisible to the caller (returns null, same as not-found).
+		async getSession(id: string, projectPath?: string) {
+			let result: {
+				id: string;
+				title: string;
+				model?: string;
+				provider?: string;
+				createdAt: string;
+				updatedAt: string;
+				messages: ReturnType<typeof readDiskSessionMessages>;
+				sessionFile?: string;
+				cwd?: string;
+			} | null = null;
+
 			// Flush runtime session to disk first if it matches
 			if (id === runtime.session.sessionId && runtime.session.sessionFile) {
-				return {
+				result = {
 					id,
 					title: runtime.session.sessionName || "Current Session",
 					model: runtime.session.model?.id,
@@ -376,21 +394,26 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 					sessionFile: runtime.session.sessionFile,
 					cwd: runtime.session.sessionManager.getCwd(),
 				};
+			} else {
+				const diskSessions = await loadDiskSessions();
+				const diskInfo = diskSessions.find((s) => s.id === id);
+				if (diskInfo) {
+					result = {
+						id,
+						title: diskInfo.title,
+						createdAt: diskInfo.modified.toISOString(),
+						updatedAt: diskInfo.modified.toISOString(),
+						messages: readDiskSessionMessages(diskInfo.path),
+						sessionFile: diskInfo.path,
+						cwd: diskInfo.cwd,
+					};
+				}
 			}
 
-			const diskSessions = await loadDiskSessions();
-			const diskInfo = diskSessions.find((s) => s.id === id);
-			if (!diskInfo) return null;
-
-			return {
-				id,
-				title: diskInfo.title,
-				createdAt: diskInfo.modified.toISOString(),
-				updatedAt: diskInfo.modified.toISOString(),
-				messages: readDiskSessionMessages(diskInfo.path),
-				sessionFile: diskInfo.path,
-				cwd: diskInfo.cwd,
-			};
+			if (result && projectPath !== undefined && !sessionBelongsToProject(result.cwd, projectPath)) {
+				return null;
+			}
+			return result;
 		},
 
 		// --- createSession: new session on disk via runtime ---
@@ -421,11 +444,15 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 		},
 
 		// --- deleteSession: remove JSONL file ---
-		async deleteSession(id: string) {
+		// F-1.9: optional projectPath — a session owned by another project is
+		// never deleted (returns false, same as not-found; the HTTP layer keeps
+		// its own 403 check for a distinct error code).
+		async deleteSession(id: string, projectPath?: string) {
 			if (id === runtime.session.sessionId) return false;
 			const diskSessions = await loadDiskSessions();
 			const info = diskSessions.find((s) => s.id === id);
 			if (!info) return false;
+			if (projectPath !== undefined && !sessionBelongsToProject(info.cwd, projectPath)) return false;
 			try {
 				const { unlinkSync } = await import("fs");
 				unlinkSync(info.path);
