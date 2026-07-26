@@ -1,5 +1,64 @@
 # Changelog
 
+## [2.4.0] — 2026-07-25
+
+### Фаза 1 — Workspace-aware API (workspace-api)
+
+Мультипроектная работа через FAN API: per-session cwd, реестр проектов,
+whitelist-валидация рабочих директорий, CLI-управление проектами.
+Реализовано 14 фич + 1 fix (15 коммитов `5b0b944..ee49635`).
+Спецификация: `docs/specs/spec_fan-network-agent_phase1-workspace-api_2026-07-25.md`,
+отчёт: `docs/features/phase1-workspace-api/pipeline-report.md`.
+
+#### Добавлено
+
+- **Поле `cwd` в модели Session** — nullable `String` + `@@index([cwd])` в
+  `packages/db/prisma/schema.prisma`; аддитивная миграция (старые сессии —
+  `null`, обратная совместимость сохранена)
+- **`GET /api/sessions?project=<path>`** — фильтр сессий по проекту
+  (нормализованное сравнение путей); без параметра — все сессии (backward
+  compatible). Поле `cwd` проброшено в ответы API (legacy-сессии — `cwd`
+  omitted, никогда не `null`/пустая строка)
+- **`POST /api/sessions` принимает `cwd`** — создание сессии в указанной
+  директории; 400 при невалидном типе `cwd` (не непустая строка)
+- **`DELETE /api/sessions/:id?project=<path>`** — верификация принадлежности
+  сессии проекту: 204 при удалении, 403 при чужом проекте
+  (`session does not belong to this project`)
+- **`GET /api/projects`** — реестр проектов с подсчётом сессий:
+  `{ projects: [{ path, name, type, sessionCount }] }`
+- **Реестр проектов `projects.json`** — `~/.fan/agent/projects.json`,
+  атомарная запись (tmp + rename), дедупликация по path, устойчивость к
+  повреждённому файлу (`packages/coding-agent/src/core/project-registry.ts`)
+- **Авто-регистрация проекта** — при создании сессии в непустой несистемной
+  директории; тип: `.git` → `code`, `docs/` → `research`, иначе `unknown`
+  (`packages/coding-agent/src/core/project-auto-register.ts`)
+- **CLI `fan project register/list`** — ручное управление реестром
+  (`fan project register <path> [--type code|research|automation|unknown]`,
+  `fan project list` — таблица PATH | NAME | TYPE | ADDED AT)
+- **Per-session cwd** — сервисы (ResourceLoader, SettingsManager)
+  инициализируются из `session.cwd`, а не из process-wide cwd
+  (`agent-session-runtime.ts`); `process.chdir()` при switchSession
+  сохранён (удаление — фаза 5)
+- **`FAN_WORKSPACE_ROOT`** — стартовый cwd сервера и дефолт для сессий без
+  явного `cwd`; fallback-цепочка: явный `cwd` в запросе >
+  `FAN_WORKSPACE_ROOT` > `~/projects`; docker-compose:
+  `FAN_WORKSPACE_ROOT=/data/repos` (volume `fan-repos`)
+- **Whitelist-валидация cwd (security P0)** — `validateCwd`:
+  каноникализация пути (`path.resolve` + `realpath` на longest existing
+  prefix), защита от symlink traversal и prefix-collision
+  (`/data/repos2` ≠ `/data/repos`), HTTP 403 + структурированная запись в
+  audit log (`[api-gateway][audit] cwd rejected`)
+  (`packages/api-gateway/src/workspace-validation.ts`)
+- **E2E мультипроектный workflow** — секция 8 в `deploy/scripts/e2e-local.sh`:
+  создание проектов A/B → сессии в обоих → реестр + `?project=` фильтры →
+  cross-project delete 403 → path traversal 403 → in-project delete 204
+  (всего 21 проверка в скрипте)
+
+#### Исправлено
+
+- **4 находки верификации в валидации cwd** (`ee49635`) — уточнение
+  граничных случаев whitelist-валидации
+
 ## [2.3.6] — 2026-07-25
 
 ### Фаза 0 — Сетевой контур (network-contour)

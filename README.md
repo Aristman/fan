@@ -9,6 +9,7 @@
 - **Multi-agent orchestrator** — coordinator mode, 8 worker types (explore, plan, implement, verify, bug-fix, code-research, docs-impl, tests-impl), single mode, live tool call display
 - **Model management** — routing rules, fallback chains, budget tracking, per-session settings
 - **REST API + WebSocket server** — 14 endpoints, token auth, background daemon mode
+- **Multi-project workspaces** — per-session `cwd`, project registry (`fan project register/list`, `GET /api/projects`), whitelist-validated workspace root (`FAN_WORKSPACE_ROOT`)
 - **Web dashboard** — Lit-based, real-time streaming, model settings, budget visualization
 - **Extension & skill system** — tools, commands, lifecycle hooks, prompt templates
 - **Session persistence** — JSONL (single source of truth) + SQLite metadata
@@ -205,6 +206,8 @@ docker compose logs -f fan     # follow logs
 ```
 
 Key env vars: `PORT`, `HOST`, `FAN_PUBLIC=1` (mandatory token auth), `ALLOWED_ORIGINS`, `LOG_DIR`/`LOG_LEVEL`. The gateway binds to loopback inside the container; nginx terminates TLS and proxies HTTP + WebSocket. Full walkthrough: [docs/guides/deployment.md](docs/guides/deployment.md).
+
+Multi-project support: the container workspace root is `/data/repos` (`FAN_WORKSPACE_ROOT`, volume `fan-repos`). Sessions are created per project via `POST /api/sessions {"cwd": "/data/repos/<project>"}` — a `cwd` outside the workspace root is rejected with 403 (symlink-aware whitelist). Projects are auto-registered on first session and exposed via `GET /api/projects`; see [docs/guides/api-reference.md](docs/guides/api-reference.md).
 
 ## Development
 

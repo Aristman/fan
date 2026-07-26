@@ -61,6 +61,7 @@ Server-mode variables (`fan server` / `fan --web` / Docker). Implementation: `pa
 |----------|---------|-------------|
 | `PORT` | `3456` | Server port. `--port` flag overrides; unset/invalid values fall back to the default |
 | `HOST` | `"localhost"` | Bind host. `--host` flag overrides; use `0.0.0.0` inside containers |
+| `FAN_WORKSPACE_ROOT` | `~/projects` | Workspace root for server mode (F-1.11). Default cwd for sessions created without an explicit `cwd` and the cwd whitelist for `POST /api/sessions` — a `cwd` outside it is rejected with 403 (F-1.13, symlink-aware). Unset/empty → `~/projects`. Container sets `/data/repos` |
 | `FAN_PUBLIC` | unset | Public mode: `"1"`/`"true"`/`"yes"`/`"on"` makes token auth mandatory and ignores `FAN_NO_AUTH`. Unrecognized values fail closed (treated as public, with a stderr warning) |
 | `ALLOWED_ORIGINS` | `"*"` | CORS whitelist — comma-separated origins (whitespace trimmed, empty entries dropped). `"*"` = fully open (local dev) |
 | `LOG_DIR` | unset | File logging directory (`app.log` + rotation). Unset/empty = file logging disabled (console only). Container sets it to `/data/logs` |

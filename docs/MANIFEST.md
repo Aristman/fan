@@ -12,13 +12,13 @@
 | `SETUP.md` | ✅ | Полное руководство по настройке |
 | `MIGRATION.md` | ✅ | Migration from upstream fan/pi |
 | `CONTRIBUTING.md` | ✅ | Contribution guidelines |
-| `CHANGELOG.md` | ✅ | FAN changelog (0.2.0 → MCP Integration 2026-07-16) |
+| `CHANGELOG.md` | ✅ | FAN changelog (0.2.0 → [2.4.0] фаза 1 workspace-api 2026-07-25) |
 | `docs/guides/quick-start.md` | ✅ | Quick start stub — redirects to QUICK-START.md |
 | `docs/guides/configuration.md` | ✅ | Full settings reference |
 | `docs/guides/orchestrator.md` | ✅ | Orchestrator user guide (v7.10.0: `/orchestrator models`, named presets, permission approval, slot pools, Pipeline Mode v3.1.0) |
 | `docs/guides/dashboard.md` | ✅ | Dashboard user guide |
-| `docs/guides/api-reference.md` | ✅ | REST API + WebSocket protocol reference (health readiness, 200/503) |
-| `docs/guides/deployment.md` | ✅ | Деплой FAN на VPS: Docker, nginx + TLS, certbot, healthcheck |
+| `docs/guides/api-reference.md` | ✅ | REST API + WebSocket protocol reference (health readiness, project filter, GET /api/projects, cwd whitelist 403) |
+| `docs/guides/deployment.md` | ✅ | Деплой FAN на VPS: Docker, nginx + TLS, certbot, healthcheck, workspaces /data/repos (фаза 1) |
 | `docs/guides/mcp.md` | ✅ | MCP integration guide (Russian) — transports, config, OAuth, Worker Proxy, security |
 | `docs/mcp.md` | ✅ | MCP in FAN — comprehensive English reference (TOC, config, widget, commands, filtering, examples, troubleshooting, architecture, security) |
 | `docs/mcp.ru.md` | ✅ | MCP в FAN — полный русский перевод (содержание, конфигурация, виджет, команды, фильтрация, примеры, решение проблем, архитектура, безопасность) |
@@ -89,7 +89,8 @@
 | `docs/roadmaps/roadmap-idea-plugin-v2-from-orf-ed2.md` | ⚠️ | IDEA plugin v2 2nd edition (superseded) |
 | `docs/features/phase0-network-contour/roadmap.md` | ✅ | TDD roadmap: фаза 0 — Сетевой контур (TLS/auth/Docker/nginx), 11 фич, 4 этапа + 1 E2E |
 | `docs/features/phase0-network-contour/pipeline-report.md` | ✅ | Отчёт пайплайна фазы 0: 11 фич + fix, 10 коммитов (`684de18..006ef96`) |
-| `docs/features/phase1-workspace-api/roadmap.md` | ✅ | TDD roadmap: фаза 1 — Workspace-aware API (cwd/project/whitelist), 14 фич, 6 этапов + 1 E2E |
+| `docs/features/phase1-workspace-api/roadmap.md` | ✅ | TDD roadmap: фаза 1 — Workspace-aware API (cwd/project/whitelist), 14 фич ✅, 6 этапов + 1 E2E ✅ |
+| `docs/features/phase1-workspace-api/pipeline-report.md` | ✅ | Отчёт пайплайна фазы 1: 14 фич + fix, 15 коммитов (`5b0b944..ee49635`) |
 | `docs/features/phase2-workspace-ux/roadmap.md` | ✅ | TDD roadmap: фаза 2 — Workspace UX (Service Registry/queue/dashboard switcher), 15 фич, 5 этапов + 1 E2E |
 | `docs/features/phase3-universal-tasks/roadmap.md` | ✅ | TDD roadmap: фаза 3 — Universal Tasks (templates/detection/prompts/skills), 12 фич, 4 этапа + 2 E2E |
 | `docs/features/phase4-autonomy/roadmap.md` | ✅ | TDD roadmap: фаза 4 — Автономность (scheduler/git-PR/budget caps), 16 фич, 6 этапов + 1 E2E |
@@ -138,7 +139,9 @@
 
 All 5 package READMEs have been created — status updated to ✅.
 
-Total: **66 tracked documents** (60 ✅, 6 ⚠️, 0 ❌)
+Total: **67 tracked documents** (61 ✅, 6 ⚠️, 0 ❌)
+
+*Фаза 1 workspace-api финализирована (2026-07-26):* pipeline-report.md заполнен (14 ✅, 15 коммитов `5b0b944..ee49635`), roadmap F-1.14-E2E ☐→✅ (все 14 фич ✅); обновлены api-reference.md (`?project=` фильтр, `cwd` в POST/ответах, DELETE 204/403, `GET /api/projects`, коды 400/403), configuration.md (`FAN_WORKSPACE_ROOT`), deployment.md (секция 8.1 workspaces + whitelist в security notes), README.md (multi-project в features и Docker), CHANGELOG.md [2.4.0]
 
 *Фаза 0 network-contour финализирована (2026-07-25):* Dockerfile, docker-compose.yml, .dockerignore, deploy/nginx/, deploy/scripts/ (setup-tls.sh, e2e-local.sh), docs/guides/deployment.md, pipeline-report.md; обновлены README.md, configuration.md (env vars), api-reference.md (health readiness), CHANGELOG.md [2.3.6]
 

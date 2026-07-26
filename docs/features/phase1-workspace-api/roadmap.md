@@ -52,7 +52,7 @@
 
 ### Фичи
 
-#### ☐ F-1.1: Prisma поле cwd в модели Session
+#### ✅ F-1.1: Prisma поле cwd в модели Session
 
 - **Приоритет:** P0
 - **Слой:** [DATA]
@@ -86,7 +86,7 @@
 
 ### Фичи
 
-#### ☐ F-1.2: GET /api/sessions с фильтром ?project=
+#### ✅ F-1.2: GET /api/sessions с фильтром ?project=
 
 - **Приоритет:** P0
 - **Слой:** [API]
@@ -112,7 +112,7 @@
 - **Ожидаемый результат:** Обновлённый `packages/api-gateway/src/http-server.ts`; GET /api/sessions handler
 - **Оценка объёма:** M
 
-#### ☐ F-1.3: POST /api/sessions принимает cwd в теле
+#### ✅ F-1.3: POST /api/sessions принимает cwd в теле
 
 - **Приоритет:** P0
 - **Слой:** [API]
@@ -138,7 +138,7 @@
 - **Ожидаемый результат:** Модифицированный `http-server.ts`; POST /api/sessions handler update
 - **Оценка объёма:** M
 
-#### ☐ F-1.4: DELETE /api/sessions/:id с верификацией проекта
+#### ✅ F-1.4: DELETE /api/sessions/:id с верификацией проекта
 
 - **Приоритет:** P0
 - **Слой:** [API]
@@ -172,7 +172,7 @@
 
 ### Фичи
 
-#### ☐ F-1.5: NEW endpoint GET /api/projects
+#### ✅ F-1.5: NEW endpoint GET /api/projects
 
 - **Приоритет:** P0
 - **Слой:** [API]
@@ -198,7 +198,7 @@
 - **Ожидаемый результат:** Новый handler в `packages/api-gateway/src/http-server.ts`; route `GET /api/projects`
 - **Оценка объёма:** M
 
-#### ☐ F-1.6: Реестр проектов projects.json
+#### ✅ F-1.6: Реестр проектов projects.json
 
 - **Приоритет:** P0
 - **Слой:** [BIZ]
@@ -224,18 +224,18 @@
 - **Ожидаемый результат:** Новый модуль утилит для реестра (e.g. `packages/coding-agent/src/core/project-registry.ts` или в main.ts util секции)
 - **Оценка объёма:** M
 
-#### ⏳ F-1.7: Авто-регистрация при первом сеансе
+#### ✅ F-1.7: Авто-регистрация при первом сеансе
 
 - **Приоритет:** P1
 - **Слой:** [BIZ]
 - **Описание:** При создании сессии в непустой директории (не null, не temporary) — автоматически добавить проект в реестр. Тип определяется: наличие `.git` → `code`, наличие `docs/` → `research`, иначе `unknown`. Проверяется только если cwd не пустой и не находится в системных путях.
 - **Зависимости:** F-1.6 (registry utils)
 - **TDD-тесты:**
-  - [ ] **TC-F-1.7-1:** Git-репозиторий автоматически регистрируется как 'code'
+  - [x] **TC-F-1.7-1:** Git-репозиторий автоматически регистрируется как 'code'
     - *Условие:* Сессия в `/data/repos/repo-with-git` (есть .git dir)
     - *Шаги:* Создать сессию с этим cwd
     - *Ожидаемый результат:* projects.json содержит entry type='code'; basename извлечён корректно
-  - [ ] **TC-F-1.7-2:** Системные пути исключены из регистрации
+  - [x] **TC-F-1.7-2:** Системные пути исключены из регистрации
     - *Условие:* CWD = `/tmp` or system directory
     - *Шаги:* Создать сессию
     - *Ожидаемый результат:* Не зарегистрировано в реестре
@@ -246,7 +246,7 @@
 - **Ожидаемый результат:** Hook в Session creation flow (inside `http-server.ts` or service layer)
 - **Оценка объёма:** M
 
-#### ⏳ F-1.8: CLI команда fan project register
+#### ✅ F-1.8: CLI команда fan project register
 
 - **Приоритет:** P1
 - **Слой:** [CLI]
@@ -276,7 +276,7 @@
 
 ### Фичи
 
-#### ☐ F-1.9: SessionAdapter project-aware methods
+#### ✅ F-1.9: SessionAdapter project-aware methods
 
 - **Приоритет:** P0
 - **Слой:** [CORE]
@@ -302,7 +302,7 @@
 - **Ожидаемый результат:** Updated `packages/coding-agent/src/main.ts`; interface extension
 - **Оценка объёма:** M
 
-#### ☐ F-1.10: Per-session cwd вместо process-wide cwd
+#### ✅ F-1.10: Per-session cwd вместо process-wide cwd
 
 - **Приоритет:** P0
 - **Слой:** [CORE]
@@ -328,7 +328,7 @@
 - **Ожидаемый результат:** Обновлённый `packages/coding-agent/src/core/agent-session-runtime.ts`
 - **Оценка объёма:** M
 
-#### ☐ F-1.11: Стартовый cwd сервера = default workspace root
+#### ✅ F-1.11: Стартовый cwd сервера = default workspace root
 
 - **Приоритет:** P0
 - **Слой:** [INFRA]
@@ -354,7 +354,7 @@
 - **Ожидаемый результат:** Обновлённый `packages/coding-agent/src/main.ts`; docker-compose.yml env vars
 - **Оценка объёма:** S
 
-#### ☐ F-1.12: listAll() проброс cwd в API responses
+#### ✅ F-1.12: listAll() проброс cwd в API responses
 
 - **Приоритет:** P0
 - **Слой:** [CORE]
@@ -384,7 +384,7 @@
 
 ### Фичи
 
-#### ☐ F-1.13: Whitelist validation middleware
+#### ✅ F-1.13: Whitelist validation middleware
 
 - **Приоритет:** P0
 - **Слой:** [BIZ]
@@ -413,14 +413,14 @@
 
 ## E2E-сценарии фазы 1
 
-#### ☐ F-1.14-E2E: Мультипроектный API workflow
+#### ✅ F-1.14-E2E: Мультипроектный API workflow
 
 - **Приоритет:** P0
 - **Слой:** [E2E]
 - **Описание:** Сквозной сценарий: через API создан проект → создана сессия в проекте A и B → переключение между ними → попытка path traversal отклонена. Проверяет всю цепочку: реестр → сессия → filter → безопасность.
 - **Зависимости:** F-1.1..F-1.13
 - **TDD-тесты:**
-  - [ ] **TC-F-1.14-E2E-1:** Сквозной мультипроектный API-поток
+  - [x] **TC-F-1.14-E2E-1:** Сквозной мультипроектный API-поток
     - *Условие:* FAN запущен, FAN_PUBLIC=1, whitelist configured (`FAN_WORKSPACE_ROOT=/data/repos`)
     - *Шаги:*
       1. `POST /api/projects` (или CLI register) → регистрация `/data/repos/project-a`
@@ -433,11 +433,11 @@
       8. `DELETE /api/sessions/<a-id>?project=/data/repos/project-a` → удалить сессию A
       9. Убедиться: GET /api/sessions без filter → осталась только сессия B
     - *Ожидаемый результат:* Все шаги завершаются успешно; фильтры корректны; удаление только своей сессии
-  - [ ] **TC-F-1.14-E2E-2:** Межпроектное удаление заблокировано
+  - [x] **TC-F-1.14-E2E-2:** Межпроектное удаление заблокировано
     - *Условие:* Сессия A в проекте A
     - *Шаги:* `DELETE /api/sessions/<a-id>?project=/data/repos/project-b`
     - *Ожидаемый результат:* HTTP 403 Forbidden; session NOT deleted
-  - [ ] **TC-F-1.14-E2E-3:** Обход путей (path traversal) заблокирован
+  - [x] **TC-F-1.14-E2E-3:** Обход путей (path traversal) заблокирован
     - *Условие:* Whitelist = `/data/repos`
     - *Шаги:* `POST /api/sessions` с `{ cwd: "/etc/passwd" }`
     - *Ожидаемый результат:* HTTP 403 Forbidden; body contains error message; no session created; attempt logged
@@ -477,23 +477,23 @@ Phase 1 Dependencies:
 
 ### P0 (Must Have) — 12 фич
 
-- [ ] ☐ F-1.1 Prisma cwd в Session + migration
-- [ ] ☐ F-1.2 GET /api/sessions с фильтром ?project=
-- [ ] ☐ F-1.3 POST /api/sessions принимает cwd
-- [ ] ☐ F-1.4 DELETE /api/sessions/:id с верификацией проекта
-- [ ] ☐ F-1.5 GET /api/projects endpoint
-- [ ] ☐ F-1.6 Реестр проектов projects.json
-- [ ] ☐ F-1.9 SessionAdapter project-aware methods
-- [ ] ☐ F-1.10 Per-session cwd вместо process-wide
-- [ ] ☐ F-1.11 Стартовый cwd сервера = default workspace root
-- [ ] ☐ F-1.12 listAll() проброс cwd в API
-- [ ] ☐ F-1.13 Whitelist validation middleware
-- [ ] ☐ F-1.14-E2E Мультипроектный API workflow
+- [ ] ✅ F-1.1 Prisma cwd в Session + migration
+- [ ] ✅ F-1.2 GET /api/sessions с фильтром ?project=
+- [ ] ✅ F-1.3 POST /api/sessions принимает cwd
+- [ ] ✅ F-1.4 DELETE /api/sessions/:id с верификацией проекта
+- [ ] ✅ F-1.5 GET /api/projects endpoint
+- [ ] ✅ F-1.6 Реестр проектов projects.json
+- [ ] ✅ F-1.9 SessionAdapter project-aware methods
+- [ ] ✅ F-1.10 Per-session cwd вместо process-wide
+- [ ] ✅ F-1.11 Стартовый cwd сервера = default workspace root
+- [ ] ✅ F-1.12 listAll() проброс cwd в API
+- [ ] ✅ F-1.13 Whitelist validation middleware
+- [x] ✅ F-1.14-E2E Мультипроектный API workflow
 
 ### P1 (Should Have) — 2 фич
 
-- [ ] ⏳ F-1.7 Авто-регистрация при первом сеансе
-- [ ] ⏳ F-1.8 CLI команда `fan project register`
+- [x] ✅ F-1.7 Авто-регистрация при первом сеансе
+- [x] ✅ F-1.8 CLI команда `fan project register`
 
 ### P2 (Could Have) — 0 фич
 

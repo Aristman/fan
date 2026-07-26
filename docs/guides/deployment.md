@@ -383,6 +383,33 @@ ssh root@185.219.41.46 "cd /opt/fan-agent && docker compose up -d --build"
 Data (SQLite `fan.db`, JSONL sessions, tokens) persists in the named
 volumes `fan-data` / `fan-repos` across rebuilds.
 
+### 8.1 Workspaces — multi-project support (Phase 1)
+
+The container treats `/data/repos` as the **workspace root**
+(`FAN_WORKSPACE_ROOT=/data/repos` in `docker-compose.yml`, backed by the
+`fan-repos` volume). All agent projects should live under this directory.
+
+- **Whitelist protection (F-1.13):** `POST /api/sessions` accepts a `cwd`
+  only inside the workspace root. Paths outside it — including symlink
+  escapes — are rejected with HTTP 403 and written to the audit log
+  (`[api-gateway][audit] cwd rejected ...` in `/data/logs/app.log`).
+- **Project registry:** registered workspaces are tracked in
+  `/data/.fan/agent/projects.json` (inside the `fan-data` volume).
+  `GET /api/projects` exposes the registry with per-project session counts.
+- **Auto-registration (F-1.7):** the first session created in a workspace
+  registers it automatically — `.git` present → type `"code"`, `docs/`
+  present → `"research"`, otherwise `"unknown"`.
+- **Manual registration** (rarely needed — auto-registration covers the
+  common case), inside the container:
+
+  ```bash
+  docker exec -w /app fan-agent bun packages/coding-agent/dist/cli.js project register /data/repos/my-project
+  docker exec -w /app fan-agent bun packages/coding-agent/dist/cli.js project list
+  ```
+
+  Or via any `fan` binary on the host: `fan project register /data/repos/my-project`,
+  `fan project list`.
+
 ## 9. Rollback
 
 nginx layer (takes agent.sea-agents.ru offline, FAN Store unaffected):
@@ -419,3 +446,7 @@ to be removed — they simply become unused.
   into nginx logs by using a `log_format` that omits the query string
   (for example log `$uri` instead of `$request_uri`) or by rotating/cleaning
   access logs regularly.
+- **Workspace whitelist (F-1.13):** session `cwd` is confined to
+  `FAN_WORKSPACE_ROOT` (`/data/repos`). Out-of-whitelist and symlink-escape
+  attempts return 403 and are audit-logged — watch for
+  `cwd rejected by workspace whitelist` entries in `/data/logs/app.log`.

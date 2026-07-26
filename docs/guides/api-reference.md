@@ -135,6 +135,7 @@ Create a new conversation session.
 |------------------|----------|----------|--------------------------------|
 | title            | `string` | No       | Session title (auto-generated if omitted) |
 | parentSessionId  | `string` | No       | ID of a parent session for branching |
+| cwd              | `string` | No       | Working directory (project workspace) for the new session. Normalized by the server; validated against the workspace whitelist (F-1.13) — see errors below. Default: the server workspace root (`FAN_WORKSPACE_ROOT` → `~/projects`) |
 
 **Example:**
 
@@ -142,7 +143,7 @@ Create a new conversation session.
 curl -X POST http://localhost:3456/api/sessions \
   -H "Authorization: Bearer $FAN_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"title": "Refactor auth module"}'
+  -d '{"title": "Refactor auth module", "cwd": "/data/repos/my-project"}'
 ```
 
 **Response `201`:**
@@ -154,8 +155,21 @@ curl -X POST http://localhost:3456/api/sessions \
   "model": "claude-sonnet-4-20250514",
   "provider": "anthropic",
   "createdAt": "2026-04-13T10:30:00.000Z",
-  "updatedAt": "2026-04-13T10:30:00.000Z"
+  "updatedAt": "2026-04-13T10:30:00.000Z",
+  "cwd": "/data/repos/my-project"
 }
+```
+
+**Error `400`** (`BAD_REQUEST`) — the body is not a JSON object, or `cwd` is present but is not a non-empty string:
+
+```json
+{ "error": "cwd must be a non-empty string", "code": "BAD_REQUEST" }
+```
+
+**Error `403`** (`FORBIDDEN`) — `cwd` rejected by the workspace whitelist (active in server mode: `allowedRoots = [FAN_WORKSPACE_ROOT → ~/projects]`). Rejections are written to the audit log (`[api-gateway][audit] cwd rejected ...`). Possible `reason` values: `"empty path"`, `"invalid characters in path"`, `"path outside allowed roots"`, `"symlink traversal detected"`:
+
+```json
+{ "error": "cwd rejected: path outside allowed roots", "code": "FORBIDDEN" }
 ```
 
 #### List Sessions
@@ -166,10 +180,16 @@ GET /api/sessions
 
 Returns all sessions with summary information.
 
+**Query parameters:**
+
+| Param    | Type     | Required | Description                              |
+|----------|----------|----------|------------------------------------------|
+| project  | `string` | No       | Project path filter (F-1.2) — only sessions whose `cwd` matches the path (normalized comparison: separators, `.`/`..`, trailing slash, Windows case-folding). Without the param all sessions are returned (backward compatible). Sessions without `cwd` (legacy) never match the filter |
+
 **Example:**
 
 ```bash
-curl http://localhost:3456/api/sessions \
+curl "http://localhost:3456/api/sessions?project=/data/repos/my-project" \
   -H "Authorization: Bearer $FAN_TOKEN"
 ```
 
@@ -184,7 +204,8 @@ curl http://localhost:3456/api/sessions \
       "model": "claude-sonnet-4-20250514",
       "provider": "anthropic",
       "createdAt": "2026-04-13T10:30:00.000Z",
-      "updatedAt": "2026-04-13T10:45:00.000Z"
+      "updatedAt": "2026-04-13T10:45:00.000Z",
+      "cwd": "/data/repos/my-project"
     },
     {
       "id": "sess_e5f6g7h8",
@@ -192,11 +213,14 @@ curl http://localhost:3456/api/sessions \
       "model": "gpt-4o",
       "provider": "openai",
       "createdAt": "2026-04-13T09:00:00.000Z",
-      "updatedAt": "2026-04-13T09:20:00.000Z"
+      "updatedAt": "2026-04-13T09:20:00.000Z",
+      "cwd": "/data/repos/my-project"
     }
   ]
 }
 ```
+
+> **Note:** `cwd` is omitted for legacy sessions whose JSONL header has no working directory — it is never `null` or an empty string (F-1.12). A project path with no sessions yields `"sessions": []` with HTTP 200.
 
 #### Get Session
 
@@ -223,6 +247,7 @@ curl http://localhost:3456/api/sessions/sess_a1b2c3d4 \
   "provider": "anthropic",
   "createdAt": "2026-04-13T10:30:00.000Z",
   "updatedAt": "2026-04-13T10:45:00.000Z",
+  "cwd": "/data/repos/my-project",
   "messages": [
     {
       "role": "user",
@@ -248,22 +273,28 @@ DELETE /api/sessions/:id
 
 Permanently deletes a session and its messages.
 
+**Query parameters:**
+
+| Param    | Type     | Required | Description                              |
+|----------|----------|----------|------------------------------------------|
+| project  | `string` | No       | Project path verification (F-1.4) — the session must belong to this project (`cwd` match, normalized comparison) or the delete is rejected with `403`. Without the param the delete is global (backward compatible) |
+
 **Example:**
 
 ```bash
-curl -X DELETE http://localhost:3456/api/sessions/sess_a1b2c3d4 \
+curl -X DELETE "http://localhost:3456/api/sessions/sess_a1b2c3d4?project=/data/repos/my-project" \
   -H "Authorization: Bearer $FAN_TOKEN"
 ```
 
-**Response `200`:**
-
-```json
-{
-  "success": true
-}
-```
+**Response `204`:** No body (`No Content`).
 
 **Error `404`:** Session not found.
+
+**Error `403`** — the session exists but belongs to a different project than `?project=` (also when the session has no `cwd` at all):
+
+```json
+{ "error": "session does not belong to this project" }
+```
 
 #### Send Message
 
@@ -298,6 +329,55 @@ curl -X POST http://localhost:3456/api/sessions/sess_a1b2c3d4/messages \
 ```
 
 > **Note:** This endpoint only enqueues the message. To receive the agent's reply, connect to the WebSocket and listen for `agent_event` messages.
+
+---
+
+### Projects
+
+#### List Projects
+
+```
+GET /api/projects
+```
+
+Returns the project registry (`~/.fan/agent/projects.json`, F-1.6) enriched with per-project session counts (F-1.5). Projects are registered manually via `fan project register` or automatically on first session creation in a workspace (F-1.7 — `.git` → `"code"`, `docs/` → `"research"`, otherwise `"unknown"`; system paths are excluded).
+
+**Example:**
+
+```bash
+curl http://localhost:3456/api/projects \
+  -H "Authorization: Bearer $FAN_TOKEN"
+```
+
+**Response `200`:**
+
+```json
+{
+  "projects": [
+    {
+      "path": "/data/repos/my-project",
+      "name": "my-project",
+      "type": "code",
+      "sessionCount": 3
+    },
+    {
+      "path": "/data/repos/research-notes",
+      "name": "research-notes",
+      "type": "research",
+      "sessionCount": 0
+    }
+  ]
+}
+```
+
+| Field        | Type     | Description                                             |
+|--------------|----------|---------------------------------------------------------|
+| path         | `string` | Absolute path of the project workspace                  |
+| name         | `string` | Display name (from the registry; basename fallback)     |
+| type         | `string` | `"code"` \| `"research"` \| `"automation"` \| `"unknown"` |
+| sessionCount | `number` | Sessions whose `cwd` matches the project path (normalized comparison) |
+
+An empty or missing registry yields `{ "projects": [] }` with HTTP 200.
 
 ---
 
@@ -636,7 +716,7 @@ All errors return a JSON body with a consistent format:
 |-------------------|-------------|------------------------------------------|
 | `BAD_REQUEST`     | 400         | Malformed request body or parameters     |
 | `UNAUTHORIZED`    | 401         | Missing or invalid authentication token  |
-| `FORBIDDEN`       | 403         | Token does not have permission for this action |
+| `FORBIDDEN`       | 403         | Token does not have permission for this action; or `cwd` rejected by the workspace whitelist / cross-project delete (see [Sessions](#sessions)) |
 | `NOT_FOUND`       | 404         | Requested resource does not exist        |
 | `CONFLICT`        | 409         | Resource conflict (e.g., duplicate name) |
 | `VALIDATION_ERROR`| 422         | Request body failed validation           |
