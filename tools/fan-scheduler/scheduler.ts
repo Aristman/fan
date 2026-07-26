@@ -1,12 +1,24 @@
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { loadTasks, type TaskConfig } from "./lib/config-loader.js";
+import { FanApiClient } from "./lib/client.js";
+import { loadTasks } from "./lib/config-loader.js";
+import { CronScheduler, createConfigWatcher, createShutdownHandler } from "./lib/cron-scheduler.js";
+import { createTaskExecutor } from "./lib/executor.js";
 import { logger } from "./lib/logger.js";
 import { TaskQueue } from "./lib/queue.js";
 
 /**
- * FAN Scheduler — main entry point (F-4.1 skeleton).
- * Loads config.yaml, validates tasks and prepares the queue.
- * The cron scheduling loop, graceful shutdown and hot-reload land in F-4.5.
+ * FAN Scheduler — main entry point (F-4.5 cron scheduling loop).
+ *
+ * Flow:
+ * 1. loadTasks(config.yaml) — parse and validate the task list;
+ * 2. FanApiClient — gateway client from FAN_API_URL / FAN_API_TOKEN env vars;
+ * 3. TaskQueue with the F-4.4 execution pipeline (single-consumer);
+ * 4. CronScheduler — each task is scheduled independently via Croner;
+ *    on trigger the task is enqueued into the TaskQueue;
+ * 5. Config watcher — periodic config.yaml mtime scan → hot-reload
+ *    (old jobs stopped, new tasks scheduled);
+ * 6. SIGINT/SIGTERM — graceful shutdown: cron stopped, queue paused,
+ *    the in-flight task settles, clean exit(0).
  */
 
 function resolveConfigPath(): string {
@@ -16,24 +28,39 @@ function resolveConfigPath(): string {
 	return fileURLToPath(new URL("../config.yaml", import.meta.url));
 }
 
-export function createScheduler(configPath: string): { tasks: TaskConfig[]; queue: TaskQueue } {
-	const tasks = loadTasks(configPath);
-	const queue = new TaskQueue();
-	for (const task of tasks) {
-		queue.enqueue(task);
-	}
-	return { tasks, queue };
-}
-
 export function main(): void {
 	const configPath = resolveConfigPath();
-	const { tasks, queue } = createScheduler(configPath);
-	logger.info("Scheduler started");
-	logger.info(`Loaded ${tasks.length} task(s) from ${configPath}`);
-	for (const task of queue.pending) {
-		logger.info(`Scheduled task "${task.name}" [${task.schedule}] workspace=${task.workspace} timeout=${task.timeout}s`);
-	}
-	// TODO(F-4.5): cron scheduling loop + SIGINT/SIGTERM handlers
+	const tasks = loadTasks(configPath);
+
+	const client = new FanApiClient();
+	const queue = new TaskQueue(createTaskExecutor(client));
+
+	const scheduler = new CronScheduler(queue);
+	scheduler.schedule(tasks);
+
+	const watcher = createConfigWatcher({
+		configPath,
+		onReload: (reloadedTasks) => scheduler.schedule(reloadedTasks),
+	});
+	watcher.start();
+
+	const shutdown = createShutdownHandler({
+		stopCron: () => {
+			scheduler.stop();
+			watcher.stop();
+		},
+		queue,
+	});
+	const onSignal = (signal: string): void => {
+		void shutdown(signal).catch((error: unknown) => {
+			logger.error(`[scheduler] shutdown failed: ${error instanceof Error ? error.message : String(error)}`);
+			process.exit(1);
+		});
+	};
+	process.on("SIGINT", onSignal);
+	process.on("SIGTERM", onSignal);
+
+	logger.info(`Scheduler started — ${tasks.length} task(s) scheduled from ${configPath}`);
 }
 
 const isMainModule = process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
