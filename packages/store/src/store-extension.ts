@@ -27,7 +27,7 @@ export const storeExtension: ExtensionFactory = (fan) => {
 	let config = loadConfig();
 	const db = new StoreDatabase();
 	const repoClient = new RepoClient();
-	const installer = new ArchiveInstaller(db, repoClient, config.archiveTempDir);
+	let installer = new ArchiveInstaller(db, repoClient, config.archiveTempDir);
 
 	const getConfig = () => config;
 	const getDB = () => db;
@@ -68,6 +68,10 @@ export const storeExtension: ExtensionFactory = (fan) => {
 	fan.on("session_start", async (_event, ctx) => {
 		// Reload config on each session (user may have modified it)
 		config = loadConfig();
+
+		// Bind installer to the current session cwd so project-scope installs go
+		// into the active workspace, not the process launch directory (F-5.4).
+		installer = new ArchiveInstaller(db, repoClient, config.archiveTempDir, ctx.cwd);
 
 		// ─── Phase 0: Apply staged self-update if pending ───
 		const SELF_EXTENSION_DIR = join(homedir(), ".fan", "agent", "extensions", "fan-store");

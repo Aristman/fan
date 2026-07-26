@@ -24,11 +24,16 @@ import type { InstalledPackage, RepoEntry, RepoPackage, ResourceType } from "./t
 export type ProgressCallback = (stage: string, detail?: string) => void;
 
 export class ArchiveInstaller {
+	private readonly cwd: string;
+
 	constructor(
 		private db: StoreDatabase,
 		private repoClient: RepoClient,
 		private archiveTempDir?: string,
-	) {}
+		cwd?: string,
+	) {
+		this.cwd = cwd ?? process.cwd();
+	}
 
 	/**
 	 * Get target directory for a resource type and scope.
@@ -38,7 +43,7 @@ export class ArchiveInstaller {
 		switch (type) {
 			case "extension":
 				if (scope === "project") {
-					return join(process.cwd(), ".fan", "extensions", name);
+					return join(this.cwd, ".fan", "extensions", name);
 				}
 				return join(homeDir, ".fan", "agent", "extensions", name);
 			case "skill":
