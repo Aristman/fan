@@ -33,6 +33,8 @@ import type {
 	ProjectSummary,
 	RevokeTokenResponse,
 	RoutingRuleInfo,
+	SchedulerHealthDownResponse,
+	SchedulerHealthResponse,
 	SendMessageRequest,
 	SendMessageResponse,
 	SessionSummary,
@@ -226,6 +228,12 @@ const startTime = Date.now();
 /** Max time to wait for the DB readiness probe before reporting "down" */
 const DB_CHECK_TIMEOUT_MS = 1500;
 
+/** Max time to wait for the scheduler control server before reporting "down" (F-4.14) */
+const SCHEDULER_CHECK_TIMEOUT_MS = 2000;
+
+/** Default base URL of the fan-scheduler control server (F-4.12/F-4.14). */
+const DEFAULT_SCHEDULER_URL = "http://127.0.0.1:3457";
+
 /**
  * Lightweight DB readiness probe: `SELECT 1` via Prisma with a hard timeout.
  * Never throws — returns "down" on error or timeout so /api/health stays fast.
@@ -281,6 +289,33 @@ async function createApp(
 			session: { active: sessionId !== null, id: sessionId },
 		};
 		return c.json(resp, db === "up" ? 200 : 503);
+	});
+
+	// --- Scheduler health proxy (no auth required) ---
+	// F-4.14: public by design — same decision as /api/health. The payload
+	// contains only operational metrics (no secrets, tokens or task contents),
+	// so docker healthchecks and external monitoring can poll it without a
+	// ClientToken. The scheduler is a separate process; its control server
+	// (F-4.12, localhost-only) is proxied here.
+	// Reachable → the scheduler's payload is passed through unchanged (200).
+	// Unreachable / error → 503 with { status: "degraded", scheduler: "down" }.
+	app.get("/api/scheduler/health", async (c) => {
+		const baseUrl = (process.env.FAN_SCHEDULER_URL?.trim() || DEFAULT_SCHEDULER_URL).replace(/\/+$/, "");
+		try {
+			const res = await fetch(`${baseUrl}/health`, {
+				signal: AbortSignal.timeout(SCHEDULER_CHECK_TIMEOUT_MS),
+			});
+			if (!res.ok) throw new Error(`scheduler answered HTTP ${res.status}`);
+			const health = (await res.json()) as SchedulerHealthResponse;
+			return c.json(health, 200);
+		} catch {
+			const resp: SchedulerHealthDownResponse = {
+				status: "degraded",
+				scheduler: "down",
+				error: "scheduler unreachable",
+			};
+			return c.json(resp, 503);
+		}
 	});
 
 	// --- All /api/ routes require auth (except health) ---

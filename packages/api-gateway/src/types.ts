@@ -27,6 +27,37 @@ export interface HealthResponse {
 	};
 }
 
+// --- Scheduler (F-4.14) ---
+
+/**
+ * Health & metrics payload of the fan-scheduler process, as served by its
+ * control server (GET /health on FAN_SCHEDULER_URL, default
+ * http://127.0.0.1:3457) and proxied unchanged by GET /api/scheduler/health.
+ * Operational metrics only — no secrets, tokens or task message contents.
+ */
+export interface SchedulerHealthResponse {
+	/** "ok" when healthy, "degraded" when the scheduler started with a corrupt pending-queue file */
+	status: "ok" | "degraded";
+	/** True while a task is executing */
+	running: boolean;
+	/** Number of tasks waiting in the pending queue */
+	pendingCount: number;
+	/** Terminal status of the most recently finished task (null before the first one) */
+	lastTaskStatus: "completed" | "failed" | "timeout" | "budget_exceeded" | null;
+	/** Seconds since the scheduler control server started */
+	uptimeSeconds: number;
+	/** Pending-queue persistence schema version */
+	queueVersion: 1;
+}
+
+/** Fallback payload of GET /api/scheduler/health when the scheduler process is unreachable. */
+export interface SchedulerHealthDownResponse {
+	status: "degraded";
+	scheduler: "down";
+	/** Human-readable reason (no internals — fixed string) */
+	error: string;
+}
+
 // --- Sessions ---
 
 export interface CreateSessionRequest {

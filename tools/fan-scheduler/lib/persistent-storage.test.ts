@@ -7,6 +7,7 @@ import {
 	defaultPendingQueuePath,
 	getAgentDir,
 	loadPendingTasks,
+	loadPendingTasksDetailed,
 	PENDING_QUEUE_FILENAME,
 	PENDING_QUEUE_VERSION,
 	savePendingTasks,
@@ -203,6 +204,41 @@ describe("load failure modes", () => {
 		const restored = loadPendingTasks(filePath);
 		expect(restored.map((t) => t.name)).toEqual(["good", "also-good"]);
 		expect(stderrEntries().filter((e) => e.event === "pending_task_skipped")).toHaveLength(2);
+	});
+});
+
+describe("loadPendingTasksDetailed (F-4.14 degraded flag)", () => {
+	it("missing file → corrupt=false (first run is healthy)", () => {
+		expect(loadPendingTasksDetailed(join(tmpRoot, "does-not-exist.json"))).toEqual({ tasks: [], corrupt: false });
+	});
+
+	it("valid file → tasks restored, corrupt=false", () => {
+		savePendingTasks(filePath, [makeTask("alpha")]);
+		expect(loadPendingTasksDetailed(filePath)).toEqual({ tasks: [makeTask("alpha")], corrupt: false });
+	});
+
+	it("corrupt JSON → corrupt=true (TC-F-4.14-2 source flag)", () => {
+		mkdirSync(join(tmpRoot, "state"), { recursive: true });
+		writeFileSync(filePath, "{ not valid json !!!", "utf8");
+		expect(loadPendingTasksDetailed(filePath)).toEqual({ tasks: [], corrupt: true });
+	});
+
+	it("version mismatch → corrupt=true", () => {
+		mkdirSync(join(tmpRoot, "state"), { recursive: true });
+		writeFileSync(filePath, JSON.stringify({ version: 99, tasks: [] }), "utf8");
+		expect(loadPendingTasksDetailed(filePath).corrupt).toBe(true);
+	});
+
+	it("skipped malformed entries → corrupt=true but valid tasks kept", () => {
+		mkdirSync(join(tmpRoot, "state"), { recursive: true });
+		writeFileSync(
+			filePath,
+			JSON.stringify({ version: PENDING_QUEUE_VERSION, tasks: [makeTask("good"), { name: 42 }] }),
+			"utf8",
+		);
+		const result = loadPendingTasksDetailed(filePath);
+		expect(result.tasks.map((t) => t.name)).toEqual(["good"]);
+		expect(result.corrupt).toBe(true);
 	});
 });
 

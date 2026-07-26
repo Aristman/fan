@@ -161,6 +161,89 @@ describe("HTTP Server", () => {
 		});
 	});
 
+	describe("GET /api/scheduler/health (F-4.14)", () => {
+		const schedulerHealth = {
+			status: "ok",
+			running: true,
+			pendingCount: 2,
+			lastTaskStatus: "completed",
+			uptimeSeconds: 42,
+			queueVersion: 1,
+		};
+
+		afterEach(() => {
+			vi.unstubAllGlobals();
+			delete process.env.FAN_SCHEDULER_URL;
+		});
+
+		// TC-F-4.14-1: scheduler reachable → payload proxied unchanged (200)
+		it("should proxy the scheduler health payload when the scheduler is reachable", async () => {
+			const fetchMock = vi.fn().mockResolvedValue(
+				new Response(JSON.stringify(schedulerHealth), {
+					status: 200,
+					headers: { "Content-Type": "application/json" },
+				}),
+			);
+			vi.stubGlobal("fetch", fetchMock);
+
+			const app = await getApp();
+			const res = await app.request("/api/scheduler/health");
+			expect(res.status).toBe(200);
+			const data = await json<typeof schedulerHealth>(res);
+			expect(data).toEqual(schedulerHealth);
+			// Default: control server on localhost:3457
+			expect(fetchMock).toHaveBeenCalledWith(
+				"http://127.0.0.1:3457/health",
+				expect.objectContaining({ signal: expect.any(AbortSignal) }),
+			);
+		});
+
+		it("should honor the FAN_SCHEDULER_URL override", async () => {
+			process.env.FAN_SCHEDULER_URL = "http://127.0.0.1:9999/";
+			const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(schedulerHealth), { status: 200 }));
+			vi.stubGlobal("fetch", fetchMock);
+
+			const app = await getApp();
+			await app.request("/api/scheduler/health");
+			expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:9999/health", expect.anything());
+		});
+
+		// TC-F-4.14-2 (proxy variant): scheduler process down → 503 degraded
+		it("should return 503 degraded when the scheduler is unreachable", async () => {
+			vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("connect ECONNREFUSED 127.0.0.1:3457")));
+
+			const app = await getApp();
+			const res = await app.request("/api/scheduler/health");
+			expect(res.status).toBe(503);
+			const data = await json<{ status: string; scheduler: string; error: string }>(res);
+			expect(data.status).toBe("degraded");
+			expect(data.scheduler).toBe("down");
+		});
+
+		it("should return 503 degraded when the scheduler answers with a non-OK status", async () => {
+			vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("oops", { status: 500 })));
+
+			const app = await getApp();
+			const res = await app.request("/api/scheduler/health");
+			expect(res.status).toBe(503);
+			const data = await json<{ status: string }>(res);
+			expect(data.status).toBe("degraded");
+		});
+
+		it("should be public (no token required), like /api/health", async () => {
+			vi.stubGlobal(
+				"fetch",
+				vi.fn().mockResolvedValue(new Response(JSON.stringify(schedulerHealth), { status: 200 })),
+			);
+
+			const app = await getApp();
+			// FAN_NO_AUTH is NOT the mechanism here — the route is registered
+			// before the tokenAuth middleware; a request without any headers works.
+			const res = await app.request("/api/scheduler/health");
+			expect(res.status).toBe(200);
+		});
+	});
+
 	describe("Sessions", () => {
 		it("GET /api/sessions should list sessions", async () => {
 			mockSessionAdapter.listSessions.mockResolvedValueOnce([

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { startControlServer, type ControlServerHandle, type ControlState } from "./control-server.js";
+import { startControlServer, type ControlServerHandle, type ControlState, type SchedulerHealth } from "./control-server.js";
 import type { TaskConfig } from "./config-loader.js";
 import { TaskQueue, type TaskResult } from "./queue.js";
 
@@ -109,7 +109,7 @@ describe("control server (F-4.12)", () => {
 		const res = await fetch(`${baseUrl}/nope`);
 		expect(res.status).toBe(404);
 		const body = (await res.json()) as { error: string; routes: string[] };
-		expect(body.routes).toEqual(["GET /state", "POST /pause", "POST /resume"]);
+		expect(body.routes).toEqual(["GET /state", "GET /health", "POST /pause", "POST /resume"]);
 	});
 
 	it("GET /state on an idle queue reports idle with null currentTask", async () => {
@@ -122,5 +122,71 @@ describe("control server (F-4.12)", () => {
 		expect(body.isRunning).toBe(false);
 		expect(body.currentTask).toBeNull();
 		expect(body.lastResult).toBeNull();
+	});
+});
+
+describe("GET /health (F-4.14)", () => {
+	it("TC-F-4.14-1: returns live queue state — running with 2 pending tasks", async () => {
+		const queue = new TaskQueue(hangingExecutor);
+		queue.enqueue(makeTask("auto-1")); // starts executing immediately
+		queue.enqueue(makeTask("auto-2")); // pending
+		queue.enqueue(makeTask("auto-3")); // pending
+		await startWith(queue);
+
+		const res = await fetch(`${baseUrl}/health`);
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as SchedulerHealth;
+		expect(body.status).toBe("ok");
+		expect(body.running).toBe(true);
+		expect(body.pendingCount).toBe(2);
+		expect(body.queueVersion).toBe(1);
+		expect(typeof body.uptimeSeconds).toBe("number");
+		expect(body.uptimeSeconds).toBeGreaterThanOrEqual(0);
+		expect(body.lastTaskStatus).toBeNull();
+	});
+
+	it("reports lastTaskStatus of the most recently finished task", async () => {
+		const queue = new TaskQueue(() =>
+			Promise.resolve({
+				taskName: "auto-1",
+				status: "budget_exceeded" as const,
+				durationMs: 1,
+				startedAt: new Date().toISOString(),
+				finishedAt: new Date().toISOString(),
+			}),
+		);
+		queue.enqueue(makeTask("auto-1"));
+		// Let the executor settle so lastResult is populated.
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		await startWith(queue);
+
+		const res = await fetch(`${baseUrl}/health`);
+		const body = (await res.json()) as SchedulerHealth;
+		expect(body.lastTaskStatus).toBe("budget_exceeded");
+		expect(body.running).toBe(false);
+		expect(body.status).toBe("ok");
+	});
+
+	it("TC-F-4.14-2: status=degraded when the pending file was corrupt at startup", async () => {
+		const queue = new TaskQueue(hangingExecutor);
+		server = await startControlServer({ queue, port: 0, degraded: () => true });
+		baseUrl = `http://127.0.0.1:${server.port}`;
+
+		const res = await fetch(`${baseUrl}/health`);
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as SchedulerHealth;
+		expect(body.status).toBe("degraded");
+		expect(body.queueVersion).toBe(1);
+	});
+
+	it("contains no secrets — only the documented metric fields", async () => {
+		const queue = new TaskQueue(hangingExecutor);
+		await startWith(queue);
+
+		const res = await fetch(`${baseUrl}/health`);
+		const body = (await res.json()) as Record<string, unknown>;
+		expect(Object.keys(body).sort()).toEqual(
+			["lastTaskStatus", "pendingCount", "queueVersion", "running", "status", "uptimeSeconds"].sort(),
+		);
 	});
 });

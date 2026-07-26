@@ -7,7 +7,7 @@ import { CronScheduler, createConfigWatcher, createShutdownHandler } from "./lib
 import { createTaskExecutor } from "./lib/executor.js";
 import { validateGitHubIdentity } from "./lib/github-identity.js";
 import { logger } from "./lib/logger.js";
-import { defaultPendingQueuePath, loadPendingTasks, savePendingTasks } from "./lib/persistent-storage.js";
+import { defaultPendingQueuePath, loadPendingTasksDetailed, savePendingTasks } from "./lib/persistent-storage.js";
 import { TaskQueue } from "./lib/queue.js";
 
 /**
@@ -88,9 +88,12 @@ export function main(): void {
 
 	// F-4.13: restore pending tasks left over from the previous run and
 	// resume processing (restored tasks wait in line behind the cron triggers).
-	const restoredTasks = loadPendingTasks(pendingQueuePath);
-	if (restoredTasks.length > 0) {
-		queue.restore(restoredTasks);
+	// F-4.14: a corrupt pending file marks the scheduler as degraded — tasks
+	// were dropped and an operator should look at the logs.
+	const restored = loadPendingTasksDetailed(pendingQueuePath);
+	const pendingFileCorrupt = restored.corrupt;
+	if (restored.tasks.length > 0) {
+		queue.restore(restored.tasks);
 		void queue.runNext();
 	}
 	activityMonitor = new UserActivityMonitor(client, queue, {
@@ -110,6 +113,7 @@ export function main(): void {
 			queue,
 			port: envInt("FAN_SCHEDULER_CONTROL_PORT", 3457),
 			extraState: () => ({ pausedForChat: monitor.pausedForChat }),
+			degraded: () => pendingFileCorrupt,
 		})
 			.then((handle) => {
 				controlServer = handle;

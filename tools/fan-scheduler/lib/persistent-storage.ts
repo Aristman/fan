@@ -104,6 +104,18 @@ function isTaskConfigLike(entry: unknown): entry is TaskConfig {
 }
 
 /**
+ * Result of the detailed loader (F-4.14): the restored tasks plus a
+ * `corrupt` flag that is true whenever the pending file existed but could
+ * not be fully trusted (unreadable, invalid JSON, wrong shape, version
+ * mismatch). The health endpoint reports `status: "degraded"` while the
+ * flag is set. A missing file (first run) is NOT corruption.
+ */
+export interface PendingLoadResult {
+	tasks: TaskConfig[];
+	corrupt: boolean;
+}
+
+/**
  * Loads the persisted pending task list from disk.
  *
  * - Missing file → empty queue (silent).
@@ -112,18 +124,26 @@ function isTaskConfigLike(entry: unknown): entry is TaskConfig {
  * - Individual malformed task entries are skipped with a warning.
  */
 export function loadPendingTasks(filePath: string): TaskConfig[] {
+	return loadPendingTasksDetailed(filePath).tasks;
+}
+
+/**
+ * Detailed variant of {@link loadPendingTasks} — additionally reports
+ * whether the on-disk file was corrupt (F-4.14 health "degraded" flag).
+ */
+export function loadPendingTasksDetailed(filePath: string): PendingLoadResult {
 	let raw: string;
 	try {
 		raw = readFileSync(filePath, "utf8");
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return { tasks: [], corrupt: false };
 		log.warn(
 			"pending_read_failed",
 			`[persistence] failed to read "${filePath}" — starting with an empty queue: ` +
 				(error instanceof Error ? error.message : String(error)),
 			{ error, filePath },
 		);
-		return [];
+		return { tasks: [], corrupt: true };
 	}
 
 	let data: unknown;
@@ -135,7 +155,7 @@ export function loadPendingTasks(filePath: string): TaskConfig[] {
 			`[persistence] "${filePath}" is not valid JSON — starting with an empty queue`,
 			{ filePath },
 		);
-		return [];
+		return { tasks: [], corrupt: true };
 	}
 
 	if (typeof data !== "object" || data === null || Array.isArray(data)) {
@@ -144,7 +164,7 @@ export function loadPendingTasks(filePath: string): TaskConfig[] {
 			`[persistence] "${filePath}" has an unexpected shape (expected an object) — starting with an empty queue`,
 			{ filePath },
 		);
-		return [];
+		return { tasks: [], corrupt: true };
 	}
 
 	const record = data as Record<string, unknown>;
@@ -154,7 +174,7 @@ export function loadPendingTasks(filePath: string): TaskConfig[] {
 			`[persistence] "${filePath}" has version ${String(record.version)} (expected ${PENDING_QUEUE_VERSION}) — file ignored, starting with an empty queue`,
 			{ filePath, version: record.version },
 		);
-		return [];
+		return { tasks: [], corrupt: true };
 	}
 
 	if (!Array.isArray(record.tasks)) {
@@ -163,14 +183,16 @@ export function loadPendingTasks(filePath: string): TaskConfig[] {
 			`[persistence] "${filePath}" has no "tasks" array — starting with an empty queue`,
 			{ filePath },
 		);
-		return [];
+		return { tasks: [], corrupt: true };
 	}
 
 	const tasks: TaskConfig[] = [];
+	let skippedMalformed = false;
 	for (const entry of record.tasks) {
 		if (isTaskConfigLike(entry)) {
 			tasks.push(entry);
 		} else {
+			skippedMalformed = true;
 			log.warn(
 				"pending_task_skipped",
 				`[persistence] skipping malformed task entry in "${filePath}" (missing required string fields)`,
@@ -178,5 +200,5 @@ export function loadPendingTasks(filePath: string): TaskConfig[] {
 			);
 		}
 	}
-	return tasks;
+	return { tasks, corrupt: skippedMalformed };
 }

@@ -47,6 +47,9 @@ The pending task list is serialized to `<agentDir>/scheduler-pending.json` on **
 | `POST /pause`  | `queue.pauseCurrent()` — pause autonomous tasks |
 | `POST /resume` | `queue.runNext()` — resume auto-advance |
 | `GET /state`   | `{ state, isRunning, pendingCount, currentTask, lastResult, pausedForChat }` |
+| `GET /health`  | `{ status, running, pendingCount, lastTaskStatus, uptimeSeconds, queueVersion }` (F-4.14) |
+
+**Health & metrics (F-4.14):** `GET /health` returns operational metrics only — no secrets, no task contents, no blocking operations (in-memory queue state). `status` is `"degraded"` when the scheduler started with a corrupt pending-queue file (F-4.13: unreadable / invalid JSON / wrong shape / version mismatch — tasks were dropped, check the logs for `pending_file_corrupt` / `pending_version_mismatch` warnings); otherwise `"ok"`. The api-gateway proxies this endpoint at `GET /api/scheduler/health` (env `FAN_SCHEDULER_URL`, default `http://127.0.0.1:3457`) and answers `503 { status: "degraded", scheduler: "down" }` when the scheduler process is unreachable.
 
 ### Environment variables (F-4.12)
 

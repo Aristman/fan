@@ -117,6 +117,47 @@ Readiness probe (F-0.9): returns HTTP `200` when all checks pass, HTTP `503` whe
 | session.active | `boolean` | Whether a session is currently active                   |
 | session.id     | `string?` | Active session ID (`null` when none)                    |
 
+### Scheduler Health
+
+```
+GET /api/scheduler/health
+```
+No authentication required (same decision as `/api/health` — the payload contains only operational metrics, no secrets, so Docker healthchecks and external monitoring can poll it without a token).
+
+Health & metrics proxy (F-4.14) for the `fan-scheduler` process. The gateway forwards the request to the scheduler's localhost control server (`GET {FAN_SCHEDULER_URL}/health`, env `FAN_SCHEDULER_URL`, default `http://127.0.0.1:3457`, 2 s timeout) and returns the payload unchanged.
+
+**Response `200`** (scheduler reachable; `status` is `"degraded"` when the scheduler started with a corrupt pending-queue file):
+
+```json
+{
+  "status": "ok",
+  "running": true,
+  "pendingCount": 2,
+  "lastTaskStatus": "completed",
+  "uptimeSeconds": 3600,
+  "queueVersion": 1
+}
+```
+
+**Response `503`** (scheduler process not running or timed out):
+
+```json
+{
+  "status": "degraded",
+  "scheduler": "down",
+  "error": "scheduler unreachable"
+}
+```
+
+| Field          | Type       | Description                                                            |
+|----------------|------------|------------------------------------------------------------------------|
+| status         | `string`   | `"ok"` when healthy, `"degraded"` on corrupt pending queue or scheduler down |
+| running        | `boolean`  | Whether a task is currently executing                                  |
+| pendingCount   | `number`   | Number of tasks waiting in the pending queue                           |
+| lastTaskStatus | `string?`  | `"completed"` / `"failed"` / `"timeout"` / `"budget_exceeded"` / `null`        |
+| uptimeSeconds  | `number`   | Scheduler control server uptime in seconds                             |
+| queueVersion   | `number`   | Pending-queue persistence schema version (`1`)                         |
+
 ---
 
 ### Sessions
