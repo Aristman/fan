@@ -19,6 +19,15 @@ import type { ExtensionAPI, ExtensionCommandContext, ExtensionFactory } from "@s
 import type { ConfigLoader } from "./config.js";
 import { createMcpConfigLoader } from "./config.js";
 import { createMcpClientManager, type McpClientManager } from "./manager.js";
+
+export type { ConfigLoader, McpConfig, McpServerConfig } from "./config.js";
+// Re-exported for external coordinators (e.g. coding-agent workspace
+// mcp-switcher, F-2.10) that need to lazily load per-project MCP configs
+// without going through the extension lifecycle hooks.
+export { createMcpConfigLoader, loadMcpConfig } from "./config.js";
+export type { McpClientManager, ServerInfo } from "./manager.js";
+export { createMcpClientManager } from "./manager.js";
+
 import { createPermissionGate } from "./permissions.js";
 import { type McpAction, McpWidget } from "./widget.js";
 
