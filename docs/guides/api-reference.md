@@ -401,6 +401,82 @@ An empty or missing registry yields `{ "projects": [] }` with HTTP 200.
 > visible/manageable. The endpoint simply returns the cwd-filtered list
 > (empty when no session ever ran with that cwd).
 
+#### Create Project
+
+```
+POST /api/projects
+```
+
+Creates a new project workspace — optionally from a built-in template
+(F-3.3/F-3.4) — auto-detects its type (F-3.2) and registers it in
+`~/.fan/agent/projects.json` (F-3.5).
+
+**Request body:**
+
+```json
+{
+  "name": "market-analysis-q3",
+  "template": "research",
+  "rootPath": "/data/repos"
+}
+```
+
+| Field    | Type     | Required | Description                                                                                                    |
+|----------|----------|----------|----------------------------------------------------------------------------------------------------------------|
+| name     | `string` | yes      | Project name, used as the directory name under `rootPath`. Must be a single path segment: no `/`, `\`, `".."` or `"."`, and must not resolve to the workspace root itself |
+| template | `string` | no       | `"code"` \| `"research"` \| `"automation"`. Unknown names are rejected with `400` before any filesystem write          |
+| rootPath | `string` | no       | Parent directory for the new project. Defaults to the workspace root (`FAN_WORKSPACE_ROOT`, falling back to `~/projects` when no whitelist is configured) |
+
+Without `template` the server performs `mkdir -p` + type detection on the
+resulting (empty) directory — type will be `"unknown"`.
+
+**Template structures** (`packages/coding-agent/src/workspace/templates/`):
+
+| Template    | Directories                                              | Files                                        |
+|-------------|----------------------------------------------------------|----------------------------------------------|
+| `code`      | `.fan/`, `src/`, `tests/`, `docs/`                       | `.fan/settings.json`, `package.json`         |
+| `research`  | `.fan/`, `.fan/prompts/`, `docs/research/`, `data/`, `reports/` | `.fan/settings.json`                    |
+| `automation`| `.fan/`, `scripts/`, `config/`, `output/`, `logs/`       | `.fan/settings.json`, `scripts/example.sh`   |
+
+Templates never overwrite existing files. The `code` template deliberately
+does **not** create `.git` (the user runs `git init` when ready) — since
+detection would then yield `"unknown"`, the template name is used as the
+declared type fallback.
+
+**Example:**
+
+```bash
+curl -X POST http://localhost:3456/api/projects \
+  -H "Authorization: Bearer $FAN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"market-analysis-q3","template":"research","rootPath":"/data/repos"}'
+```
+
+**Response `201` (created):**
+
+```json
+{
+  "path": "/data/repos/market-analysis-q3",
+  "name": "market-analysis-q3",
+  "type": "research",
+  "template": "research"
+}
+```
+
+`template` is present only when a template was applied. `type` is
+auto-detected from the created structure (e.g. the `research` template
+creates `docs/research/` → detected as `"research"`).
+
+**Responses:**
+
+| Status | Meaning                                                                                              |
+|--------|------------------------------------------------------------------------------------------------------|
+| `201`  | Workspace created and newly registered                                                               |
+| `200`  | Idempotent: the path was already registered — the existing registry entry is returned (dedup by path) |
+| `400`  | Invalid body: missing/empty `name`, path-traversal name (`/`, `\`, `..`, `.`), name resolving to the workspace root, empty `template`/`rootPath`, or `Unknown template: <name>` |
+| `403`  | `rootPath + name` is outside the workspace whitelist (`FORBIDDEN`, logged to the audit log, F-1.13)  |
+| `501`  | The session adapter does not support project creation (`NOT_IMPLEMENTED`)                            |
+
 #### Remove Project from Registry
 
 ```

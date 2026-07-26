@@ -1,5 +1,88 @@
 # Changelog
 
+## [2.6.0] — 2026-07-26
+
+### Фаза 3 — Universal Tasks (universal-tasks)
+
+Типы workspaces (code/research/automation/unknown), автодетекция по
+структуре директории, шаблоны проектов и создание через API и dashboard,
+системные промпты по типу с override через `.fan/prompts/system.md`.
+Реализовано 12 фич + 1 fix (12 коммитов `f29eb35..a1bbbd4`).
+Спецификация: `docs/specs/spec_fan-network-agent_phase3-universal-tasks_2026-07-25.md`,
+отчёт: `docs/features/phase3-universal-tasks/pipeline-report.md`.
+
+#### Добавлено
+
+- **Типы workspaces в projects.json (F-3.1)** — поле `type` со значениями
+  `"code" | "research" | "automation" | "unknown"` в реестре
+  `~/.fan/agent/projects.json`; `normalizeEntry()` даёт fallback
+  `"unknown"` для legacy-записей без типа
+- **Автодетекция типа (F-3.2)** — `detectWorkspaceType(cwd)` в
+  `packages/coding-agent/src/workspace/detector.ts`; приоритет
+  `code > research > automation > unknown`: code = `.git` (dir или
+  gitfile) + (`src/` или `package.json`); research = `docs/research/` или
+  `.fan/prompts/`; automation = скрипты (`*.sh`/`*.py` в корне или
+  `scripts/`) + конфиг (`config/` или корневые `*.yaml`/`*.yml`/`*.toml`/
+  `*.ini`/`*.cfg`; `*.json` намеренно исключён). Никогда не бросает
+  исключений — любые fs-ошибки → `"unknown"`
+- **Шаблоны проектов (F-3.3, F-3.4)** — реестр шаблонов +
+  `applyTemplate()` + `createProject()` в
+  `packages/coding-agent/src/workspace/templates/`: Code Project
+  (`.fan/settings.json`, `src/`, `tests/`, `docs/`, `package.json`),
+  Research Lab (`.fan/prompts/`, `docs/research/`, `data/`, `reports/`),
+  Automation Hub (`scripts/`, `config/`, `output/`, `logs/`,
+  `scripts/example.sh`). Существующие файлы не перезаписываются; `.git` в
+  code-шаблоне не создаётся — при `unknown` детекции типом становится имя
+  шаблона (documented fallback)
+- **`POST /api/projects` (F-3.5)** — создание проекта из шаблона:
+  body `{ name, template?, rootPath? }`; валидация `name` (единственный
+  сегмент пути: без `/`, `\`, `..`, `.`; не корень whitelist),
+  whitelist-проверка пути до записи на диск (403), unknown template →
+  400 до любой fs-записи; ответ 201 (создан) / 200 (уже в реестре —
+  идемпотентный dedup по path) с `{ path, name, type, template? }`
+- **System prompt loader (F-3.6)** —
+  `packages/coding-agent/src/workspace/prompt-loader.ts`: базовые промпты
+  для code/research/automation + generic fallback для unknown; override
+  `<cwd>/.fan/prompts/system.md` заменяет шаблон целиком (пустой файл =
+  нет override); переменные `{workspace_path}` и `{project_name}`.
+  Standalone-модуль — интеграция в runtime
+  (`AgentSession._rebuildSystemPrompt()` / `ResourceLoader`) запланирована
+  будущей фазой
+- **Иконки типов в dashboard (F-3.7)** — `lib/workspace-type.ts`:
+  Lucide-иконки CodeXml/FlaskConical/Cog/CircleQuestionMark + CSS-классы
+  `.type-*`; показываются в project switcher и на группах cwd в древе
+  сессий
+- **Диалог создания проекта (F-3.8)** — `<fan-create-project-dialog>`:
+  имя (client-side проверка path-traversal), radio-группа шаблонов
+  (Code/Research/Automation/Empty Folder), опциональный rootPath; success
+  → `project-created` + re-fetch списка; ошибки 400/403 показываются
+  inline
+- **Slash command autocomplete (F-3.9)** — dropdown по `/` в чате
+  (`lib/slash-commands.ts`): 8 предустановленных скиллов как
+  `/skill:<name>` (единственный slash-синтаксис, работающий через
+  server path); порядок команд зависит от типа активного проекта;
+  навигация ↑/↓, Enter/Tab, Esc; фильтрация по вводу
+- **Ручная смена типа (F-3.10)** — `PUT /api/projects?path= { type }`
+  (200/400/404/501, registry-only) + inline-редактор типа в
+  project switcher
+- **E2E (F-3.11, F-3.12)** — секции 10–11 в
+  `deploy/scripts/e2e-local.sh` (всего 76 проверок, PASS=76 FAIL=0 ×2
+  прогона, идемпотентно): создание research-проекта через API, структуры
+  шаблонов на диске в контейнере, типы в реестре, `loadSystemPrompt` из
+  реального dist для 3 типов (default + override), round-trip смены типа,
+  изоляция `?project=`, возврат к проекту. LLM-шаги (idea-lab /
+  research-spec-generator) — manual чеклисты в шапках секций (в
+  контейнере нет API-ключей)
+
+#### Исправлено
+
+- **3 находки верификации** (`a1bbbd4`) — восстановлен biome strict gate
+  (`useImportType` + форматирование, 666 файлов); `POST /api/projects`
+  отклоняет `name` `"."`/`".."` + защита `resolve(root, name) != root`;
+  `shellQuote(projectName)` в automation-hub `example.sh` — нет
+  shell-инъекции. Тесты: api-gateway 168 (+5), coding-agent 1274 (+1),
+  dashboard 93, e2e 76/76
+
 ## [2.5.0] — 2026-07-26
 
 ### Фаза 2 — Workspace UX (workspace-ux)

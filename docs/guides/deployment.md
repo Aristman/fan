@@ -425,6 +425,39 @@ they never received an `agent_event` for a queued message. Registry cleanup
 for deleted workspaces: `DELETE /api/projects?path=` (removes the entry
 from `projects.json` only — sessions and files are never touched).
 
+### 8.3 Workspace types and templates (Phase 3)
+
+Workspaces under `/data/repos` are classified by **type** — `code`,
+`research`, `automation` or `unknown` — stored in the project registry
+(`/data/.fan/agent/projects.json`). Types drive the dashboard icons and the
+type-aware system prompts.
+
+- **Auto-detection (F-3.2)** runs at registration and at project creation:
+  priority `code > research > automation > unknown`. Criteria: `code` =
+  `.git` + (`src/` or `package.json`); `research` = `docs/research/` or
+  `.fan/prompts/`; `automation` = script files (`*.sh`/`*.py` in root or
+  `scripts/`) + config (`config/` dir or root-level `*.yaml`/`*.yml`/`*.toml`/
+  `*.ini`/`*.cfg`); otherwise `unknown`.
+- **Creation from templates (F-3.5):** `POST /api/projects` with
+  `{ "name", "template": "code"|"research"|"automation", "rootPath": "/data/repos" }`
+  materializes the directory structure inside the workspace root and
+  registers the project (see the [API reference](api-reference.md#create-project)
+  for the full contract). The dashboard offers the same flow via the create
+  project dialog.
+- **Manual override:** when detection misclassifies a project,
+  `PUT /api/projects?path= { "type": ... }` fixes the registry entry
+  (dashboard: per-project type editor in the switcher).
+- **Per-type system prompts (F-3.6, standalone):**
+  `packages/coding-agent/src/workspace/prompt-loader.ts` resolves a base
+  prompt per type, with `<cwd>/.fan/prompts/system.md` as a full override
+  and `{workspace_path}` / `{project_name}` variable substitution. The
+  module is NOT wired into the runtime yet — integration into
+  `AgentSession._rebuildSystemPrompt()` is a documented future phase.
+- The `code` template deliberately does not run `git init` — without
+  `.git` the detector would return `unknown`, so the template name is used
+  as the declared type fallback. Run `git init` inside the new project when
+  ready.
+
 ## 9. Rollback
 
 nginx layer (takes agent.sea-agents.ru offline, FAN Store unaffected):

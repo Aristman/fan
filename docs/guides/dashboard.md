@@ -91,6 +91,14 @@ When the agent uses tools (read, write, edit, bash, etc.), each call is shown wi
 
 Hover over any message to reveal a **copy** button. Click it to copy the raw message content to your clipboard.
 
+### Slash Command Autocomplete
+
+Typing `/` in the chat input opens an autocomplete dropdown (`chat-view.ts` + `lib/slash-commands.ts`, F-3.9):
+
+- **Commands** — the 8 pre-installed skills as `/skill:<name>` (`idea-lab`, `research-spec-generator`, `repo-explorer`, `deep-dive`, `code-research`, `bug-fix`, `auto-tests`, `fan-forge`). This is the only slash syntax that works through the server path: `/skill:<name> <args>` is expanded to the skill's `SKILL.md` content by the runtime. Built-in TUI commands (`/model`, `/compact`, …) are interactive-mode only and intentionally not listed.
+- **Type-aware ordering** — commands relevant to the active project's workspace type come first: `research` → idea-lab / research-spec-generator / deep-dive; `code` → bug-fix / auto-tests / code-research / repo-explorer; `automation` → repo-explorer / auto-tests.
+- **Navigation** — ↑/↓ to move, Enter/Tab to insert, Esc to dismiss. The list filters as you type.
+
 ### Queue Indicator
 
 The runtime executes one session at a time. If you send a message while the engine is busy with another session, your message is queued server-side (see [Message Queueing](api-reference.md#message-queueing-phase-2)):
@@ -105,8 +113,35 @@ The sidebar header contains the **project switcher** (`<fan-project-switcher>`) 
 - **Select project** — click a project to scope the session list to it. The active project is highlighted; its name is shown in the switcher button.
 - **Search** — the filter input matches project name or path (case-insensitive).
 - **Session counts** — each entry shows the number of sessions in that project.
-- **Add project** — the **+** button opens an inline form; submit an absolute path to register a new project workspace.
+- **Add project** — the **+** button opens the [create project dialog](#create-project-dialog) (F-3.8) to create a workspace from a template via `POST /api/projects`.
 - **Unavailable projects** — projects whose directory was deleted from disk are marked with a "Not found on disk" indicator (`available: false` / `PROJECT_NOT_FOUND` from the API) and offer a **remove** button that calls `DELETE /api/projects?path=` to drop the entry from the registry. Sessions and files on disk are never touched.
+
+### Workspace Type Icons (Phase 3)
+
+Every project entry is prefixed with an icon reflecting its workspace type (`project.type` from the API; `lib/workspace-type.ts`, F-3.7):
+
+| Type        | Icon (Lucide)    | CSS class         | Meaning                              |
+|-------------|------------------|-------------------|--------------------------------------|
+| `code`      | CodeXml (💻)     | `.type-code`      | Code repository (`.git` + `src/`/`package.json`) |
+| `research`  | FlaskConical (🔬)| `.type-research`  | Research workspace (`docs/research/` or `.fan/prompts/`) |
+| `automation`| Cog (⚙️)         | `.type-automation`| Scripts + config (`*.sh`/`*.py` + config files) |
+| `unknown`   | CircleQuestionMark (❓) | `.type-unknown` | No criterion matched            |
+
+The same icons appear on the cwd group headers in the session tree.
+
+### Create Project Dialog
+
+The **+** button in the switcher opens `<fan-create-project-dialog>` (F-3.8) — a modal that creates a workspace via `POST /api/projects` (F-3.5):
+
+- **Project name** — required; path-traversal symbols (`/`, `\`, `..`, `.`) are rejected client-side (the server validates too).
+- **Template radio group** — *Code Project* (`src/`, `tests/`, `docs/`, `package.json`), *Research Lab* (`docs/research/`, `data/`, `reports/`), *Automation Hub* (`scripts/`, `config/`, `output/`, `logs/`), or *Empty Folder* (no `template` field in the request).
+- **Location** (`rootPath`) — optional; when empty the server applies its default (workspace root → `~/projects`).
+
+On success the dialog emits `project-created`, the project list is re-fetched and the new project becomes active. Server errors (400/403) are shown inline; the dialog stays open.
+
+### Manual Type Change
+
+Each project row has a **type edit** button (F-3.10) that opens an inline type picker under the item. Picking a type sends `PUT /api/projects?path= { type }` and reloads the list — the icon refreshes immediately. Use this when auto-detection classified the project wrong (e.g. a code project without `.git` shows as `unknown`).
 
 ## Session Management
 
