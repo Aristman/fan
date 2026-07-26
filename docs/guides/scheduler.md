@@ -70,4 +70,42 @@ curl -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/user
 
 ---
 
-*Остальные разделы (config.yaml, очередь, budget caps, PR-политика, мониторинг) будут добавлены по мере реализации соответствующих фич Phase 4.*
+## Feature Branch Policy — fan-auto/<id>-<timestamp> (F-4.7)
+
+Каждая автономная задача работает в уникальной feature-ветке. Коммиты **только** в feature-ветки — **никогда** в `main`/`master`.
+
+### Naming convention
+
+```
+fan-auto/<task-id>-<YYYYMMDD-HHmmss>
+# пример: fan-auto/review-1-20260725-090000
+```
+
+- Timestamp — UTC, формат `YYYYMMDD-HHmmss`.
+- Имя всегда соответствует regex `/^fan-auto\/[\w-]+-\d{8}-\d{6}$/` (экспортируется как `AUTONOMOUS_BRANCH_NAME_REGEX`).
+- Идентификатор задачи санитизируется в git-safe slug: unicode → ASCII (диакритика срезается через NFKD), lowercase, пробелы/слэши/спецсимволы схлопываются в одиночный `-`, края подрезаются, длина ограничена 50 символами (`MAX_SLUG_LENGTH`).
+- Результат **никогда** не равен `main`/`master`: slug, в точности совпадающий с защищённой веткой, префиксуется `task-` (например `main` → `task-main`); кроме того, префикс `fan-auto/` и суффикс timestamp делают совпадение невозможным в принципе.
+
+Программный интерфейс — `tools/fan-scheduler/lib/branch-policy.ts` (чистые функции, единственный I/O — часы, инъецируются параметром `now` для тестов):
+
+| Экспорт | Назначение |
+|---------|-----------|
+| `generateBranchName(task, now?)` | Генерация имени ветки: `fan-auto/<slug>-<timestamp>`; принимает `{ id?, name? }` или строку |
+| `sanitizeTaskId(raw)` | Санитизация идентификатора в git-safe slug |
+| `formatBranchTimestamp(date)` | Форматирование даты как `YYYYMMDD-HHmmss` (UTC) |
+| `isValidBranchName(name)` | Проверка имени по `AUTONOMOUS_BRANCH_NAME_REGEX` |
+| `AUTONOMOUS_BRANCH_NAME_REGEX` | Regex валидации: `/^fan-auto\/[\w-]+-\d{8}-\d{6}$/` |
+| `AUTONOMOUS_BRANCH_POLICY` | Текст-константа system prompt для autonomous mode (см. ниже) |
+| `PROTECTED_BRANCHES` | `['main', 'master']` |
+
+### System prompt template
+
+`AUTONOMOUS_BRANCH_POLICY` — текст правила branch policy для агента в autonomous mode: создавай ветку `fan-auto/*` до начала изменений (`git checkout -b`), никогда не коммить/push в `main`/`master`, по завершении — `git add -A && git commit`, `git push -u origin <branch>`, `gh pr create --base main --head <branch>`.
+
+> **Интеграция:** константа экспортируется как единый источник правды. Подстановка в сообщения задач будет реализована позже (F-4.16 / scheduler config) — до этого потребители добавляют текст в начало task message самостоятельно.
+
+Ветка создаётся агентом через bash tool: `git checkout -b fan-auto/task-X-20260725-120000`.
+
+---
+
+*Остальные разделы (config.yaml, очередь, budget caps, мониторинг) будут добавлены по мере реализации соответствующих фич Phase 4.*
