@@ -52,6 +52,10 @@ export interface TaskExecutorOptions {
 	maxRetries?: number;
 	/** Retry config (F-4.10): base backoff delay in ms (default 2000). */
 	retryBaseDelayMs?: number;
+	/** F-4.12: called synchronously right after createSession resolves, before
+	 *  sendMessage. Used to register scheduler-owned sessions with the
+	 *  UserActivityMonitor so task prompts are not mistaken for live chat. */
+	onSessionCreated?: (sessionId: string, task: TaskConfig) => void;
 }
 
 function defaultSleep(ms: number): Promise<void> {
@@ -133,6 +137,7 @@ export function createTaskExecutor(client: FanApiClient, options: TaskExecutorOp
 	const retryBaseDelayMs = options.retryBaseDelayMs ?? DEFAULT_BASE_DELAY_MS;
 	const now = options.now ?? (() => Date.now());
 	const sleep = options.sleep ?? defaultSleep;
+	const onSessionCreated = options.onSessionCreated;
 
 	async function waitForCompletion(
 		task: TaskConfig,
@@ -226,6 +231,10 @@ export function createTaskExecutor(client: FanApiClient, options: TaskExecutorOp
 		const runPipeline = async (): Promise<number> => {
 			// Step 1 — create a session bound to the task workspace.
 			const session = await client.createSession(task.workspace);
+			// F-4.12: register the scheduler-owned session BEFORE sending the
+			// prompt — the chat-interruption monitor must not treat the task
+			// message (a user-role message) as live chat activity.
+			onSessionCreated?.(session.id, task);
 			// Step 2 — set the per-project budget cap BEFORE any tokens are spent
 			// (F-4.9). Best-effort: failures are logged and ignored.
 			if (task.budget_limit !== null) {

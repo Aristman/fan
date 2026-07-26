@@ -7,6 +7,40 @@ Autonomous cron-based task runner for FAN (Phase 4 — Autonomy). Loads tasks fr
 - **F-4.1 (done):** package structure + YAML config parsing (`lib/config-loader.ts`), skeletons for scheduler loop, queue, API client, logger.
 - **F-4.2 … F-4.8 (done):** FAN API client, TaskQueue + execution pipeline, cron loop, bot identity, branch policy, PR via `gh`.
 - **F-4.9 (done):** per-project budget caps — the executor sets the cap before `sendMessage` and monitors usage during execution (see below).
+- **F-4.12 (done):** chat interruption — live chat pauses autonomous tasks; `chat > autonomous` priority (see below).
+
+## Chat interruption (F-4.12)
+
+**Priority model: `chat > autonomous tasks`.** While the user is chatting, the scheduler pauses its queue; when the chat goes quiet, the queue resumes.
+
+**Chosen mechanism — scheduler-side polling (no gateway changes).** The scheduler is a separate process from the api-gateway, so the gateway cannot call the TaskQueue in-process. Alternatives considered: (a) scheduler as WS observer on the gateway — complex/fragile (auth, reconnects, no "user is typing" frame in the protocol); (b) gateway → scheduler HTTP push — requires gateway changes and a new bidirectional dependency; (c) **scheduler polls the read-only HTTP API** — simple, testable, zero gateway changes. Option (c) is implemented in `lib/activity-monitor.ts` (`UserActivityMonitor`):
+
+1. Every `FAN_SCHEDULER_ACTIVITY_POLL_MS` (default **5 s**) the monitor fetches `GET /api/sessions`.
+2. Sessions **created by the scheduler itself** are excluded — the executor registers each session via `onSessionCreated` right after `createSession` (task prompts are user-role messages and would otherwise look like chat).
+3. For every other session that changed since the last poll, the monitor fetches its detail; if the latest user-role message is younger than `FAN_SCHEDULER_ACTIVITY_WINDOW_MS` (default **60 s**), chat counts as active → `queue.pauseCurrent()` and log `chat_interruption` ("Paused autonomous task for live chat").
+4. When no recent user message remains → `queue.runNext()` and log `chat_interruption_end`.
+
+**Resume behavior (spec: "опционально" — implemented):** auto-resume starts the **next pending task**; a task that was in flight when the pause hit is *not* aborted server-side (the gateway has no interruption endpoint — same documented limitation as F-4.4/F-4.9), it settles and the queue continues. The monitor only resumes pauses it made itself and logs transitions once (no flapping). Poll failures are best-effort warnings — a gateway hiccup never crashes the scheduler or flaps the queue.
+
+**Control server (`lib/control-server.ts`)** — the external pause/resume signal channel (spec: "scheduler can receive pause signal … HTTP endpoint"). Localhost-only HTTP server, no auth (same trust model as the local runtime):
+
+| Route | Effect |
+|-------|--------|
+| `POST /pause`  | `queue.pauseCurrent()` — pause autonomous tasks |
+| `POST /resume` | `queue.runNext()` — resume auto-advance |
+| `GET /state`   | `{ state, isRunning, pendingCount, currentTask, lastResult, pausedForChat }` |
+
+### Environment variables (F-4.12)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `FAN_SCHEDULER_PAUSE_ON_USER_ACTIVITY` | `true` | `off`/`0`/`false`/`no` disables the activity monitor |
+| `FAN_SCHEDULER_ACTIVITY_POLL_MS` | `5000` | interval between `GET /api/sessions` polls |
+| `FAN_SCHEDULER_ACTIVITY_WINDOW_MS` | `60000` | how long a user message counts as live chat |
+| `FAN_SCHEDULER_CONTROL` | `true` | `off`/`0`/`false`/`no` disables the control server |
+| `FAN_SCHEDULER_CONTROL_PORT` | `3457` | control server port (bound to `127.0.0.1`) |
+
+A failed control-server bind is a warning, not a crash — the scheduler keeps running without it.
 
 ## Budget monitoring (F-4.9)
 

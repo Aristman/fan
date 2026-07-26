@@ -434,3 +434,22 @@ describe("retry with exponential backoff (F-4.10)", () => {
 		expect(delays).toEqual([]);
 	});
 });
+
+describe("onSessionCreated hook (F-4.12)", () => {
+	it("is called with the created session id before sendMessage, once per attempt", async () => {
+		const task = makeTask({ budget_limit: null });
+		const { client, callOrder } = createMockClient();
+		const registered: Array<{ sessionId: string; taskName: string }> = [];
+		const execute = createTaskExecutor(client, {
+			onSessionCreated: (sessionId, t) => registered.push({ sessionId, taskName: t.name }),
+		});
+
+		const result = await execute(task);
+
+		expect(result.status).toBe("completed");
+		expect(registered).toEqual([{ sessionId: "session-1", taskName: task.name }]);
+		// Registration happens after createSession and before sendMessage so the
+		// chat-interruption monitor never sees the task prompt as user activity.
+		expect(callOrder).toEqual(["createSession", "sendMessage", "getSession"]);
+	});
+});

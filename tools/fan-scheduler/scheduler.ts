@@ -1,6 +1,8 @@
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { UserActivityMonitor } from "./lib/activity-monitor.js";
 import { FanApiClient } from "./lib/client.js";
 import { loadTasks } from "./lib/config-loader.js";
+import { startControlServer, type ControlServerHandle } from "./lib/control-server.js";
 import { CronScheduler, createConfigWatcher, createShutdownHandler } from "./lib/cron-scheduler.js";
 import { createTaskExecutor } from "./lib/executor.js";
 import { validateGitHubIdentity } from "./lib/github-identity.js";
@@ -29,6 +31,21 @@ function resolveConfigPath(): string {
 	return fileURLToPath(new URL("../config.yaml", import.meta.url));
 }
 
+/** Truthy env check: "0"/"false"/"off"/"no" (case-insensitive) disable a feature. */
+function envEnabled(name: string, defaultEnabled: boolean): boolean {
+	const raw = process.env[name]?.trim().toLowerCase();
+	if (raw === undefined || raw === "") return defaultEnabled;
+	return raw !== "0" && raw !== "false" && raw !== "off" && raw !== "no";
+}
+
+/** Positive integer env override with fallback. */
+function envInt(name: string, fallback: number): number {
+	const raw = process.env[name]?.trim();
+	if (raw === undefined || raw === "") return fallback;
+	const value = Number(raw);
+	return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
+}
+
 export function main(): void {
 	const configPath = resolveConfigPath();
 	const tasks = loadTasks(configPath);
@@ -45,7 +62,48 @@ export function main(): void {
 	});
 
 	const client = new FanApiClient();
-	const queue = new TaskQueue(createTaskExecutor(client));
+
+	// F-4.12: chat interruption — the monitor polls GET /api/sessions for live
+	// chat activity (user messages in sessions NOT created by the scheduler)
+	// and pauses/resumes the queue; chat has priority over autonomous tasks.
+	// The executor registers each session it creates so task prompts are never
+	// mistaken for user chat. Disabled via FAN_SCHEDULER_PAUSE_ON_USER_ACTIVITY=off.
+	let activityMonitor: UserActivityMonitor | null = null;
+	const queue = new TaskQueue(
+		createTaskExecutor(client, {
+			onSessionCreated: (sessionId) => activityMonitor?.registerSchedulerSession(sessionId),
+		}),
+	);
+	activityMonitor = new UserActivityMonitor(client, queue, {
+		pollIntervalMs: envInt("FAN_SCHEDULER_ACTIVITY_POLL_MS", 5000),
+		activityWindowMs: envInt("FAN_SCHEDULER_ACTIVITY_WINDOW_MS", 60000),
+	});
+	const monitor = activityMonitor;
+	if (envEnabled("FAN_SCHEDULER_PAUSE_ON_USER_ACTIVITY", true)) {
+		monitor.start();
+	}
+
+	// F-4.12: localhost control server (POST /pause, POST /resume, GET /state)
+	// — the external pause/resume signal channel. Disabled via FAN_SCHEDULER_CONTROL=off.
+	let controlServer: ControlServerHandle | null = null;
+	if (envEnabled("FAN_SCHEDULER_CONTROL", true)) {
+		startControlServer({
+			queue,
+			port: envInt("FAN_SCHEDULER_CONTROL_PORT", 3457),
+			extraState: () => ({ pausedForChat: monitor.pausedForChat }),
+		})
+			.then((handle) => {
+				controlServer = handle;
+			})
+			.catch((error: unknown) => {
+				logger.warn(
+					"control_server_failed",
+					`[control] control server failed to start (scheduler continues without it): ` +
+						(error instanceof Error ? error.message : String(error)),
+					{ error },
+				);
+			});
+	}
 
 	const scheduler = new CronScheduler(queue);
 	scheduler.schedule(tasks);
@@ -60,6 +118,10 @@ export function main(): void {
 		stopCron: () => {
 			scheduler.stop();
 			watcher.stop();
+			monitor.stop();
+			if (controlServer !== null) {
+				void controlServer.close().catch(() => {});
+			}
 		},
 		queue,
 	});
