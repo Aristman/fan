@@ -116,15 +116,8 @@ describe("sendMessage", () => {
 });
 
 describe("getBudgetUsage", () => {
-	it("aggregates provider budgets into { used, limit }", async () => {
-		fetchMock.mockResolvedValue(
-			jsonResponse({
-				budgets: [
-					{ provider: "anthropic", period: "daily", tokensUsed: 300, costUsed: 1, tokenLimit: 400, exceeded: false },
-					{ provider: "openai", period: "daily", tokensUsed: 200, costUsed: 1, tokenLimit: 100, exceeded: false },
-				],
-			}),
-		);
+	it("returns the project-scoped { project, used, limit } from the gateway (F-4.9)", async () => {
+		fetchMock.mockResolvedValue(jsonResponse({ project: "/data/repos/my-project", used: 500, limit: 500 }));
 		const client = createClient();
 
 		const usage = await client.getBudgetUsage("/data/repos/my-project");
@@ -132,7 +125,6 @@ describe("getBudgetUsage", () => {
 		expect(usage.project).toBe("/data/repos/my-project");
 		expect(usage.used).toBe(500);
 		expect(usage.limit).toBe(500);
-		expect(usage.budgets).toHaveLength(2);
 
 		const { url, init } = callArgs();
 		expect(init.method).toBe("GET");
@@ -140,12 +132,8 @@ describe("getBudgetUsage", () => {
 		expect(url.searchParams.get("project")).toBe("/data/repos/my-project");
 	});
 
-	it("reports limit=null when no provider has a token limit", async () => {
-		fetchMock.mockResolvedValue(
-			jsonResponse({
-				budgets: [{ provider: "anthropic", period: "daily", tokensUsed: 42, costUsed: 0.1, exceeded: false }],
-			}),
-		);
+	it("reports limit=null when the project has no stored cap", async () => {
+		fetchMock.mockResolvedValue(jsonResponse({ project: "/p", used: 42, limit: null }));
 		const client = createClient();
 
 		const usage = await client.getBudgetUsage("/p");

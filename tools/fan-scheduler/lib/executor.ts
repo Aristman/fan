@@ -1,10 +1,13 @@
-import type { FanApiClient, FanSessionMessage } from "./client.js";
+import type { BudgetUsage, FanApiClient, FanSessionMessage } from "./client.js";
 import type { TaskConfig } from "./config-loader.js";
 import { logger } from "./logger.js";
 import type { TaskExecutor, TaskResult, TaskStatus } from "./queue.js";
 
 /** Default delay between completion polls of GET /api/sessions/:id. */
 export const DEFAULT_POLL_INTERVAL_MS = 5000;
+
+/** Default delay between budget polls of GET /api/budget?project= (F-4.9). */
+export const DEFAULT_BUDGET_POLL_INTERVAL_MS = 30000;
 
 /** Internal marker: the task deadline expired (distinct from API/logic failures). */
 class TaskTimeoutError extends Error {
@@ -14,9 +17,23 @@ class TaskTimeoutError extends Error {
 	}
 }
 
+/** Internal marker: the per-project budget cap was reached (F-4.9). */
+class BudgetExceededError extends Error {
+	constructor(
+		taskName: string,
+		readonly used: number,
+		readonly limit: number,
+	) {
+		super(`Task "${taskName}" stopped: budget exceeded (${used}/${limit} tokens)`);
+		this.name = "BudgetExceededError";
+	}
+}
+
 export interface TaskExecutorOptions {
 	/** Polling interval for waitForCompletion (default 5000 ms). */
 	pollIntervalMs?: number;
+	/** Polling interval for the budget monitor (default 30000 ms, F-4.9). */
+	budgetPollIntervalMs?: number;
 	/** Clock override (default Date.now) — for tests. */
 	now?: () => number;
 	/** Sleep override (default setTimeout-based) — for tests. */
@@ -31,17 +48,45 @@ function sumTokens(messages: FanSessionMessage[]): number {
 	return messages.reduce((sum, m) => sum + (typeof m.tokens === "number" ? m.tokens : 0), 0);
 }
 
+/** Emits the F-4.9 budget_monitor log event: { event, project, used, limit, percentage }. */
+function logBudgetMonitor(usage: BudgetUsage): void {
+	const percentage =
+		usage.limit !== null && usage.limit > 0 ? Math.round((usage.used / usage.limit) * 100) : null;
+	logger.info(
+		JSON.stringify({
+			event: "budget_monitor",
+			project: usage.project,
+			used: usage.used,
+			limit: usage.limit,
+			percentage,
+		}),
+	);
+}
+
 /**
- * Execution pipeline (F-4.4): creates a real TaskExecutor for the TaskQueue.
+ * Execution pipeline (F-4.4) + budget monitor (F-4.9, part B).
  *
  * Per task:
  * 1. session = client.createSession(task.workspace)
- * 2. client.sendMessage(session.id, task.message)
- * 3. waitForCompletion(session.id, task.timeout) — see completion-signal note below
- * 4. client.setProjectBudget(task.workspace, task.budget_limit) — best-effort;
- *    errors are logged as warnings and ignored (per-project budget params are
- *    ignored by the current gateway anyway — see client.ts F-4.9 blocker note)
- * 5. TaskResult { status, durationMs, tokensUsed } is logged and returned.
+ * 2. client.setProjectBudget(task.workspace, task.budget_limit) — BEFORE
+ *    sendMessage (F-4.9: the cap must be in place before tokens are spent).
+ *    Best-effort: failures are logged as warnings and ignored (documented —
+ *    a misconfigured gateway must not silently block the queue).
+ * 3. client.sendMessage(session.id, task.message)
+ * 4. waitForCompletion(session.id, task.timeout) — polls GET /api/sessions/:id
+ *    (see completion-signal note below) and, when budget_limit is set, polls
+ *    client.getBudgetUsage(task.workspace) every budgetPollIntervalMs
+ *    (default 30s, configurable via TaskExecutorOptions). Each budget poll is
+ *    logged as { event: 'budget_monitor', project, used, limit, percentage }.
+ *    used >= limit → the wait stops and the task is marked "budget_exceeded"
+ *    with a warning. NOTE (same limitation as timeout, F-4.4): the gateway has
+ *    no interruption/abort endpoint, so the agent keeps running server-side —
+ *    only the scheduler's wait is aborted. Budget poll failures are
+ *    best-effort (warning, monitoring continues) — a transient network error
+ *    must not fail the task.
+ * 5. After completion: a final usage report is logged ("used X / Y tokens")
+ *    when budget monitoring was active.
+ * 6. TaskResult { status, durationMs, tokensUsed } is logged and returned.
  *
  * Completion signal (gateway reality check — packages/api-gateway):
  * - GetSessionResponse has NO streaming/isExecuting field;
@@ -54,21 +99,48 @@ function sumTokens(messages: FanSessionMessage[]): number {
  * a fresh session (no stale assistant messages) and JSONL messages are
  * persisted as whole entries.
  *
- * Limitation: the gateway has no interruption/abort endpoint. On timeout the
- * task is only MARKED as "timeout" — the agent keeps running server-side.
+ * Limitation: the gateway has no interruption/abort endpoint. On timeout (and
+ * on budget_exceeded) the task is only MARKED — the agent keeps running
+ * server-side.
  */
 export function createTaskExecutor(client: FanApiClient, options: TaskExecutorOptions = {}): TaskExecutor {
 	const pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
+	const budgetPollIntervalMs = options.budgetPollIntervalMs ?? DEFAULT_BUDGET_POLL_INTERVAL_MS;
 	const now = options.now ?? (() => Date.now());
 	const sleep = options.sleep ?? defaultSleep;
 
-	async function waitForCompletion(task: TaskConfig, sessionId: string, deadlineMs: number): Promise<number> {
+	async function waitForCompletion(
+		task: TaskConfig,
+		sessionId: string,
+		startedAtMs: number,
+		deadlineMs: number,
+	): Promise<number> {
+		const budgetEnabled = task.budget_limit !== null;
+		let nextBudgetPollAt = startedAtMs + budgetPollIntervalMs;
 		for (;;) {
 			const session = await client.getSession(sessionId);
 			const messages = session.messages ?? [];
 			const last = messages[messages.length - 1];
 			if (last !== undefined && last.role === "assistant") {
 				return sumTokens(messages);
+			}
+			// F-4.9: budget monitor — poll usage every budgetPollIntervalMs.
+			if (budgetEnabled && now() >= nextBudgetPollAt) {
+				nextBudgetPollAt = now() + budgetPollIntervalMs;
+				try {
+					const usage = await client.getBudgetUsage(task.workspace);
+					logBudgetMonitor(usage);
+					if (usage.limit !== null && usage.used >= usage.limit) {
+						throw new BudgetExceededError(task.name, usage.used, usage.limit);
+					}
+				} catch (error) {
+					if (error instanceof BudgetExceededError) throw error;
+					// Best-effort monitoring: a failed poll must not fail the task.
+					logger.warn(
+						`[executor] task "${task.name}" budget poll failed (monitoring continues): ` +
+							(error instanceof Error ? error.message : String(error)),
+					);
+				}
 			}
 			const remainingMs = deadlineMs - now();
 			if (remainingMs <= 0) {
@@ -118,10 +190,24 @@ export function createTaskExecutor(client: FanApiClient, options: TaskExecutorOp
 		const pipeline = (async (): Promise<number> => {
 			// Step 1 — create a session bound to the task workspace.
 			const session = await client.createSession(task.workspace);
-			// Step 2 — dispatch the prompt (REST bypass: never queued server-side).
+			// Step 2 — set the per-project budget cap BEFORE any tokens are spent
+			// (F-4.9). Best-effort: failures are logged and ignored.
+			if (task.budget_limit !== null) {
+				try {
+					await client.setProjectBudget(task.workspace, task.budget_limit);
+					logger.info(
+						`[executor] task "${task.name}" budget cap set: ${task.budget_limit} tokens for ${task.workspace}`,
+					);
+				} catch (error) {
+					logger.warn(
+						`[executor] task "${task.name}" budget update failed (ignored): ${error instanceof Error ? error.message : String(error)}`,
+					);
+				}
+			}
+			// Step 3 — dispatch the prompt (REST bypass: never queued server-side).
 			await client.sendMessage(session.id, task.message);
-			// Step 3 — poll until the assistant finishes its turn.
-			return await waitForCompletion(task, session.id, deadlineMs);
+			// Step 4 — poll until the assistant finishes its turn (+ budget monitor).
+			return await waitForCompletion(task, session.id, startedAtMs, deadlineMs);
 		})();
 
 		let tokensUsed: number;
@@ -137,24 +223,36 @@ export function createTaskExecutor(client: FanApiClient, options: TaskExecutorOp
 				);
 				return buildResult("timeout", null, error.message);
 			}
+			if (error instanceof BudgetExceededError) {
+				// F-4.9: same no-interruption limitation as timeout (F-4.4) — the wait
+				// stops, the task is marked, but the agent is NOT aborted server-side.
+				logger.warn(
+					`[executor] task "${task.name}" stopped: budget exceeded (${error.used}/${error.limit} tokens) — ` +
+						"no interruption endpoint in the gateway; the session continues running server-side",
+				);
+				return buildResult("budget_exceeded", error.used, error.message);
+			}
 			const message = error instanceof Error ? error.message : String(error);
 			logger.error(`[executor] task "${task.name}" failed: ${message}`);
 			return buildResult("failed", null, message);
 		}
 
-		// Step 4 — budget update, best-effort: per-project scoping is ignored by
-		// the current gateway (F-4.2/F-4.9 blocker), so failures are non-fatal.
+		// Step 5 — final usage report (F-4.9) when budget monitoring was active.
 		if (task.budget_limit !== null) {
 			try {
-				await client.setProjectBudget(task.workspace, task.budget_limit);
+				const usage = await client.getBudgetUsage(task.workspace);
+				logBudgetMonitor(usage);
+				logger.info(
+					`[executor] task "${task.name}" usage report: used ${usage.used} / ${usage.limit ?? "unlimited"} tokens`,
+				);
 			} catch (error) {
 				logger.warn(
-					`[executor] task "${task.name}" budget update failed (ignored): ${error instanceof Error ? error.message : String(error)}`,
+					`[executor] task "${task.name}" final usage report failed (ignored): ${error instanceof Error ? error.message : String(error)}`,
 				);
 			}
 		}
 
-		// Step 5 — result logging happens in buildResult.
+		// Step 6 — result logging happens in buildResult.
 		return buildResult("completed", tokensUsed);
 	};
 }

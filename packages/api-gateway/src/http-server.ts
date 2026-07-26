@@ -9,6 +9,7 @@ import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { generateToken as createToken, isAuthDisabled, listTokens, revokeToken, tokenAuth } from "./auth.js";
 import { resolveCorsOrigin } from "./cors-config.js";
+import { ProjectBudgetStore } from "./project-budgets.js";
 import type {
 	ApiError,
 	ApiMcpStatusResponse,
@@ -21,6 +22,7 @@ import type {
 	GetBudgetResponse,
 	GetModelSettingsResponse,
 	GetModelsResponse,
+	GetProjectBudgetResponse,
 	GetSessionResponse,
 	HealthResponse,
 	ListProjectsResponse,
@@ -34,6 +36,7 @@ import type {
 	SendMessageRequest,
 	SendMessageResponse,
 	SessionSummary,
+	SetProjectBudgetResponse,
 	UpdateBudgetRequest,
 	UpdateBudgetResponse,
 	UpdateModelSettingsRequest,
@@ -120,6 +123,10 @@ export interface ServerOptions {
 	 *  from FAN_WORKSPACE_ROOT (env pattern like ALLOWED_ORIGINS). An empty
 	 *  resolved list → bypass (local mode, no restrictions). */
 	allowedRoots?: string[];
+	/** F-4.9: path of the per-project budget store file.
+	 *  Default: `~/.fan/agent/project-budgets.json` (next to projects.json).
+	 *  Overridable for tests / custom agent dirs. */
+	projectBudgetsFile?: string;
 }
 
 // ============================================================================
@@ -634,14 +641,71 @@ async function createApp(
 	});
 
 	// --- Budget ---
+	// F-4.9 (part A): the endpoint is provider-scoped by default (backward compat)
+	// and project-scoped when ?project=<path> is given. The project branch
+	// aggregates assistant-message tokens from the project's JSONL sessions
+	// (listSessions(project) → getSession(id) → sum message.tokens — disk is the
+	// single source of truth, same philosophy as the WebUI). The per-project cap
+	// is stored in project-budgets.json (see project-budgets.ts).
+	// NOTE: enforcement is NOT done here — the gateway only stores/serves the
+	// numbers. Deep integration with BudgetTracker/model-manager was explicitly
+	// deferred; the scheduler monitors usage itself (F-4.9 part B).
+	const projectBudgets = new ProjectBudgetStore(
+		options.projectBudgetsFile ?? resolvePath(homedir(), ".fan", "agent", "project-budgets.json"),
+	);
+
 	app.get("/api/budget", async (c) => {
+		const project = c.req.query("project");
+		if (project) {
+			const target = normalizeProjectPath(project);
+			// Defense-in-depth cwd filter (same as GET /api/sessions?project=).
+			const sessions = (await sessionAdapter.listSessions(project)).filter(
+				(s) => s.cwd !== undefined && normalizeProjectPath(s.cwd) === target,
+			);
+			const details = await Promise.all(sessions.map((s) => sessionAdapter.getSession(s.id, project)));
+			let used = 0;
+			for (const detail of details) {
+				for (const m of detail?.messages ?? []) {
+					if (typeof m.tokens === "number") used += m.tokens;
+				}
+			}
+			const entry = projectBudgets.get(target);
+			const resp: GetProjectBudgetResponse = { project: target, used, limit: entry?.tokenLimit ?? null };
+			return c.json(resp);
+		}
 		const budgets = await modelManager.getBudgetStatus();
 		const resp: GetBudgetResponse = { budgets: Array.isArray(budgets) ? budgets : [budgets] };
 		return c.json(resp);
 	});
 
 	app.put("/api/budget", async (c) => {
-		const body = await c.req.json<UpdateBudgetRequest>();
+		const rawBody = await c.req.json();
+		// F-4.9: a body with a non-empty `project` string selects the project-scoped
+		// branch; anything else keeps the legacy provider-scoped behavior.
+		if (
+			rawBody !== null &&
+			typeof rawBody === "object" &&
+			!Array.isArray(rawBody) &&
+			typeof (rawBody as { project?: unknown }).project === "string" &&
+			((rawBody as { project: string }).project as string).trim().length > 0
+		) {
+			const body = rawBody as { project: string; tokenLimit?: unknown };
+			if (typeof body.tokenLimit !== "number" || !Number.isFinite(body.tokenLimit) || body.tokenLimit < 0) {
+				return c.json(
+					{ error: "tokenLimit must be a non-negative finite number", code: "BAD_REQUEST" } satisfies ApiError,
+					400,
+				);
+			}
+			const target = normalizeProjectPath(body.project);
+			const entry = projectBudgets.set(target, body.tokenLimit);
+			const resp: SetProjectBudgetResponse = {
+				project: target,
+				limit: entry.tokenLimit,
+				updatedAt: entry.updatedAt,
+			};
+			return c.json(resp, 200);
+		}
+		const body = rawBody as UpdateBudgetRequest;
 		await modelManager.configureBudget(body);
 		const resp: UpdateBudgetResponse = { config: body };
 		return c.json(resp);

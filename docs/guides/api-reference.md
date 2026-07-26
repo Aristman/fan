@@ -768,6 +768,84 @@ curl -X PUT http://localhost:3456/api/budget \
 }
 ```
 
+#### Get Project Budget (F-4.9)
+
+```
+GET /api/budget?project=<path>
+```
+
+Project-scoped branch of the budget endpoint. Returns the aggregated token
+usage of a single project and its stored cap.
+
+- `used` — sum of `tokens` of all assistant messages across every session
+  whose cwd belongs to the project (aggregated from the JSONL session files —
+  disk is the single source of truth).
+- `limit` — per-project token cap stored via the project-scoped `PUT`
+  (below), or `null` when no cap was set.
+
+**Example:**
+
+```bash
+curl "http://localhost:3456/api/budget?project=/data/repos/my-project" \
+  -H "Authorization: Bearer $FAN_TOKEN"
+```
+
+**Response `200`:**
+
+```json
+{
+  "project": "/data/repos/my-project",
+  "used": 12500,
+  "limit": 500
+}
+```
+
+#### Set Project Budget (F-4.9)
+
+```
+PUT /api/budget
+```
+
+When the request body contains a non-empty `project` string, the endpoint
+switches to the project-scoped branch and stores a per-project token cap.
+Caps are persisted in `~/.fan/agent/project-budgets.json` (flat JSON file
+next to the `projects.json` registry — no DB migration, human-inspectable).
+Project paths are normalized with the same rules as the `?project=` session
+filter, so `C:\proj` and `c:/proj` resolve to one entry.
+
+**Request body:**
+
+| Field      | Type     | Required | Description                    |
+|------------|----------|----------|--------------------------------|
+| project    | `string` | Yes      | Project path (normalized)      |
+| tokenLimit | `number` | Yes      | Non-negative token cap         |
+
+**Example:**
+
+```bash
+curl -X PUT http://localhost:3456/api/budget \
+  -H "Authorization: Bearer $FAN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "project": "/data/repos/my-project", "tokenLimit": 500 }'
+```
+
+**Response `200`:**
+
+```json
+{
+  "project": "/data/repos/my-project",
+  "limit": 500,
+  "updatedAt": "2026-07-26T12:00:00.000Z"
+}
+```
+
+> **Enforcement note:** the gateway only stores and serves per-project
+> budgets — it does NOT block `sendMessage` when a cap is exhausted (deep
+> integration with BudgetTracker/model-manager was deliberately deferred).
+> Enforcement is the scheduler's job (F-4.9 part B): `fan-scheduler` sets the
+> cap before each task and polls this endpoint during execution, marking the
+> task `budget_exceeded` when `used >= limit`.
+
 ---
 
 ### Tokens

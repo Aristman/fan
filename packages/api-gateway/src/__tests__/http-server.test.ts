@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Use vi.hoisted to create stable mock references that persist across getPrismaClient() calls
@@ -1138,6 +1141,123 @@ describe("HTTP Server", () => {
 			expect(mockModelManager.configureBudget).toHaveBeenCalledWith({ period: "daily", costLimit: 10 });
 			const data = await json<{ config: Record<string, unknown> }>(res);
 			expect(data.config).toEqual({ period: "daily", costLimit: 10 });
+		});
+	});
+
+	describe("Project-scoped budget (F-4.9)", () => {
+		let tmpDir: string;
+		let budgetsFile: string;
+
+		beforeEach(() => {
+			tmpDir = mkdtempSync(join(tmpdir(), "fan-budgets-"));
+			budgetsFile = join(tmpDir, "project-budgets.json");
+		});
+
+		afterEach(() => {
+			rmSync(tmpDir, { recursive: true, force: true });
+		});
+
+		async function getAppWithBudgets() {
+			return createApp(mockModelManager as unknown as ModelManager, mockSessionAdapter, {
+				projectBudgetsFile: budgetsFile,
+			});
+		}
+
+		function projectSession(id: string, cwd: string, tokens: number[]) {
+			return {
+				summary: {
+					id,
+					title: id,
+					createdAt: "t",
+					updatedAt: "t",
+					messageCount: tokens.length,
+					cwd,
+				},
+				detail: {
+					id,
+					title: id,
+					createdAt: "t",
+					updatedAt: "t",
+					cwd,
+					messages: tokens.map((t, i) => ({
+						id: `${id}-m${i}`,
+						role: "assistant" as const,
+						content: "x",
+						tokens: t,
+						createdAt: "t",
+					})),
+				},
+			};
+		}
+
+		it("GET /api/budget?project= aggregates assistant tokens from project sessions", async () => {
+			const s1 = projectSession("s1", "/proj", [120, 80]);
+			const s2 = projectSession("s2", "/proj", [50]);
+			const other = projectSession("s3", "/other", [999]);
+			mockSessionAdapter.listSessions.mockResolvedValueOnce([s1.summary, s2.summary, other.summary]);
+			mockSessionAdapter.getSession.mockImplementation(async (id: string) => {
+				if (id === "s1") return s1.detail;
+				if (id === "s2") return s2.detail;
+				if (id === "s3") return other.detail;
+				return null;
+			});
+			const app = await getAppWithBudgets();
+
+			const res = await app.request(`/api/budget?project=${encodeURIComponent("/proj")}`);
+
+			expect(res.status).toBe(200);
+			const data = await json<{ project: string; used: number; limit: number | null }>(res);
+			expect(data.project).toBe("/proj");
+			expect(data.used).toBe(250); // 120 + 80 + 50 — /other session excluded
+			expect(data.limit).toBeNull(); // no cap stored yet
+			expect(mockSessionAdapter.getSession).not.toHaveBeenCalledWith("s3", expect.anything());
+		});
+
+		it("PUT /api/budget with { project, tokenLimit } stores the cap; GET returns it", async () => {
+			const app = await getAppWithBudgets();
+
+			const putRes = await app.request("/api/budget", {
+				method: "PUT",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ project: "/proj", tokenLimit: 500 }),
+			});
+			expect(putRes.status).toBe(200);
+			const putData = await json<{ project: string; limit: number; updatedAt: string }>(putRes);
+			expect(putData.project).toBe("/proj");
+			expect(putData.limit).toBe(500);
+			expect(Date.parse(putData.updatedAt)).not.toBeNaN();
+			// Provider-scoped configureBudget must NOT be touched by the project branch.
+			expect(mockModelManager.configureBudget).not.toHaveBeenCalled();
+
+			mockSessionAdapter.listSessions.mockResolvedValueOnce([]);
+			const getRes = await app.request(`/api/budget?project=${encodeURIComponent("/proj")}`);
+			const getData = await json<{ used: number; limit: number | null }>(getRes);
+			expect(getData.used).toBe(0);
+			expect(getData.limit).toBe(500);
+		});
+
+		it("PUT /api/budget project branch rejects invalid tokenLimit with 400", async () => {
+			const app = await getAppWithBudgets();
+			const res = await app.request("/api/budget", {
+				method: "PUT",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ project: "/proj", tokenLimit: -5 }),
+			});
+			expect(res.status).toBe(400);
+			const data = await json<{ error: string; code: string }>(res);
+			expect(data.code).toBe("BAD_REQUEST");
+			expect(mockModelManager.configureBudget).not.toHaveBeenCalled();
+		});
+
+		it("PUT /api/budget without project keeps the provider-scoped behavior", async () => {
+			const app = await getAppWithBudgets();
+			const res = await app.request("/api/budget", {
+				method: "PUT",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ period: "monthly", tokenLimit: 1000 }),
+			});
+			expect(res.status).toBe(200);
+			expect(mockModelManager.configureBudget).toHaveBeenCalledWith({ period: "monthly", tokenLimit: 1000 });
 		});
 	});
 

@@ -30,7 +30,10 @@ function makeSession(messages: FanSessionMessage[]): FanSessionDetail {
 	};
 }
 
-type MockClient = Pick<FanApiClient, "createSession" | "sendMessage" | "getSession" | "setProjectBudget">;
+type MockClient = Pick<
+	FanApiClient,
+	"createSession" | "sendMessage" | "getSession" | "setProjectBudget" | "getBudgetUsage"
+>;
 
 /** Records call order across all mocked methods. */
 function createMockClient(overrides: Partial<MockClient> = {}) {
@@ -57,6 +60,10 @@ function createMockClient(overrides: Partial<MockClient> = {}) {
 		setProjectBudget: vi.fn(async (_project: string, _limit: number) => {
 			callOrder.push("setProjectBudget");
 		}),
+		getBudgetUsage: vi.fn(async (project: string) => {
+			callOrder.push("getBudgetUsage");
+			return { project, used: 0, limit: null };
+		}),
 		...overrides,
 	};
 	return { client: client as FanApiClient, mocks: client, callOrder };
@@ -74,7 +81,7 @@ afterEach(() => {
 
 describe("createTaskExecutor (F-4.4)", () => {
 	// TC-F-4.4-1: full pipeline runs in order.
-	it("TC-F-4.4-1: executes createSession → sendMessage → poll → setProjectBudget in order, status completed", async () => {
+	it("TC-F-4.4-1: executes createSession → setProjectBudget → sendMessage → poll → usage report in order, status completed", async () => {
 		const task = makeTask();
 		const { client, mocks, callOrder } = createMockClient();
 		const execute = createTaskExecutor(client);
@@ -82,14 +89,16 @@ describe("createTaskExecutor (F-4.4)", () => {
 		const result = await execute(task);
 
 		expect(result.status).toBe("completed");
-		expect(callOrder).toEqual(["createSession", "sendMessage", "getSession", "setProjectBudget"]);
+		// F-4.9: the budget cap is set BEFORE sendMessage; the final getBudgetUsage
+		// is the post-completion usage report.
+		expect(callOrder).toEqual(["createSession", "setProjectBudget", "sendMessage", "getSession", "getBudgetUsage"]);
 		// Step 1: session created with the task workspace as cwd.
 		expect(mocks.createSession).toHaveBeenCalledWith(task.workspace);
-		// Step 2: full message text sent to the created session.
-		expect(mocks.sendMessage).toHaveBeenCalledWith("session-1", task.message);
-		// Step 4: best-effort budget update for the task workspace.
+		// Step 2: budget cap stored for the task workspace before any tokens are spent.
 		expect(mocks.setProjectBudget).toHaveBeenCalledWith(task.workspace, task.budget_limit);
-		// Step 5: result carries duration and token usage.
+		// Step 3: full message text sent to the created session.
+		expect(mocks.sendMessage).toHaveBeenCalledWith("session-1", task.message);
+		// Result carries duration and token usage.
 		expect(result.taskName).toBe(task.name);
 		expect(result.tokensUsed).toBe(150);
 		expect(result.durationMs).toBeGreaterThanOrEqual(0);
@@ -190,5 +199,91 @@ describe("createTaskExecutor (F-4.4)", () => {
 		expect(result.status).toBe("completed");
 		expect(mocks.setProjectBudget).toHaveBeenCalledWith(task.workspace, 500);
 		expect(console.log).toHaveBeenCalledWith(expect.stringContaining("budget update failed (ignored)"));
+	});
+});
+
+describe("budget monitor (F-4.9)", () => {
+	// TC-F-4.9-1: the cap is set before the task starts spending tokens.
+	it("TC-F-4.9-1: budget_limit=500 → setProjectBudget called before sendMessage, log entry recorded", async () => {
+		const task = makeTask({ budget_limit: 500, workspace: "/proj" });
+		const { client, mocks, callOrder } = createMockClient();
+		const execute = createTaskExecutor(client);
+
+		const result = await execute(task);
+
+		expect(result.status).toBe("completed");
+		expect(mocks.setProjectBudget).toHaveBeenCalledWith("/proj", 500);
+		expect(callOrder.indexOf("setProjectBudget")).toBeGreaterThanOrEqual(0);
+		expect(callOrder.indexOf("setProjectBudget")).toBeLessThan(callOrder.indexOf("sendMessage"));
+		// Log entry recorded for the cap.
+		expect(console.log).toHaveBeenCalledWith(expect.stringContaining("budget cap set: 500 tokens for /proj"));
+	});
+
+	// TC-F-4.9-2: usage reaching the limit stops the wait.
+	it("TC-F-4.9-2: usage 500/500 → status budget_exceeded, warning + budget_monitor event logged", async () => {
+		vi.useFakeTimers();
+		const task = makeTask({ budget_limit: 500, workspace: "/proj" });
+		const { client } = createMockClient({
+			// The session never completes (no assistant reply).
+			getSession: vi.fn(async () => makeSession([makeMessage("user")])),
+			getBudgetUsage: vi.fn(async (project: string) => ({ project, used: 500, limit: 500 })),
+		});
+		const execute = createTaskExecutor(client, { pollIntervalMs: 100, budgetPollIntervalMs: 100 });
+
+		const promise = execute(task);
+		await vi.advanceTimersByTimeAsync(0); // createSession + setProjectBudget + sendMessage + first poll
+		await vi.advanceTimersByTimeAsync(100); // second poll → budget check fires
+		const result = await promise;
+
+		expect(result.status).toBe("budget_exceeded");
+		expect(result.tokensUsed).toBe(500);
+		expect(result.error).toContain("budget exceeded");
+		// Warning logged.
+		expect(console.log).toHaveBeenCalledWith(expect.stringContaining("budget exceeded (500/500 tokens)"));
+		// budget_monitor event logged as JSON: { event, project, used, limit, percentage }.
+		const monitorCall = (console.log as ReturnType<typeof vi.fn>).mock.calls
+			.map((c) => String(c[0]))
+			.find((line) => line.includes('"event":"budget_monitor"'));
+		expect(monitorCall).toBeDefined();
+		const payload = JSON.parse(monitorCall?.slice(monitorCall.indexOf("{")) ?? "{}");
+		expect(payload).toEqual({ event: "budget_monitor", project: "/proj", used: 500, limit: 500, percentage: 100 });
+	});
+
+	// TC-F-4.9-3: usage below the limit → normal completion + usage report.
+	it("TC-F-4.9-3: usage 200/500 → status completed + usage report 'used 200 / 500 tokens'", async () => {
+		const task = makeTask({ budget_limit: 500, workspace: "/proj" });
+		const { client } = createMockClient({
+			getBudgetUsage: vi.fn(async (project: string) => ({ project, used: 200, limit: 500 })),
+		});
+		const execute = createTaskExecutor(client);
+
+		const result = await execute(task);
+
+		expect(result.status).toBe("completed");
+		expect(result.tokensUsed).toBe(150);
+		expect(console.log).toHaveBeenCalledWith(expect.stringContaining("usage report: used 200 / 500 tokens"));
+	});
+
+	it("a failed budget poll is best-effort (warning, task continues)", async () => {
+		vi.useFakeTimers();
+		const task = makeTask({ budget_limit: 500 });
+		const { client } = createMockClient({
+			getSession: vi
+				.fn()
+				.mockResolvedValueOnce(makeSession([makeMessage("user")]))
+				.mockResolvedValueOnce(makeSession([makeMessage("user")]))
+				.mockResolvedValue(makeSession([makeMessage("user"), makeMessage("assistant", 42)])),
+			getBudgetUsage: vi.fn().mockRejectedValue(new Error("gateway down")),
+		});
+		const execute = createTaskExecutor(client, { pollIntervalMs: 100, budgetPollIntervalMs: 100 });
+
+		const promise = execute(task);
+		await vi.advanceTimersByTimeAsync(0); // first poll (user-only)
+		await vi.advanceTimersByTimeAsync(100); // second poll → budget check fires (fails, ignored)
+		await vi.advanceTimersByTimeAsync(100); // third poll → completed
+		const result = await promise;
+
+		expect(result.status).toBe("completed");
+		expect(console.log).toHaveBeenCalledWith(expect.stringContaining("budget poll failed (monitoring continues)"));
 	});
 });

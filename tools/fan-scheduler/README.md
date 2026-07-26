@@ -5,7 +5,19 @@ Autonomous cron-based task runner for FAN (Phase 4 — Autonomy). Loads tasks fr
 ## Status
 
 - **F-4.1 (done):** package structure + YAML config parsing (`lib/config-loader.ts`), skeletons for scheduler loop, queue, API client, logger.
-- **F-4.2+ (planned):** FAN API client methods, TaskQueue execution, cron scheduling loop, Git/PR policy, budget caps.
+- **F-4.2 … F-4.8 (done):** FAN API client, TaskQueue + execution pipeline, cron loop, bot identity, branch policy, PR via `gh`.
+- **F-4.9 (done):** per-project budget caps — the executor sets the cap before `sendMessage` and monitors usage during execution (see below).
+
+## Budget monitoring (F-4.9)
+
+When a task has `budget_limit` set:
+
+1. **Before `sendMessage`:** `setProjectBudget(workspace, budget_limit)` → `PUT /api/budget { project, tokenLimit }` (gateway persists the cap in `~/.fan/agent/project-budgets.json`). Best-effort: failures are logged as warnings and ignored.
+2. **During execution:** `getBudgetUsage(workspace)` → `GET /api/budget?project=…` is polled every `budgetPollIntervalMs` (default **30 s**, configurable via `TaskExecutorOptions`). Each poll is logged as JSON: `{ "event": "budget_monitor", "project", "used", "limit", "percentage" }`. Poll failures are best-effort (warning, monitoring continues).
+3. **`used >= limit`:** the wait stops, the task is marked `budget_exceeded` with a warning. Note: the gateway has no interruption endpoint (documented in F-4.4), so the agent keeps running server-side — only the scheduler's wait is aborted.
+4. **After completion:** a final usage report is logged (`usage report: used X / Y tokens`).
+
+The gateway itself does **not** block messages on cap exhaustion — enforcement lives here, in the scheduler.
 
 ## Usage
 

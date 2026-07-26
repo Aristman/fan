@@ -246,6 +246,33 @@ export interface UpdateBudgetResponse {
 	config: BudgetConfig;
 }
 
+// --- Project-scoped budget (F-4.9) ---
+
+/**
+ * Response of GET /api/budget?project=<path>: per-project token usage and cap.
+ * `used` is the sum of assistant-message tokens across all sessions whose cwd
+ * belongs to the project (aggregated from JSONL sessions via the adapter).
+ * `limit` is the stored per-project cap (null when none was set).
+ */
+export interface GetProjectBudgetResponse {
+	project: string;
+	used: number;
+	limit: number | null;
+}
+
+/** Request body of the project-scoped PUT /api/budget branch (F-4.9). */
+export interface SetProjectBudgetRequest {
+	project: string;
+	tokenLimit: number;
+}
+
+/** Response of the project-scoped PUT /api/budget branch (F-4.9). */
+export interface SetProjectBudgetResponse {
+	project: string;
+	limit: number;
+	updatedAt: string;
+}
+
 // --- Client Tokens ---
 
 export interface TokenInfo {

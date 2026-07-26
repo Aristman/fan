@@ -64,16 +64,15 @@ export interface FanBudgetStatus {
 
 /**
  * Aggregated budget usage for a project, consumed by the execution pipeline (F-4.4)
- * and the budget monitor (F-4.9) as `{ used, limit }`.
+ * and the budget monitor (F-4.9). Mirrors the gateway's project-scoped
+ * GET /api/budget?project=<path> response (F-4.9 part A).
  */
 export interface BudgetUsage {
 	project: string;
-	/** Sum of tokensUsed across all provider budgets. */
+	/** Sum of assistant-message tokens across all sessions of the project. */
 	used: number;
-	/** Sum of defined tokenLimits across providers; null when no limit is configured. */
+	/** Stored per-project token cap; null when no limit is configured. */
 	limit: number | null;
-	/** Raw per-provider budget entries returned by the gateway. */
-	budgets: FanBudgetStatus[];
 }
 
 /** Partial budget update accepted by updateBudget(). */
@@ -107,17 +106,18 @@ export class FanApiError extends Error {
  * - GET  /api/sessions?project=<path>         — REAL, matches spec.
  * - POST /api/sessions/:id/messages { message } — REAL (REST bypass, never queued);
  *   note the body field is `message`, not `content`.
- * - GET  /api/budget                          — REAL but PROVIDER-scoped: the gateway
- *   accepts NO `project` query param and returns per-provider budgets only.
- * - PUT  /api/budget                          — REAL but PROVIDER-scoped: body is
- *   `{ provider?, period: "daily"|"monthly", tokenLimit?, costLimit? }`; there is
- *   no `project` field and `period` is REQUIRED by the real endpoint.
+ * - GET  /api/budget?project=<path>         — REAL (F-4.9 part A): project-scoped
+ *   branch returns `{ project, used, limit }` where used = sum of assistant-message
+ *   tokens across the project's sessions and limit = stored per-project cap.
+ * - GET  /api/budget (no project)             — PROVIDER-scoped (unchanged).
+ * - PUT  /api/budget { project, tokenLimit }  — REAL (F-4.9 part A): stores the
+ *   per-project cap (project-budgets.json in the agent dir).
+ * - PUT  /api/budget (no project)             — PROVIDER-scoped: body is
+ *   `{ provider?, period: "daily"|"monthly", tokenLimit?, costLimit? }`.
  *
- * TODO(F-4.9 blocker): per-project budget endpoints do not exist in the gateway.
- * getBudgetUsage/setProjectBudget/updateBudget send `project` (and `limit`) as query
- * params per the roadmap spec, but the current gateway ignores them. The gateway must
- * be extended (e.g. project-scoped budget registry) before F-4.9 can enforce
- * per-project caps against a live server.
+ * Enforcement note (F-4.9): the gateway only stores/serves per-project budgets;
+ * it does not block sendMessage on cap exhaustion. The scheduler enforces caps
+ * itself via getBudgetUsage polling in the executor (see executor.ts).
  */
 export class FanApiClient {
 	readonly baseUrl: string;
@@ -162,35 +162,36 @@ export class FanApiClient {
 
 	/**
 	 * GET /api/budget?project=<path> — aggregated token usage for a project.
-	 * TODO: the real gateway has no per-project scoping; it returns provider-wide
-	 * budgets and ignores the `project` param. Aggregation is done client-side.
+	 * The gateway (F-4.9 part A) answers `{ project, used, limit }` directly:
+	 * `used` = sum of assistant-message tokens across the project's sessions,
+	 * `limit` = stored per-project cap (null when unset).
 	 */
 	async getBudgetUsage(project: string): Promise<BudgetUsage> {
-		const resp = await this.request<{ budgets: FanBudgetStatus[] }>("GET", "/api/budget", {
-			query: { project },
-		});
-		const budgets = resp.budgets ?? [];
-		const used = budgets.reduce((sum, b) => sum + b.tokensUsed, 0);
-		const limits = budgets.map((b) => b.tokenLimit).filter((l): l is number => typeof l === "number");
-		const limit = limits.length > 0 ? limits.reduce((sum, l) => sum + l, 0) : null;
-		return { project, used, limit, budgets };
+		const resp = await this.request<{ project: string; used: number; limit: number | null }>(
+			"GET",
+			"/api/budget",
+			{ query: { project } },
+		);
+		return { project: resp.project ?? project, used: resp.used ?? 0, limit: resp.limit ?? null };
 	}
 
 	/**
 	 * PUT /api/budget?project=<path>&limit=<tokens> — set the token cap for a project.
-	 * TODO: the real gateway is provider-scoped, ignores `project`/`limit` query params
-	 * and requires `period` in the body. See class-level note (F-4.9 blocker).
+	 * The gateway's project-scoped branch (F-4.9 part A) persists the cap in
+	 * project-budgets.json; query params are kept for spec compatibility, the
+	 * body is authoritative.
 	 */
 	async setProjectBudget(project: string, limit: number): Promise<void> {
 		await this.request("PUT", "/api/budget", {
 			query: { project, limit: String(limit) },
-			body: { project, tokenLimit: limit, period: "daily" },
+			body: { project, tokenLimit: limit },
 		});
 	}
 
 	/**
 	 * PUT /api/budget?project=<path> — partial budget update for a project.
-	 * TODO: same per-project scoping caveat as setProjectBudget.
+	 * When the body carries `project`, the gateway routes to the project-scoped
+	 * branch (F-4.9 part A); `period` is only meaningful for provider budgets.
 	 */
 	async updateBudget(project: string, data: BudgetUpdate): Promise<void> {
 		await this.request("PUT", "/api/budget", {
