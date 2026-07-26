@@ -1,5 +1,9 @@
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TaskConfig } from "./config-loader.js";
+import { loadPendingTasks, PENDING_QUEUE_VERSION, savePendingTasks } from "./persistent-storage.js";
 import { TaskQueue, type TaskResult } from "./queue.js";
 
 function makeTask(name: string): TaskConfig {
@@ -264,5 +268,151 @@ describe("executor failures", () => {
 		expect(queue.state).toBe("idle");
 		expect(queue.lastResult?.status).toBe("failed");
 		expect(queue.lastResult?.error).toMatch(/no TaskExecutor configured/);
+	});
+});
+
+describe("F-4.13: persistence hooks (onPendingChange / restore)", () => {
+	let tmpRoot: string;
+	let filePath: string;
+
+	beforeEach(() => {
+		tmpRoot = mkdtempSync(join(tmpdir(), "fan-scheduler-queue-persist-"));
+		filePath = join(tmpRoot, "scheduler-pending.json");
+	});
+
+	afterEach(() => {
+		rmSync(tmpRoot, { recursive: true, force: true });
+	});
+
+	it("enqueue fires onPendingChange with a snapshot of the pending list", () => {
+		const { executor } = createStubExecutor();
+		const snapshots: string[][] = [];
+		const queue = new TaskQueue(executor, {
+			onPendingChange: (pending) => snapshots.push(pending.map((t) => t.name)),
+		});
+
+		queue.enqueue(makeTask("t1")); // picked up immediately — pending back to []
+		queue.enqueue(makeTask("t2"));
+		queue.enqueue(makeTask("t3"));
+
+		expect(snapshots).toEqual([
+			["t1"], // enqueue t1
+			[], // dequeue t1 (runNext shift)
+			["t2"], // enqueue t2
+			["t2", "t3"], // enqueue t3
+		]);
+	});
+
+	it("dequeue (runNext shift) fires onPendingChange with the remaining tasks", async () => {
+		const { executor, calls } = createStubExecutor();
+		const snapshots: string[][] = [];
+		const queue = new TaskQueue(executor, {
+			onPendingChange: (pending) => snapshots.push(pending.map((t) => t.name)),
+		});
+
+		queue.enqueue(makeTask("t1"));
+		queue.enqueue(makeTask("t2"));
+		expect(queue.pending).toHaveLength(1);
+
+		calls[0].resolve(makeResult("t1"));
+		await flush(); // t2 dequeued — snapshot []
+
+		expect(snapshots.at(-1)).toEqual([]);
+		expect(queue.pending).toHaveLength(0);
+	});
+
+	it("the hook receives a copy — mutating it does not corrupt the queue", () => {
+		const { executor } = createStubExecutor();
+		const queue = new TaskQueue(executor, {
+			onPendingChange: (pending) => {
+				pending.length = 0; // sabotage the snapshot
+			},
+		});
+		queue.enqueue(makeTask("t1"));
+		queue.enqueue(makeTask("t2"));
+		expect(queue.pending).toHaveLength(1);
+		expect(queue.pending[0].name).toBe("t2");
+	});
+
+	it("a throwing hook is swallowed and logged — the queue keeps working", async () => {
+		const { executor, calls } = createStubExecutor();
+		const queue = new TaskQueue(executor, {
+			onPendingChange: () => {
+				throw new Error("disk full");
+			},
+		});
+
+		queue.enqueue(makeTask("t1"));
+		expect(queue.isRunning).toBe(true);
+		calls[0].resolve(makeResult("t1"));
+		await flush();
+		expect(queue.state).toBe("idle");
+	});
+
+	it("restore() sets pending in order without starting tasks or firing the hook", () => {
+		const { executor } = createStubExecutor();
+		const onPendingChange = vi.fn();
+		const queue = new TaskQueue(executor, { onPendingChange });
+
+		queue.restore([makeTask("r1"), makeTask("r2")]);
+
+		expect(queue.pending.map((t) => t.name)).toEqual(["r1", "r2"]);
+		expect(queue.state).toBe("idle");
+		expect(executor).not.toHaveBeenCalled();
+		expect(onPendingChange).not.toHaveBeenCalled();
+	});
+
+	it("TC-F-4.13-1: 2 pending tasks survive a kill+restart, order preserved", () => {
+		// First scheduler run: t1 executing, t2+t3 pending.
+		const { executor } = createStubExecutor();
+		const queue1 = new TaskQueue(executor, {
+			onPendingChange: (pending) => savePendingTasks(filePath, pending),
+		});
+		queue1.enqueue(makeTask("t1"));
+		queue1.enqueue(makeTask("t2"));
+		queue1.enqueue(makeTask("t3"));
+		expect(queue1.pending.map((t) => t.name)).toEqual(["t2", "t3"]);
+
+		// The file on disk reflects exactly the pending list at "kill" time.
+		const onDisk = JSON.parse(readFileSync(filePath, "utf8")) as { version: number; tasks: TaskConfig[] };
+		expect(onDisk.version).toBe(PENDING_QUEUE_VERSION);
+		expect(onDisk.tasks.map((t) => t.name)).toEqual(["t2", "t3"]);
+
+		// "Restart": a brand-new queue restores from the file.
+		const queue2 = new TaskQueue(createStubExecutor().executor);
+		queue2.restore(loadPendingTasks(filePath));
+
+		expect(queue2.pending).toHaveLength(2);
+		expect(queue2.pending.map((t) => t.name)).toEqual(["t2", "t3"]);
+	});
+
+	it("TC-F-4.13-2: drained queue persists an empty tasks array (no stale tasks)", async () => {
+		// Stale data from a previous run.
+		savePendingTasks(filePath, [makeTask("stale")]);
+		expect(loadPendingTasks(filePath)).toHaveLength(1);
+
+		const { executor, calls } = createStubExecutor();
+		const queue = new TaskQueue(executor, {
+			onPendingChange: (pending) => savePendingTasks(filePath, pending),
+		});
+		queue.enqueue(makeTask("t1"));
+		calls[0].resolve(makeResult("t1"));
+		await flush();
+
+		expect(queue.state).toBe("idle");
+		const onDisk = JSON.parse(readFileSync(filePath, "utf8")) as { version: number; tasks: unknown[] };
+		expect(onDisk.version).toBe(PENDING_QUEUE_VERSION);
+		expect(onDisk.tasks).toEqual([]);
+		expect(loadPendingTasks(filePath)).toEqual([]);
+	});
+
+	it("without a persistence hook the queue behaves exactly as before", async () => {
+		const { executor, calls } = createStubExecutor();
+		const queue = new TaskQueue(executor);
+		queue.enqueue(makeTask("t1"));
+		calls[0].resolve(makeResult("t1"));
+		await flush();
+		expect(queue.state).toBe("idle");
+		expect(existsSync(filePath)).toBe(false);
 	});
 });

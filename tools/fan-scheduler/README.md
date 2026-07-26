@@ -8,6 +8,24 @@ Autonomous cron-based task runner for FAN (Phase 4 — Autonomy). Loads tasks fr
 - **F-4.2 … F-4.8 (done):** FAN API client, TaskQueue + execution pipeline, cron loop, bot identity, branch policy, PR via `gh`.
 - **F-4.9 (done):** per-project budget caps — the executor sets the cap before `sendMessage` and monitors usage during execution (see below).
 - **F-4.12 (done):** chat interruption — live chat pauses autonomous tasks; `chat > autonomous` priority (see below).
+- **F-4.13 (done):** persistent queue — pending tasks survive restarts via write-on-change durability (see below).
+
+## Persistent queue (F-4.13)
+
+The pending task list is serialized to `<agentDir>/scheduler-pending.json` on **every queue mutation** (enqueue/dequeue) via the TaskQueue `onPendingChange` hook, and restored on startup (`queue.restore(...)`, then `runNext()` resumes processing).
+
+- **Format:** `{ "version": 1, "tasks": [TaskConfig, ...] }` — version-checked on load; a mismatch ignores the file with a warning (future-proof for migrations).
+- **Atomic write:** payload goes to `<path>.tmp` and is renamed over the target — a crash mid-write never leaves truncated JSON. Atomic rename is used instead of an explicit file lock (single-writer process).
+- **Failure modes:** missing file → empty queue (silent); corrupt JSON / wrong shape → empty queue + warning (no crash); malformed task entries are skipped with a warning.
+- **Graceful shutdown (F-4.5):** needs no extra flush — the queue is already on disk thanks to write-on-change.
+- **Best-effort saves:** I/O failures are logged as errors, never thrown into the queue.
+
+### Environment variables (F-4.13)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `FAN_CODING_AGENT_DIR` | `~/.fan/agent` | agent dir; the pending file lives at `<agentDir>/scheduler-pending.json` |
+| `FAN_SCHEDULER_PENDING_FILE` | _(unset)_ | full path override for the pending file (tests, side-by-side instances) |
 
 ## Chat interruption (F-4.12)
 

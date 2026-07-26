@@ -47,6 +47,16 @@ const notConfiguredExecutor: TaskExecutor = () =>
 	Promise.reject(new Error("TaskQueue: no TaskExecutor configured — pass one to the constructor (see F-4.4)"));
 
 /**
+ * Persistence hook for the pending list (F-4.13).
+ * Called synchronously after every mutation of `pending` (enqueue/dequeue)
+ * with a snapshot copy of the list. Exceptions thrown by the hook are
+ * logged and swallowed — persistence must never break the queue.
+ */
+export interface TaskQueuePersistence {
+	onPendingChange?: (pending: TaskConfig[]) => void;
+}
+
+/**
  * Single-consumer task queue (F-4.3).
  *
  * Guarantees strictly one task executing at a time:
@@ -60,13 +70,15 @@ export class TaskQueue {
 	readonly pending: TaskConfig[] = [];
 
 	private readonly executor: TaskExecutor;
+	private readonly persistence: TaskQueuePersistence;
 	private queueState: QueueState = "idle";
 	private activeTask: TaskConfig | null = null;
 	private activeStartedAt = 0;
 	private lastTaskResult: TaskResult | null = null;
 
-	constructor(executor: TaskExecutor = notConfiguredExecutor) {
+	constructor(executor: TaskExecutor = notConfiguredExecutor, persistence: TaskQueuePersistence = {}) {
 		this.executor = executor;
+		this.persistence = persistence;
 	}
 
 	get state(): QueueState {
@@ -90,7 +102,36 @@ export class TaskQueue {
 	/** Appends a task to the pending list; starts it immediately if the queue is idle. */
 	enqueue(task: TaskConfig): void {
 		this.pending.push(task);
+		this.notifyPendingChange();
 		void this.runNext();
+	}
+
+	/**
+	 * Replaces the pending list with tasks restored from persistent storage
+	 * (F-4.13). Does NOT trigger the persistence hook (the data came from
+	 * disk) and does NOT auto-start execution — call runNext() to begin
+	 * processing restored tasks.
+	 */
+	restore(tasks: readonly TaskConfig[]): void {
+		this.pending.length = 0;
+		this.pending.push(...tasks);
+		log.info("queue_restored", `[queue] restored ${tasks.length} pending task(s) from persistent storage`, {
+			pending: tasks.length,
+		});
+	}
+
+	/** Fires the F-4.13 persistence hook with a snapshot of the pending list. */
+	private notifyPendingChange(): void {
+		if (this.persistence.onPendingChange === undefined) return;
+		try {
+			this.persistence.onPendingChange([...this.pending]);
+		} catch (error) {
+			log.error(
+				"persistence_hook_failed",
+				`[queue] onPendingChange hook failed (ignored): ${error instanceof Error ? error.message : String(error)}`,
+				{ error },
+			);
+		}
 	}
 
 	/**
@@ -111,6 +152,7 @@ export class TaskQueue {
 			this.queueState = "idle";
 			return;
 		}
+		this.notifyPendingChange();
 		this.queueState = "running";
 		this.activeTask = task;
 		this.activeStartedAt = Date.now();

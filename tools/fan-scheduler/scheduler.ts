@@ -7,6 +7,7 @@ import { CronScheduler, createConfigWatcher, createShutdownHandler } from "./lib
 import { createTaskExecutor } from "./lib/executor.js";
 import { validateGitHubIdentity } from "./lib/github-identity.js";
 import { logger } from "./lib/logger.js";
+import { defaultPendingQueuePath, loadPendingTasks, savePendingTasks } from "./lib/persistent-storage.js";
 import { TaskQueue } from "./lib/queue.js";
 
 /**
@@ -63,6 +64,10 @@ export function main(): void {
 
 	const client = new FanApiClient();
 
+	// F-4.13: persistent queue storage path (~/.fan/agent/scheduler-pending.json,
+	// honoring FAN_CODING_AGENT_DIR / FAN_SCHEDULER_PENDING_FILE).
+	const pendingQueuePath = defaultPendingQueuePath();
+
 	// F-4.12: chat interruption — the monitor polls GET /api/sessions for live
 	// chat activity (user messages in sessions NOT created by the scheduler)
 	// and pauses/resumes the queue; chat has priority over autonomous tasks.
@@ -73,7 +78,21 @@ export function main(): void {
 		createTaskExecutor(client, {
 			onSessionCreated: (sessionId) => activityMonitor?.registerSchedulerSession(sessionId),
 		}),
+		{
+			// F-4.13: write-on-change durability — every enqueue/dequeue
+			// persists the pending list, so graceful shutdown (F-4.5) needs
+			// no extra flush and a kill never loses pending tasks.
+			onPendingChange: (pending) => savePendingTasks(pendingQueuePath, pending),
+		},
 	);
+
+	// F-4.13: restore pending tasks left over from the previous run and
+	// resume processing (restored tasks wait in line behind the cron triggers).
+	const restoredTasks = loadPendingTasks(pendingQueuePath);
+	if (restoredTasks.length > 0) {
+		queue.restore(restoredTasks);
+		void queue.runNext();
+	}
 	activityMonitor = new UserActivityMonitor(client, queue, {
 		pollIntervalMs: envInt("FAN_SCHEDULER_ACTIVITY_POLL_MS", 5000),
 		activityWindowMs: envInt("FAN_SCHEDULER_ACTIVITY_WINDOW_MS", 60000),

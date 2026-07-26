@@ -13,7 +13,8 @@ import type { TaskQueue } from "./queue.js";
  *   onReload() with the freshly parsed tasks when the file changes.
  * - createShutdownHandler: SIGINT/SIGTERM graceful shutdown — stops cron jobs,
  *   pauses the queue, waits for the in-flight task to settle, then exits.
- *   (Persistent queue state across restarts is F-4.13 — out of scope here.)
+ *   Pending tasks survive restarts via the F-4.13 write-on-change persistence
+ *   hook (scheduler-pending.json) — no extra flush is needed on shutdown.
  */
 
 /** Minimal handle over a scheduled cron job (structural subset of Croner's Cron). */
@@ -221,8 +222,8 @@ function defaultSleep(ms: number): Promise<void> {
  * 3. wait for the in-flight task to settle (it is NOT killed);
  * 4. log final state and exit(0).
  *
- * Repeated signals during shutdown are ignored. Pending tasks are left in
- * memory — persisting them across restarts is F-4.13.
+ * Repeated signals during shutdown are ignored. Pending tasks are already on
+ * disk thanks to the F-4.13 write-on-change persistence hook — no flush here.
  */
 export function createShutdownHandler(options: ShutdownHandlerOptions): (signal: string) => Promise<void> {
 	const exit = options.exit ?? ((code: number) => process.exit(code));
@@ -254,7 +255,7 @@ export function createShutdownHandler(options: ShutdownHandlerOptions): (signal:
 		logger.info(
 			"shutdown_complete",
 			`[scheduler] shutdown complete — ${options.queue.pending.length} task(s) left pending ` +
-				"(persistent queue state is F-4.13)",
+				"(persisted to scheduler-pending.json — F-4.13)",
 			{ pending: options.queue.pending.length },
 		);
 		exit(0);
