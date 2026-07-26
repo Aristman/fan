@@ -27,6 +27,30 @@ export interface CreateSessionResult {
 	cwd?: string;
 }
 
+/** Single message in a session (mirrors gateway SessionMessage). */
+export interface FanSessionMessage {
+	id: string;
+	role: "user" | "assistant" | "tool";
+	content: string;
+	model?: string;
+	tokens?: number;
+	cost?: number;
+	createdAt: string;
+}
+
+/** Response of GET /api/sessions/:id (mirrors gateway GetSessionResponse). */
+export interface FanSessionDetail {
+	id: string;
+	title: string;
+	model?: string;
+	provider?: string;
+	createdAt: string;
+	updatedAt: string;
+	messages: FanSessionMessage[];
+	sessionFile?: string;
+	cwd?: string;
+}
+
 /** Single provider budget entry as returned by GET /api/budget (mirrors model-manager BudgetStatus). */
 export interface FanBudgetStatus {
 	provider: string;
@@ -123,6 +147,17 @@ export class FanApiClient {
 		await this.request<{ success: true }>("POST", `/api/sessions/${encodeURIComponent(sessionId)}/messages`, {
 			body: { message: content },
 		});
+	}
+
+	/**
+	 * GET /api/sessions/:id — full session detail including the message list.
+	 * Used by the execution pipeline (F-4.4) as the completion-signal source:
+	 * the gateway exposes no per-session streaming flag over HTTP (isExecuting()
+	 * is WS-internal, /api/health only reports the globally active session), so
+	 * the executor polls this endpoint — see executor.ts for the heuristic.
+	 */
+	async getSession(sessionId: string): Promise<FanSessionDetail> {
+		return this.request<FanSessionDetail>("GET", `/api/sessions/${encodeURIComponent(sessionId)}`);
 	}
 
 	/**
