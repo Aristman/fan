@@ -19,6 +19,9 @@
 #   → phase 3 (F-3.11-E2E, part 1): Universal Tasks — research workspace
 #     lifecycle: template creation, type detection, prompt override,
 #     manual type change (section 10)
+#   → phase 3 (F-3.12-E2E, part 2): multi-type lifecycle — code/research/
+#     automation projects via the API, per-type disk structures, registry
+#     types, session isolation, per-type system prompts (section 11)
 #   → docker compose down (trap on exit)
 #
 # Exit code 0 only if every check passes (check 7 is optional — skipped
@@ -128,11 +131,25 @@ RESEARCH_PROJ_NAME="e2e-research-lab"
 # stage 2 copies each package's dist/ to /app/packages/<pkg>/dist).
 PROMPT_LOADER_DIST="/app/packages/coding-agent/dist/workspace/prompt-loader.js"
 
+# --- Section 11 (F-3.12-E2E, part 2) constants ---
+P3_CODE="/data/repos/e2e-backend-api"
+P3_RESEARCH="/data/repos/e2e-competitor-analysis"
+P3_AUTO="/data/repos/e2e-backup-pipeline"
+P3_CODE_NAME="e2e-backend-api"
+P3_RESEARCH_NAME="e2e-competitor-analysis"
+P3_AUTO_NAME="e2e-backup-pipeline"
+SESS_DIR_P3_CODE="/data/.fan/agent/sessions/--data-repos-e2e-backend-api--"
+SESS_DIR_P3_RESEARCH="/data/.fan/agent/sessions/--data-repos-e2e-competitor-analysis--"
+SESS_DIR_P3_AUTO="/data/.fan/agent/sessions/--data-repos-e2e-backup-pipeline--"
+
 # Remove test workspaces, their session dirs and their projects.json
 # registry entries. Best-effort: never fails the script (used in the trap).
 e2e_workspace_cleanup() {
 	MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" \
-		rm -rf "$PROJ_A" "$PROJ_B" "$PROJ_C" "$RESEARCH_PROJ" "$SESS_DIR_A" "$SESS_DIR_B" "$SESS_DIR_C" 2>/dev/null || true
+		rm -rf "$PROJ_A" "$PROJ_B" "$PROJ_C" "$RESEARCH_PROJ" \
+			"$P3_CODE" "$P3_RESEARCH" "$P3_AUTO" \
+			"$SESS_DIR_A" "$SESS_DIR_B" "$SESS_DIR_C" \
+			"$SESS_DIR_P3_CODE" "$SESS_DIR_P3_RESEARCH" "$SESS_DIR_P3_AUTO" 2>/dev/null || true
 	MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" bun -e '
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 const p = "/data/.fan/agent/projects.json";
@@ -140,7 +157,11 @@ if (existsSync(p)) {
 	try {
 		const list = JSON.parse(readFileSync(p, "utf8"));
 		if (Array.isArray(list)) {
-			const e2e = ["/data/repos/e2e-proj-a", "/data/repos/e2e-proj-b", "/data/repos/e2e-proj-c", "/data/repos/e2e-research-lab"];
+			const e2e = [
+				"/data/repos/e2e-proj-a", "/data/repos/e2e-proj-b", "/data/repos/e2e-proj-c",
+				"/data/repos/e2e-research-lab",
+				"/data/repos/e2e-backend-api", "/data/repos/e2e-competitor-analysis", "/data/repos/e2e-backup-pipeline",
+			];
 			const keep = list.filter((e) => e && !e2e.includes(e.path));
 			writeFileSync(p, JSON.stringify(keep, null, 2));
 		}
@@ -825,6 +846,297 @@ console.log(loadSystemPrompt(\"/data/repos/e2e-research-lab\"));
 
 	# 10.10. Post-clean: keep the run idempotent (also runs from the EXIT trap).
 	info "Cleanup: removing research test workspace and registry entry"
+	e2e_workspace_cleanup
+fi
+
+# =========================================================================
+section "11. Phase 3 — Universal Tasks (F-3.12-E2E): multi-type lifecycle"
+# =========================================================================
+# Covers TC-F-3.12-E2E-1 (non-LLM part) + TC-F-3.12-E2E-2 against the live
+# container — 38 checks:
+#   11.1  POST /api/projects ×3 (code/research/automation → 201 + correct
+#         type/template, F-3.5)                                        [3]
+#   11.2  per-template disk structures (F-3.3/F-3.4)                   [16]
+#   11.3  GET /api/projects registry types (F-3.1/F-3.2)                [4]
+#   11.4  one session per project (POST /api/sessions {cwd} ×3)         [3]
+#   11.5  lazy-JSONL seed per project (same workaround as section 8)    [3]
+#   11.6  ?project= isolation: each filter returns ONLY its own session [3]
+#   11.7  return-to-project: switch back → seeded data still in place   [3]
+#   11.8  per-type system prompts via loadSystemPrompt from the REAL dist
+#         build in the container (F-3.6, TC-F-3.12-E2E-2)               [3]
+#
+# DOCUMENTED CONSTRAINT — LLM-dependent steps are a MANUAL checklist
+# (same boundary as sections 9/10: no API keys in the container).
+# TC-F-3.12-E2E-1 steps 4–6 (agent tasks inside each project) need a live
+# model. Manual checklist (run on a deployment WITH a configured model):
+#   1. backend-api: chat «Add user authentication» → src/auth.ts created
+#      (with tests under tests/).
+#   2. competitor-analysis: /idea-lab:analyze "Enterprise AI platform" →
+#      non-empty markdown doc under docs/research/.
+#   3. backup-pipeline: chat «Create daily backup script» → executable
+#      scripts/daily-backup.sh.
+#   4. Switch back to each project → the created files are still there
+#      (context isolation; complements the REST-level checks 11.6/11.7).
+# Everything BEFORE the LLM boundary is checked here.
+#
+# .GIT NOTE (check 11.8): the code template deliberately ships no .git
+# (the user runs `git init` when ready — templates/index.ts), while the
+# F-3.2 detector requires .git for type=code. The REGISTRY type falls back
+# to the template name (createProject), but loadSystemPrompt() re-detects
+# from disk — so we simulate `git init` (mkdir .git) before asserting the
+# code prompt. Research/automation detect from the template layout alone.
+
+# assert_dir / assert_file: per-entry template structure checks (11.2).
+assert_dir() { # <container-path> <label>
+	if MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" test -d "$1"; then
+		pass "$2"
+	else
+		fail "$2 (missing directory $1)"
+	fi
+}
+assert_file() { # <container-path> <label>
+	if MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" test -f "$1"; then
+		pass "$2"
+	else
+		fail "$2 (missing file $1)"
+	fi
+}
+
+# seed_session_jsonl <session-dir> <session-id> <cwd> — prints SEEDED on
+# success. Writes exactly the v3 header SessionManager.newSession() would
+# write (lazy-JSONL workaround, see section 8 header).
+seed_session_jsonl() {
+	MSYS2_ARG_CONV_EXCL="*" docker exec \
+		-e E2E_SID="$2" -e E2E_DIR="$1" -e E2E_CWD="$3" "$CONTAINER_NAME" bun -e '
+import { mkdirSync, writeFileSync } from "node:fs";
+const id = process.env.E2E_SID;
+const ts = new Date().toISOString();
+mkdirSync(process.env.E2E_DIR, { recursive: true });
+const file = `${process.env.E2E_DIR}/${ts.replace(/[:.]/g, "-")}_${id}.jsonl`;
+const header = { type: "session", version: 3, id, timestamp: ts, cwd: process.env.E2E_CWD };
+writeFileSync(file, JSON.stringify(header) + "\n");
+console.log("SEEDED");
+' 2>/dev/null || true
+}
+
+# load_prompt <cwd> — run loadSystemPrompt() from the real dist build in
+# the container (same approach as check 10.5).
+load_prompt() {
+	MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" bun -e "
+import { loadSystemPrompt } from \"$PROMPT_LOADER_DIST\";
+console.log(loadSystemPrompt(\"$1\"));
+" 2>/dev/null || true
+}
+
+SID_P3_CODE=""
+SID_P3_RESEARCH=""
+SID_P3_AUTO=""
+if [ -z "$TOKEN" ]; then
+	fail "phase 3 multi-type checks skipped — no token (see check 3)"
+else
+	# 11.0. Pre-clean: wipe leftovers from a crashed previous run (volumes persist).
+	e2e_workspace_cleanup
+
+	# 11.1. TC-F-3.12-E2E-1 steps 1–3: create the three projects via the API.
+	# Each POST must return 201 with the resolved path, the auto-detected
+	# type (F-3.2, with the documented template-name fallback for code) and
+	# the applied template (F-3.5, TC-F-3.5-1/3).
+	for spec in \
+		"code|$P3_CODE_NAME|$P3_CODE" \
+		"research|$P3_RESEARCH_NAME|$P3_RESEARCH" \
+		"automation|$P3_AUTO_NAME|$P3_AUTO"; do
+		tmpl="${spec%%|*}"; rest="${spec#*|}"; pname="${rest%%|*}"; ppath="${rest#*|}"
+		resp="$(curl -s --max-time 15 -w '\n%{http_code}' -X POST "$BASE_URL/api/projects" \
+			-H "Authorization: Bearer $TOKEN" \
+			-H "Content-Type: application/json" \
+			-d "{\"name\": \"$pname\", \"template\": \"$tmpl\", \"rootPath\": \"/data/repos\"}")"
+		code="${resp##*$'\n'}"
+		body="${resp%$'\n'*}"
+		info "POST /api/projects {name: $pname, template: $tmpl} → $code: $body"
+		if [ "$code" = "201" ] && echo "$body" | grep -q "\"path\":\"$ppath\"" \
+			&& echo "$body" | grep -q "\"type\":\"$tmpl\"" && echo "$body" | grep -q "\"template\":\"$tmpl\""; then
+			pass "project $pname created via API (HTTP 201, type=$tmpl, template=$tmpl)"
+		else
+			fail "POST /api/projects $pname: expected 201 + path/type/template=$tmpl, got code=$code body=$body"
+		fi
+	done
+
+	# 11.2. TC-F-3.12-E2E-1 (structure): template layouts materialized on
+	# disk inside the container (F-3.3 code, F-3.4 research/automation).
+	assert_dir  "$P3_CODE/src"                "code template: src/ exists (F-3.3)"
+	assert_dir  "$P3_CODE/tests"              "code template: tests/ exists (F-3.3)"
+	assert_dir  "$P3_CODE/docs"               "code template: docs/ exists (F-3.3)"
+	assert_file "$P3_CODE/package.json"       "code template: package.json exists (F-3.3)"
+	assert_file "$P3_CODE/.fan/settings.json" "code template: .fan/settings.json exists (F-3.3)"
+	assert_dir  "$P3_RESEARCH/.fan/prompts"   "research template: .fan/prompts/ exists (F-3.4)"
+	assert_file "$P3_RESEARCH/.fan/settings.json" "research template: .fan/settings.json exists (F-3.4)"
+	assert_dir  "$P3_RESEARCH/docs/research"  "research template: docs/research/ exists (F-3.4)"
+	assert_dir  "$P3_RESEARCH/data"           "research template: data/ exists (F-3.4)"
+	assert_dir  "$P3_RESEARCH/reports"        "research template: reports/ exists (F-3.4)"
+	assert_file "$P3_AUTO/.fan/settings.json" "automation template: .fan/settings.json exists (F-3.4)"
+	assert_dir  "$P3_AUTO/scripts"            "automation template: scripts/ exists (F-3.4)"
+	assert_dir  "$P3_AUTO/config"             "automation template: config/ exists (F-3.4)"
+	assert_dir  "$P3_AUTO/output"             "automation template: output/ exists (F-3.4)"
+	assert_dir  "$P3_AUTO/logs"               "automation template: logs/ exists (F-3.4)"
+	if MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" \
+		grep -q '^#!/usr/bin/env bash' "$P3_AUTO/scripts/example.sh"; then
+		pass "automation template: scripts/example.sh exists with bash shebang (F-3.4, detection placeholder)"
+	else
+		fail "automation template: scripts/example.sh missing or without shebang under $P3_AUTO"
+	fi
+
+	# 11.3. GET /api/projects → all three registered with auto-detected
+	# types (F-3.1/F-3.2; code via the documented template-name fallback).
+	projects_body="$(curl -s --max-time 10 "$BASE_URL/api/projects" -H "Authorization: Bearer $TOKEN")"
+	if echo "$projects_body" | grep -q "\"path\":\"$P3_CODE\"" \
+		&& echo "$projects_body" | grep -q "\"path\":\"$P3_RESEARCH\"" \
+		&& echo "$projects_body" | grep -q "\"path\":\"$P3_AUTO\""; then
+		pass "GET /api/projects: all three projects present in the registry"
+	else
+		fail "GET /api/projects: expected all three projects, got $projects_body"
+	fi
+	if echo "$projects_body" | grep -q "\"path\":\"$P3_CODE\",\"name\":\"$P3_CODE_NAME\",\"type\":\"code\""; then
+		pass "registry entry $P3_CODE_NAME: type=code"
+	else
+		fail "registry entry $P3_CODE_NAME: expected type=code, got $projects_body"
+	fi
+	if echo "$projects_body" | grep -q "\"path\":\"$P3_RESEARCH\",\"name\":\"$P3_RESEARCH_NAME\",\"type\":\"research\""; then
+		pass "registry entry $P3_RESEARCH_NAME: type=research"
+	else
+		fail "registry entry $P3_RESEARCH_NAME: expected type=research, got $projects_body"
+	fi
+	if echo "$projects_body" | grep -q "\"path\":\"$P3_AUTO\",\"name\":\"$P3_AUTO_NAME\",\"type\":\"automation\""; then
+		pass "registry entry $P3_AUTO_NAME: type=automation"
+	else
+		fail "registry entry $P3_AUTO_NAME: expected type=automation, got $projects_body"
+	fi
+
+	# 11.4. One session per project (POST /api/sessions {cwd} ×3 → 201 +
+	# response.cwd). Each POST performs the runtime switch; after the loop
+	# the automation session is the active one.
+	for spec in \
+		"SID_P3_CODE|$P3_CODE" \
+		"SID_P3_RESEARCH|$P3_RESEARCH" \
+		"SID_P3_AUTO|$P3_AUTO"; do
+		var="${spec%%|*}"; ppath="${spec#*|}"
+		resp="$(curl -s --max-time 15 -w '\n%{http_code}' -X POST "$BASE_URL/api/sessions" \
+			-H "Authorization: Bearer $TOKEN" \
+			-H "Content-Type: application/json" -d "{\"cwd\": \"$ppath\"}")"
+		code="${resp##*$'\n'}"
+		body="${resp%$'\n'*}"
+		sid="$(echo "$body" | grep -o '"id"[: ]*"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"$/\1/')"
+		resp_cwd="$(echo "$body" | grep -o '"cwd"[: ]*"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"$/\1/')"
+		info "POST /api/sessions {cwd: $ppath} → $code, id: ${sid:-<none>}"
+		if [ "$code" = "201" ] && [ -n "$sid" ] && [ "$resp_cwd" = "$ppath" ]; then
+			pass "session created in $ppath (HTTP 201, response.cwd correct)"
+			printf -v "$var" '%s' "$sid"
+		else
+			fail "POST session $ppath: expected 201 + cwd, got code=$code body=$body"
+		fi
+	done
+
+	if [ -z "$SID_P3_CODE" ] || [ -z "$SID_P3_RESEARCH" ] || [ -z "$SID_P3_AUTO" ]; then
+		fail "multi-type isolation checks aborted — session ids missing (see 11.4)"
+		# Keep the declared 38-check shape: the remaining 12 checks of 11.5–11.8
+		# cannot run without session ids.
+		for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do fail "skipped — no session ids (see 11.4)"; done
+	else
+		# 11.5. Lazy-JSONL seed per project (same workaround as section 8.4:
+		# without an LLM no first assistant response persists the session, so
+		# we seed the v3 header SessionManager.newSession() would write).
+		for spec in \
+			"$SESS_DIR_P3_CODE|$SID_P3_CODE|$P3_CODE" \
+			"$SESS_DIR_P3_RESEARCH|$SID_P3_RESEARCH|$P3_RESEARCH" \
+			"$SESS_DIR_P3_AUTO|$SID_P3_AUTO|$P3_AUTO"; do
+			sdir="${spec%%|*}"; rest="${spec#*|}"; sid="${rest%%|*}"; ppath="${rest#*|}"
+			if [ "$(seed_session_jsonl "$sdir" "$sid" "$ppath")" = "SEEDED" ]; then
+				pass "session $sid persisted to disk in $ppath (manual JSONL seed)"
+			else
+				fail "session JSONL seed failed for $ppath (docker exec)"
+			fi
+		done
+
+		# 11.6. Isolation: GET /api/sessions?project=<p> returns ONLY that
+		# project's session (own id + correct cwd present, foreign ids absent).
+		for spec in \
+			"$P3_CODE|$SID_P3_CODE|$SID_P3_RESEARCH|$SID_P3_AUTO" \
+			"$P3_RESEARCH|$SID_P3_RESEARCH|$SID_P3_CODE|$SID_P3_AUTO" \
+			"$P3_AUTO|$SID_P3_AUTO|$SID_P3_CODE|$SID_P3_RESEARCH"; do
+			ppath="${spec%%|*}"; rest="${spec#*|}"; own="${rest%%|*}"; rest="${rest#*|}"
+			other1="${rest%%|*}"; other2="${rest#*|}"
+			resp="$(curl -s --max-time 10 -w '\n%{http_code}' "$BASE_URL/api/sessions?project=$ppath" \
+				-H "Authorization: Bearer $TOKEN")"
+			code="${resp##*$'\n'}"
+			body="${resp%$'\n'*}"
+			if [ "$code" = "200" ] && echo "$body" | grep -q "\"id\":\"$own\"" \
+				&& echo "$body" | grep -q "\"cwd\":\"$ppath\"" \
+				&& ! echo "$body" | grep -q "\"id\":\"$other1\"" \
+				&& ! echo "$body" | grep -q "\"id\":\"$other2\""; then
+				pass "GET /api/sessions?project=$ppath: only own session listed (isolation F-1.2)"
+			else
+				fail "isolation ?project=$ppath: expected only session $own, got code=$code body=$body"
+			fi
+		done
+
+		# 11.7. TC-F-3.12-E2E-1 steps 7–9 (REST level): return to each project
+		# (POST /api/sessions switches the runtime back) → the previously
+		# seeded session data is still in place.
+		for spec in \
+			"$P3_CODE|$SID_P3_CODE" \
+			"$P3_RESEARCH|$SID_P3_RESEARCH" \
+			"$P3_AUTO|$SID_P3_AUTO"; do
+			ppath="${spec%%|*}"; sid="${spec#*|}"
+			switch_code="$(http_status -X POST "$BASE_URL/api/sessions" \
+				-H "Authorization: Bearer $TOKEN" \
+				-H "Content-Type: application/json" -d "{\"cwd\": \"$ppath\"}")"
+			body="$(curl -s --max-time 10 "$BASE_URL/api/sessions?project=$ppath" \
+				-H "Authorization: Bearer $TOKEN")"
+			if [ "$switch_code" = "201" ] && echo "$body" | grep -q "\"id\":\"$sid\"" \
+				&& echo "$body" | grep -q "\"cwd\":\"$ppath\""; then
+				pass "return to $ppath: switch OK (201), session $sid data still in place"
+			else
+				fail "return to $ppath: switch=$switch_code, session $sid presence: $body"
+			fi
+		done
+
+		# 11.8. TC-F-3.12-E2E-2: per-type system prompts via loadSystemPrompt
+		# from the real dist build in the container (F-3.6). The code project
+		# gets a simulated `git init` first — the F-3.2 detector requires .git
+		# for type=code and the template deliberately ships none (see header).
+		MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" mkdir -p "$P3_CODE/.git" 2>/dev/null || true
+		code_prompt="$(load_prompt "$P3_CODE")"
+		if echo "$code_prompt" | grep -q "coding assistant" \
+			&& echo "$code_prompt" | grep -q "src/" && echo "$code_prompt" | grep -q "tests/" \
+			&& echo "$code_prompt" | grep -q "$P3_CODE"; then
+			pass "system prompt (code): 'coding assistant' role + src//tests/ references + substituted path (F-3.6)"
+		else
+			fail "system prompt (code): expected coding-assistant prompt, got: $(echo "$code_prompt" | head -3)"
+		fi
+		research_prompt="$(load_prompt "$P3_RESEARCH")"
+		if echo "$research_prompt" | grep -q "research assistant" \
+			&& echo "$research_prompt" | grep -q "$P3_RESEARCH/docs/research" \
+			&& echo "$research_prompt" | grep -q "$P3_RESEARCH_NAME"; then
+			pass "system prompt (research): 'research assistant' role + docs/research output path (F-3.6)"
+		else
+			fail "system prompt (research): expected research prompt, got: $(echo "$research_prompt" | head -3)"
+		fi
+		auto_prompt="$(load_prompt "$P3_AUTO")"
+		if echo "$auto_prompt" | grep -q "automation assistant" \
+			&& echo "$auto_prompt" | grep -q "$P3_AUTO/scripts" \
+			&& echo "$auto_prompt" | grep -q "$P3_AUTO_NAME"; then
+			pass "system prompt (automation): 'automation assistant' role + scripts/ path (F-3.6)"
+		else
+			fail "system prompt (automation): expected automation prompt, got: $(echo "$auto_prompt" | head -3)"
+		fi
+	fi
+
+	# 11.9. Manual checklist for the LLM-bound steps (see section header).
+	info "MANUAL (needs LLM): backend-api 'Add user authentication' → src/auth.ts;"
+	info "  competitor-analysis /idea-lab:analyze → docs/research/*.md;"
+	info "  backup-pipeline 'Create daily backup script' → scripts/daily-backup.sh"
+
+	# 11.10. Post-clean: keep the run idempotent (also runs from the EXIT trap).
+	info "Cleanup: removing multi-type test workspaces, session dirs and registry entries"
 	e2e_workspace_cleanup
 fi
 
