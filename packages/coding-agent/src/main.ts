@@ -517,6 +517,12 @@ export function createSessionAdapter(runtime: AgentSessionRuntime, defaultCwd?: 
 		getActiveSessionId() {
 			return runtime.session?.sessionId ?? null;
 		},
+
+		// --- isExecuting (F-2.5: WS message queue busy check) ---
+		// Single-engine runtime: busy = the active session is streaming.
+		isExecuting() {
+			return runtime.session?.isStreaming ?? false;
+		},
 	};
 }
 

@@ -75,6 +75,11 @@ export interface SessionAdapter {
 	listProjects(): Promise<ProjectInfo[]>;
 	/** Get the id of the currently active session (null if none). Optional — used by /api/health readiness. */
 	getActiveSessionId?(): string | null;
+	/** F-2.5: whether the engine is currently executing a prompt (streaming).
+	 *  Single-engine runtime: the check is global, not per-session. Optional —
+	 *  adapters without it are treated as always idle (WS messages are dispatched
+	 *  directly, never queued). */
+	isExecuting?(): boolean;
 }
 
 // ============================================================================

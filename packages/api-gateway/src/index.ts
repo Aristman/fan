@@ -16,5 +16,5 @@ export { createApp, startServer } from "./http-server.js";
 export * from "./types.js";
 export type { CwdValidationResult } from "./workspace-validation.js";
 export { isWithinRoot, logCwdRejection, resolveAllowedRoots, validateCwd } from "./workspace-validation.js";
-export type { WsHandlerOptions } from "./ws-handler.js";
-export { attachWebSocketHandler, createBunWebSocketBridge } from "./ws-handler.js";
+export type { WsHandlerOptions, WsMessageDispatcherOptions, WsSendMessagePayload } from "./ws-handler.js";
+export { attachWebSocketHandler, createBunWebSocketBridge, WsMessageDispatcher } from "./ws-handler.js";

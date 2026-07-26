@@ -2,6 +2,7 @@ import type { IncomingMessage, Server } from "node:http";
 import type { WebSocket as WsWebSocket } from "ws";
 import { isAuthDisabled, validateToken } from "./auth.js";
 import type { SessionAdapter } from "./http-server.js";
+import { InMemoryMessageQueue } from "./message-queue.js";
 import type { WsIncomingMessage, WsOutgoingMessage } from "./types.js";
 
 // ============================================================================
@@ -13,6 +14,9 @@ export interface WsHandlerOptions {
 	sessionAdapter: SessionAdapter;
 	/** Path prefix for WebSocket connections. Default: "/api/ws/" */
 	pathPrefix?: string;
+	/** F-2.5: optional shared message queue (default: new InMemoryMessageQueue).
+	 *  Injectable for tests. */
+	messageQueue?: InMemoryMessageQueue<WsSendMessagePayload>;
 }
 
 interface ClientConnection {
@@ -22,11 +26,157 @@ interface ClientConnection {
 }
 
 // ============================================================================
+// Message Dispatcher — enqueue on busy (F-2.5)
+// ============================================================================
+
+/** Payload of a queued `sendMessage` WS request. */
+export interface WsSendMessagePayload {
+	content: string;
+	streamingBehavior?: "steer" | "followUp";
+}
+
+export interface WsMessageDispatcherOptions {
+	sessionAdapter: SessionAdapter;
+	/** Injectable for tests; a fresh InMemoryMessageQueue is created otherwise. */
+	messageQueue?: InMemoryMessageQueue<WsSendMessagePayload>;
+}
+
+/**
+ * WsMessageDispatcher — routes incoming `sendMessage` WS messages (F-2.5).
+ *
+ * Busy semantics (single-engine runtime — ONE active session at a time):
+ * - "Busy" = `sessionAdapter.isExecuting()` (engine streaming a response).
+ *   Adapters without `isExecuting()` are treated as always idle → messages
+ *   are always dispatched directly (no queueing, backward compatible).
+ * - Busy + message for a DIFFERENT session than the active one → enqueue
+ *   (switching the engine mid-stream would corrupt the running turn) and
+ *   notify the client with `{ type: "queued", position: N }` (1-based
+ *   position in the per-session queue).
+ * - Busy + message for the SAME (active) session → direct dispatch:
+ *   `AgentSession.prompt()` already queues it internally via steer/followUp.
+ * - Idle → direct dispatch via `sessionAdapter.sendMessage()` (which performs
+ *   the switchSession when the target session differs).
+ *
+ * Dequeue processor strategy (documented decision):
+ * - Queues are per-session (F-2.4), but draining is GLOBAL FIFO by enqueue
+ *   timestamp across all sessions via `messageQueue.dequeueOldest()` — the
+ *   globally oldest message runs first, regardless of which session it
+ *   belongs to.
+ * - Trigger points: (a) after every dispatched sendMessage completes
+ *   (Promise settlement), and (b) on `agent_end` events observed by the
+ *   session event subscriptions ({@link notifyIdle}). (b) covers turns that
+ *   were started outside the WS path (REST POST /messages, followUp queues).
+ * - Serialized by a `draining` flag; never dequeues while the engine is busy.
+ */
+export class WsMessageDispatcher {
+	private readonly sessionAdapter: SessionAdapter;
+	private readonly queue: InMemoryMessageQueue<WsSendMessagePayload>;
+	private draining = false;
+
+	constructor(options: WsMessageDispatcherOptions) {
+		this.sessionAdapter = options.sessionAdapter;
+		this.queue = options.messageQueue ?? new InMemoryMessageQueue<WsSendMessagePayload>();
+	}
+
+	/** Engine busy check — adapters without isExecuting() are always idle. */
+	private isBusy(): boolean {
+		return this.sessionAdapter.isExecuting?.() ?? false;
+	}
+
+	/**
+	 * Handle an incoming WS message for `sessionId`. Non-sendMessage types are
+	 * ignored (handled elsewhere). `send` delivers protocol frames back to the
+	 * originating client (e.g. the `queued` notification).
+	 */
+	async handleMessage(
+		sessionId: string,
+		msg: WsIncomingMessage,
+		send: (message: WsOutgoingMessage) => void,
+	): Promise<void> {
+		if (msg.type !== "sendMessage") return;
+
+		const payload: WsSendMessagePayload = {
+			content: msg.content,
+			streamingBehavior: msg.streamingBehavior,
+		};
+		const activeSessionId = this.sessionAdapter.getActiveSessionId?.() ?? null;
+
+		if (this.isBusy() && sessionId !== activeSessionId) {
+			// Engine busy with another session → enqueue, notify position.
+			const position = await this.queue.enqueue(sessionId, payload);
+			send({ type: "queued", sessionId, timestamp: new Date().toISOString(), position });
+			return;
+		}
+
+		// No conflict → direct dispatch (fire-and-forget; the WS handler must
+		// not block on a full agent turn).
+		this.dispatch(sessionId, payload);
+	}
+
+	/** Signal that the engine may have become idle (e.g. on `agent_end`). */
+	notifyIdle(): void {
+		void this.drainQueue();
+	}
+
+	/** Direct dispatch; triggers the dequeue processor on completion. */
+	private dispatch(sessionId: string, payload: WsSendMessagePayload): void {
+		void Promise.resolve()
+			.then(() => this.sessionAdapter.sendMessage(sessionId, payload.content, payload.streamingBehavior))
+			.catch((err) => {
+				console.error(`[ws-handler] sendMessage failed for session ${sessionId}:`, err);
+			})
+			.finally(() => {
+				void this.drainQueue();
+			});
+	}
+
+	/**
+	 * Background dequeue processor. Picks the globally-oldest queued message,
+	 * awaits its full execution, then continues with the next one while the
+	 * engine stays idle. Re-entrant calls no-op via the `draining` flag.
+	 */
+	private async drainQueue(): Promise<void> {
+		if (this.draining) return;
+		this.draining = true;
+		try {
+			while (!this.isBusy()) {
+				const next = await this.queue.dequeueOldest();
+				if (!next) break;
+				try {
+					await this.sessionAdapter.sendMessage(
+						next.sessionId,
+						next.item.message.content,
+						next.item.message.streamingBehavior,
+					);
+				} catch (err) {
+					console.error(`[ws-handler] queued sendMessage failed for session ${next.sessionId}:`, err);
+				}
+			}
+		} finally {
+			this.draining = false;
+		}
+		// Race guard: a message may have been enqueued between the last
+		// dequeueOldest() and the flag release above. One extra scan is cheap.
+		if (!this.isBusy()) {
+			const pending = await this.queue.dequeueOldest();
+			if (pending) {
+				// Put it back at the head is not possible — dispatch it directly
+				// instead: the engine is idle, so ordering is preserved.
+				this.dispatch(pending.sessionId, pending.item.message);
+			}
+		}
+	}
+}
+
+// ============================================================================
 // WebSocket Handler
 // ============================================================================
 
 export function attachWebSocketHandler(options: WsHandlerOptions): { close: () => void } {
 	const { server, sessionAdapter, pathPrefix = "/api/ws/" } = options;
+
+	// F-2.5: enqueue-on-busy dispatcher (shared queue across all connections)
+	const dispatcher = new WsMessageDispatcher({ sessionAdapter, messageQueue: options.messageQueue });
 
 	// Map: sessionId → Set of connected clients
 	const sessionClients = new Map<string, Set<ClientConnection>>();
@@ -131,6 +281,10 @@ export function attachWebSocketHandler(options: WsHandlerOptions): { close: () =
 						event,
 					};
 					broadcastToSession(connSessionId, message);
+					// F-2.5: a finished turn may free the engine → drain queued messages
+					if (event?.type === "agent_end") {
+						dispatcher.notifyIdle();
+					}
 				});
 
 				const client: ClientConnection = { ws, sessionId: connSessionId, unsubscribe };
@@ -159,6 +313,13 @@ export function attachWebSocketHandler(options: WsHandlerOptions): { close: () =
 							ws.send(
 								JSON.stringify({ type: "pong", sessionId: connSessionId, timestamp: new Date().toISOString() }),
 							);
+						} else if (msg.type === "sendMessage") {
+							// F-2.5: enqueue when the engine is busy with another session
+							void dispatcher.handleMessage(connSessionId, msg, (out) => {
+								if (ws.readyState === 1) {
+									ws.send(JSON.stringify(out));
+								}
+							});
 						}
 						// Other message types can be handled here in the future
 					} catch {
@@ -249,8 +410,14 @@ export interface BunWebSocketBridge {
 	};
 }
 
-export function createBunWebSocketBridge(sessionAdapter: SessionAdapter, pathPrefix = "/api/ws/"): BunWebSocketBridge {
+export function createBunWebSocketBridge(
+	sessionAdapter: SessionAdapter,
+	pathPrefix = "/api/ws/",
+	messageQueue?: InMemoryMessageQueue<WsSendMessagePayload>,
+): BunWebSocketBridge {
 	const unsubscribes = new Map<BunWebSocket, () => void>();
+	// F-2.5: enqueue-on-busy dispatcher (shared queue across all connections)
+	const dispatcher = new WsMessageDispatcher({ sessionAdapter, messageQueue });
 
 	return {
 		async handleFetch(req, server, url) {
@@ -286,6 +453,10 @@ export function createBunWebSocketBridge(sessionAdapter: SessionAdapter, pathPre
 						event,
 					};
 					ws.send(JSON.stringify(message));
+					// F-2.5: a finished turn may free the engine → drain queued messages
+					if (event?.type === "agent_end") {
+						dispatcher.notifyIdle();
+					}
 				});
 				unsubscribes.set(ws, unsubscribe);
 				// Welcome frame — same shape as the ws-based handler.
@@ -308,6 +479,11 @@ export function createBunWebSocketBridge(sessionAdapter: SessionAdapter, pathPre
 								timestamp: new Date().toISOString(),
 							}),
 						);
+					} else if (msg.type === "sendMessage") {
+						// F-2.5: enqueue when the engine is busy with another session
+						void dispatcher.handleMessage(ws.data.sessionId, msg, (out) => {
+							ws.send(JSON.stringify(out));
+						});
 					}
 				} catch {
 					// Ignore malformed messages

@@ -278,7 +278,17 @@ export interface WsError extends WsMessage {
 	message: string;
 }
 
-export type WsOutgoingMessage = WsAgentEvent | WsBudgetAlert | WsModelSwitch | WsError;
+/** Server notification: the message was queued because the engine is busy (F-2.5) */
+export interface WsQueued extends WsMessage {
+	type: "queued";
+	/** 1-based position of the message in the session's queue */
+	position: number;
+}
+
+export type WsOutgoingMessage = WsAgentEvent | WsBudgetAlert | WsModelSwitch | WsError | WsQueued;
 
 /** Incoming WebSocket messages from client */
-export type WsIncomingMessage = { type: "ping" } | { type: "subscribe"; sessionId: string };
+export type WsIncomingMessage =
+	| { type: "ping" }
+	| { type: "subscribe"; sessionId: string }
+	| { type: "sendMessage"; content: string; streamingBehavior?: "steer" | "followUp" };

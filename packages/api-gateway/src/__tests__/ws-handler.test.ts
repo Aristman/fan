@@ -49,6 +49,8 @@ describe("WebSocket Handler", () => {
 			getAvailableModels: vi.fn().mockResolvedValue([]),
 			bindSessionExtensions: vi.fn().mockResolvedValue(undefined),
 			listProjects: vi.fn().mockResolvedValue([]),
+			getActiveSessionId: vi.fn().mockReturnValue(null),
+			isExecuting: vi.fn().mockReturnValue(false),
 		};
 	}
 
@@ -97,6 +99,151 @@ describe("WebSocket Handler", () => {
 
 			expect(typeof handler.close).toBe("function");
 			handler.close();
+		});
+	});
+
+	describe("F-2.5: enqueue on busy (Bun bridge)", () => {
+		// Minimal BunWebSocket fake — only the surface the bridge touches.
+		function makeFakeWs(sessionId: string) {
+			const sent: Array<Record<string, unknown>> = [];
+			const ws = {
+				data: { sessionId },
+				send: (data: string) => sent.push(JSON.parse(data)),
+				close: vi.fn(),
+			};
+			return { ws, sent };
+		}
+
+		it("TC-F-2.5-1: busy engine + different session → queued notification, message enqueued", async () => {
+			const { createBunWebSocketBridge } = await import("../ws-handler.js");
+			const adapter = createMockAdapter();
+			adapter.isExecuting.mockReturnValue(true);
+			adapter.getActiveSessionId.mockReturnValue("sess-A");
+
+			const bridge = createBunWebSocketBridge(adapter);
+			const { ws, sent } = makeFakeWs("sess-B");
+			bridge.websocket.open(ws);
+
+			bridge.websocket.message(ws, JSON.stringify({ type: "sendMessage", content: "test" }));
+
+			await vi.waitFor(() => {
+				expect(sent.some((m) => m.type === "queued")).toBe(true);
+			});
+			const queued = sent.find((m) => m.type === "queued");
+			expect(queued).toMatchObject({ type: "queued", sessionId: "sess-B", position: 1 });
+			// Not dispatched while busy with another session
+			expect(adapter.sendMessage).not.toHaveBeenCalled();
+		});
+
+		it("TC-F-2.5-2: idle engine → direct dispatch, no queued notification", async () => {
+			const { createBunWebSocketBridge } = await import("../ws-handler.js");
+			const adapter = createMockAdapter();
+			adapter.isExecuting.mockReturnValue(false);
+			adapter.getActiveSessionId.mockReturnValue("sess-B");
+
+			const bridge = createBunWebSocketBridge(adapter);
+			const { ws, sent } = makeFakeWs("sess-B");
+			bridge.websocket.open(ws);
+
+			bridge.websocket.message(ws, JSON.stringify({ type: "sendMessage", content: "hello" }));
+
+			await vi.waitFor(() => {
+				expect(adapter.sendMessage).toHaveBeenCalledWith("sess-B", "hello", undefined);
+			});
+			expect(sent.some((m) => m.type === "queued")).toBe(false);
+		});
+
+		it("busy engine + SAME active session → direct dispatch (prompt queues via followUp internally)", async () => {
+			const { createBunWebSocketBridge } = await import("../ws-handler.js");
+			const adapter = createMockAdapter();
+			adapter.isExecuting.mockReturnValue(true);
+			adapter.getActiveSessionId.mockReturnValue("sess-A");
+
+			const bridge = createBunWebSocketBridge(adapter);
+			const { ws, sent } = makeFakeWs("sess-A");
+			bridge.websocket.open(ws);
+
+			bridge.websocket.message(ws, JSON.stringify({ type: "sendMessage", content: "steer me" }));
+
+			await vi.waitFor(() => {
+				expect(adapter.sendMessage).toHaveBeenCalledWith("sess-A", "steer me", undefined);
+			});
+			expect(sent.some((m) => m.type === "queued")).toBe(false);
+		});
+
+		it("two queued messages → positions 1 and 2; dequeue on completion executes them in order", async () => {
+			const { createBunWebSocketBridge } = await import("../ws-handler.js");
+			const adapter = createMockAdapter();
+			let executing = true;
+			adapter.isExecuting.mockImplementation(() => executing);
+			adapter.getActiveSessionId.mockReturnValue("sess-A");
+
+			// Capture the session event handler registered on open()
+			let eventHandler: ((event: unknown) => void) | null = null;
+			adapter.subscribeToSession.mockImplementation((_id: string, handler: (event: unknown) => void) => {
+				eventHandler = handler;
+				return () => {};
+			});
+
+			const bridge = createBunWebSocketBridge(adapter);
+			const { ws, sent } = makeFakeWs("sess-B");
+			bridge.websocket.open(ws);
+
+			bridge.websocket.message(ws, JSON.stringify({ type: "sendMessage", content: "m1" }));
+			bridge.websocket.message(ws, JSON.stringify({ type: "sendMessage", content: "m2" }));
+
+			await vi.waitFor(() => {
+				const positions = sent.filter((m) => m.type === "queued").map((m) => m.position);
+				expect(positions).toEqual([1, 2]);
+			});
+			expect(adapter.sendMessage).not.toHaveBeenCalled();
+
+			// Task completes → engine idle → agent_end event triggers the dequeue processor
+			executing = false;
+			eventHandler!({ type: "agent_end" });
+
+			await vi.waitFor(() => {
+				expect(adapter.sendMessage).toHaveBeenCalledTimes(2);
+			});
+			// FIFO order: m1 before m2, both for sess-B
+			expect(adapter.sendMessage.mock.calls[0]).toEqual(["sess-B", "m1", undefined]);
+			expect(adapter.sendMessage.mock.calls[1]).toEqual(["sess-B", "m2", undefined]);
+		});
+
+		it("global FIFO across sessions: oldest message (any session) dequeues first", async () => {
+			const { createBunWebSocketBridge } = await import("../ws-handler.js");
+			const adapter = createMockAdapter();
+			let executing = true;
+			adapter.isExecuting.mockImplementation(() => executing);
+			adapter.getActiveSessionId.mockReturnValue("sess-A");
+
+			let eventHandler: ((event: unknown) => void) | null = null;
+			adapter.subscribeToSession.mockImplementation((_id: string, handler: (event: unknown) => void) => {
+				eventHandler = handler;
+				return () => {};
+			});
+
+			const bridge = createBunWebSocketBridge(adapter);
+			const clientB = makeFakeWs("sess-B");
+			const clientC = makeFakeWs("sess-C");
+			bridge.websocket.open(clientB.ws);
+			bridge.websocket.open(clientC.ws);
+
+			// Enqueue: sess-C first, then sess-B
+			bridge.websocket.message(clientC.ws, JSON.stringify({ type: "sendMessage", content: "from-C" }));
+			await vi.waitFor(() => expect(clientC.sent.some((m) => m.type === "queued")).toBe(true));
+			bridge.websocket.message(clientB.ws, JSON.stringify({ type: "sendMessage", content: "from-B" }));
+			await vi.waitFor(() => expect(clientB.sent.some((m) => m.type === "queued")).toBe(true));
+
+			executing = false;
+			eventHandler!({ type: "agent_end" });
+
+			await vi.waitFor(() => {
+				expect(adapter.sendMessage).toHaveBeenCalledTimes(2);
+			});
+			// Global timestamp order: from-C (enqueued first) executes before from-B
+			expect(adapter.sendMessage.mock.calls[0]).toEqual(["sess-C", "from-C", undefined]);
+			expect(adapter.sendMessage.mock.calls[1]).toEqual(["sess-B", "from-B", undefined]);
 		});
 	});
 });

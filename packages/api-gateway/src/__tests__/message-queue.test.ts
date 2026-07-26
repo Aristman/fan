@@ -121,4 +121,31 @@ describe("InMemoryMessageQueue", () => {
 		await queue.dequeue("sess-1");
 		expect(await queue.size("sess-1")).toBe(0);
 	});
+
+	it("dequeueOldest returns the globally-oldest message across sessions (F-2.5)", async () => {
+		const queue = new InMemoryMessageQueue<string>();
+
+		// Empty → null.
+		expect(await queue.dequeueOldest()).toBeNull();
+
+		// Enqueue in order: sess-2 first, then sess-1, then sess-2 again.
+		await queue.enqueue("sess-2", "b1");
+		await queue.enqueue("sess-1", "a1");
+		await queue.enqueue("sess-2", "b2");
+
+		// Global FIFO by timestamp: b1 (oldest) → a1 → b2.
+		const first = await queue.dequeueOldest();
+		expect(first?.sessionId).toBe("sess-2");
+		expect(first?.item.message).toBe("b1");
+
+		const second = await queue.dequeueOldest();
+		expect(second?.sessionId).toBe("sess-1");
+		expect(second?.item.message).toBe("a1");
+
+		const third = await queue.dequeueOldest();
+		expect(third?.sessionId).toBe("sess-2");
+		expect(third?.item.message).toBe("b2");
+
+		expect(await queue.dequeueOldest()).toBeNull();
+	});
 });
