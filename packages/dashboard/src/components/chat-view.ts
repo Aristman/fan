@@ -4,7 +4,19 @@ import type { GetSessionResponse, SessionMessage } from "@fan/api-gateway/types"
 import { html, LitElement, nothing } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
-import { Brain, Check, ChevronRight, Copy, FileText, Loader2, Send, Terminal } from "lucide";
+import {
+	AlertTriangle,
+	Brain,
+	Check,
+	ChevronRight,
+	Clock,
+	Copy,
+	FileText,
+	Loader2,
+	Send,
+	Terminal,
+	X,
+} from "lucide";
 import type { FanApiClient } from "../api/client.js";
 import type { FanWsClient } from "../api/ws-client.js";
 import { icon } from "../lib/icon.js";
@@ -51,6 +63,10 @@ export class ChatView extends LitElement {
 	@state() currentToolName: string | null = null;
 	@state() isThinking = false;
 	@state() copiedId: string | null = null;
+	/** F-2.12: 1-based queue position when the message was queued (server busy), null otherwise */
+	@state() queuePosition: number | null = null;
+	/** F-2.15: queue capacity limit when the message was rejected (QUEUE_OVERFLOW), null otherwise */
+	@state() queueFullLimit: number | null = null;
 
 	// -----------------------------------------------------------------------
 	// Internal
@@ -105,6 +121,8 @@ export class ChatView extends LitElement {
 			this.isStreaming = false;
 			this.currentToolName = null;
 			this.isThinking = false;
+			this.queuePosition = null;
+			this.queueFullLimit = null;
 			this.loadSession();
 			this.connectWs();
 		}
@@ -188,6 +206,21 @@ export class ChatView extends LitElement {
 		// Narrow to WsAgentEvent
 		if (!msg || typeof msg !== "object") return;
 		const m = msg as Record<string, unknown>;
+
+		// F-2.12: message queued — show position indicator above the input
+		if (m.type === "queued") {
+			if (m.sessionId !== this.sessionId) return;
+			this.queuePosition = typeof m.position === "number" ? m.position : null;
+			return;
+		}
+
+		// F-2.15: queue overflow — message rejected, show warning
+		if (m.type === "queue_full") {
+			if (m.sessionId !== this.sessionId) return;
+			this.queueFullLimit = typeof m.limit === "number" ? m.limit : null;
+			return;
+		}
+
 		if (m.type !== "agent_event") return;
 		if (m.sessionId !== this.sessionId) return;
 
@@ -200,6 +233,8 @@ export class ChatView extends LitElement {
 		switch (eventType) {
 			case "agent_start":
 			case "turn_start":
+				// Engine picked up this session — the queued message is being processed
+				this.queuePosition = null;
 				this.isThinking = true;
 				break;
 
@@ -211,6 +246,8 @@ export class ChatView extends LitElement {
 					this.isStreaming = true;
 					this.streamingContent = "";
 					this.thinkingContent = "";
+					// Streaming response started — hide the queue indicator
+					this.queuePosition = null;
 				}
 				break;
 			}
@@ -647,6 +684,56 @@ export class ChatView extends LitElement {
     `;
 	}
 
+	private dismissQueueFull(): void {
+		this.queueFullLimit = null;
+	}
+
+	// F-2.12 / F-2.15: queue position indicator and overflow warning above the input
+	private renderQueueIndicator() {
+		return html`
+      ${
+				this.queueFullLimit !== null
+					? html`
+            <div class="max-w-4xl mx-auto mb-2">
+              <div
+                data-testid="queue-full-alert"
+                role="alert"
+                class="flex items-center gap-2 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-700 dark:text-red-400"
+              >
+                ${icon(AlertTriangle, "w-4 h-4")}
+                <span class="flex-1">Очередь заполнена (лимит ${this.queueFullLimit})</span>
+                <button
+                  class="p-0.5 rounded hover:bg-red-500/20 transition-colors"
+                  @click=${() => this.dismissQueueFull()}
+                  title="Dismiss"
+                  aria-label="Dismiss"
+                >
+                  ${icon(X, "w-3.5 h-3.5")}
+                </button>
+              </div>
+            </div>
+          `
+					: nothing
+			}
+      ${
+				this.queuePosition !== null
+					? html`
+            <div class="max-w-4xl mx-auto mb-2">
+              <div
+                data-testid="queue-position-alert"
+                role="status"
+                class="flex items-center gap-2 rounded-lg border border-yellow-500/40 bg-yellow-500/10 px-3 py-2 text-xs text-yellow-700 dark:text-yellow-400"
+              >
+                ${icon(Clock, "w-4 h-4")}
+                <span>В очереди, позиция ${this.queuePosition}</span>
+              </div>
+            </div>
+          `
+					: nothing
+			}
+    `;
+	}
+
 	// -----------------------------------------------------------------------
 	// Render
 	// -----------------------------------------------------------------------
@@ -704,6 +791,7 @@ export class ChatView extends LitElement {
 
         <!-- ── Input area ─────────────────────────────────────────────── -->
         <div class="border-t border-border p-4">
+          ${this.renderQueueIndicator()}
           <div
             class="flex items-end gap-2 max-w-4xl mx-auto"
           >
