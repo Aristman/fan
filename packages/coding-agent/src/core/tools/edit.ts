@@ -302,6 +302,14 @@ export function createEditTool(cwd: string, options?: EditToolOptions): AgentToo
 	return wrapToolDefinition(createEditToolDefinition(cwd, options));
 }
 
-/** Default edit tool using process.cwd() for backwards compatibility. */
+/**
+ * Default edit tool using process.cwd() for backwards compatibility.
+ * @deprecated Use {@link createEditToolDefinition} with an explicit session cwd.
+ * Not used in the runtime path — sessions create tools via createAllToolDefinitions(cwd).
+ */
 export const editToolDefinition = createEditToolDefinition(process.cwd());
+/**
+ * Default edit tool using process.cwd() for backwards compatibility.
+ * @deprecated Use {@link createEditTool} with an explicit session cwd.
+ */
 export const editTool = createEditTool(process.cwd());

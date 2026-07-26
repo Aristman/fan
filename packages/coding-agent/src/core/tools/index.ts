@@ -107,9 +107,21 @@ import { createWriteTool, createWriteToolDefinition, writeTool, writeToolDefinit
 export type Tool = AgentTool<any>;
 export type ToolDef = ToolDefinition<any, any>;
 
+/**
+ * Pre-built tools bound to process.cwd().
+ * @deprecated Use {@link createCodingTools} with an explicit session cwd.
+ */
 export const codingTools: Tool[] = [readTool, bashTool, editTool, writeTool];
+/**
+ * Pre-built read-only tools bound to process.cwd().
+ * @deprecated Use {@link createReadOnlyTools} with an explicit session cwd.
+ */
 export const readOnlyTools: Tool[] = [readTool, grepTool, findTool, lsTool];
 
+/**
+ * Pre-built tool map bound to process.cwd().
+ * @deprecated Use {@link createAllTools} with an explicit session cwd.
+ */
 export const allTools = {
 	read: readTool,
 	bash: bashTool,
@@ -120,6 +132,10 @@ export const allTools = {
 	ls: lsTool,
 };
 
+/**
+ * Pre-built tool definition map bound to process.cwd().
+ * @deprecated Use {@link createAllToolDefinitions} with an explicit session cwd.
+ */
 export const allToolDefinitions = {
 	read: readToolDefinition,
 	bash: bashToolDefinition,

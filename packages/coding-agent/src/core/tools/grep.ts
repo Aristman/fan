@@ -370,6 +370,14 @@ export function createGrepTool(cwd: string, options?: GrepToolOptions): AgentToo
 	return wrapToolDefinition(createGrepToolDefinition(cwd, options));
 }
 
-/** Default grep tool using process.cwd() for backwards compatibility. */
+/**
+ * Default grep tool using process.cwd() for backwards compatibility.
+ * @deprecated Use {@link createGrepToolDefinition} with an explicit session cwd.
+ * Not used in the runtime path — sessions create tools via createAllToolDefinitions(cwd).
+ */
 export const grepToolDefinition = createGrepToolDefinition(process.cwd());
+/**
+ * Default grep tool using process.cwd() for backwards compatibility.
+ * @deprecated Use {@link createGrepTool} with an explicit session cwd.
+ */
 export const grepTool = createGrepTool(process.cwd());

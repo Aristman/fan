@@ -228,6 +228,14 @@ export function createLsTool(cwd: string, options?: LsToolOptions): AgentTool<ty
 	return wrapToolDefinition(createLsToolDefinition(cwd, options));
 }
 
-/** Default ls tool using process.cwd() for backwards compatibility. */
+/**
+ * Default ls tool using process.cwd() for backwards compatibility.
+ * @deprecated Use {@link createLsToolDefinition} with an explicit session cwd.
+ * Not used in the runtime path — sessions create tools via createAllToolDefinitions(cwd).
+ */
 export const lsToolDefinition = createLsToolDefinition(process.cwd());
+/**
+ * Default ls tool using process.cwd() for backwards compatibility.
+ * @deprecated Use {@link createLsTool} with an explicit session cwd.
+ */
 export const lsTool = createLsTool(process.cwd());

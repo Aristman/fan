@@ -107,7 +107,7 @@ export type { Skill } from "./skills.js";
 export type { Tool } from "./tools/index.js";
 
 export {
-	// Pre-built tools (use process.cwd())
+	// Pre-built tools (bound to process.cwd() — deprecated, use the create* factories with an explicit cwd)
 	readTool,
 	bashTool,
 	editTool,

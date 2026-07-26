@@ -280,6 +280,14 @@ export function createWriteTool(cwd: string, options?: WriteToolOptions): AgentT
 	return wrapToolDefinition(createWriteToolDefinition(cwd, options));
 }
 
-/** Default write tool using process.cwd() for backwards compatibility. */
+/**
+ * Default write tool using process.cwd() for backwards compatibility.
+ * @deprecated Use {@link createWriteToolDefinition} with an explicit session cwd.
+ * Not used in the runtime path — sessions create tools via createAllToolDefinitions(cwd).
+ */
 export const writeToolDefinition = createWriteToolDefinition(process.cwd());
+/**
+ * Default write tool using process.cwd() for backwards compatibility.
+ * @deprecated Use {@link createWriteTool} with an explicit session cwd.
+ */
 export const writeTool = createWriteTool(process.cwd());

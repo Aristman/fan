@@ -53,8 +53,10 @@ export function getShellConfig(): { shell: string; args: string[] } {
 		return cachedShellConfig;
 	}
 
-	const settings = SettingsManager.create();
-	const customShellPath = settings.getShellPath();
+	// F-5.3: shellPath is machine-level config — read global settings only.
+	// SettingsManager.create() would merge the project overlay of process.cwd(),
+	// leaking one project's shellPath into bash tool executions of other sessions.
+	const customShellPath = SettingsManager.loadGlobalSettings().shellPath;
 
 	// 1. Check user-specified shell path
 	if (customShellPath) {

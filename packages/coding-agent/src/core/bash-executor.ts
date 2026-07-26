@@ -55,6 +55,9 @@ export interface BashResult {
  * @param command - The bash command to execute
  * @param options - Optional streaming callback and abort signal
  * @returns Promise resolving to execution result
+ * @deprecated Uses process.cwd(). No runtime-path callers remain — use
+ * {@link executeBashWithOperations} with an explicit session cwd instead.
+ * Kept for backwards compatibility.
  */
 export function executeBash(command: string, options?: BashExecutorOptions): Promise<BashResult> {
 	return executeBashWithOperations(command, process.cwd(), createLocalBashOperations(), options);

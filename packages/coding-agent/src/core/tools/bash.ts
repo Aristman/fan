@@ -451,6 +451,14 @@ export function createBashTool(cwd: string, options?: BashToolOptions): AgentToo
 	return wrapToolDefinition(createBashToolDefinition(cwd, options));
 }
 
-/** Default bash tool using process.cwd() for backwards compatibility. */
+/**
+ * Default bash tool using process.cwd() for backwards compatibility.
+ * @deprecated Use {@link createBashToolDefinition} with an explicit session cwd.
+ * Not used in the runtime path — sessions create tools via createAllToolDefinitions(cwd).
+ */
 export const bashToolDefinition = createBashToolDefinition(process.cwd());
+/**
+ * Default bash tool using process.cwd() for backwards compatibility.
+ * @deprecated Use {@link createBashTool} with an explicit session cwd.
+ */
 export const bashTool = createBashTool(process.cwd());

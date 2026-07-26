@@ -58,7 +58,7 @@ import {
 import { SessionManager } from "./core/session-manager.js";
 import { SettingsManager } from "./core/settings-manager.js";
 import { printTimings, resetTimings, time } from "./core/timings.js";
-import { allTools } from "./core/tools/index.js";
+import { createAllTools } from "./core/tools/index.js";
 import { runMigrations, showDeprecationWarnings } from "./migrations.js";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { ExtensionSelectorComponent } from "./modes/interactive/components/extension-selector.js";
@@ -778,6 +778,7 @@ async function createSessionManager(
 
 function buildSessionOptions(
 	parsed: Args,
+	cwd: string,
 	scopedModels: ScopedModel[],
 	hasExistingSession: boolean,
 	modelRegistry: ModelRegistry,
@@ -863,16 +864,18 @@ function buildSessionOptions(
 	// (handled by caller before createAgentSession)
 
 	// Tools
+	// F-5.3: build tools bound to the session cwd, not process.cwd().
+	const sessionTools = createAllTools(cwd);
 	if (parsed.noTools) {
 		// --no-tools: start with no built-in tools
 		// --tools can still add specific ones back
 		if (parsed.tools && parsed.tools.length > 0) {
-			options.tools = parsed.tools.map((name) => allTools[name]);
+			options.tools = parsed.tools.map((name) => sessionTools[name]);
 		} else {
 			options.tools = [];
 		}
 	} else if (parsed.tools) {
-		options.tools = parsed.tools.map((name) => allTools[name]);
+		options.tools = parsed.tools.map((name) => sessionTools[name]);
 	}
 
 	return { options, cliThinkingFromModel, diagnostics };
@@ -1125,6 +1128,7 @@ export async function main(args: string[]) {
 			diagnostics: sessionOptionDiagnostics,
 		} = buildSessionOptions(
 			parsed,
+			cwd,
 			scopedModels,
 			sessionManager.buildSessionContext().messages.length > 0,
 			modelRegistry,

@@ -338,6 +338,30 @@ export class SettingsManager {
 		}
 	}
 
+	/**
+	 * Load global settings from `<agentDir>/settings.json` only.
+	 *
+	 * Never reads project overlays or process.cwd(). Intended for machine-level
+	 * config lookups (e.g. shellPath) that must not depend on the session cwd.
+	 * Returns an empty object when the file is missing, empty, or unreadable.
+	 * Never throws.
+	 */
+	static loadGlobalSettings(agentDir: string = getAgentDir()): Settings {
+		const settingsPath = join(agentDir, "settings.json");
+		try {
+			if (!existsSync(settingsPath)) {
+				return {};
+			}
+			const content = readFileSync(settingsPath, "utf-8");
+			if (!content.trim()) {
+				return {};
+			}
+			return SettingsManager.migrateSettings(JSON.parse(content) as Record<string, unknown>);
+		} catch {
+			return {};
+		}
+	}
+
 	private static loadFromStorage(storage: SettingsStorage, scope: SettingsScope): Settings {
 		let content: string | undefined;
 		storage.withLock(scope, (current) => {

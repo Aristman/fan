@@ -309,6 +309,14 @@ export function createFindTool(cwd: string, options?: FindToolOptions): AgentToo
 	return wrapToolDefinition(createFindToolDefinition(cwd, options));
 }
 
-/** Default find tool using process.cwd() for backwards compatibility. */
+/**
+ * Default find tool using process.cwd() for backwards compatibility.
+ * @deprecated Use {@link createFindToolDefinition} with an explicit session cwd.
+ * Not used in the runtime path — sessions create tools via createAllToolDefinitions(cwd).
+ */
 export const findToolDefinition = createFindToolDefinition(process.cwd());
+/**
+ * Default find tool using process.cwd() for backwards compatibility.
+ * @deprecated Use {@link createFindTool} with an explicit session cwd.
+ */
 export const findTool = createFindTool(process.cwd());

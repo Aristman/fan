@@ -264,6 +264,14 @@ export function createReadTool(cwd: string, options?: ReadToolOptions): AgentToo
 	return wrapToolDefinition(createReadToolDefinition(cwd, options));
 }
 
-/** Default read tool using process.cwd() for backwards compatibility. */
+/**
+ * Default read tool using process.cwd() for backwards compatibility.
+ * @deprecated Use {@link createReadToolDefinition} with an explicit session cwd.
+ * Not used in the runtime path — sessions create tools via createAllToolDefinitions(cwd).
+ */
 export const readToolDefinition = createReadToolDefinition(process.cwd());
+/**
+ * Default read tool using process.cwd() for backwards compatibility.
+ * @deprecated Use {@link createReadTool} with an explicit session cwd.
+ */
 export const readTool = createReadTool(process.cwd());
