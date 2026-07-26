@@ -257,6 +257,9 @@ ${chalk.bold("Commands:")}
   ${APP_NAME} server start         Start server as background daemon
   ${APP_NAME} server stop          Stop background server
   ${APP_NAME} server status        Check server status (use --json for machine-readable output)
+  ${APP_NAME} project register <path> [--type code|research|automation|unknown]
+                                  Register a project workspace (auto-detects type)
+  ${APP_NAME} project list            List registered project workspaces
   ${APP_NAME} <command> --help          Show help for install/remove/uninstall/update/list
 
 ${chalk.bold("Options:")}

@@ -114,6 +114,12 @@ async function handleServerCommand(args: string[]): Promise<boolean> {
 	return false; // continue to normal flow
 }
 
+async function handleProjectCommand(args: string[]): Promise<boolean> {
+	if (args[0] !== "project") return false;
+	const { runProjectCommand } = await import("./cli/project-command.js");
+	process.exit(runProjectCommand(args.slice(1)));
+}
+
 /**
  * Read all content from piped stdin.
  * Returns undefined if stdin is a TTY (interactive terminal).
@@ -855,6 +861,10 @@ export async function main(args: string[]) {
 	}
 
 	if (await handleServerCommand(args)) {
+		return;
+	}
+
+	if (await handleProjectCommand(args)) {
 		return;
 	}
 

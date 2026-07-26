@@ -32,7 +32,7 @@ export interface ProjectEntry {
 	addedAt: string;
 }
 
-const PROJECT_TYPES: readonly ProjectType[] = ["code", "research", "automation", "unknown"];
+export const PROJECT_TYPES: readonly ProjectType[] = ["code", "research", "automation", "unknown"];
 
 /** Get path to projects.json registry file. */
 export function getProjectsPath(): string {
