@@ -180,7 +180,7 @@ export function createSessionAdapter(runtime: AgentSessionRuntime, defaultCwd?: 
 		title: string;
 		modified: Date;
 		messageCount: number;
-		cwd: string;
+		cwd?: string;
 	}> = [];
 
 	// --- WS subscription forwarding ---
@@ -301,7 +301,10 @@ export function createSessionAdapter(runtime: AgentSessionRuntime, defaultCwd?: 
 				title: s.name || s.firstMessage || "Untitled",
 				modified: s.modified,
 				messageCount: s.messageCount,
-				cwd: s.cwd,
+				// F-1.12: legacy sessions have no cwd in the JSONL header (SessionInfo.cwd = "").
+				// Normalize to undefined so API responses omit the field (SessionSummary.cwd?)
+				// instead of emitting an empty string — cwd-less sessions never match project filters.
+				cwd: s.cwd || undefined,
 			}));
 			return cachedDiskSessions;
 		} catch (err) {

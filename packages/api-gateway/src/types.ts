@@ -57,7 +57,11 @@ export interface SessionSummary {
 	messageCount: number;
 	/** Path to JSONL file on disk (for disk-based sessions) */
 	sessionFile?: string;
-	/** Working directory of the project the session belongs to (from JSONL session header) */
+	/**
+	 * Working directory of the project the session belongs to (from JSONL session header).
+	 * Omitted for legacy sessions whose header has no cwd — never an empty string or null
+	 * (F-1.12). Cwd-less sessions never match the ?project= filter.
+	 */
 	cwd?: string;
 }
 
@@ -107,7 +111,10 @@ export interface GetSessionResponse {
 	messages: SessionMessage[];
 	/** Path to JSONL file on disk (for disk-based sessions) */
 	sessionFile?: string;
-	/** Working directory of the project the session belongs to (from JSONL session header) */
+	/**
+	 * Working directory of the project the session belongs to (from JSONL session header).
+	 * Omitted for legacy sessions whose header has no cwd — never an empty string or null (F-1.12).
+	 */
 	cwd?: string;
 }
 

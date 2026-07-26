@@ -288,6 +288,61 @@ describe("HTTP Server", () => {
 			expect(mockSessionAdapter.listSessions).toHaveBeenCalledWith(undefined);
 		});
 
+		// --- F-1.12: listAll() → проброс cwd в API responses ---
+		// TC-F-1.12-1: каждый элемент response.sessions содержит cwd; для legacy-сессий
+		// (без cwd в JSONL header) поле отсутствует — не "" и не null.
+		it("GET /api/sessions should include cwd in every element and omit it for legacy sessions (TC-F-1.12-1)", async () => {
+			mockSessionAdapter.listSessions.mockResolvedValueOnce([
+				{
+					id: "a1",
+					title: "A1",
+					createdAt: "2026-01-01",
+					updatedAt: "2026-01-01",
+					messageCount: 1,
+					cwd: "/data/repos/a",
+				},
+				{
+					id: "b1",
+					title: "B1",
+					createdAt: "2026-01-02",
+					updatedAt: "2026-01-02",
+					messageCount: 2,
+					cwd: "/data/repos/b",
+				},
+				// legacy session: adapter omits cwd (no cwd in JSONL header)
+				{ id: "legacy1", title: "Old", createdAt: "2025-12-31", updatedAt: "2025-12-31", messageCount: 0 },
+			]);
+			const app = await getApp();
+			const res = await app.request("/api/sessions");
+			expect(res.status).toBe(200);
+			const data = await json<{ sessions: Array<Record<string, unknown>> }>(res);
+			expect(data.sessions).toHaveLength(3);
+			expect(data.sessions[0].cwd).toBe("/data/repos/a");
+			expect(data.sessions[1].cwd).toBe("/data/repos/b");
+			// legacy: field omitted entirely, not "" / null
+			expect(data.sessions[2].cwd).toBeUndefined();
+			expect("cwd" in data.sessions[2]).toBe(false);
+		});
+
+		// TC-F-1.12-2: фильтр ?project= применяется после listAll (in-memory в handler);
+		// отфильтрованные сессии сохраняют cwd; cwd-less сессии исключены.
+		// The mock adapter ignores the projectPath arg (returns all) — the handler-side
+		// in-memory filter after listAll does the work.
+		it("GET /api/sessions?project= should filter after listAll and keep cwd in filtered results (TC-F-1.12-2)", async () => {
+			mockSessionAdapter.listSessions.mockResolvedValueOnce([
+				...projectSessions,
+				{ id: "legacy1", title: "Old", createdAt: "2025-12-31", updatedAt: "2025-12-31", messageCount: 0 },
+			]);
+			const app = await getApp();
+			const res = await app.request(`/api/sessions?project=${encodeURIComponent("/data/repos/b")}`);
+			expect(res.status).toBe(200);
+			const data = await json<{ sessions: Array<{ id: string; cwd?: string }> }>(res);
+			expect(data.sessions).toHaveLength(2);
+			for (const s of data.sessions) {
+				expect(s.cwd).toBe("/data/repos/b");
+			}
+		});
+
 		it("POST /api/sessions should create a session", async () => {
 			mockSessionAdapter.createSession.mockResolvedValueOnce({
 				id: "s2",
