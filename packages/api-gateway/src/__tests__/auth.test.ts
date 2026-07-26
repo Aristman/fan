@@ -7,6 +7,7 @@ const { mockClientToken, mockRandomBytes } = vi.hoisted(() => ({
 		update: vi.fn(),
 		findMany: vi.fn(),
 		delete: vi.fn(),
+		findUnique: vi.fn(),
 	},
 	mockRandomBytes: vi.fn().mockReturnValue({
 		toString: vi.fn().mockReturnValue("mocked-random-token-hex"),
@@ -31,6 +32,7 @@ process.env.FAN_NO_AUTH = "1";
 import {
 	authorizeProjectScope,
 	generateToken,
+	getTokenById,
 	isAuthDisabled,
 	isPublicMode,
 	listTokens,
@@ -288,6 +290,15 @@ describe("Auth module", () => {
 				orderBy: { createdAt: "desc" },
 			});
 		});
+
+		it("F-5.7: should filter by projectScope when a scope is provided", async () => {
+			mockClientToken.findMany.mockResolvedValue([]);
+			await listTokens("/proj/a");
+			expect(mockClientToken.findMany).toHaveBeenCalledWith({
+				where: { projectScope: "/proj/a" },
+				orderBy: { createdAt: "desc" },
+			});
+		});
 	});
 
 	describe("revokeToken", () => {
@@ -309,6 +320,57 @@ describe("Auth module", () => {
 			expect(mockClientToken.delete).toHaveBeenCalledWith({
 				where: { id: "token-123" },
 			});
+		});
+
+		it("scoped caller cannot revoke a foreign-scoped token", async () => {
+			mockClientToken.findUnique.mockResolvedValue({
+				id: "foreign-token",
+				name: "Foreign",
+				token: "foreign-hex",
+				projectScope: "/other-project",
+				createdAt: new Date(),
+				lastUsed: null,
+			});
+			const result = await revokeToken("foreign-token", "/own-project");
+			expect(result).toBe(false);
+			expect(mockClientToken.delete).not.toHaveBeenCalled();
+		});
+
+		it("scoped caller can revoke a same-scope token", async () => {
+			mockClientToken.findUnique.mockResolvedValue({
+				id: "own-token",
+				name: "Own",
+				token: "own-hex",
+				projectScope: "/own-project",
+				createdAt: new Date(),
+				lastUsed: null,
+			});
+			mockClientToken.delete.mockResolvedValue({});
+			const result = await revokeToken("own-token", "/own-project");
+			expect(result).toBe(true);
+			expect(mockClientToken.delete).toHaveBeenCalledWith({ where: { id: "own-token" } });
+		});
+	});
+
+	describe("getTokenById", () => {
+		it("returns token data including the raw token value", async () => {
+			const mockRecord = {
+				id: "token-123",
+				name: "Test Client",
+				token: "secret-hex",
+				projectScope: "/proj",
+				createdAt: new Date("2026-01-01"),
+				lastUsed: new Date("2026-01-02"),
+			};
+			mockClientToken.findUnique.mockResolvedValue(mockRecord);
+			const result = await getTokenById("token-123");
+			expect(result).toEqual(mockRecord);
+		});
+
+		it("returns null for non-existent token", async () => {
+			mockClientToken.findUnique.mockResolvedValue(null);
+			const result = await getTokenById("missing");
+			expect(result).toBeNull();
 		});
 	});
 
@@ -475,13 +537,16 @@ describe("Auth module", () => {
 				expect(next).toHaveBeenCalled();
 			});
 
-			it("GET /api/tokens without project context → 403 (token management is not neutral)", async () => {
+			it("GET /api/tokens without project context → allowed (handler filters to own scope)", async () => {
 				const next = vi.fn();
-				const result = (await tokenAuth(makeCtx("http://localhost/api/tokens", { headers: bearer }), next)) as {
-					status: number;
-				};
-				expect(next).not.toHaveBeenCalled();
-				expect(result.status).toBe(403);
+				await tokenAuth(makeCtx("http://localhost/api/tokens", { headers: bearer }), next);
+				expect(next).toHaveBeenCalled();
+			});
+
+			it("DELETE /api/tokens/:id without project context → allowed (handler checks ownership)", async () => {
+				const next = vi.fn();
+				await tokenAuth(makeCtx("http://localhost/api/tokens/t1", { method: "DELETE", headers: bearer }), next);
+				expect(next).toHaveBeenCalled();
 			});
 
 			it("GET /api/sessions/:id without project context → allowed through for resource-level check", async () => {

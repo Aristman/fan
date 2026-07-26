@@ -16,7 +16,6 @@
  */
 
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionFactory } from "@seaagents/fan-coding-agent";
-import type { ConfigLoader } from "./config.js";
 import { createMcpConfigLoader } from "./config.js";
 import { createMcpClientManager, type McpClientManager } from "./manager.js";
 
@@ -143,12 +142,12 @@ async function handleConnectDisconnect(
  * Reload all MCP connections: dispose all clients, reload config,
  * and reconnect.
  */
-async function reloadMcp(configLoader: ConfigLoader): Promise<string> {
+async function reloadMcp(cwd: string): Promise<string> {
 	if (currentManager) {
 		await currentManager.dispose();
 		currentManager = null;
 	}
-	const config = await configLoader.load();
+	const config = await createMcpConfigLoader(cwd).load();
 	if (config.servers.length > 0) {
 		const manager = createMcpClientManager(fanInstance, permissions);
 		await manager.connectAll(config);
@@ -161,17 +160,13 @@ async function reloadMcp(configLoader: ConfigLoader): Promise<string> {
 /**
  * Handler for the /mcp slash command.
  */
-async function mcpCommandHandler(
-	args: string,
-	ctx: ExtensionCommandContext,
-	configLoader: ConfigLoader,
-): Promise<void> {
+async function mcpCommandHandler(args: string, ctx: ExtensionCommandContext): Promise<void> {
 	const subcommand = args.trim().split(/\s+/)[0] || "status";
 
 	if (subcommand === "status") {
 		ctx.ui.notify(renderMcpStatus(), "info");
 	} else if (subcommand === "reload") {
-		const msg = await reloadMcp(configLoader);
+		const msg = await reloadMcp(ctx.cwd);
 		ctx.ui.notify(msg, "info");
 	} else if (subcommand === "list") {
 		const lines = renderMcpList();
@@ -236,16 +231,15 @@ let permissions: ReturnType<typeof createPermissionGate>;
 
 export const mcpExtension: ExtensionFactory = (fan: ExtensionAPI) => {
 	fanInstance = fan;
-	const configLoader = createMcpConfigLoader();
 	permissions = createPermissionGate();
 
 	fan.registerCommand("mcp", {
 		description: "MCP server status and management",
-		handler: (args, ctx) => mcpCommandHandler(args, ctx, configLoader),
+		handler: (args, ctx) => mcpCommandHandler(args, ctx),
 	});
 
-	fan.on("session_start", async () => {
-		const config = await configLoader.load();
+	fan.on("session_start", async (_event, ctx) => {
+		const config = await createMcpConfigLoader(ctx.cwd).load();
 		permissions.updateConfig(config.servers);
 		if (config.servers.length === 0) {
 			currentManager = null;

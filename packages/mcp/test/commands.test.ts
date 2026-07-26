@@ -117,6 +117,7 @@ function makeFakeCtx(): ExtensionCommandContext & { _notifyCalls: Array<{ messag
 		compact: vi.fn(),
 		getSystemPrompt: vi.fn(),
 		reload: vi.fn(),
+		cwd: process.cwd(),
 	} as unknown as ExtensionCommandContext;
 
 	return Object.assign(ctx, { _notifyCalls: notifyCalls });
@@ -141,12 +142,12 @@ describe("F-3.5: /mcp command", () => {
 		// Fire session_start — without any server config, it should be a no-op
 		const sessionStartHandler = handlers.get("session_start")![0];
 		expect(sessionStartHandler).toBeDefined();
-		await sessionStartHandler();
+		const ctx = makeFakeCtx();
+		await sessionStartHandler({ type: "session_start", reason: "startup" }, ctx);
 
 		const cmd = getRegisteredCommand();
 		expect(cmd).not.toBeNull();
 
-		const ctx = makeFakeCtx();
 		await cmd!.options.handler("status", ctx);
 
 		expect(ctx.ui.notify).toHaveBeenCalledWith("No MCP servers configured.", "info");
@@ -164,10 +165,10 @@ describe("F-3.5: /mcp command", () => {
 		// Instead, we rely on the fact that _entries() returns [] when null,
 		// which is tested above. This test verifies the handler is wired.
 		const sessionStartHandler = handlers.get("session_start")![0];
-		await sessionStartHandler();
+		const ctx = makeFakeCtx();
+		await sessionStartHandler({ type: "session_start", reason: "startup" }, ctx);
 
 		const cmd = getRegisteredCommand()!;
-		const ctx = makeFakeCtx();
 		await cmd.options.handler("status", ctx);
 
 		// Fallback text from the handler for empty entries — already checked via notify
@@ -180,10 +181,10 @@ describe("F-3.5: /mcp command", () => {
 
 		// session_start with no config — should set currentManager to null
 		const sessionStartHandler = handlers.get("session_start")![0];
-		await sessionStartHandler();
+		const ctx = makeFakeCtx();
+		await sessionStartHandler({ type: "session_start", reason: "startup" }, ctx);
 
 		const cmd = getRegisteredCommand()!;
-		const ctx = makeFakeCtx();
 		await cmd.options.handler("reload", ctx);
 
 		// Reload falls back to loading config and shows result

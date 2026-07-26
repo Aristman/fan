@@ -1,6 +1,6 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve as resolvePath } from "node:path";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Use vi.hoisted to create stable mock references that persist across getPrismaClient() calls
@@ -10,6 +10,7 @@ const { mockClientToken, mockQueryRawUnsafe } = vi.hoisted(() => ({
 		update: vi.fn(),
 		findMany: vi.fn(),
 		delete: vi.fn(),
+		findUnique: vi.fn(),
 	},
 	mockQueryRawUnsafe: vi.fn(),
 }));
@@ -1465,6 +1466,14 @@ describe("HTTP Server", () => {
 		});
 
 		it("DELETE /api/tokens/:id should revoke token", async () => {
+			mockClientToken.findUnique.mockResolvedValueOnce({
+				id: "t1",
+				name: "Test",
+				token: "secret",
+				projectScope: null,
+				createdAt: new Date("2026-01-01"),
+				lastUsed: null,
+			});
 			mockClientToken.delete.mockResolvedValueOnce({});
 			const app = await getApp();
 			const res = await app.request("/api/tokens/t1", { method: "DELETE" });
@@ -1474,10 +1483,12 @@ describe("HTTP Server", () => {
 		});
 
 		it("DELETE /api/tokens/:id should return 404 for non-existent token", async () => {
-			mockClientToken.delete.mockRejectedValueOnce(new Error("Not found"));
+			// F-5.7 handler 404s via getTokenById (findUnique default → undefined)
+			// before ever reaching delete — assert delete is NOT attempted.
 			const app = await getApp();
 			const res = await app.request("/api/tokens/nonexistent", { method: "DELETE" });
 			expect(res.status).toBe(404);
+			expect(mockClientToken.delete).not.toHaveBeenCalled();
 		});
 	});
 
@@ -1634,6 +1645,202 @@ describe("HTTP Server", () => {
 				headers: { Authorization: `Bearer ${SCOPED_TOKEN}` },
 			});
 			expect(res.status).toBe(200);
+		});
+	});
+
+	describe("F-5.7: scoped token global-mutation lockdown", () => {
+		const SCOPED_TOKEN = "scoped-token-hex";
+		// Use a resolved absolute path so the scope matches filesystem-resolved
+		// project paths on both Windows (C:\own) and Unix (/own).
+		const SCOPED_SCOPE = resolvePath("/own");
+		const FOREIGN_SCOPE = resolvePath("/other");
+
+		beforeEach(() => {
+			delete process.env.FAN_NO_AUTH;
+			mockClientToken.update.mockResolvedValue({
+				id: "scoped-token",
+				name: "Scoped Client",
+				token: SCOPED_TOKEN,
+				projectScope: SCOPED_SCOPE,
+				createdAt: new Date(),
+				lastUsed: new Date(),
+			});
+		});
+
+		afterEach(() => {
+			process.env.FAN_NO_AUTH = "1";
+		});
+
+		it("GET /api/tokens returns only tokens within the caller scope", async () => {
+			mockClientToken.findMany.mockImplementation((args: any) => {
+				const records = [
+					{ id: "t1", name: "Own", token: "s1", projectScope: SCOPED_SCOPE, createdAt: new Date(), lastUsed: null },
+					{ id: "t2", name: "Other", token: "s2", projectScope: FOREIGN_SCOPE, createdAt: new Date(), lastUsed: null },
+					{ id: "t3", name: "Admin", token: "s3", projectScope: null, createdAt: new Date(), lastUsed: null },
+				];
+				if (args?.where?.projectScope !== undefined) {
+					return records.filter((r) => r.projectScope === args.where.projectScope);
+				}
+				return records;
+			});
+			const app = await getApp();
+			const res = await app.request("/api/tokens", {
+				headers: { Authorization: `Bearer ${SCOPED_TOKEN}` },
+			});
+			expect(res.status).toBe(200);
+			expect(mockClientToken.findMany).toHaveBeenCalledWith(
+				expect.objectContaining({ where: { projectScope: SCOPED_SCOPE } }),
+			);
+			const data = await json<{ tokens: Array<{ id: string; projectScope: string | null }> }>(res);
+			expect(data.tokens).toHaveLength(1);
+			expect(data.tokens[0].id).toBe("t1");
+		});
+
+		it("DELETE /api/tokens/:id with a foreign-scoped token → 403 and no delete", async () => {
+			mockClientToken.findUnique.mockResolvedValue({
+				id: "foreign-token",
+				name: "Foreign",
+				token: "foreign-hex",
+				projectScope: FOREIGN_SCOPE,
+				createdAt: new Date(),
+				lastUsed: null,
+			});
+			const app = await getApp();
+			const res = await app.request(`/api/tokens/foreign-token?project=${encodeURIComponent(SCOPED_SCOPE)}`, {
+				method: "DELETE",
+				headers: { Authorization: `Bearer ${SCOPED_TOKEN}` },
+			});
+			expect(res.status).toBe(403);
+			expect(mockClientToken.delete).not.toHaveBeenCalled();
+		});
+
+		it("DELETE /api/tokens/:id with own-scope token → 204", async () => {
+			mockClientToken.findUnique.mockResolvedValue({
+				id: "own-token",
+				name: "Own",
+				token: "own-hex",
+				projectScope: SCOPED_SCOPE,
+				createdAt: new Date(),
+				lastUsed: null,
+			});
+			mockClientToken.delete.mockResolvedValue({});
+			const app = await getApp();
+			const res = await app.request("/api/tokens/own-token", {
+				method: "DELETE",
+				headers: { Authorization: `Bearer ${SCOPED_TOKEN}` },
+			});
+			expect(res.status).toBe(200);
+			expect(mockClientToken.delete).toHaveBeenCalledWith({ where: { id: "own-token" } });
+		});
+
+		it("PUT /api/models/settings with ?project=own → 403 for scoped token", async () => {
+			const app = await getApp();
+			const res = await app.request(`/api/models/settings?project=${encodeURIComponent(SCOPED_SCOPE)}`, {
+				method: "PUT",
+				headers: { Authorization: `Bearer ${SCOPED_TOKEN}`, "Content-Type": "application/json" },
+				body: JSON.stringify({ provider: "anthropic", model: "claude-sonnet", temperature: 0.5 }),
+			});
+			expect(res.status).toBe(403);
+			expect(mockModelManager.setModelSetting).not.toHaveBeenCalled();
+		});
+
+		it("PUT /api/budget provider branch with ?project=own → 403 for scoped token", async () => {
+			const app = await getApp();
+			const res = await app.request(`/api/budget?project=${encodeURIComponent(SCOPED_SCOPE)}`, {
+				method: "PUT",
+				headers: { Authorization: `Bearer ${SCOPED_TOKEN}`, "Content-Type": "application/json" },
+				body: JSON.stringify({ period: "daily", tokenLimit: 1000 }),
+			});
+			expect(res.status).toBe(403);
+			expect(mockModelManager.configureBudget).not.toHaveBeenCalled();
+		});
+
+		it("GET /api/budget global branch → 403 for scoped token", async () => {
+			const app = await getApp();
+			const res = await app.request("/api/budget", {
+				headers: { Authorization: `Bearer ${SCOPED_TOKEN}` },
+			});
+			expect(res.status).toBe(403);
+			expect(mockModelManager.getBudgetStatus).not.toHaveBeenCalled();
+		});
+
+		it("GET /api/projects returns only the scope project", async () => {
+			mockSessionAdapter.listProjects.mockResolvedValueOnce([
+				{ path: SCOPED_SCOPE, name: "own", type: "code" },
+				{ path: FOREIGN_SCOPE, name: "other", type: "research" },
+			]);
+			mockSessionAdapter.listSessions.mockResolvedValueOnce([]);
+			const app = await getApp();
+			const res = await app.request("/api/projects", {
+				headers: { Authorization: `Bearer ${SCOPED_TOKEN}` },
+			});
+			expect(res.status).toBe(200);
+			const data = await json<{ projects: Array<{ path: string }> }>(res);
+			expect(data.projects).toHaveLength(1);
+			expect(data.projects[0].path).toBe(SCOPED_SCOPE);
+		});
+
+		it("POST /api/projects inside the token scope → allowed", async () => {
+			const expectedPath = resolvePath(SCOPED_SCOPE, "sub");
+			mockSessionAdapter.createProject.mockResolvedValueOnce({
+				path: expectedPath,
+				name: "sub",
+				type: "unknown",
+				created: true,
+			});
+			const app = await getApp();
+			const res = await app.request("/api/projects", {
+				method: "POST",
+				headers: { Authorization: `Bearer ${SCOPED_TOKEN}`, "Content-Type": "application/json" },
+				body: JSON.stringify({ name: "sub", rootPath: SCOPED_SCOPE }),
+			});
+			expect(res.status).toBe(201);
+			expect(mockSessionAdapter.createProject).toHaveBeenCalledWith({ name: "sub", rootPath: SCOPED_SCOPE });
+		});
+
+		it("POST /api/projects outside the token scope → 403", async () => {
+			const app = await getApp();
+			const res = await app.request("/api/projects", {
+				method: "POST",
+				headers: { Authorization: `Bearer ${SCOPED_TOKEN}`, "Content-Type": "application/json" },
+				body: JSON.stringify({ name: "evil", rootPath: FOREIGN_SCOPE }),
+			});
+			expect(res.status).toBe(403);
+			expect(mockSessionAdapter.createProject).not.toHaveBeenCalled();
+		});
+
+		it("DELETE /api/projects?path=... → 403 for scoped token", async () => {
+			mockSessionAdapter.removeProject.mockResolvedValueOnce(true);
+			const app = await getApp();
+			const res = await app.request(`/api/projects?path=${encodeURIComponent(SCOPED_SCOPE)}`, {
+				method: "DELETE",
+				headers: { Authorization: `Bearer ${SCOPED_TOKEN}` },
+			});
+			expect(res.status).toBe(403);
+			expect(mockSessionAdapter.removeProject).not.toHaveBeenCalled();
+		});
+
+		it("PUT /api/projects?path=outside-scope → 403 for scoped token", async () => {
+			const app = await getApp();
+			const res = await app.request(`/api/projects?path=${encodeURIComponent(FOREIGN_SCOPE)}`, {
+				method: "PUT",
+				headers: { Authorization: `Bearer ${SCOPED_TOKEN}`, "Content-Type": "application/json" },
+				body: JSON.stringify({ type: "code" }),
+			});
+			expect(res.status).toBe(403);
+			expect(mockSessionAdapter.updateProject).not.toHaveBeenCalled();
+		});
+
+		it("PUT /api/projects?path=inside-scope → allowed for scoped token", async () => {
+			mockSessionAdapter.updateProject.mockResolvedValueOnce({ path: SCOPED_SCOPE, name: "own", type: "code" });
+			const app = await getApp();
+			const res = await app.request(`/api/projects?path=${encodeURIComponent(SCOPED_SCOPE)}`, {
+				method: "PUT",
+				headers: { Authorization: `Bearer ${SCOPED_TOKEN}`, "Content-Type": "application/json" },
+				body: JSON.stringify({ type: "code" }),
+			});
+			expect(res.status).toBe(200);
+			expect(mockSessionAdapter.updateProject).toHaveBeenCalledWith(SCOPED_SCOPE, "code");
 		});
 	});
 

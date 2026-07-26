@@ -4,11 +4,34 @@
  * F-1.3: Package structure + extension manifest + factory export.
  * Verifies the extension can be loaded without runtime errors when no servers
  * are configured.
+ *
+ * F2 F-5.4: session_start ctx.cwd is passed to the config loader so project-level
+ * `.fan/mcp.json` is loaded for sessions whose cwd differs from process.cwd().
  */
 
-import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
+import { randomUUID } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { ExtensionAPI, ExtensionContext } from "@seaagents/fan-coding-agent";
 import { describe, expect, it, vi } from "vitest";
+import type { McpConfig } from "../src/config.js";
 import { mcpExtension } from "../src/index.js";
+
+let capturedConfig: McpConfig | undefined;
+
+vi.mock("../src/manager.js", () => ({
+	createMcpClientManager: vi.fn().mockReturnValue({
+		connectAll: vi.fn().mockImplementation((config: McpConfig) => {
+			capturedConfig = config;
+		}),
+		dispose: vi.fn(),
+		_entries: vi.fn().mockReturnValue([]),
+		getServers: vi.fn().mockReturnValue([]),
+		connectOne: vi.fn(),
+		disconnectOne: vi.fn(),
+	}),
+}));
 
 function makeFakeApi() {
 	// biome-ignore lint/complexity/noBannedTypes: test mock for event handlers
@@ -50,6 +73,17 @@ function makeFakeApi() {
 	return { api, handlers, events };
 }
 
+async function makeProjectDir(): Promise<string> {
+	const dir = join(tmpdir(), `fan-mcp-cwd-test-${randomUUID()}`);
+	await mkdir(join(dir, ".fan"), { recursive: true });
+	await writeFile(
+		join(dir, ".fan", "mcp.json"),
+		JSON.stringify({ servers: [{ transport: "stdio", command: "project-server" }] }),
+		"utf8",
+	);
+	return dir;
+}
+
 describe("F-1.3: mcpExtension factory", () => {
 	it("exports an ExtensionFactory function", () => {
 		expect(typeof mcpExtension).toBe("function");
@@ -67,6 +101,21 @@ describe("F-1.3: mcpExtension factory", () => {
 		const { api, handlers } = makeFakeApi();
 		mcpExtension(api);
 		const start = handlers.get("session_start")![0];
-		await expect(start({} as any)).resolves.not.toThrow();
+		await expect(start({} as any, { cwd: process.cwd() } as any)).resolves.not.toThrow();
+	});
+
+	it("F2 F-5.4: session_start uses ctx.cwd to load project mcp.json", async () => {
+		capturedConfig = undefined;
+		const projectDir = await makeProjectDir();
+		const { api, handlers } = makeFakeApi();
+		mcpExtension(api);
+
+		const start = handlers.get("session_start")![0];
+		const ctx: Partial<ExtensionContext> = { cwd: projectDir };
+		await start({ type: "session_start", reason: "startup" }, ctx);
+
+		expect(capturedConfig).toBeDefined();
+		expect(capturedConfig!.servers).toHaveLength(1);
+		expect(capturedConfig!.servers[0].command).toBe("project-server");
 	});
 });

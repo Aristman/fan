@@ -10,6 +10,7 @@ import { logger } from "hono/logger";
 import {
 	type ClientTokenData,
 	generateToken as createToken,
+	getTokenById,
 	isAuthDisabled,
 	listTokens,
 	revokeToken,
@@ -17,7 +18,7 @@ import {
 } from "./auth.js";
 import { resolveCorsOrigin } from "./cors-config.js";
 import { type DrainableMessageQueue, InMemoryMessageQueue, PersistentMessageQueue } from "./message-queue.js";
-import { normalizeProjectPath, pathBasename } from "./path-utils.js";
+import { isProjectPathWithin, normalizeProjectPath, pathBasename } from "./path-utils.js";
 import { ProjectBudgetStore } from "./project-budgets.js";
 import type {
 	ApiError,
@@ -448,7 +449,13 @@ async function createApp(
 	app.get("/api/projects", async (c) => {
 		// Projects come from the adapter (project registry); session counts are
 		// derived from listSessions() grouped by normalized cwd.
-		const [projects, sessions] = await Promise.all([sessionAdapter.listProjects(), sessionAdapter.listSessions()]);
+		// F-5.7: scoped callers see only their own scope project.
+		const caller = c.get("clientToken");
+		let [projects, sessions] = await Promise.all([sessionAdapter.listProjects(), sessionAdapter.listSessions()]);
+		if (caller?.projectScope) {
+			const scope = normalizeProjectPath(caller.projectScope);
+			projects = projects.filter((p) => normalizeProjectPath(p.path) === scope);
+		}
 
 		const countByCwd = new Map<string, number>();
 		for (const s of sessions) {
@@ -565,6 +572,15 @@ async function createApp(
 			return c.json({ error: `path rejected: ${validation.reason}`, code: "FORBIDDEN" } satisfies ApiError, 403);
 		}
 
+		// F-5.7: scoped callers may only create projects inside their own scope.
+		const caller = c.get("clientToken");
+		if (caller?.projectScope && !isProjectPathWithin(caller.projectScope, fullPath)) {
+			return c.json(
+				{ error: "target path outside token scope", code: "FORBIDDEN" } satisfies ApiError,
+				403,
+			);
+		}
+
 		if (!sessionAdapter.createProject) {
 			return c.json(
 				{ error: "project creation is not supported by this adapter", code: "NOT_IMPLEMENTED" } satisfies ApiError,
@@ -611,6 +627,15 @@ async function createApp(
 		if (!path || path.trim().length === 0) {
 			return c.json({ error: "path query parameter is required", code: "BAD_REQUEST" } satisfies ApiError, 400);
 		}
+		// F-5.7: removing projects from the registry is a global mutation;
+		// scoped tokens are not allowed to alter the global project list.
+		const caller = c.get("clientToken");
+		if (caller?.projectScope) {
+			return c.json(
+				{ error: "scoped token cannot remove projects", code: "FORBIDDEN" } satisfies ApiError,
+				403,
+			);
+		}
 		if (!sessionAdapter.removeProject) {
 			return c.json(
 				{ error: "project removal is not supported by this adapter", code: "NOT_IMPLEMENTED" } satisfies ApiError,
@@ -647,6 +672,14 @@ async function createApp(
 			return c.json(
 				{ error: `type must be one of: ${PROJECT_TYPES.join(", ")}`, code: "BAD_REQUEST" } satisfies ApiError,
 				400,
+			);
+		}
+		// F-5.7: scoped callers may only mutate projects inside their own scope.
+		const caller = c.get("clientToken");
+		if (caller?.projectScope && !isProjectPathWithin(caller.projectScope, path)) {
+			return c.json(
+				{ error: "target path outside token scope", code: "FORBIDDEN" } satisfies ApiError,
+				403,
 			);
 		}
 		if (!sessionAdapter.updateProject) {
@@ -700,6 +733,14 @@ async function createApp(
 	});
 
 	app.put("/api/models/settings", async (c) => {
+		// F-5.7: model settings are global; scoped tokens cannot mutate them.
+		const caller = c.get("clientToken");
+		if (caller?.projectScope) {
+			return c.json(
+				{ error: "scoped token cannot modify global model settings", code: "FORBIDDEN" } satisfies ApiError,
+				403,
+			);
+		}
 		const body = await c.req.json<UpdateModelSettingsRequest>();
 		await modelManager.setModelSetting({
 			provider: body.provider,
@@ -730,6 +771,14 @@ async function createApp(
 
 	app.get("/api/budget", async (c) => {
 		const project = c.req.query("project");
+		// F-5.7: scoped callers may only read the budget for their own project.
+		const caller = c.get("clientToken");
+		if (caller?.projectScope && !project) {
+			return c.json(
+				{ error: "scoped token requires ?project=", code: "FORBIDDEN" } satisfies ApiError,
+				403,
+			);
+		}
 		if (project) {
 			const target = normalizeProjectPath(project);
 			// Defense-in-depth cwd filter (same as GET /api/sessions?project=).
@@ -754,6 +803,25 @@ async function createApp(
 
 	app.put("/api/budget", async (c) => {
 		const rawBody = await c.req.json();
+		// F-5.7: provider-scoped budget configuration is a global mutation;
+		// scoped tokens may only use the project-scoped branch for their own scope.
+		const caller = c.get("clientToken");
+		if (caller?.projectScope) {
+			const bodyProject =
+				rawBody !== null && typeof rawBody === "object" && !Array.isArray(rawBody)
+					? (rawBody as { project?: unknown }).project
+					: undefined;
+			if (
+				typeof bodyProject !== "string" ||
+				bodyProject.trim().length === 0 ||
+				normalizeProjectPath(bodyProject) !== normalizeProjectPath(caller.projectScope)
+			) {
+				return c.json(
+					{ error: "scoped token can only set budget for its own project", code: "FORBIDDEN" } satisfies ApiError,
+					403,
+				);
+			}
+		}
 		// F-4.9: a body with a non-empty `project` string selects the project-scoped
 		// branch; anything else keeps the legacy provider-scoped behavior.
 		if (
@@ -849,7 +917,9 @@ async function createApp(
 	});
 
 	app.get("/api/tokens", async (c) => {
-		const tokens = await listTokens();
+		// F-5.7: scoped callers can only inspect tokens within their own scope.
+		const caller = c.get("clientToken");
+		const tokens = await listTokens(caller?.projectScope ?? undefined);
 		const resp: ListTokensResponse = {
 			tokens: tokens.map((t) => ({
 				id: t.id,
@@ -864,7 +934,19 @@ async function createApp(
 
 	app.delete("/api/tokens/:id", async (c) => {
 		const id = c.req.param("id");
-		const revoked = await revokeToken(id);
+		// F-5.7: scoped callers can only revoke tokens that belong to their scope.
+		const caller = c.get("clientToken");
+		const target = await getTokenById(id);
+		if (!target) {
+			return c.json({ error: "Token not found", code: "NOT_FOUND" } satisfies ApiError, 404);
+		}
+		if (caller?.projectScope && target.projectScope !== caller.projectScope) {
+			return c.json(
+				{ error: "token not scoped to this project", code: "FORBIDDEN" } satisfies ApiError,
+				403,
+			);
+		}
+		const revoked = await revokeToken(id, caller?.projectScope ?? undefined);
 		if (!revoked) {
 			return c.json({ error: "Token not found", code: "NOT_FOUND" } satisfies ApiError, 404);
 		}

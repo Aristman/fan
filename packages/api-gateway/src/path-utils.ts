@@ -34,6 +34,18 @@ export function normalizeProjectPath(p: string): string {
 	return normalized;
 }
 
+/**
+ * True when `child` is the same path as `parent` or a descendant of it.
+ * Both paths are normalized before comparison (platform-independent).
+ */
+export function isProjectPathWithin(parent: string, child: string): boolean {
+	const np = normalizeProjectPath(parent);
+	const nc = normalizeProjectPath(child);
+	if (np === nc) return true;
+	// Avoid matching siblings that share a prefix (e.g. /proj vs /project).
+	return nc.startsWith(np.endsWith("/") ? np : `${np}/`);
+}
+
 /** Basename of a normalized path (pure string-based, no fs access). */
 export function pathBasename(p: string): string {
 	const segments = p.split("/").filter((seg) => seg.length > 0);

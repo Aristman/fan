@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { getPrismaClient } from "@fan/db";
+import { getPrismaClient, type Prisma } from "@fan/db";
 import type { MiddlewareHandler } from "hono";
 import { normalizeProjectPath } from "./path-utils.js";
 
@@ -56,11 +56,17 @@ export async function validateToken(token: string): Promise<ClientTokenData | nu
 	}
 }
 
-/** List all tokens (without exposing full token value) */
-export async function listTokens(): Promise<Omit<ClientTokenData, "token">[]> {
-	const records = await getPrismaClient().clientToken.findMany({
-		orderBy: { createdAt: "desc" },
-	});
+/**
+ * List tokens (without exposing full token value).
+ * F-5.7: when `scope` is provided, only tokens whose projectScope equals that
+ * value are returned. Scoped UI clients use this to manage their own tokens.
+ */
+export async function listTokens(scope?: string): Promise<Omit<ClientTokenData, "token">[]> {
+	const args: Prisma.ClientTokenFindManyArgs = { orderBy: { createdAt: "desc" } };
+	if (scope !== undefined) {
+		args.where = { projectScope: scope };
+	}
+	const records = await getPrismaClient().clientToken.findMany(args);
 	return records.map(
 		({
 			token: _token,
@@ -76,10 +82,32 @@ export async function listTokens(): Promise<Omit<ClientTokenData, "token">[]> {
 	);
 }
 
-/** Revoke a token by ID */
-export async function revokeToken(id: string): Promise<boolean> {
+/** Fetch a single token record by ID, including the raw token value. */
+export async function getTokenById(id: string): Promise<ClientTokenData | null> {
 	try {
-		await getPrismaClient().clientToken.delete({ where: { id } });
+		const record = await getPrismaClient().clientToken.findUnique({ where: { id } });
+		return record ? mapToClientToken(record) : null;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Revoke a token by ID.
+ * F-5.7: when `callerScope` is provided, the token is deleted only if it
+ * belongs to that scope. A scoped caller cannot revoke foreign or full-access
+ * tokens. Returns false when the token does not exist or the caller is not
+ * allowed to revoke it.
+ */
+export async function revokeToken(id: string, callerScope?: string): Promise<boolean> {
+	try {
+		const prisma = getPrismaClient();
+		if (callerScope !== undefined) {
+			const token = await prisma.clientToken.findUnique({ where: { id } });
+			if (!token) return false;
+			if (token.projectScope !== callerScope) return false;
+		}
+		await prisma.clientToken.delete({ where: { id } });
 		return true;
 	} catch {
 		return false;
@@ -123,18 +151,36 @@ export function authorizeProjectScope(
 
 /**
  * Endpoints a project-scoped token may call WITHOUT a project context (F-5.7).
- * Only project-neutral operations: global model metadata (read-only, no
- * project data), the MCP status stub, and token creation — POST /api/tokens
- * is additionally constrained in the handler: a scoped caller can only create
- * tokens for its own scope (no privilege escalation to null scope).
- * Everything else (sessions, projects, budgets, settings, token listing and
- * revocation) requires an explicit project context matching the scope.
+ *
+ * Explicit policy: a scoped token = only its own project + only its own tokens.
+ * Neutral endpoints are either read-only global metadata or operations whose
+ * handler further constrains the result to the caller's scope.
+ *
+ *   - GET /api/models /models/settings /mcp/servers: read-only global metadata.
+ *   - POST /api/tokens: handler enforces the created token's scope = caller scope.
+ *   - GET /api/tokens: handler filters to tokens within the caller's scope.
+ *   - DELETE /api/tokens/:id: handler verifies the target token's scope.
+ *   - GET /api/projects: handler filters to the caller's scope project.
+ *   - POST /api/projects: handler verifies the resolved target path is inside
+ *     the caller's scope.
  */
 const SCOPE_NEUTRAL_ENDPOINTS: ReadonlyArray<{ method: string; path: string }> = [
 	{ method: "GET", path: "/api/models" },
 	{ method: "GET", path: "/api/models/settings" },
 	{ method: "GET", path: "/api/mcp/servers" },
 	{ method: "POST", path: "/api/tokens" },
+	{ method: "GET", path: "/api/tokens" },
+	{ method: "GET", path: "/api/projects" },
+	{ method: "POST", path: "/api/projects" },
+];
+
+/**
+ * Neutral endpoints whose path contains a dynamic segment. These are treated
+ * the same as SCOPE_NEUTRAL_ENDPOINTS: no project context is required at the
+ * middleware layer; the handler performs the ownership check.
+ */
+const SCOPE_NEUTRAL_PATTERNS: ReadonlyArray<{ method: string; pattern: RegExp }> = [
+	{ method: "DELETE", pattern: /^\/api\/tokens\/[^/]+$/ },
 ];
 
 /**
@@ -281,7 +327,9 @@ export const tokenAuth: MiddlewareHandler = async (c, next) => {
 		const requestedProjects = await extractRequestedProjects(c);
 		if (requestedProjects.length === 0) {
 			const path = new URL(c.req.url).pathname;
-			const neutral = SCOPE_NEUTRAL_ENDPOINTS.some((e) => e.method === c.req.method && e.path === path);
+			const neutral =
+				SCOPE_NEUTRAL_ENDPOINTS.some((e) => e.method === c.req.method && e.path === path) ||
+				SCOPE_NEUTRAL_PATTERNS.some((e) => e.method === c.req.method && e.pattern.test(path));
 			const resource = SCOPE_RESOURCE_ENDPOINTS.some((e) => e.method === c.req.method && e.pattern.test(path));
 			if (!neutral && !resource) {
 				const check = authorizeProjectScope(clientToken, null);
