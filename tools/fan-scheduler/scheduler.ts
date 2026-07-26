@@ -3,6 +3,7 @@ import { FanApiClient } from "./lib/client.js";
 import { loadTasks } from "./lib/config-loader.js";
 import { CronScheduler, createConfigWatcher, createShutdownHandler } from "./lib/cron-scheduler.js";
 import { createTaskExecutor } from "./lib/executor.js";
+import { validateGitHubIdentity } from "./lib/github-identity.js";
 import { logger } from "./lib/logger.js";
 import { TaskQueue } from "./lib/queue.js";
 
@@ -31,6 +32,15 @@ function resolveConfigPath(): string {
 export function main(): void {
 	const configPath = resolveConfigPath();
 	const tasks = loadTasks(configPath);
+
+	// F-4.6: validate the GitHub bot identity (GITHUB_TOKEN) once at startup.
+	// Never blocks or crashes the scheduler — a missing/invalid token only
+	// marks git/PR-dependent actions as unavailable (gitEnabled=false).
+	void validateGitHubIdentity().catch((error: unknown) => {
+		logger.warn(
+			`[github] identity validation failed: ${error instanceof Error ? error.message : String(error)} — git/PR-dependent actions unavailable`,
+		);
+	});
 
 	const client = new FanApiClient();
 	const queue = new TaskQueue(createTaskExecutor(client));
