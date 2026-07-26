@@ -12,14 +12,15 @@
 //   configured every path is accepted. This keeps TUI / local single-user
 //   setups and the current e2e-local compose stack (no whitelist) working.
 //
-// - Normalization: `path.resolve` (absolute, `.`/`..` collapsed) plus
-//   `fs.realpathSync` for symlink resolution — but ONLY when the path
-//   exists. A non-existent path cannot traverse a symlink itself, so it is
-//   judged by its lexical resolved path:
-//     · non-existent path INSIDE the whitelist → valid
-//       (future projects, repos not cloned yet — the directory will be
-//       created under an allowed root later);
-//     · non-existent path OUTSIDE the whitelist → invalid.
+// - Canonicalization: `path.resolve` (absolute, `.`/`..` collapsed) plus
+//   `fs.realpathSync` on the longest existing prefix. Non-existent trailing
+//   segments are kept as-is, but any symlink in an intermediate component
+//   is followed. This closes the partial-symlink bypass where a path whose
+//   leaf does not exist was previously judged only by its lexical form.
+//     · canonical path INSIDE the whitelist → valid (future projects,
+//       repos not cloned yet — the directory will be created under an
+//       allowed root later);
+//     · canonical path OUTSIDE the whitelist → invalid.
 //
 // - Boundary safety: comparison is segment-based — a candidate must equal
 //   the root or start with `root + path.sep`. Plain `startsWith` would
@@ -47,6 +48,24 @@ export interface CwdValidationResult {
 
 /** Windows filesystems are case-insensitive — compare case-folded there. */
 const CASE_INSENSITIVE = process.platform === "win32";
+
+/** Max characters of a rejected cwd written to the audit log (F-1.13 hardening). */
+const MAX_AUDIT_CWD_LENGTH = 500;
+
+/**
+ * Characters that are never valid in a filesystem path passed through the API.
+ * Null bytes and C0 control characters cannot be used in paths on any platform.
+ */
+const INVALID_PATH_CHARS = /[\x00-\x1f]/;
+
+function containsInvalidPathChars(p: string): boolean {
+	return INVALID_PATH_CHARS.test(p);
+}
+
+function truncateForAudit(p: string): string {
+	if (p.length <= MAX_AUDIT_CWD_LENGTH) return p;
+	return `${p.slice(0, MAX_AUDIT_CWD_LENGTH)}...[truncated]`;
+}
 
 /**
  * Resolve the workspace whitelist from the environment (F-1.11 source).
@@ -97,12 +116,43 @@ function canonicalizeRoot(root: string): string {
 }
 
 /**
+ * Canonicalize a path by resolving symlinks on the longest existing prefix.
+ *
+ * Non-existent trailing segments are kept as-is, but any symlink in an
+ * intermediate component is followed. This closes the partial-symlink bypass
+ * where `/data/repos/link-out/foo` was accepted because `foo` does not exist
+ * and only the lexical path was checked.
+ */
+function canonicalizePath(p: string): string {
+	const resolved = path.resolve(p);
+	let prefix = resolved;
+	const suffixSegments: string[] = [];
+
+	// Walk upward to the longest existing prefix.
+	while (!existsSync(prefix)) {
+		const parent = path.dirname(prefix);
+		if (parent === prefix) break; // filesystem root not existing — defensive break
+		suffixSegments.unshift(path.basename(prefix));
+		prefix = parent;
+	}
+
+	try {
+		prefix = realpathSync(prefix);
+	} catch {
+		// realpath failure (permissions, race with unlink) — keep lexical prefix
+	}
+
+	return suffixSegments.length > 0 ? path.join(prefix, ...suffixSegments) : prefix;
+}
+
+/**
  * Validate a requested cwd against the allowed workspace roots.
  *
  * Returns `{ valid: true }` when the whitelist is empty (bypass, local
  * mode) or the canonical path lies within one of the allowed roots.
  * Otherwise `{ valid: false, reason }` where reason is one of:
  *   - "empty path"
+ *   - "invalid characters in path"
  *   - "path outside allowed roots"
  *   - "symlink traversal detected" (lexical path inside, realpath outside)
  */
@@ -114,22 +164,12 @@ export function validateCwd(cwd: string, allowedRoots: string[]): CwdValidationR
 	if (cwd.trim().length === 0) {
 		return { valid: false, reason: "empty path" };
 	}
+	if (containsInvalidPathChars(cwd)) {
+		return { valid: false, reason: "invalid characters in path" };
+	}
 
 	const resolved = path.resolve(cwd);
-
-	// Symlink resolution: realpath only when the path exists. A non-existent
-	// path is judged lexically — inside the whitelist it stays valid (future
-	// projects / not-yet-cloned repos), outside it is rejected.
-	let canonical = resolved;
-	let usedRealpath = false;
-	try {
-		if (existsSync(resolved)) {
-			canonical = realpathSync(resolved);
-			usedRealpath = true;
-		}
-	} catch {
-		// realpath failure (permissions, race with unlink) — lexical fallback
-	}
+	const canonical = canonicalizePath(cwd);
 
 	// Roots are canonicalized (realpath) as well, so roots living under a
 	// symlink (macOS /var → /private/var, symlinked mounts) still match
@@ -142,7 +182,7 @@ export function validateCwd(cwd: string, allowedRoots: string[]): CwdValidationR
 	// Distinguish a symlink escape from a plain out-of-whitelist path:
 	// the lexical path is inside but the real target is outside.
 	const lexicallyInside = allowedRoots.some((root) => isWithinRoot(resolved, root));
-	if (usedRealpath && lexicallyInside && normalizeForCompare(canonical) !== normalizeForCompare(resolved)) {
+	if (lexicallyInside) {
 		return { valid: false, reason: "symlink traversal detected" };
 	}
 	return { valid: false, reason: "path outside allowed roots" };
@@ -156,7 +196,7 @@ export function logCwdRejection(details: { cwd: string; reason: string; allowedR
 	console.warn(
 		`[api-gateway][audit] cwd rejected by workspace whitelist: ${JSON.stringify({
 			event: "cwd_rejected",
-			cwd: details.cwd,
+			cwd: truncateForAudit(details.cwd),
 			reason: details.reason,
 			allowedRoots: details.allowedRoots,
 			timestamp: new Date().toISOString(),

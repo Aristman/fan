@@ -247,19 +247,31 @@ async function createApp(
 
 	// --- Sessions ---
 	app.post("/api/sessions", async (c) => {
-		const body = await c.req.json<CreateSessionRequest>();
-		// F-1.3: optional cwd — normalized for consistent storage/comparison.
-		// Without cwd the adapter falls back to the server process cwd (backward compat).
-		if (body.cwd !== undefined) {
-			body.cwd = normalizeProjectPath(body.cwd);
+		// F-1.3: optional cwd — must be a non-empty string when provided.
+		// Validate the body shape and cwd type before normalization so that
+		// non-string values (null/number/array/object) surface as 400 instead
+		// of TypeError → 500. An empty/whitespace-only cwd is also rejected as
+		// 400 because it is not a usable filesystem path.
+		const rawBody = await c.req.json();
+		if (rawBody === null || typeof rawBody !== "object" || Array.isArray(rawBody)) {
+			return c.json({ error: "Request body must be a JSON object", code: "BAD_REQUEST" } satisfies ApiError, 400);
+		}
+		const body = rawBody as CreateSessionRequest;
+
+		if ("cwd" in body) {
+			if (typeof body.cwd !== "string" || body.cwd.trim().length === 0) {
+				return c.json({ error: "cwd must be a non-empty string", code: "BAD_REQUEST" } satisfies ApiError, 400);
+			}
+			const normalizedCwd = normalizeProjectPath(body.cwd);
 			// F-1.13: whitelist validation BEFORE the runtime touches the path
 			// (previously an invalid directory surfaced as a 500 on process.chdir).
 			// Rejections are audit-logged (structured field → F-0.10 file logger).
-			const validation = validateCwd(body.cwd, allowedRoots);
+			const validation = validateCwd(normalizedCwd, allowedRoots);
 			if (!validation.valid) {
-				logCwdRejection({ cwd: body.cwd, reason: validation.reason ?? "rejected", allowedRoots });
+				logCwdRejection({ cwd: normalizedCwd, reason: validation.reason ?? "rejected", allowedRoots });
 				return c.json({ error: `cwd rejected: ${validation.reason}`, code: "FORBIDDEN" } satisfies ApiError, 403);
 			}
+			body.cwd = normalizedCwd;
 		}
 		const session = await sessionAdapter.createSession(body);
 		return c.json(session, 201);

@@ -45,6 +45,12 @@ describe("validateCwd", () => {
 		expect(result.reason).toBe("empty path");
 	});
 
+	it("rejects paths containing null bytes and other control characters", () => {
+		const result = validateCwd("/data/repos/evil\0.txt", ["/data/repos"]);
+		expect(result.valid).toBe(false);
+		expect(result.reason).toBe("invalid characters in path");
+	});
+
 	it("non-existent path inside the whitelist is valid (future projects)", () => {
 		const result = validateCwd("/data/repos/not-yet-cloned/repo", ["/data/repos"]);
 		expect(result).toEqual({ valid: true });
@@ -85,6 +91,14 @@ describe("validateCwd", () => {
 			// 'junction' works without admin rights on Windows; 'dir' elsewhere
 			symlinkSync(outside, link, process.platform === "win32" ? "junction" : "dir");
 			const result = validateCwd(link, [root]);
+			expect(result.valid).toBe(false);
+			expect(result.reason).toBe("symlink traversal detected");
+		});
+
+		it("partial-symlink bypass: intermediate symlink + non-existent leaf is rejected", () => {
+			const link = path.join(root, "partial-link-to-outside");
+			symlinkSync(outside, link, process.platform === "win32" ? "junction" : "dir");
+			const result = validateCwd(path.join(link, "non-existent", "leaf"), [root]);
 			expect(result.valid).toBe(false);
 			expect(result.reason).toBe("symlink traversal detected");
 		});
@@ -145,6 +159,18 @@ describe("logCwdRejection", () => {
 		expect(payload.reason).toBe("path outside allowed roots");
 		expect(payload.allowedRoots).toEqual(["/data/repos"]);
 		expect(typeof payload.timestamp).toBe("string");
+		warn.mockRestore();
+	});
+
+	it("truncates very long cwd values to avoid log flooding", () => {
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+		const longCwd = `/data/repos/${"a".repeat(20_000)}`;
+		logCwdRejection({ cwd: longCwd, reason: "path outside allowed roots", allowedRoots: ["/data/repos"] });
+		const line = warn.mock.calls[0][0] as string;
+		const payload = JSON.parse(line.slice(line.indexOf("{")));
+		expect(payload.cwd.length).toBeLessThan(longCwd.length);
+		expect(payload.cwd).toContain("...[truncated]");
+		expect(payload.cwd.startsWith("/data/repos/")).toBe(true);
 		warn.mockRestore();
 	});
 });
@@ -309,5 +335,47 @@ describe("POST /api/sessions — whitelist enforcement", () => {
 		});
 		const res = await postSession(app, sibling);
 		expect(res.status).toBe(403);
+	});
+});
+
+describe("POST /api/sessions — cwd type validation", () => {
+	const originalRootEnv = process.env.FAN_WORKSPACE_ROOT;
+
+	beforeAll(() => {
+		process.env.FAN_WORKSPACE_ROOT = "/data/repos";
+	});
+
+	afterAll(() => {
+		if (originalRootEnv === undefined) delete process.env.FAN_WORKSPACE_ROOT;
+		else process.env.FAN_WORKSPACE_ROOT = originalRootEnv;
+	});
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		mockSessionAdapter.createSession.mockResolvedValue({ id: "s1", title: "Test" });
+	});
+
+	async function postSessionBody(body: unknown) {
+		const app = await createApp(mockModelManager as unknown as ModelManager, mockSessionAdapter);
+		return app.request("/api/sessions", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(body),
+		});
+	}
+
+	it.each([
+		{ label: "null", body: { cwd: null } },
+		{ label: "number", body: { cwd: 123 } },
+		{ label: "array", body: { cwd: ["/data/repos"] } },
+		{ label: "object", body: { cwd: { path: "/data/repos" } } },
+		{ label: "empty string", body: { cwd: "  " } },
+	])("returns 400 when cwd is $label", async ({ body }) => {
+		const res = await postSessionBody(body);
+		expect(res.status).toBe(400);
+		const data = (await res.json()) as { error: string; code: string };
+		expect(data.code).toBe("BAD_REQUEST");
+		expect(data.error).toContain("cwd");
+		expect(mockSessionAdapter.createSession).not.toHaveBeenCalled();
 	});
 });
