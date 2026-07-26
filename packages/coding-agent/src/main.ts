@@ -41,7 +41,7 @@ import { resolveCliModel, resolveModelScope, type ScopedModel } from "./core/mod
 import { restoreStdout, takeOverStdout } from "./core/output-guard.js";
 import { autoRegisterProject } from "./core/project-auto-register.js";
 import { sessionBelongsToProject } from "./core/project-path.js";
-import { listProjects, removeFromProjects } from "./core/project-registry.js";
+import { addToProjects, listProjects, removeFromProjects } from "./core/project-registry.js";
 import type { CreateAgentSessionOptions } from "./core/sdk.js";
 import {
 	formatMissingSessionCwdPrompt,
@@ -60,6 +60,8 @@ import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.js"
 import { handleConfigCommand, handlePackageCommand } from "./package-manager-cli.js";
 import { installFileLogger } from "./utils/file-logger.js";
 import { isLocalPath } from "./utils/paths.js";
+import { detectWorkspaceType } from "./workspace/detector.js";
+import { createProject as createProjectFromTemplate } from "./workspace/templates/index.js";
 
 async function handleInitCommand(args: string[]): Promise<boolean> {
 	if (!args.includes("init")) return false;
@@ -517,6 +519,27 @@ export function createSessionAdapter(runtime: AgentSessionRuntime, defaultCwd?: 
 		// Registry-only: sessions and files on disk are never touched.
 		async removeProject(path: string) {
 			return removeFromProjects(path).removed;
+		},
+
+		// --- createProject: create a workspace + register it (F-3.5) ---
+		// With a template: createProjectFromTemplate applies the directory
+		// structure and auto-detects the type. Without a template (documented
+		// contract decision): mkdir -p + type detection (empty dir → 'unknown')
+		// + registration. In both cases the registry write happens HERE (the
+		// templates module deliberately stays registry-free). Duplicates are
+		// idempotent: addToProjects dedups by path and the existing entry is
+		// returned with created=false (the HTTP layer maps that to 200).
+		async createProject(options: { name: string; template?: string; rootPath: string }) {
+			if (options.template) {
+				const meta = createProjectFromTemplate(options.template, options.name, options.rootPath);
+				const { added, entry } = addToProjects(meta.path, meta.name, meta.type);
+				return { path: entry.path, name: entry.name, type: entry.type, template: meta.template, created: added };
+			}
+			const path = resolve(options.rootPath, options.name);
+			mkdirSync(path, { recursive: true });
+			const type = detectWorkspaceType(path);
+			const { added, entry } = addToProjects(path, options.name, type);
+			return { path: entry.path, name: entry.name, type: entry.type, created: added };
 		},
 
 		// --- getActiveSessionId (F-0.9: /api/health readiness) ---

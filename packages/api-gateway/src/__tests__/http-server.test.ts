@@ -31,6 +31,7 @@ const mockSessionAdapter = {
 	bindSessionExtensions: vi.fn().mockResolvedValue(undefined),
 	listProjects: vi.fn().mockResolvedValue([]),
 	removeProject: vi.fn().mockResolvedValue(false),
+	createProject: vi.fn(),
 	getActiveSessionId: vi.fn().mockReturnValue(null),
 };
 
@@ -84,6 +85,7 @@ describe("HTTP Server", () => {
 		mockSessionAdapter.getAvailableModels.mockResolvedValue([]);
 		mockSessionAdapter.listProjects.mockResolvedValue([]);
 		mockSessionAdapter.removeProject.mockResolvedValue(false);
+		mockSessionAdapter.createProject.mockReset();
 		mockSessionAdapter.getActiveSessionId.mockReturnValue(null);
 		mockQueryRawUnsafe.mockResolvedValue([{ 1: 1 }]);
 		mockRandomBytes.mockReturnValue({
@@ -656,6 +658,182 @@ describe("HTTP Server", () => {
 				expect(data.code).toBe("NOT_IMPLEMENTED");
 			} finally {
 				mockSessionAdapter.removeProject = saved;
+			}
+		});
+
+		// TC-F-3.5-1: валидный шаблон создаёт проект и возвращает метаданные
+		it("POST /api/projects with valid template should return 201 + metadata (TC-F-3.5-1)", async () => {
+			mockSessionAdapter.createProject.mockResolvedValueOnce({
+				path: "/tmp/test",
+				name: "test",
+				type: "code",
+				template: "code",
+				created: true,
+			});
+			const app = await getApp();
+			const res = await app.request("/api/projects", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ name: "test", template: "code", rootPath: "/tmp" }),
+			});
+			expect(res.status).toBe(201);
+			const data = await json<{ path: string; name: string; type: string; template: string }>(res);
+			expect(data).toEqual({ path: "/tmp/test", name: "test", type: "code", template: "code" });
+			expect(mockSessionAdapter.createProject).toHaveBeenCalledWith({
+				name: "test",
+				template: "code",
+				rootPath: "/tmp",
+			});
+		});
+
+		// TC-F-3.5-2: невалидный шаблон возвращает 400
+		it("POST /api/projects with unknown template should return 400 (TC-F-3.5-2)", async () => {
+			mockSessionAdapter.createProject.mockRejectedValueOnce(new Error("Unknown template: nonexistent"));
+			const app = await getApp();
+			const res = await app.request("/api/projects", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ name: "test", template: "nonexistent", rootPath: "/tmp" }),
+			});
+			expect(res.status).toBe(400);
+			const data = await json<{ error: string; code: string }>(res);
+			expect(data.error).toBe("Unknown template: nonexistent");
+		});
+
+		// TC-F-3.5-3: автодетектированный тип соответствует содержимому
+		it("POST /api/projects with research template should return type=research (TC-F-3.5-3)", async () => {
+			mockSessionAdapter.createProject.mockResolvedValueOnce({
+				path: "/tmp/lab",
+				name: "lab",
+				type: "research",
+				template: "research",
+				created: true,
+			});
+			const app = await getApp();
+			const res = await app.request("/api/projects", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ name: "lab", template: "research", rootPath: "/tmp" }),
+			});
+			expect(res.status).toBe(201);
+			const data = await json<{ type: string }>(res);
+			expect(data.type).toBe("research");
+		});
+
+		it("POST /api/projects without name should return 400", async () => {
+			const app = await getApp();
+			const res = await app.request("/api/projects", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ template: "code" }),
+			});
+			expect(res.status).toBe(400);
+			expect(mockSessionAdapter.createProject).not.toHaveBeenCalled();
+		});
+
+		// Доп: traversal в name → 400 (до обращения к файловой системе/адаптеру)
+		it.each(["../escape", "a/b", "a\\b", ".."])(
+			"POST /api/projects with traversal name %j should return 400",
+			async (name) => {
+				const app = await getApp();
+				const res = await app.request("/api/projects", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ name, rootPath: "/tmp" }),
+				});
+				expect(res.status).toBe(400);
+				expect(mockSessionAdapter.createProject).not.toHaveBeenCalled();
+			},
+		);
+
+		// Доп: path вне whitelist → 403 (F-1.13 применяется и к созданию проектов)
+		it("POST /api/projects with rootPath outside the whitelist should return 403", async () => {
+			const app = await createApp(mockModelManager as unknown as ModelManager, mockSessionAdapter, {
+				allowedRoots: ["/data/repos"],
+			});
+			const res = await app.request("/api/projects", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ name: "evil", rootPath: "/etc" }),
+			});
+			expect(res.status).toBe(403);
+			expect(mockSessionAdapter.createProject).not.toHaveBeenCalled();
+		});
+
+		it("POST /api/projects inside the whitelist should pass validation", async () => {
+			mockSessionAdapter.createProject.mockResolvedValueOnce({
+				path: "/data/repos/ok",
+				name: "ok",
+				type: "unknown",
+				created: true,
+			});
+			const app = await createApp(mockModelManager as unknown as ModelManager, mockSessionAdapter, {
+				allowedRoots: ["/data/repos"],
+			});
+			const res = await app.request("/api/projects", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ name: "ok", rootPath: "/data/repos" }),
+			});
+			expect(res.status).toBe(201);
+		});
+
+		// Контракт-решение: без template — mkdir + detect + register (пустая папка)
+		it("POST /api/projects without template should create an empty registered dir", async () => {
+			mockSessionAdapter.createProject.mockResolvedValueOnce({
+				path: "/tmp/empty-proj",
+				name: "empty-proj",
+				type: "unknown",
+				created: true,
+			});
+			const app = await getApp();
+			const res = await app.request("/api/projects", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ name: "empty-proj", rootPath: "/tmp" }),
+			});
+			expect(res.status).toBe(201);
+			const data = await json<{ type: string; template?: string }>(res);
+			expect(data.type).toBe("unknown");
+			expect(data.template).toBeUndefined();
+			expect(mockSessionAdapter.createProject).toHaveBeenCalledWith({ name: "empty-proj", rootPath: "/tmp" });
+		});
+
+		// Контракт-решение: дубликат (уже в реестре) → 200 с существующей записью
+		it("POST /api/projects for an already-registered path should return 200 (idempotent)", async () => {
+			mockSessionAdapter.createProject.mockResolvedValueOnce({
+				path: "/tmp/test",
+				name: "test",
+				type: "code",
+				template: "code",
+				created: false,
+			});
+			const app = await getApp();
+			const res = await app.request("/api/projects", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ name: "test", template: "code", rootPath: "/tmp" }),
+			});
+			expect(res.status).toBe(200);
+			const data = await json<{ path: string; type: string }>(res);
+			expect(data.path).toBe("/tmp/test");
+		});
+
+		it("POST /api/projects should return 501 when the adapter lacks createProject", async () => {
+			const saved = mockSessionAdapter.createProject;
+			Reflect.deleteProperty(mockSessionAdapter, "createProject");
+			try {
+				const app = await getApp();
+				const res = await app.request("/api/projects", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ name: "x", rootPath: "/tmp" }),
+				});
+				expect(res.status).toBe(501);
+				const data = await json<{ error: string; code: string }>(res);
+				expect(data.code).toBe("NOT_IMPLEMENTED");
+			} finally {
+				mockSessionAdapter.createProject = saved;
 			}
 		});
 	});

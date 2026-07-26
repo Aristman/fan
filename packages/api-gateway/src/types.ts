@@ -99,6 +99,38 @@ export interface ListProjectsResponse {
 	projects: ProjectSummary[];
 }
 
+// --- Project creation (F-3.5) ---
+
+/** POST /api/projects request body. */
+export interface CreateProjectRequest {
+	/** Project name — used as the directory name under rootPath. Required. */
+	name: string;
+	/** Optional workspace template ('code' | 'research' | 'automation'). */
+	template?: string;
+	/** Optional parent directory. Default: workspace root (FAN_WORKSPACE_ROOT → ~/projects). */
+	rootPath?: string;
+}
+
+/** POST /api/projects response body — metadata of the created/existing project. */
+export interface CreateProjectResponse {
+	/** Absolute path of the project workspace. */
+	path: string;
+	/** Project name (directory basename). */
+	name: string;
+	/** Workspace type (auto-detected after template application). */
+	type: string;
+	/** Template that was applied (omitted for template-less creation). */
+	template?: string;
+}
+
+/** Adapter-level result of project creation (F-3.5): response metadata plus
+ *  a flag telling whether a new registry entry was created. The HTTP layer
+ *  maps created=true → 201, created=false (duplicate path, idempotent) → 200. */
+export interface CreateProjectResult extends CreateProjectResponse {
+	/** False when the resolved path was already registered (no re-registration). */
+	created: boolean;
+}
+
 export interface SessionMessage {
 	id: string;
 	role: "user" | "assistant" | "tool";

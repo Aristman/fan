@@ -352,9 +352,10 @@ else
 	# 8.0. Pre-clean: wipe leftovers from a crashed previous run (volumes persist).
 	e2e_workspace_cleanup
 
-	# 8.1. Workspace dirs in the container; .git in A → auto-register type=code (F-1.7).
-	if MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" mkdir -p "$PROJ_A/.git" "$PROJ_B" 2>/dev/null; then
-		pass "test workspaces created ($PROJ_A with .git, $PROJ_B)"
+	# 8.1. Workspace dirs in the container; .git + src/ in A → auto-register type=code
+	# (F-1.7 via the F-3.2 detector: code = .git AND (src/ OR package.json)).
+	if MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" mkdir -p "$PROJ_A/.git" "$PROJ_A/src" "$PROJ_B" 2>/dev/null; then
+		pass "test workspaces created ($PROJ_A with .git + src/, $PROJ_B)"
 	else
 		fail "failed to create test workspace directories in container"
 	fi
@@ -411,7 +412,7 @@ console.log("SEEDED");
 		fi
 
 		# 8.5. GET /api/projects → both projects auto-registered (F-1.5/F-1.7);
-		# A has type=code (.git) and sessionCount=1 (seeded JSONL counted).
+		# A has type=code (.git + src/ detected, F-3.2) and sessionCount=1 (seeded JSONL counted).
 		projects_body="$(curl -s --max-time 10 "$BASE_URL/api/projects" -H "Authorization: Bearer $TOKEN")"
 		info "GET /api/projects → $projects_body"
 		if echo "$projects_body" | grep -q "\"path\":\"$PROJ_A\"" && echo "$projects_body" | grep -q "\"path\":\"$PROJ_B\""; then
@@ -420,7 +421,7 @@ console.log("SEEDED");
 			fail "GET /api/projects: expected $PROJ_A and $PROJ_B, got $projects_body"
 		fi
 		if echo "$projects_body" | grep -q "\"path\":\"$PROJ_A\",\"name\":\"$PROJ_A_NAME\",\"type\":\"code\",\"sessionCount\":1"; then
-			pass "project A entry: type=code (.git detected), sessionCount=1"
+			pass "project A entry: type=code (.git + src/ detected, F-3.2), sessionCount=1"
 		else
 			fail "project A entry: expected type=code + sessionCount=1, got $projects_body"
 		fi

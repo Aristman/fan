@@ -1,4 +1,6 @@
 import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { resolve as resolvePath } from "node:path";
 import { getPrismaClient } from "@fan/db";
 import type { ModelManager, RoutingRuleData } from "@fan/model-manager";
 import { serveStatic } from "@hono/node-server/serve-static";
@@ -10,6 +12,9 @@ import { resolveCorsOrigin } from "./cors-config.js";
 import type {
 	ApiError,
 	ApiMcpStatusResponse,
+	CreateProjectRequest,
+	CreateProjectResponse,
+	CreateProjectResult,
 	CreateSessionRequest,
 	CreateSessionResponse,
 	GenerateTokenResponse,
@@ -78,6 +83,13 @@ export interface SessionAdapter {
 	 *  Returns true when an entry was removed, false when it was not registered.
 	 *  Optional — adapters without it cause DELETE /api/projects to answer 501. */
 	removeProject?(path: string): Promise<boolean>;
+	/** Create a project workspace (F-3.5): apply the optional template to
+	 *  `rootPath/name`, auto-detect the type and register the project.
+	 *  Returns metadata plus `created` (false = path already registered,
+	 *  idempotent repeat). Throws `Error('Unknown template: ...')` for
+	 *  unregistered template names — mapped to 400 by the HTTP layer.
+	 *  Optional — adapters without it cause POST /api/projects to answer 501. */
+	createProject?(options: { name: string; template?: string; rootPath: string }): Promise<CreateProjectResult>;
 	/** Get the id of the currently active session (null if none). Optional — used by /api/health readiness. */
 	getActiveSessionId?(): string | null;
 	/** F-2.5: whether the engine is currently executing a prompt (streaming).
@@ -372,6 +384,121 @@ async function createApp(
 			}),
 		};
 		return c.json(resp);
+	});
+
+	// F-3.5: create a project workspace from a template.
+	// Flow: validate body → resolve path → whitelist validation (F-1.13) →
+	// adapter.createProject (template application + type detection + registry
+	// write — the gateway never touches coding-agent directly, DI-style like
+	// listProjects/removeProject).
+	//
+	// Documented contract decisions:
+	// - `template` is OPTIONAL. Without it the adapter creates an empty
+	//   directory (mkdir -p), auto-detects the type (an empty dir → 'unknown')
+	//   and registers the project.
+	// - Unknown template name → 400 { error: 'Unknown template: <name>' }.
+	//   The gateway stays template-agnostic: the adapter throws an Error whose
+	//   message starts with 'Unknown template:' and the handler maps it to 400.
+	// - Duplicate (resolved path already in the registry) → 200 with the
+	//   EXISTING registry entry (idempotent creation, mirrors the registry's
+	//   dedup-by-path semantics). Fresh creation → 201.
+	// - `name` must be a non-empty single path segment: path separators
+	//   ('/', '\\') and '..' are rejected with 400 — traversal never reaches
+	//   the filesystem. Path-outside-whitelist is rejected with 403 (F-1.13).
+	// - Default rootPath: the first allowed root (= FAN_WORKSPACE_ROOT →
+	//   ~/projects chain resolved at startup), falling back to ~/projects when
+	//   no whitelist is configured (local mode).
+	app.post("/api/projects", async (c) => {
+		const rawBody = await c.req.json();
+		if (rawBody === null || typeof rawBody !== "object" || Array.isArray(rawBody)) {
+			return c.json({ error: "Request body must be a JSON object", code: "BAD_REQUEST" } satisfies ApiError, 400);
+		}
+		const body = rawBody as CreateProjectRequest;
+
+		// name: required, non-empty, single path segment (no traversal).
+		if (typeof body.name !== "string" || body.name.trim().length === 0) {
+			return c.json(
+				{ error: "name is required and must be a non-empty string", code: "BAD_REQUEST" } satisfies ApiError,
+				400,
+			);
+		}
+		const name = body.name.trim();
+		if (name.includes("/") || name.includes("\\") || name.includes("..")) {
+			return c.json(
+				{
+					error: "name must be a single path segment (no '/', '\\\\' or '..')",
+					code: "BAD_REQUEST",
+				} satisfies ApiError,
+				400,
+			);
+		}
+
+		// template: optional, non-empty string when provided.
+		let template: string | undefined;
+		if (body.template !== undefined) {
+			if (typeof body.template !== "string" || body.template.trim().length === 0) {
+				return c.json(
+					{ error: "template must be a non-empty string", code: "BAD_REQUEST" } satisfies ApiError,
+					400,
+				);
+			}
+			template = body.template.trim();
+		}
+
+		// rootPath: optional, defaults to the workspace root (whitelist root or ~/projects).
+		let rootPath: string;
+		if (body.rootPath !== undefined) {
+			if (typeof body.rootPath !== "string" || body.rootPath.trim().length === 0) {
+				return c.json(
+					{ error: "rootPath must be a non-empty string", code: "BAD_REQUEST" } satisfies ApiError,
+					400,
+				);
+			}
+			rootPath = body.rootPath;
+		} else {
+			rootPath = allowedRoots[0] ?? resolvePath(homedir(), "projects");
+		}
+
+		// F-1.13: whitelist validation BEFORE the adapter touches the filesystem.
+		const fullPath = resolvePath(rootPath, name);
+		const validation = validateCwd(fullPath, allowedRoots);
+		if (!validation.valid) {
+			logCwdRejection({ cwd: fullPath, reason: validation.reason ?? "rejected", allowedRoots });
+			return c.json({ error: `path rejected: ${validation.reason}`, code: "FORBIDDEN" } satisfies ApiError, 403);
+		}
+
+		if (!sessionAdapter.createProject) {
+			return c.json(
+				{ error: "project creation is not supported by this adapter", code: "NOT_IMPLEMENTED" } satisfies ApiError,
+				501,
+			);
+		}
+
+		let result: CreateProjectResult;
+		try {
+			result = await sessionAdapter.createProject({
+				name,
+				...(template !== undefined ? { template } : {}),
+				rootPath,
+			});
+		} catch (err) {
+			// Unknown template names surface from the template registry as
+			// Error('Unknown template: <name>') — map to 400 (contract: the
+			// gateway stays agnostic of registered template names).
+			const msg = err instanceof Error ? err.message : String(err);
+			if (msg.startsWith("Unknown template:")) {
+				return c.json({ error: msg, code: "BAD_REQUEST" } satisfies ApiError, 400);
+			}
+			throw err;
+		}
+
+		const resp: CreateProjectResponse = {
+			path: result.path,
+			name: result.name,
+			type: result.type,
+			...(result.template !== undefined ? { template: result.template } : {}),
+		};
+		return c.json(resp, result.created ? 201 : 200);
 	});
 
 	// F-2.13: remove a project from the registry by absolute path.
