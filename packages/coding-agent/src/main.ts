@@ -39,6 +39,7 @@ import { KeybindingsManager } from "./core/keybindings.js";
 import type { ModelRegistry } from "./core/model-registry.js";
 import { resolveCliModel, resolveModelScope, type ScopedModel } from "./core/model-resolver.js";
 import { restoreStdout, takeOverStdout } from "./core/output-guard.js";
+import { autoRegisterProject } from "./core/project-auto-register.js";
 import { listProjects } from "./core/project-registry.js";
 import type { CreateAgentSessionOptions } from "./core/sdk.js";
 import {
@@ -395,10 +396,19 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 			bindSessionExtensions();
 			diskCacheTime = 0;
 			resubscribeAfterSwitch();
+			const sessionCwd = runtime.session.sessionManager.getCwd();
+			// F-1.7: auto-register the workspace in projects.json after successful
+			// session creation. Synchronous on purpose: addToProjects is already
+			// sync (tiny JSON read + atomic rename, microseconds), so a fire-and-
+			// forget promise would only add ordering complexity for no measurable
+			// latency gain. autoRegisterProject never throws (system paths and
+			// non-existent dirs are skipped, write errors are caught + logged),
+			// so registration can never fail or block session creation.
+			autoRegisterProject(sessionCwd);
 			return {
 				id: runtime.session.sessionId,
 				title: opts?.title || runtime.session.sessionName || "New Session",
-				cwd: runtime.session.sessionManager.getCwd(),
+				cwd: sessionCwd,
 				createdAt: new Date().toISOString(),
 				updatedAt: new Date().toISOString(),
 			};
