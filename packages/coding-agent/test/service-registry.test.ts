@@ -181,3 +181,130 @@ describe("ServiceRegistry (F-2.1)", () => {
 		});
 	});
 });
+
+describe("ServiceRegistry LRU eviction (F-2.2)", () => {
+	describe("TC-F-2.2-1: oldest entry is evicted automatically", () => {
+		test("set on a full cache evicts the entry with the smallest lastAccess", () => {
+			let clock = 0;
+			const registry = new ServiceRegistry({ maxItems: 2, now: () => clock });
+			const svcA = mockServices("/a");
+			const svcB = mockServices("/b");
+			const svcC = mockServices("/c");
+
+			clock = 100;
+			registry.set("/a", svcA);
+			clock = 200;
+			registry.set("/b", svcB);
+
+			clock = 300;
+			registry.set("/c", svcC);
+
+			expect(registry.get("/a")).toBeNull();
+			expect(registry.get("/c")).toBe(svcC);
+			expect(registry.get("/b")).toBe(svcB);
+			expect(registry.size).toBe(2);
+		});
+	});
+
+	describe("TC-F-2.2-2: eviction is by last access, not insertion order", () => {
+		test("a recently accessed entry survives; the stale one is evicted", () => {
+			let clock = 0;
+			const registry = new ServiceRegistry({ maxItems: 2, now: () => clock });
+			const svcA = mockServices("/a");
+			const svcB = mockServices("/b");
+			const svcC = mockServices("/c");
+
+			clock = 100;
+			registry.set("/a", svcA);
+			clock = 200;
+			registry.get("/a");
+			clock = 300;
+			registry.set("/b", svcB);
+			clock = 400;
+			registry.get("/a");
+
+			clock = 500;
+			registry.set("/c", svcC);
+
+			expect(registry.get("/b")).toBeNull();
+			expect(registry.get("/a")).toBe(svcA);
+			expect(registry.get("/c")).toBe(svcC);
+			expect(registry.size).toBe(2);
+		});
+	});
+
+	describe("eviction semantics", () => {
+		test("overwrite of an existing key on a full cache does not trigger eviction", () => {
+			let clock = 0;
+			const cleanup = vi.fn();
+			const registry = new ServiceRegistry({ maxItems: 2, cleanup, now: () => clock });
+			const svcA = mockServices("/a");
+			const svcB = mockServices("/b");
+			const svcA2 = mockServices("/a");
+
+			clock = 100;
+			registry.set("/a", svcA);
+			clock = 200;
+			registry.set("/b", svcB);
+
+			clock = 300;
+			registry.set("/a", svcA2);
+
+			expect(registry.size).toBe(2);
+			expect(registry.get("/b")).toBe(svcB);
+			expect(registry.get("/a")).toBe(svcA2);
+			// Cleanup ran only for the overwritten services, nothing evicted.
+			expect(cleanup).toHaveBeenCalledTimes(1);
+			expect(cleanup).toHaveBeenCalledWith(svcA, "/a");
+		});
+
+		test("cleanup is called for the evicted entry", () => {
+			let clock = 0;
+			const cleanup = vi.fn();
+			const registry = new ServiceRegistry({ maxItems: 2, cleanup, now: () => clock });
+			const svcA = mockServices("/a");
+
+			clock = 100;
+			registry.set("/a", svcA);
+			clock = 200;
+			registry.set("/b", mockServices("/b"));
+			clock = 300;
+			registry.set("/c", mockServices("/c"));
+
+			expect(cleanup).toHaveBeenCalledTimes(1);
+			expect(cleanup).toHaveBeenCalledWith(svcA, "/a");
+		});
+
+		test("cache never exceeds maxItems across many inserts", () => {
+			let clock = 0;
+			const registry = new ServiceRegistry({ maxItems: 3, now: () => clock });
+
+			for (let i = 0; i < 20; i++) {
+				clock = i;
+				registry.set(`/p${i}`, mockServices(`/p${i}`));
+				expect(registry.size).toBeLessThanOrEqual(3);
+			}
+			expect(registry.size).toBe(3);
+			expect(registry.keys()).toEqual(["/p17", "/p18", "/p19"]);
+		});
+
+		test("throwing cleanup does not break eviction", () => {
+			let clock = 0;
+			const registry = new ServiceRegistry({
+				maxItems: 1,
+				now: () => clock,
+				cleanup: () => {
+					throw new Error("boom");
+				},
+			});
+
+			clock = 100;
+			registry.set("/a", mockServices("/a"));
+			clock = 200;
+			expect(() => registry.set("/b", mockServices("/b"))).not.toThrow();
+			expect(registry.size).toBe(1);
+			expect(registry.get("/a")).toBeNull();
+			expect(registry.get("/b")).not.toBeNull();
+		});
+	});
+});

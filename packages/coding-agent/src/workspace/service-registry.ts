@@ -11,7 +11,7 @@ import type { AgentSessionServices } from "../core/agent-session-services.js";
 export type ServiceCleanupFn = (services: AgentSessionServices, cwd: string) => void;
 
 export interface ServiceRegistryOptions {
-	/** Maximum number of cached entries. Default: 5. Eviction is implemented in F-2.2. */
+	/** Maximum number of cached entries. Default: 5. When full, the least recently used entry is evicted. */
 	maxItems?: number;
 	/** Optional cleanup hook called before an entry is removed from the cache. */
 	cleanup?: ServiceCleanupFn;
@@ -30,8 +30,8 @@ export const DEFAULT_MAX_ITEMS = 5;
  * Cache of cwd-bound AgentSessionServices keyed by working directory.
  *
  * Standalone infrastructure module (F-2.1). Avoids full teardown/recreate of
- * services on every project switch. LRU eviction on capacity is intentionally
- * NOT implemented here — it is feature F-2.2.
+ * services on every project switch. When the cache reaches maxItems, set()
+ * evicts the entry with the oldest lastAccess (LRU, F-2.2).
  */
 export class ServiceRegistry {
 	private readonly cache = new Map<string, CacheEntry>();
@@ -46,7 +46,7 @@ export class ServiceRegistry {
 		this.now = opts.now ?? Date.now;
 	}
 
-	/** Configured cache capacity. Eviction is handled in F-2.2. */
+	/** Configured cache capacity. The cache never exceeds this size (LRU eviction). */
 	get maxItems(): number {
 		return this.maxItemsValue;
 	}
@@ -76,12 +76,22 @@ export class ServiceRegistry {
 
 	/**
 	 * Store services for a cwd. Overwrites an existing entry (running cleanup
-	 * for the replaced services). Capacity eviction is F-2.2 and not done here.
+	 * for the replaced services). If the cache is full and the key is new,
+	 * the least recently used entry (smallest lastAccess) is evicted first
+	 * (delete + cleanup), so the cache never exceeds maxItems.
 	 */
 	set(cwd: string, services: AgentSessionServices): void {
 		const existing = this.cache.get(cwd);
-		if (existing && existing.services !== services) {
-			this.runCleanup(existing.services, cwd);
+		if (existing) {
+			// Overwrite: no eviction, just replace the services.
+			if (existing.services !== services) {
+				this.runCleanup(existing.services, cwd);
+			}
+			this.cache.set(cwd, { services, lastAccess: this.now() });
+			return;
+		}
+		if (this.cache.size >= this.maxItemsValue) {
+			this.evictLeastRecentlyUsed();
 		}
 		this.cache.set(cwd, { services, lastAccess: this.now() });
 	}
@@ -111,10 +121,30 @@ export class ServiceRegistry {
 
 	/**
 	 * Last access timestamp for a cwd (null on miss). Does not touch the entry.
-	 * Exposed for tests and future LRU eviction (F-2.2).
+	 * Exposed for tests and diagnostics.
 	 */
 	getLastAccess(cwd: string): number | null {
 		return this.cache.get(cwd)?.lastAccess ?? null;
+	}
+
+	/** Find the entry with the smallest lastAccess, delete it, and run cleanup. */
+	private evictLeastRecentlyUsed(): void {
+		let oldestKey: string | undefined;
+		let oldestAccess = Number.POSITIVE_INFINITY;
+		for (const [key, entry] of this.cache) {
+			if (entry.lastAccess < oldestAccess) {
+				oldestAccess = entry.lastAccess;
+				oldestKey = key;
+			}
+		}
+		if (oldestKey === undefined) {
+			return;
+		}
+		const entry = this.cache.get(oldestKey);
+		this.cache.delete(oldestKey);
+		if (entry) {
+			this.runCleanup(entry.services, oldestKey);
+		}
 	}
 
 	private runCleanup(services: AgentSessionServices, cwd: string): void {
