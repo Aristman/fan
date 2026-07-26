@@ -95,39 +95,25 @@ describe("fan-project-switcher", () => {
 		expect(items[0].textContent).toContain("Alpha");
 	});
 
-	// "+" button opens the inline form; submit emits project-add
-	it("opens the inline add form via '+' and emits project-add with the entered path", async () => {
+	// F-3.8: "+" button emits project-create (the app shell opens the
+	// create-project dialog) and closes the dropdown
+	it("emits project-create when '+' is clicked and closes the dropdown (F-3.8)", async () => {
 		el.projects = PROJECTS;
 		await el.updateComplete;
 		await openDropdown(el);
 
-		// Form not visible initially
-		expect(el.querySelector(".add-form")).toBeNull();
+		const events: CustomEvent[] = [];
+		el.addEventListener("project-create", (e) => events.push(e as CustomEvent));
 
 		el.querySelector<HTMLButtonElement>(".add-project-btn")!.click();
 		await el.updateComplete;
 
-		const form = el.querySelector<HTMLFormElement>(".add-form");
-		expect(form).not.toBeNull();
-
-		const events: CustomEvent[] = [];
-		el.addEventListener("project-add", (e) => events.push(e as CustomEvent));
-
-		const input = el.querySelector<HTMLInputElement>(".new-path-input")!;
-		input.value = "/new/proj";
-		input.dispatchEvent(new Event("input"));
-		await el.updateComplete;
-
-		form!.requestSubmit();
-		await el.updateComplete;
-
 		expect(events.length).toBe(1);
-		expect(events[0].detail).toEqual({ path: "/new/proj" });
 		expect(events[0].bubbles).toBe(true);
 		expect(events[0].composed).toBe(true);
 
-		// Form collapses after submit
-		expect(el.querySelector(".add-form")).toBeNull();
+		// Dropdown closes after requesting creation
+		expect(el.querySelector(".fan-dropdown-panel")).toBeNull();
 	});
 
 	// sessionCount indicator is visible next to the project name

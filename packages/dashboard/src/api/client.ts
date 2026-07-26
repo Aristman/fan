@@ -1,6 +1,8 @@
 // @fan/dashboard/api — FAN REST API client
 import type {
 	ApiError,
+	CreateProjectRequest,
+	CreateProjectResponse,
 	CreateSessionRequest,
 	CreateSessionResponse,
 	DeleteSessionResponse,
@@ -176,6 +178,17 @@ export class FanApiClient {
 
 	listProjects(): Promise<ListProjectsResponse> {
 		return this._request<ListProjectsResponse>("GET", "/api/projects");
+	}
+
+	/**
+	 * Create a project workspace, optionally from a template (F-3.5).
+	 * Server contract: POST /api/projects { name, template?, rootPath? } →
+	 * 201 (created) / 200 (already registered, idempotent) with the project
+	 * metadata; 400 (bad name / unknown template), 403 (path outside the
+	 * allowed-roots whitelist).
+	 */
+	createProject(data: CreateProjectRequest): Promise<CreateProjectResponse> {
+		return this._request<CreateProjectResponse>("POST", "/api/projects", data);
 	}
 
 	/**

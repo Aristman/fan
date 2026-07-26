@@ -6,11 +6,13 @@ import { customElement, property, state } from "lit/decorators.js";
 import { FanApiClient } from "../api/client.js";
 import { FanWsClient } from "../api/ws-client.js";
 import { buildProjectTypeMap } from "../lib/workspace-type.js";
+import { FanCreateProjectDialog } from "./create-project-dialog.js";
 import { SettingsDialog } from "./settings-dialog.js";
 
 // Side-effect imports: register all child custom elements
 import "./session-sidebar.js";
 import "./project-switcher.js";
+import "./create-project-dialog.js";
 import "./chat-view.js";
 import "./budget-panel.js";
 import "./budget-alert-toast.js";
@@ -51,7 +53,8 @@ export class DashboardApp extends LitElement {
 	private _boundHandleSessionDeleted?: EventListener;
 	private _boundHandleNavigate?: EventListener;
 	private _boundHandleProjectSelect?: EventListener;
-	private _boundHandleProjectAdd?: EventListener;
+	private _boundHandleProjectCreate?: EventListener;
+	private _boundHandleProjectCreated?: EventListener;
 	private _boundHandleProjectRemove?: EventListener;
 	private _wsUnsubMessage: (() => void) | null = null;
 	private _wsUnsubStatus: (() => void) | null = null;
@@ -151,14 +154,18 @@ export class DashboardApp extends LitElement {
 			window.dispatchEvent(new CustomEvent("fan:project-changed", { detail: { path } }));
 		}) as EventListener;
 
-		this._boundHandleProjectAdd = ((ev: CustomEvent) => {
+		// F-3.8: "+" in the switcher opens the create-project dialog
+		this._boundHandleProjectCreate = () => {
+			FanCreateProjectDialog.open(this.apiClient);
+		};
+
+		// F-3.8: the dialog (appended to document.body, so this bubbles to
+		// window, not through dashboard-app) reports a successful creation →
+		// refresh the project list and switch to the new project.
+		this._boundHandleProjectCreated = ((ev: CustomEvent) => {
 			const path = ev.detail?.path;
 			if (typeof path !== "string" || !path) return;
-			// MVP: there is no server-side "register project" endpoint yet, so the app
-			// re-broadcasts the intent on window for future handlers (e.g. "create
-			// session with this cwd") and switches to the path optimistically.
-			window.dispatchEvent(new CustomEvent("fan:project-add", { detail: { path } }));
-			this.currentProject = path;
+			void this._onProjectCreated(path);
 		}) as EventListener;
 
 		// F-2.13: remove an unavailable project from the registry
@@ -173,7 +180,8 @@ export class DashboardApp extends LitElement {
 		this.addEventListener("fan:session-deleted", this._boundHandleSessionDeleted);
 		this.addEventListener("fan:navigate", this._boundHandleNavigate);
 		this.addEventListener("project-select", this._boundHandleProjectSelect);
-		this.addEventListener("project-add", this._boundHandleProjectAdd);
+		this.addEventListener("project-create", this._boundHandleProjectCreate);
+		window.addEventListener("project-created", this._boundHandleProjectCreated);
 		this.addEventListener("project-remove", this._boundHandleProjectRemove);
 
 		// Load project list for the switcher (non-blocking; endpoint may not exist
@@ -214,8 +222,11 @@ export class DashboardApp extends LitElement {
 		if (this._boundHandleProjectSelect) {
 			this.removeEventListener("project-select", this._boundHandleProjectSelect);
 		}
-		if (this._boundHandleProjectAdd) {
-			this.removeEventListener("project-add", this._boundHandleProjectAdd);
+		if (this._boundHandleProjectCreate) {
+			this.removeEventListener("project-create", this._boundHandleProjectCreate);
+		}
+		if (this._boundHandleProjectCreated) {
+			window.removeEventListener("project-created", this._boundHandleProjectCreated);
 		}
 		if (this._boundHandleProjectRemove) {
 			this.removeEventListener("project-remove", this._boundHandleProjectRemove);
@@ -235,6 +246,17 @@ export class DashboardApp extends LitElement {
 		} catch (err) {
 			console.warn("dashboard-app: listProjects failed (project switcher disabled)", err);
 		}
+	}
+
+	/**
+	 * F-3.8: a project was created via the create-project dialog — reload the
+	 * registry list, then select the new project (same broadcast as a manual
+	 * switch so session scoping follows).
+	 */
+	private async _onProjectCreated(path: string): Promise<void> {
+		await this._loadProjects();
+		this.currentProject = path;
+		window.dispatchEvent(new CustomEvent("fan:project-changed", { detail: { path } }));
 	}
 
 	/**

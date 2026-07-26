@@ -10,9 +10,9 @@
 //   - "project-select" with detail { path } — user picked a project from the list.
 //     The app shell updates its currentProject state on this event. Reloading the
 //     session list scoped to the project is F-2.7 territory.
-//   - "project-add" with detail { path }    — user submitted the inline "+" form.
-//     MVP: the component only emits the event; registering the project on the
-//     server (or creating a session with that cwd) is the app shell's decision.
+//   - "project-create" (no detail)           — user clicked the "+" button
+//     (F-3.8). The app shell opens the <fan-create-project-dialog> which
+//     handles name/template/location input and POST /api/projects.
 //   - "project-remove" with detail { path } — user clicked the remove button of
 //     an unavailable project (F-2.13: available === false / PROJECT_NOT_FOUND).
 //     The app shell calls DELETE /api/projects?path= and reloads the list.
@@ -20,7 +20,7 @@
 import type { ProjectSummary } from "@fan/api-gateway/types";
 import { html, LitElement, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import { Check, ChevronDown, FolderOpen, FolderX, Plus, Search, X } from "lucide";
+import { ChevronDown, FolderOpen, FolderX, Plus, Search, X } from "lucide";
 import { icon } from "../lib/icon.js";
 import { renderWorkspaceTypeIcon } from "../lib/workspace-type.js";
 
@@ -39,8 +39,6 @@ export class FanProjectSwitcher extends LitElement {
 
 	@state() open = false;
 	@state() filter = "";
-	@state() adding = false;
-	@state() newPath = "";
 
 	// -----------------------------------------------------------------------
 	// No shadow DOM — Tailwind styles need to penetrate
@@ -91,17 +89,10 @@ export class FanProjectSwitcher extends LitElement {
 
 	private _toggle(): void {
 		this.open = !this.open;
-		if (!this.open) this._resetTransient();
 	}
 
 	private _close(): void {
 		this.open = false;
-		this._resetTransient();
-	}
-
-	private _resetTransient(): void {
-		this.adding = false;
-		this.newPath = "";
 	}
 
 	selectProject(path: string): void {
@@ -115,17 +106,17 @@ export class FanProjectSwitcher extends LitElement {
 		this._close();
 	}
 
-	submitNewProject(): void {
-		const path = this.newPath.trim();
-		if (!path) return;
+	/** F-3.8: the "+" button asks the app shell to open the create-project
+	 *  dialog (which collects name/template/location and calls POST
+	 *  /api/projects). The switcher itself only emits the intent. */
+	requestCreateProject(): void {
 		this.dispatchEvent(
-			new CustomEvent("project-add", {
-				detail: { path },
+			new CustomEvent("project-create", {
 				bubbles: true,
 				composed: true,
 			}),
 		);
-		this._resetTransient();
+		this._close();
 	}
 
 	/** F-2.13: emit project-remove for an unavailable project (stopPropagation
@@ -228,60 +219,16 @@ export class FanProjectSwitcher extends LitElement {
 				}
         </div>
 
-        <!-- Add-project area -->
+        <!-- Create-project area (F-3.8: opens the create-project dialog) -->
         <div class="border-t border-border p-1.5">
-          ${
-					this.adding
-						? html`
-                <form
-                  class="add-form flex items-center gap-1.5"
-                  @submit=${(e: Event) => {
-							e.preventDefault();
-							this.submitNewProject();
-						}}
-                >
-                  <input
-                    type="text"
-                    placeholder="/absolute/path/to/project"
-                    class="new-path-input flex-1 min-w-0 px-2 py-1 text-sm rounded-md border border-border
-                           bg-background placeholder:text-muted-foreground/60
-                           focus:outline-none focus:ring-1 focus:ring-primary/50 font-mono"
-                    .value=${this.newPath}
-                    @input=${(e: Event) => {
-								this.newPath = (e.target as HTMLInputElement).value;
-							}}
-                  />
-                  <button
-                    type="submit"
-                    class="shrink-0 p-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
-                    title="Add project"
-                    ?disabled=${!this.newPath.trim()}
-                  >
-                    ${icon(Check, "w-3.5 h-3.5")}
-                  </button>
-                  <button
-                    type="button"
-                    class="shrink-0 p-1.5 rounded-md text-muted-foreground hover:bg-secondary/60 hover:text-foreground transition-colors"
-                    title="Cancel"
-                    @click=${() => this._resetTransient()}
-                  >
-                    ${icon(X, "w-3.5 h-3.5")}
-                  </button>
-                </form>
-              `
-						: html`
-                <button
-                  class="add-project-btn w-full flex items-center gap-2 px-2.5 py-1.5 text-sm rounded-md
-                         text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
-                  @click=${() => {
-							this.adding = true;
-						}}
-                >
-                  ${icon(Plus, "w-4 h-4")}
-                  <span>Add project…</span>
-                </button>
-              `
-				}
+          <button
+            class="add-project-btn w-full flex items-center gap-2 px-2.5 py-1.5 text-sm rounded-md
+                   text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
+            @click=${() => this.requestCreateProject()}
+          >
+            ${icon(Plus, "w-4 h-4")}
+            <span>New project…</span>
+          </button>
         </div>
       </div>
     `;

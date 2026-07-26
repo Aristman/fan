@@ -237,6 +237,41 @@ describe("FanApiClient", () => {
 			expect(opts.method).toBe("GET");
 		});
 
+		it("createProject() calls POST /api/projects with name/template/rootPath body (F-3.5/F-3.8)", async () => {
+			mockFetch.mockResolvedValueOnce({
+				ok: true,
+				status: 201,
+				json: () =>
+					Promise.resolve({ path: "/data/repos/myproj", name: "myproj", type: "research", template: "research" }),
+			});
+			const result = await client.createProject({
+				name: "myproj",
+				template: "research",
+				rootPath: "/data/repos",
+			});
+			expect(result).toEqual({ path: "/data/repos/myproj", name: "myproj", type: "research", template: "research" });
+
+			const [url, opts] = mockFetch.mock.calls[0];
+			expect(url).toBe("http://localhost:3456/api/projects");
+			expect(opts.method).toBe("POST");
+			expect(JSON.parse(opts.body)).toEqual({ name: "myproj", template: "research", rootPath: "/data/repos" });
+			expect(opts.headers.Authorization).toBe("Bearer test-token");
+		});
+
+		it("createProject() throws FanApiError with status/code on 403", async () => {
+			mockFetch.mockResolvedValueOnce({
+				ok: false,
+				status: 403,
+				statusText: "Forbidden",
+				json: () => Promise.resolve({ error: "path rejected: outside allowed roots", code: "FORBIDDEN" }),
+			});
+			await expect(client.createProject({ name: "x", rootPath: "/outside" })).rejects.toMatchObject({
+				name: "FanApiError",
+				status: 403,
+				code: "FORBIDDEN",
+			});
+		});
+
 		it("removeProject() calls DELETE /api/projects?path= with encoded path (F-2.13)", async () => {
 			mockFetch.mockResolvedValueOnce({
 				ok: true,
