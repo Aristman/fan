@@ -69,6 +69,10 @@ Server-mode variables (`fan server` / `fan --web` / Docker). Implementation: `pa
 | `LOG_MAX_SIZE` | `10485760` (10 MB) | Rotate `app.log` when it reaches this size. Plain bytes or `k`/`m`/`g` suffix (e.g. `"5m"`) |
 | `LOG_MAX_FILES` | `5` | Rotated files to keep: `app.log.1` … `app.log.N` (oldest dropped) |
 
+**Persistent message queue (F-5.5/F-5.6).** In server mode the WS dispatcher queue is **persistent by default** (`PersistentMessageQueue`): queued `sendMessage` payloads are stored as JSONL under `<agentDir>/queues` (`FAN_CODING_AGENT_DIR` / `FAN_AGENT_DIR`, default `~/.fan/agent`) and restored on startup (`queues_restored` WS frame). No env flag — opt out programmatically via `ServerOptions.persistentQueue: false` (legacy in-memory queue). Details: [API Reference — Message Queueing](api-reference.md#message-queueing-phases-2--5).
+
+**Per-project tokens (F-5.7).** Client tokens accept an optional `projectScope` at creation (`POST /api/tokens { "name", "projectScope" }`) restricting them to a single project (enforcement, lockdown policy and anti-escalation rules: [API Reference — Project Scope](api-reference.md#project-scope-f-57)). Existing tokens (`projectScope: null`) keep full access.
+
 ## Settings Reference
 
 ### Model Configuration

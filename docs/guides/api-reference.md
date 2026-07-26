@@ -70,6 +70,22 @@ FAN_NO_AUTH=1 fan server
 
 See [Create Token](#create-token) below. The full token secret is returned **only once** at creation time. Store it securely.
 
+### Project Scope (F-5.7)
+
+A token can optionally be restricted to a **single project** via the `projectScope` field at creation time (`POST /api/tokens`). `projectScope: null` (the default, and all pre-phase-5 tokens) means **full access** — fully backward compatible.
+
+For a **scoped token** (`projectScope = "/data/repos/my-project"`):
+
+- **Project context enforcement.** Every project context found in the request must equal the scope (normalized path comparison — exact match, no prefix/subtree): query `?project=` / `?path=`, JSON body fields `cwd` / `project` / `rootPath`. A mismatch → `403 "token not scoped to this project"`.
+- **No project context → deny by default**, except a small whitelist of project-neutral endpoints (`GET /api/models`, `GET /api/models/settings`, `GET /api/mcp/servers`, token self-management, `GET`/`POST /api/projects`) and resource-level routes (`GET`/`POST .../messages`/`DELETE /api/sessions/:id`), where the check is done against the target session's `cwd` instead.
+- **WebSocket:** a scoped token may only subscribe to sessions whose `cwd` matches the scope (checked on connect and per session switch).
+- **Scope lockdown (anti-escalation):**
+  - `GET /api/tokens` returns only tokens of the caller's own scope.
+  - `POST /api/tokens` — a scoped caller can mint tokens only for its own scope; an omitted `projectScope` inherits the caller's scope (minting a full-access or foreign-scope token → `403`).
+  - `DELETE /api/tokens/:id` — only tokens belonging to the caller's scope can be revoked.
+  - **Global mutations → `403`:** `PUT /api/models/settings`, provider-scoped `PUT /api/budget` (without `project`), `DELETE /api/projects`, `PUT /api/projects` outside the scope.
+  - `GET /api/projects` is filtered to the scope project; `POST /api/projects` is allowed only for paths inside the scope.
+
 ---
 
 ## REST Endpoints
@@ -908,9 +924,12 @@ Create a new client token for API authentication.
 
 **Request body:**
 
-| Field | Type     | Required | Description          |
-|-------|----------|----------|----------------------|
-| name  | `string` | Yes      | Human-readable label |
+| Field        | Type     | Required | Description                                                                 |
+|--------------|----------|----------|-----------------------------------------------------------------------------|
+| name         | `string` | Yes      | Human-readable label                                                        |
+| projectScope | `string` | No       | Restrict the token to a single project path (F-5.7, see [Project Scope](#project-scope-f-57)). Non-empty string, normalized before persisting. Omit for full access |
+
+> A **scoped caller** can only create tokens for its own scope; an omitted `projectScope` inherits the caller's scope.
 
 **Example:**
 
@@ -918,7 +937,7 @@ Create a new client token for API authentication.
 curl -X POST http://localhost:3456/api/tokens \
   -H "Authorization: Bearer $FAN_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"name": "VS Code extension"}'
+  -d '{"name": "VS Code extension", "projectScope": "/data/repos/my-project"}'
 ```
 
 **Response `201`:**
@@ -929,6 +948,7 @@ curl -X POST http://localhost:3456/api/tokens \
     "id": "tok_9x8w7v6u",
     "name": "VS Code extension",
     "token": "fan_tk_a1b2c3d4e5f6g7h8i9j0",
+    "projectScope": "/data/repos/my-project",
     "createdAt": "2026-04-13T10:00:00.000Z",
     "lastUsed": null
   }
@@ -941,7 +961,7 @@ curl -X POST http://localhost:3456/api/tokens \
 GET /api/tokens
 ```
 
-Returns all tokens **without** their secrets.
+Returns all tokens **without** their secrets. A **scoped caller** (F-5.7) sees only tokens of its own scope. Each entry includes `projectScope` (`null` = full access).
 
 **Example:**
 
@@ -958,12 +978,14 @@ curl http://localhost:3456/api/tokens \
     {
       "id": "tok_9x8w7v6u",
       "name": "VS Code extension",
+      "projectScope": "/data/repos/my-project",
       "createdAt": "2026-04-13T10:00:00.000Z",
       "lastUsed": "2026-04-13T11:30:00.000Z"
     },
     {
       "id": "tok_5t4r3s2q",
       "name": "CI pipeline",
+      "projectScope": null,
       "createdAt": "2026-04-12T15:00:00.000Z",
       "lastUsed": "2026-04-13T09:00:00.000Z"
     }
@@ -977,7 +999,7 @@ curl http://localhost:3456/api/tokens \
 DELETE /api/tokens/:id
 ```
 
-Permanently revoke a token. The token can no longer be used for authentication.
+Permanently revoke a token. The token can no longer be used for authentication. A **scoped caller** (F-5.7) can only revoke tokens belonging to its own scope (`404` otherwise).
 
 **Example:**
 
@@ -1058,6 +1080,24 @@ Sent immediately after a successful connection.
   "timestamp": "2026-04-13T10:30:00.000Z"
 }
 ```
+
+#### `queues_restored`
+
+Sent right after `connected` when the server restarted with **pending queued messages** on disk (F-5.6, persistent queue). Lets clients learn about tasks that survived a restart and keep waiting for their dispatch. **Not sent at all** on a fresh/empty start (`restoredCount = 0`).
+
+```json
+{
+  "type": "queues_restored",
+  "restoredCount": 2,
+  "sessions": ["sess_a1b2c3d4", "sess_e5f6g7h8"],
+  "timestamp": "2026-07-26T10:30:00.000Z"
+}
+```
+
+| Field         | Type       | Description                                                   |
+|---------------|------------|---------------------------------------------------------------|
+| restoredCount | `number`   | Number of sessions with pending messages (`=== sessions.length`) |
+| sessions      | `string[]` | Session IDs whose queues were restored from disk              |
 
 #### `agent_event`
 
@@ -1201,20 +1241,24 @@ Send a user message to the agent in this session over the WebSocket connection.
 | content           | `string` | Yes      | The user message text                          |
 | streamingBehavior | `string` | No       | `"steer"` or `"followUp"` (steering preference) |
 
-The runtime executes **one session at a time** (single engine). How the message is handled depends on the engine state (see [Message Queueing](#message-queueing-phase-2) below):
+The runtime executes **one session at a time** (single engine). How the message is handled depends on the engine state (see [Message Queueing](#message-queueing-phases-2--5) below):
 
 - **Engine idle** (or busy with *this same* session) → dispatched immediately; the reply streams as `agent_event` messages.
 - **Engine busy with another session** → the message is queued; you receive a [`queued`](#queued) notification with the position.
 - **Queue full** → the message is rejected with a [`queue_full`](#queue_full) notification.
 
-### Message Queueing (Phase 2)
+### Message Queueing (Phases 2 + 5)
 
 Because the runtime executes one session at a time, `WsMessageDispatcher` (`packages/api-gateway/src/ws-handler.ts`) serializes `sendMessage` requests:
 
-- **Enqueue on busy:** when the engine is streaming a response for session A, a `sendMessage` for session B is appended to B's per-session FIFO queue (`InMemoryMessageQueue`, `packages/api-gateway/src/message-queue.ts`) and acknowledged with `{ type: "queued", position: N }`. A message for the *active* session is dispatched directly (the agent's internal steer/followUp queue handles it).
+- **Enqueue on busy:** when the engine is streaming a response for session A, a `sendMessage` for session B is appended to B's per-session FIFO queue and acknowledged with `{ type: "queued", position: N }`. A message for the *active* session is dispatched directly (the agent's internal steer/followUp queue handles it).
 - **Global FIFO drain:** after a turn completes (`agent_end` event or dispatch settlement), the **globally oldest** queued message across all sessions is dispatched first, regardless of which session it belongs to.
 - **Overflow protection (F-2.15):** each session's queue is capped at 50 messages (configurable server-side). New messages beyond the cap are rejected with `{ type: "queue_full", error: "QUEUE_OVERFLOW", limit: 50 }`.
-- **In-memory only:** queued messages are **lost on server restart** (MVP; persistence is out of scope).
+- **Persistent by default in server mode (F-5.5/F-5.6):** `startServer()` uses `PersistentMessageQueue` (`packages/api-gateway/src/message-queue.ts`) — queued messages are stored as JSONL files and **survive server restarts**:
+  - **Storage layout** (under `<agentDir>/queues`, where agentDir honors `FAN_CODING_AGENT_DIR` / `FAN_AGENT_DIR`, default `~/.fan/agent`): one append-only `<sessionId>.queue.jsonl` per session (one JSON entry per line — FIFO order *is* file order) plus `queue-index.json` (`{ <sessionId>: boolean }` map of active queues, written atomically via tmp+rename).
+  - **Restore on startup:** active queues are reloaded from disk before the server accepts connections; connecting WS clients are notified via [`queues_restored`](#queues_restored). Restoration errors are logged and non-fatal. A corrupted index is rebuilt by rescanning `*.queue.jsonl` (files are the source of truth).
+  - **Delivery semantics: at-least-once.** A crash between dispatch and the atomic file rewrite can redeliver a message after restart (duplicates possible, no losses).
+  - **Opt-out:** `ServerOptions.persistentQueue: false` selects the legacy `InMemoryMessageQueue` (tests, ephemeral runs); a custom queue can be injected via `ServerOptions.messageQueue`.
 - **REST bypass:** `POST /api/sessions/:id/messages` dispatches directly and is never queued.
 
 ---

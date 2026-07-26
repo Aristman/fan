@@ -1,5 +1,72 @@
 # Changelog
 
+## [2.8.0] — 2026-07-26
+
+### Фаза 5 — Конкурентность (concurrency)
+
+Полная изоляция параллельных сессий разных проектов: `process.chdir()`
+удалён из runtime (0 production вызовов), инструменты привязаны к cwd
+сессии; персистентная очередь сообщений (JSONL per sessionId, восстановление
+при старте, WS-фрейм `queues_restored`); per-project токены с scope
+enforcement и lockdown-политикой. Реализовано 8 фич + 2 fix
+(9 коммитов `bb5c659..HEAD` = `2681eff..ad3cff8`).
+Спецификация: `docs/specs/spec_fan-network-agent_phase5-concurrency_2026-07-25.md`,
+аудит: `docs/research/process-cwd-audit-phase5.md`,
+отчёт: `docs/features/phase5-concurrency/pipeline-report.md`.
+
+#### Добавлено
+
+- **Аудит process.cwd()/chdir (F-5.1/F-5.2)** — `docs/research/process-cwd-audit-phase5.md`:
+  82 non-test совпадения cwd (37 direct / 23 indirect / 22 safe skip), 2
+  production вызова `process.chdir()` (оба в `agent-session-runtime.ts`),
+  скрытых chdir в extensions/mcp/store нет; migration plan с оценкой effort
+- **Per-session cwd в tool definitions (F-5.3)** — `create*ToolDefinition(cwd)`
+  для 7 инструментов (bash/read/write/edit/find/grep/ls), `BashExecutor` и
+  `settings-manager` на explicit cwd; legacy default-экспорты помечены
+  `@deprecated`; регрессионный тест `tool-cwd-isolation.test.ts`
+- **Удаление `process.chdir()` из runtime (F-5.4)** — 0 production вызовов;
+  regression guard `no-process-chdir.test.ts` (spy на chdir, параллельные
+  сессии); инвариант `process.cwd()` подтверждён E2E (`/proc/1/cwd`)
+- **PersistentMessageQueue (F-5.5)** — JSONL per sessionId
+  (`<agentDir>/queues/<sessionId>.queue.jsonl`, append-only) + атомарный
+  `queue-index.json` (tmp+rename, `repairIndex` при повреждении); dequeue =
+  атомарная перезапись; drop-in для WS dispatcher, лимит 50 (F-2.15)
+  сохранён; I/O retry ×3; доставка at-least-once (задокументировано)
+- **Restore queues on startup (F-5.6)** — восстановление очередей из файлов
+  до приёма соединений; WS-фрейм `queues_restored { restoredCount, sessions[] }`
+  при подключении (только при restoredCount > 0); ошибки не фатальны;
+  **server mode использует persistent queue по умолчанию**
+  (`ServerOptions.persistentQueue: false` — legacy in-memory)
+- **Per-project tokens (F-5.7)** — `ClientToken.projectScope` (Prisma,
+  additive-миграция, `null` = full access); `authorizeProjectScope()` —
+  exact match после нормализации пути; enforcement по query/body/WS
+  (`session.cwd` при subscribe)/resource-level (`assertSessionInScope` в
+  GET/POST/DELETE `/api/sessions/:id`); **scope lockdown**: GET `/api/tokens`
+  фильтр по scope, DELETE только своего scope, глобальные мутации 403
+  (model settings, provider budget, project registry), GET `/api/projects`
+  фильтр, POST `/api/projects` только внутри scope; anti-escalation при
+  выпуске токенов (scoped caller — только свой scope)
+- **E2E параллельных сессий (F-5.8)** — секция 13 `deploy/scripts/e2e-local.sh`
+  (107 проверок): изоляция JSONL сессий, инвариант `process.cwd()`, очередь
+  переживает `compose restart` без потерь, scoped token smoke (own → 200,
+  foreign → 403)
+
+#### Исправлено
+
+- **F1** — store installer использует session cwd: `ArchiveInstaller(cwd?)`
+  explicit cwd, пересоздание на `session_start` (fix `a1121f9`)
+- **HIGH — эскалация scoped token (финальная verify)** — scope lockdown на
+  tokens/projects/budget/model settings эндпоинтах (fix `ad3cff8`)
+- **F2 — MCP project config** — `mcpExtension` использует `ctx.cwd`
+  (session_start + `/mcp reload`): project `.fan/mcp.json` снова грузится
+  для сессий с cwd ≠ `process.cwd()` (fix `ad3cff8`)
+
+#### Backlog
+
+Deprecated tool API — путь удаления не определён; queue файлы 0644;
+FIFO-перестановка при busy-окне (minor, pre-existing); `SessionManager.open()`
+legacy fallback на `process.cwd()`; 52 старых ClientToken в dev-БД без scope.
+
 ## [2.7.0] — 2026-07-26
 
 ### Фаза 4 — Автономность (autonomy)

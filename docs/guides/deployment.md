@@ -52,7 +52,7 @@ dig +short agent.sea-agents.ru
 | `docker-compose.yml` | Service `fan`, loopback port binding, volumes, env |
 | `deploy/nginx/agent.sea-agents.ru.conf` | nginx server block (443 + 80→443 redirect, WS upgrade) |
 | `deploy/scripts/setup-tls.sh` | Idempotent certbot setup/verification script (F-0.8), run on the VPS |
-| `deploy/scripts/e2e-local.sh` | Automated E2E smoke test on local Docker / VPS loopback (F-0.11-E2E, section 7) |
+| `deploy/scripts/e2e-local.sh` | Automated E2E smoke test on local Docker / VPS loopback (F-0.11-E2E, section 7; 107 checks incl. phase 5 concurrency — section 13) |
 | `docs/guides/deployment.md` | This guide |
 | `deploy/scheduler/config.yaml` | Default scheduler task config (mounted into `fan-scheduler`, F-4.16) |
 | `deploy/scripts/backup-db.sh` | Daily SQLite backup script with rotation (F-4.15) |
@@ -519,6 +519,29 @@ Backups are written to `$FAN_AGENT_DIR/backups/` (in Docker: inside the
 `fan-data` volume). See [scheduler.md — DB Backup](scheduler.md) for env
 vars (`DB_PATH`, `BACKUP_DIR`, `KEEP`), the docker exec variant and
 off-site encryption notes.
+
+### 8.5 Concurrency — persistent queue and per-project tokens (Phase 5)
+
+- **Persistent message queue (F-5.5/F-5.6).** In server mode the WS
+  dispatcher queue is persistent by default: queued client messages live as
+  JSONL files under `/data/.fan/agent/queues` (inside the **`fan-data`
+  volume**, since compose sets `FAN_CODING_AGENT_DIR=/data/.fan/agent`) and
+  survive container restarts/recreation. On startup the server restores
+  pending queues and notifies WS clients (`queues_restored` frame).
+  Delivery is at-least-once (a crash mid-dispatch may redeliver a message).
+  The E2E cleanup wipes the queue dir for idempotency — do the same after a
+  crashed deploy if stale entries accumulate:
+  `docker exec fan-agent rm -rf /data/.fan/agent/queues`.
+- **Per-project tokens (F-5.7).** For multi-tenant setups you can issue
+  tokens restricted to a single project:
+  `POST /api/tokens { "name": "...", "projectScope": "/data/repos/<project>" }`.
+  A scoped token can only access its own project (sessions, budget), manage
+  only its own tokens, and gets `403` on global mutations (model settings,
+  provider budget, project registry changes). Existing tokens stay
+  full-access. Details: [api-reference.md — Project Scope](api-reference.md#project-scope-f-57).
+- **No `process.chdir()` in the runtime (F-5.4):** parallel sessions of
+  different projects are fully cwd-isolated; `/proc/1/cwd` of the container
+  never changes (verified in E2E section 13).
 
 ## 9. Rollback
 
