@@ -26,6 +26,10 @@
 #     cron trigger → FIFO queue → persistent queue file → session creation →
 #     budget cap → sendMessage → provider boundary, scheduler health proxy,
 #     per-project budget API (section 12)
+#   → phase 5 (F-5.8-E2E): concurrency — parallel WS clients on sessions of
+#     different projects (direct dispatch vs persistent queue), process.cwd()
+#     invariant, queue survival across a service restart, per-project scoped
+#     tokens (section 13)
 #   → docker compose down (trap on exit)
 #
 # Exit code 0 only if every check passes (check 7 is optional — skipped
@@ -159,6 +163,21 @@ SCHED_BUDGET_FILE="/data/.fan/agent/project-budgets.json"
 # relative to the compose project dir); removed by the post-clean + trap.
 SCHED_E2E_CONFIG="deploy/scheduler/.e2e-config.yaml"
 
+# --- Section 13 (F-5.8-E2E) constants ---
+PAR_PROJ_X="/data/repos/e2e-par-x"
+PAR_PROJ_Y="/data/repos/e2e-par-y"
+SESS_DIR_PAR_X="/data/.fan/agent/sessions/--data-repos-e2e-par-x--"
+SESS_DIR_PAR_Y="/data/.fan/agent/sessions/--data-repos-e2e-par-y--"
+# F-5.5 persistent queue home (<agentDir>/queues — resolveQueuesDir with the
+# compose FAN_CODING_AGENT_DIR=/data/.fan/agent). Wiped by the cleanup for
+# idempotency (a crashed run would otherwise leave pending entries that the
+# next container start restores).
+QUEUES_DIR="/data/.fan/agent/queues"
+SCOPED_TOKEN_NAME="e2e-scoped-par-x"
+# Dist path of the F-5.5 persistent queue implementation inside the runtime
+# image (same /deploy copy convention as PROMPT_LOADER_DIST — section 10).
+MESSAGE_QUEUE_DIST="/app/packages/api-gateway/dist/message-queue.js"
+
 # Remove test workspaces, their session dirs and their projects.json
 # registry entries. Best-effort: never fails the script (used in the trap).
 e2e_workspace_cleanup() {
@@ -167,7 +186,9 @@ e2e_workspace_cleanup() {
 			"$P3_CODE" "$P3_RESEARCH" "$P3_AUTO" \
 			"$SESS_DIR_A" "$SESS_DIR_B" "$SESS_DIR_C" \
 			"$SESS_DIR_P3_CODE" "$SESS_DIR_P3_RESEARCH" "$SESS_DIR_P3_AUTO" \
-			"$SCHED_PROJ" "$SESS_DIR_SCHED" "$SCHED_PENDING_FILE" 2>/dev/null || true
+			"$SCHED_PROJ" "$SESS_DIR_SCHED" "$SCHED_PENDING_FILE" \
+			"$PAR_PROJ_X" "$PAR_PROJ_Y" "$SESS_DIR_PAR_X" "$SESS_DIR_PAR_Y" \
+			"$QUEUES_DIR" 2>/dev/null || true
 	rm -f "$REPO_ROOT/$SCHED_E2E_CONFIG" 2>/dev/null || true
 	MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" bun -e '
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -181,6 +202,7 @@ if (existsSync(p)) {
 				"/data/repos/e2e-research-lab",
 				"/data/repos/e2e-backend-api", "/data/repos/e2e-competitor-analysis", "/data/repos/e2e-backup-pipeline",
 				"/data/repos/e2e-sched-project",
+				"/data/repos/e2e-par-x", "/data/repos/e2e-par-y",
 			];
 			const keep = list.filter((e) => e && !e2e.includes(e.path));
 			writeFileSync(p, JSON.stringify(keep, null, 2));
@@ -198,6 +220,14 @@ if (existsSync(b)) {
 		}
 	} catch { /* corrupted store → treated as empty */ }
 }
+' >/dev/null 2>&1 || true
+	# F-5.7: drop the scoped E2E token (fixed name) — idempotency across runs.
+	# (-w /app/packages/coding-agent: @fan/db resolution, same as check 3.)
+	MSYS2_ARG_CONV_EXCL="*" docker exec -w /app/packages/coding-agent "$CONTAINER_NAME" bun -e '
+import { getPrismaClient } from "@fan/db";
+const prisma = getPrismaClient();
+try { await prisma.clientToken.deleteMany({ where: { name: "e2e-scoped-par-x" } }); } catch { /* db not ready */ }
+await prisma.$disconnect();
 ' >/dev/null 2>&1 || true
 }
 
@@ -937,19 +967,36 @@ assert_file() { # <container-path> <label>
 	fi
 }
 
-# seed_session_jsonl <session-dir> <session-id> <cwd> — prints SEEDED on
+# seed_session_jsonl <session-dir> <session-id> <cwd> [entries] — prints SEEDED on
 # success. Writes exactly the v3 header SessionManager.newSession() would
-# write (lazy-JSONL workaround, see section 8 header).
+# write (lazy-JSONL workaround, see section 8 header). Optional 4th arg:
+# append <entries> synthetic user-message entries after the header — used by
+# section 13 to give a session a large history (a bigger history makes the
+# runtime switch measurably slower, which the TC-F-5.8-E2E-1 probe relies on
+# for a deterministic dispatch-guard window).
 seed_session_jsonl() {
 	MSYS2_ARG_CONV_EXCL="*" docker exec \
-		-e E2E_SID="$2" -e E2E_DIR="$1" -e E2E_CWD="$3" "$CONTAINER_NAME" bun -e '
+		-e E2E_SID="$2" -e E2E_DIR="$1" -e E2E_CWD="$3" -e E2E_ENTRIES="${4:-0}" "$CONTAINER_NAME" bun -e '
 import { mkdirSync, writeFileSync } from "node:fs";
 const id = process.env.E2E_SID;
 const ts = new Date().toISOString();
 mkdirSync(process.env.E2E_DIR, { recursive: true });
 const file = `${process.env.E2E_DIR}/${ts.replace(/[:.]/g, "-")}_${id}.jsonl`;
 const header = { type: "session", version: 3, id, timestamp: ts, cwd: process.env.E2E_CWD };
-writeFileSync(file, JSON.stringify(header) + "\n");
+const lines = [JSON.stringify(header)];
+let parent = null;
+for (let i = 0; i < Number(process.env.E2E_ENTRIES || 0); i++) {
+	const eid = `e${i}`;
+	lines.push(JSON.stringify({
+		type: "message",
+		id: eid,
+		parentId: parent,
+		timestamp: ts,
+		message: { role: "user", content: [{ type: "text", text: `synthetic history entry ${i}` }], timestamp: Date.now() },
+	}));
+	parent = eid;
+}
+writeFileSync(file, lines.join("\n") + "\n");
 console.log("SEEDED");
 ' 2>/dev/null || true
 }
@@ -1568,6 +1615,383 @@ EOF
 
 	# 12.19. Post-clean: keep the run idempotent (also runs from the EXIT trap).
 	info "Cleanup: removing scheduler test workspace, queue/budget artifacts and the E2E config"
+	e2e_workspace_cleanup
+fi
+
+# =========================================================================
+section "13. Phase 5 — Concurrency (F-5.8-E2E): parallel sessions, cwd invariant, queue restart survival, scoped tokens"
+# =========================================================================
+# Covers the phase-5 E2E feature against the live container — 4 checks:
+#   13.1  TC-F-5.8-E2E-1: two WS clients (sessions of DIFFERENT projects)
+#         send sendMessage in a staggered pair (deterministic guard window
+#         — see TC ADAPTATIONS) → X direct dispatch, Y queued via the
+#         dispatchPending guard (position 1, persisted by the F-5.5 queue)
+#         → after the (fast, no-LLM) provider failure the drain dequeues it
+#         → BOTH messages terminate in their OWN sessions (app.log
+#         evidence), JSONL files stay isolated
+#   13.2  TC-F-5.8-E2E-2: process.cwd() invariant — /proc/1/cwd of the
+#         server process (PID 1, bun started with WORKDIR /app) is "/app"
+#         before AND after project switches (no process.chdir, F-5.4)
+#   13.3  TC-F-5.8-E2E-3: persistent queue survives `docker compose
+#         restart fan` — 3 messages still on disk, WS client receives
+#         queues_restored (F-5.6), the drain continues after the restart
+#         (3 queued dispatches logged), nothing lost
+#   13.4  scoped token smoke (F-5.7): Prisma-provisioned scoped token →
+#         GET /api/sessions?project=<own> 200 (own session listed, no
+#         cross-project leakage), ?project=<foreign> 403
+#
+# TC ADAPTATIONS (documented):
+#  - TC-F-5.8-E2E-1: the roadmap assumes two PARALLEL agent runs. The
+#    runtime is single-engine BY DESIGN ("one engine + queue"): the second
+#    concurrent sendMessage cannot process in parallel — it is queued via
+#    the dispatchPending guard (ws-handler.ts) and drained after the first
+#    one settles. DETERMINISM: without an LLM the first dispatch settles in
+#    MICROTASKS when it targets the ACTIVE session (prompt() throws at
+#    provider validation before any I/O), releasing the guard before the
+#    second message is even read — a probe with two simultaneous sends is a
+#    race (verified experimentally: ~2/3 of runs queue nothing). The probe
+#    is therefore engineered: (a) session X gets a LARGE seeded history
+#    (40k entries — switching to it costs ~0.5s of real fs/parse I/O,
+#    measured), so X's dispatch holds the guard long enough; (b) sends are
+#    staggered — X first (X is NOT the active session after setup), Y
+#    150ms later, landing deterministically inside the guard window.
+#    Result: X = direct dispatch, Y = queued position 1. Isolation is
+#    asserted as: correct dispatch/queued split + per-session completion +
+#    zero JSONL cross-contamination.
+#  - NO-LLM BOUNDARY (same convention as sections 9/12): without API keys
+#    every dispatch fails fast at provider validation; the completion
+#    evidence is the app.log line — "[ws-handler] sendMessage failed …"
+#    for the direct dispatch, "[ws-handler] queued sendMessage failed …"
+#    for the drained one. Reaching the provider stage proves the full path
+#    (upgrade → auth → dispatcher → adapter → provider).
+#  - TC-F-5.8-E2E-3 determinism: without an LLM the busy window lasts
+#    milliseconds, so a WS-enqueued message is drained long before a
+#    `compose restart` could interrupt it — restart-durability cannot be
+#    raced reliably. The setup therefore enqueues through the PRODUCTION
+#    PersistentMessageQueue class from the image dist (exact F-5.5 on-disk
+#    format; queuesDir resolves to /data/.fan/agent/queues via the compose
+#    FAN_CODING_AGENT_DIR env) — the same seeding technique as the
+#    lazy-JSONL session headers (sections 8/11). Post-restart the restore
+#    must NOT consume the entries (asserted: 3 lines still on disk); a
+#    fresh sendMessage then kicks the drain, proving continuation.
+#  - TC-F-5.8-E2E-2 method: `docker exec readlink /proc/1/cwd` (slim image
+#    has coreutils; PID 1 is the bun server process — Dockerfile WORKDIR
+#    /app, and the compose env never changes it).
+SID_PAR_X=""
+SID_PAR_Y=""
+if [ -z "$TOKEN" ]; then
+	fail "phase 5 checks skipped — no token (see check 3)"
+else
+	# 13.0. Pre-clean: wipe leftovers from a crashed previous run (volumes persist).
+	e2e_workspace_cleanup
+
+	# --- Shared setup (13.1/13.2/13.4): two workspaces + one session each,
+	# both persisted via the lazy-JSONL seed (see section 8 header). Session
+	# ids differ per run, so app.log greps below are collision-free. ---
+	setup_ok=1
+	MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" mkdir -p "$PAR_PROJ_X" "$PAR_PROJ_Y" 2>/dev/null || setup_ok=0
+	for spec in "SID_PAR_X|$PAR_PROJ_X" "SID_PAR_Y|$PAR_PROJ_Y"; do
+		var="${spec%%|*}"; ppath="${spec#*|}"
+		resp="$(curl -s --max-time 15 -w '\n%{http_code}' -X POST "$BASE_URL/api/sessions" \
+			-H "Authorization: Bearer $TOKEN" \
+			-H "Content-Type: application/json" -d "{\"cwd\": \"$ppath\"}")"
+		code="${resp##*$'\n'}"
+		body="${resp%$'\n'*}"
+		sid="$(echo "$body" | grep -o '"id"[: ]*"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"$/\1/')"
+		resp_cwd="$(echo "$body" | grep -o '"cwd"[: ]*"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"$/\1/')"
+		info "POST /api/sessions {cwd: $ppath} → $code, id: ${sid:-<none>}"
+		if [ "$code" = "201" ] && [ -n "$sid" ] && [ "$resp_cwd" = "$ppath" ]; then
+			printf -v "$var" '%s' "$sid"
+		else
+			setup_ok=0
+		fi
+	done
+	if [ -n "$SID_PAR_X" ] && [ "$(seed_session_jsonl "$SESS_DIR_PAR_X" "$SID_PAR_X" "$PAR_PROJ_X" 40000)" != "SEEDED" ]; then
+		setup_ok=0
+	fi
+	if [ -n "$SID_PAR_Y" ] && [ "$(seed_session_jsonl "$SESS_DIR_PAR_Y" "$SID_PAR_Y" "$PAR_PROJ_Y")" != "SEEDED" ]; then
+		setup_ok=0
+	fi
+	if [ -z "$SID_PAR_X" ] || [ -z "$SID_PAR_Y" ]; then
+		setup_ok=0
+	fi
+
+	if [ "$setup_ok" != "1" ]; then
+		fail "TC-F-5.8-E2E-1 aborted — shared setup failed (sessions/seed, see INFO above)"
+		fail "TC-F-5.8-E2E-2 aborted — shared setup failed"
+	elif ! command -v bun >/dev/null 2>&1; then
+		skip "TC-F-5.8-E2E-1 skipped — bun not available on host"
+		skip "TC-F-5.8-E2E-2 skipped — bun not available on host"
+	else
+		# 13.1. TC-F-5.8-E2E-1 (adapted — see header): two WS clients,
+		# STAGGERED sendMessage. X (non-active session with a large seeded
+		# history → slow switch, guard held ~0.5s) is sent first; Y follows
+		# 150ms later and lands inside the dispatchPending window → X direct
+		# dispatch (no queue frame), Y queued at position 1.
+		# Warm-up: force a fresh disk-session listing that INCLUDES both
+		# freshly seeded files right before the probe. Without this, the
+		# adapter's 3s listAll cache may still hold a pre-seed snapshot →
+		# resolveSessionPath(X) misses → sendMessage silently returns false
+		# (now logged, see main.ts) → no switch, no guard window, Y goes
+		# direct too (root cause of the first TC-1 implementation's flake).
+		warm_x="$(curl -s --max-time 10 "$BASE_URL/api/sessions?project=$PAR_PROJ_X" -H "Authorization: Bearer $TOKEN")"
+		warm_y="$(curl -s --max-time 10 "$BASE_URL/api/sessions?project=$PAR_PROJ_Y" -H "Authorization: Bearer $TOKEN")"
+		info "warm-up listing: X has $(echo "$warm_x" | grep -c "\"id\":\"$SID_PAR_X\"") × own session, Y has $(echo "$warm_y" | grep -c "\"id\":\"$SID_PAR_Y\"") × own session"
+		ws_out="$(E2E_URL_X="ws://127.0.0.1:3456/api/ws/$SID_PAR_X?token=$TOKEN" \
+			E2E_URL_Y="ws://127.0.0.1:3456/api/ws/$SID_PAR_Y?token=$TOKEN" bun -e '
+const res = { x: { queued: false, pos: 0, queueFull: false, err: "" }, y: { queued: false, pos: 0, queueFull: false, err: "" } };
+let connectedCount = 0, sent = false;
+const timer = setTimeout(done, 15000);
+function done() { clearTimeout(timer); console.log(JSON.stringify(res)); process.exit(0); }
+function maybeSend() {
+	if (connectedCount === 2 && !sent) {
+		sent = true;
+		wsX.send(JSON.stringify({ type: "sendMessage", content: "e2e par probe X" }));
+		setTimeout(() => wsY.send(JSON.stringify({ type: "sendMessage", content: "e2e par probe Y" })), 150);
+		setTimeout(done, 8000); // collect frames for 8s after firing
+	}
+}
+function mk(url, key) {
+	const ws = new WebSocket(url);
+	ws.onmessage = (e) => {
+		try {
+			const m = JSON.parse(e.data);
+			if (m.type === "connected") { connectedCount++; maybeSend(); }
+			else if (m.type === "queued") { res[key].queued = true; res[key].pos = m.position; }
+			else if (m.type === "queue_full") { res[key].queueFull = true; }
+			else if (m.type === "error") { res[key].err = m.code || "error"; }
+		} catch { /* ignore non-JSON frames */ }
+	};
+	ws.onerror = () => { /* timeout reports what was collected */ };
+	return ws;
+}
+const wsX = mk(process.env.E2E_URL_X, "x");
+const wsY = mk(process.env.E2E_URL_Y, "y");
+' 2>/dev/null || true)"
+		info "WS parallel probe: ${ws_out:-<none>}"
+		QID=""; DID=""
+		if echo "$ws_out" | grep -q '"x":{"queued":false,"pos":0,"queueFull":false' \
+			&& echo "$ws_out" | grep -q '"y":{"queued":true,"pos":1,"queueFull":false'; then
+			QID="$SID_PAR_Y"; DID="$SID_PAR_X"
+		fi
+		# Server-side evidence: the direct dispatch reached the provider stage
+		# ("sendMessage failed") and the queued one was dequeued and reached it
+		# too ("queued sendMessage failed") — each logged against its OWN session.
+		logs_ok=0
+		if [ -n "$QID" ]; then
+			sleep 3
+			qhit="$(MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" \
+				grep -F "[ws-handler] queued sendMessage failed for session $QID" /data/logs/app.log 2>/dev/null || true)"
+			dhit="$(MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" \
+				grep -F "[ws-handler] sendMessage failed for session $DID" /data/logs/app.log 2>/dev/null || true)"
+			if [ -n "$qhit" ] && [ -n "$dhit" ]; then
+				logs_ok=1
+				info "log (direct): $(echo "$dhit" | head -1 | cut -c1-140)"
+				info "log (queued):  $(echo "$qhit" | head -1 | cut -c1-140)"
+			fi
+		fi
+		# Isolation: each session retrievable with its own cwd; on disk each
+		# project session dir references ONLY its own session id (zero
+		# cross-contamination); the queued message's persistent file is gone
+		# after the drain (F-5.5 dequeue-on-drain lifecycle).
+		iso_ok=1
+		for spec in "$SID_PAR_X|$PAR_PROJ_X" "$SID_PAR_Y|$PAR_PROJ_Y"; do
+			sid="${spec%%|*}"; ppath="${spec#*|}"
+			one="$(curl -s --max-time 10 "$BASE_URL/api/sessions/$sid" -H "Authorization: Bearer $TOKEN")"
+			echo "$one" | grep -q "\"cwd\":\"$ppath\"" || iso_ok=0
+		done
+		MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" sh -c \
+			"grep -q -F '$SID_PAR_X' $SESS_DIR_PAR_X/*.jsonl && ! grep -q -F '$SID_PAR_Y' $SESS_DIR_PAR_X/*.jsonl" \
+			2>/dev/null || iso_ok=0
+		MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" sh -c \
+			"grep -q -F '$SID_PAR_Y' $SESS_DIR_PAR_Y/*.jsonl && ! grep -q -F '$SID_PAR_X' $SESS_DIR_PAR_Y/*.jsonl" \
+			2>/dev/null || iso_ok=0
+		if [ -n "$QID" ]; then
+			MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" \
+				test ! -f "$QUEUES_DIR/$QID.queue.jsonl" 2>/dev/null || iso_ok=0
+		fi
+		if [ -n "$QID" ] && [ "$logs_ok" = "1" ] && [ "$iso_ok" = "1" ]; then
+			pass "TC-F-5.8-E2E-1: staggered sendMessage → direct dispatch ($DID) + queued position 1 ($QID, dispatchPending guard, persistent queue), both completed in their own sessions, JSONL isolated, queue drained"
+		else
+			fail "TC-F-5.8-E2E-1: ws=${ws_out:-none} queued_sid=${QID:-none} logs_ok=$logs_ok iso_ok=$iso_ok"
+			# Diagnostics for the next debug round: what does the server see?
+			info "diag: GET ?project=X → $(curl -s --max-time 10 "$BASE_URL/api/sessions?project=$PAR_PROJ_X" -H "Authorization: Bearer $TOKEN" | head -c 200)"
+			info "diag: app.log tail for SX: $(MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" sh -c "grep -F '$SID_PAR_X' /data/logs/app.log | tail -2" 2>/dev/null || true)"
+			info "diag: app.log tail for SY: $(MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" sh -c "grep -F '$SID_PAR_Y' /data/logs/app.log | tail -2" 2>/dev/null || true)"
+		fi
+
+		# 13.2. TC-F-5.8-E2E-2: process.cwd() invariant. /proc/1/cwd of the
+		# server process must be "/app" (Dockerfile WORKDIR) before AND after
+		# the project switches X → Y → X (F-5.4 removed process.chdir).
+		cwd_before="$(MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" \
+			readlink /proc/1/cwd 2>/dev/null | tr -d '\r' || true)"
+		switch_ok=1
+		for target in "$PAR_PROJ_X" "$PAR_PROJ_Y" "$PAR_PROJ_X"; do
+			scode="$(http_status -X POST "$BASE_URL/api/sessions" \
+				-H "Authorization: Bearer $TOKEN" \
+				-H "Content-Type: application/json" -d "{\"cwd\": \"$target\"}")"
+			[ "$scode" = "201" ] || switch_ok=0
+		done
+		cwd_after="$(MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" \
+			readlink /proc/1/cwd 2>/dev/null | tr -d '\r' || true)"
+		if [ "$switch_ok" = "1" ] && [ "$cwd_before" = "/app" ] && [ "$cwd_after" = "/app" ]; then
+			pass "TC-F-5.8-E2E-2: process.cwd() invariant — /proc/1/cwd == /app (WORKDIR) before and after X→Y→X switches (no process.chdir, F-5.4)"
+		else
+			fail "TC-F-5.8-E2E-2: cwd_before=${cwd_before:-none} cwd_after=${cwd_after:-none} switch_ok=$switch_ok (expected /app + 201s)"
+		fi
+	fi
+
+	# 13.3. TC-F-5.8-E2E-3: persistent queue survives a service restart.
+	# Deterministic setup (see header): 3 messages enqueued through the
+	# PRODUCTION PersistentMessageQueue class from the image dist, then
+	# `docker compose restart fan` (fan-data volume persists the file).
+	if [ "$setup_ok" != "1" ]; then
+		fail "TC-F-5.8-E2E-3 aborted — shared setup failed"
+	elif ! command -v bun >/dev/null 2>&1; then
+		skip "TC-F-5.8-E2E-3 skipped — bun not available on host"
+	else
+		restart_ok=1
+		# Baseline: queued-failure log lines for session X (13.1 may have
+		# added one when X was the queued session).
+		qfail_base="$(MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" \
+			sh -c "grep -c -F '[ws-handler] queued sendMessage failed for session $SID_PAR_X' /data/logs/app.log || true" \
+			2>/dev/null | tr -d ' \r' || true)"
+		[ -z "$qfail_base" ] && qfail_base=0
+		seed_q="$(MSYS2_ARG_CONV_EXCL="*" docker exec -e E2E_SID="$SID_PAR_X" "$CONTAINER_NAME" bun -e "
+import { PersistentMessageQueue } from \"$MESSAGE_QUEUE_DIST\";
+const q = new PersistentMessageQueue();
+for (const c of ['e2e restart probe 1', 'e2e restart probe 2', 'e2e restart probe 3']) {
+	await q.enqueue(process.env.E2E_SID, { content: c });
+}
+console.log('ENQUEUED3');
+" 2>/dev/null || true)"
+		[ "$seed_q" = "ENQUEUED3" ] || restart_ok=0
+		qlines="$(MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" \
+			sh -c "wc -l < '$QUEUES_DIR/$SID_PAR_X.queue.jsonl' 2>/dev/null || echo 0" | tr -d ' \r' || true)"
+		[ "$qlines" = "3" ] || restart_ok=0
+		info "Restarting the fan service ($qlines pending message(s) on disk for session $SID_PAR_X)..."
+		$COMPOSE restart fan >/dev/null 2>&1 || restart_ok=0
+		ready=0
+		deadline=$(( $(date +%s) + 120 ))
+		while [ "$(date +%s)" -lt "$deadline" ]; do
+			if [ "$(http_status "$BASE_URL/api/health" || true)" = "200" ]; then
+				ready=1
+				break
+			fi
+			sleep 2
+		done
+		[ "$ready" = "1" ] || restart_ok=0
+		# F-5.6: the connecting WS client is notified about the restored queue.
+		ws3_out=""
+		if [ "$ready" = "1" ]; then
+			ws3_out="$(E2E_WS_URL="ws://127.0.0.1:3456/api/ws/$SID_PAR_X?token=$TOKEN" E2E_SID="$SID_PAR_X" bun -e '
+const sid = process.env.E2E_SID;
+const res = { connected: false, restored: false, hasSid: false, count: 0 };
+const timer = setTimeout(done, 10000);
+function done() { clearTimeout(timer); console.log(JSON.stringify(res)); process.exit(0); }
+try {
+	const ws = new WebSocket(process.env.E2E_WS_URL);
+	ws.onmessage = (e) => {
+		try {
+			const m = JSON.parse(e.data);
+			if (m.type === "connected") res.connected = true;
+			if (m.type === "queues_restored") {
+				res.restored = true;
+				res.count = m.restoredCount;
+				if (Array.isArray(m.sessions) && m.sessions.includes(sid)) res.hasSid = true;
+				done();
+			}
+		} catch { /* ignore non-JSON frames */ }
+	};
+	ws.onerror = () => done();
+} catch { done(); }
+' 2>/dev/null || true)"
+		fi
+		info "WS after restart: ${ws3_out:-<none>}"
+		if ! { echo "$ws3_out" | grep -q '"connected":true' && echo "$ws3_out" | grep -q '"restored":true' \
+			&& echo "$ws3_out" | grep -q '"hasSid":true'; }; then
+			restart_ok=0
+		fi
+		# The restore must NOT consume the entries: all 3 still on disk.
+		qlines2="$(MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" \
+			sh -c "wc -l < '$QUEUES_DIR/$SID_PAR_X.queue.jsonl' 2>/dev/null || echo 0" | tr -d ' \r' || true)"
+		[ "$qlines2" = "3" ] || restart_ok=0
+		# Continuation: a fresh sendMessage kicks the post-dispatch drain →
+		# the 3 restored messages are dequeued and dispatched (each fails fast
+		# at the provider boundary — no LLM — logged per dispatch).
+		if [ "$ready" = "1" ]; then
+			E2E_WS_URL="ws://127.0.0.1:3456/api/ws/$SID_PAR_X?token=$TOKEN" bun -e '
+const timer = setTimeout(() => process.exit(0), 6000);
+try {
+	const ws = new WebSocket(process.env.E2E_WS_URL);
+	ws.onmessage = (e) => {
+		try {
+			const m = JSON.parse(e.data);
+			if (m.type === "connected") ws.send(JSON.stringify({ type: "sendMessage", content: "e2e drain kick" }));
+		} catch { /* ignore */ }
+	};
+	ws.onerror = () => { clearTimeout(timer); process.exit(0); };
+} catch { clearTimeout(timer); process.exit(0); }
+' >/dev/null 2>&1 || true
+		fi
+		want=$(( qfail_base + 3 ))
+		drain_ok=0
+		deadline=$(( $(date +%s) + 40 ))
+		while [ "$(date +%s)" -lt "$deadline" ]; do
+			cnt="$(MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" \
+				sh -c "grep -c -F '[ws-handler] queued sendMessage failed for session $SID_PAR_X' /data/logs/app.log || true" \
+				2>/dev/null | tr -d ' \r' || true)"
+			if [ -n "$cnt" ] && [ "$cnt" -ge "$want" ] 2>/dev/null; then
+				drain_ok=1
+				break
+			fi
+			sleep 2
+		done
+		[ "$drain_ok" = "1" ] || restart_ok=0
+		# Drained → the persistent file is gone (nothing left to lose).
+		MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" \
+			test ! -f "$QUEUES_DIR/$SID_PAR_X.queue.jsonl" 2>/dev/null || restart_ok=0
+		if [ "$restart_ok" = "1" ]; then
+			pass "TC-F-5.8-E2E-3: queue survived compose restart — 3 messages intact on disk, queues_restored frame (F-5.6), drain continued after restart (3 queued dispatches), file drained — no message lost"
+		else
+			fail "TC-F-5.8-E2E-3: seed=${seed_q:-none} lines=${qlines:-?}/${qlines2:-?} ready=$ready ws3=${ws3_out:-none} drain_ok=$drain_ok"
+		fi
+	fi
+
+	# 13.4. Scoped token smoke (F-5.7): token provisioned via Prisma (same
+	# bootstrap path as check 3) with projectScope=PAR_PROJ_X. Own project →
+	# 200 with ONLY the own session; foreign project → 403.
+	if [ "$setup_ok" != "1" ]; then
+		fail "scoped token smoke aborted — shared setup failed"
+	else
+		SCOPED_TOKEN="$(
+			MSYS2_ARG_CONV_EXCL="*" docker exec -w /app/packages/coding-agent "$CONTAINER_NAME" bun -e "
+import { getPrismaClient } from \"@fan/db\";
+import { randomBytes, randomUUID } from \"node:crypto\";
+const prisma = getPrismaClient();
+const token = randomBytes(32).toString(\"hex\");
+await prisma.clientToken.create({ data: { id: randomUUID(), name: \"$SCOPED_TOKEN_NAME\", token, projectScope: \"$PAR_PROJ_X\" } });
+await prisma.\$disconnect();
+console.log(token);
+" 2>/dev/null | grep -oE '[0-9a-f]{64}' | head -1 || true
+		)"
+		own_resp="$(curl -s --max-time 10 -w '\n%{http_code}' "$BASE_URL/api/sessions?project=$PAR_PROJ_X" \
+			-H "Authorization: Bearer $SCOPED_TOKEN")"
+		own_code="${own_resp##*$'\n'}"
+		own_body="${own_resp%$'\n'*}"
+		foreign_code="$(http_status "$BASE_URL/api/sessions?project=$PAR_PROJ_Y" -H "Authorization: Bearer $SCOPED_TOKEN")"
+		if [ -n "$SCOPED_TOKEN" ] && [ "$own_code" = "200" ] \
+			&& echo "$own_body" | grep -q "\"id\":\"$SID_PAR_X\"" \
+			&& ! echo "$own_body" | grep -q "\"id\":\"$SID_PAR_Y\"" \
+			&& [ "$foreign_code" = "403" ]; then
+			pass "scoped token smoke (F-5.7): ?project=own → 200 (own session only), ?project=foreign → 403"
+		else
+			fail "scoped token smoke: token=${SCOPED_TOKEN:+created} own=$own_code foreign=$foreign_code body=$own_body"
+		fi
+	fi
+
+	# 13.5. Post-clean: keep the run idempotent (also runs from the EXIT trap).
+	info "Cleanup: removing phase-5 test workspaces, session dirs, queue files, registry entries and the scoped token"
 	e2e_workspace_cleanup
 fi
 

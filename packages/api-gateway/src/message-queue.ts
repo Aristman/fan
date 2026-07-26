@@ -392,6 +392,14 @@ export class PersistentMessageQueue<T = unknown> implements DrainableMessageQueu
 				return await op();
 			} catch (err) {
 				attempt++;
+				// Durability: an ENOENT means the queues directory (or a parent)
+				// vanished at runtime — the cached ensureDir() promise is stale,
+				// so retrying the same operation could never succeed. Drop the
+				// cache; the next attempt re-creates the directory (mkdir -p)
+				// instead of failing all retries with the same ENOENT.
+				if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+					this.dirReady = null;
+				}
 				if (attempt > this.maxRetries) {
 					console.error(`[PersistentMessageQueue] ${what} failed after ${attempt} attempts:`, err);
 					throw err;

@@ -479,7 +479,15 @@ export function createSessionAdapter(runtime: AgentSessionRuntime, defaultCwd?: 
 		// --- sendMessage: switch runtime to target session, then prompt ---
 		async sendMessage(sessionId: string, message: string, streamingBehavior?: "steer" | "followUp") {
 			const switched = await ensureSession(sessionId);
-			if (!switched) return false;
+			if (!switched) {
+				// Observability: without this log the failure is silent — the
+				// promise RESOLVES (return false), so the WS dispatcher's .catch
+				// never fires and nothing reaches the logs (hard to diagnose:
+				// found via TC-F-5.8-E2E-1, where a just-seeded session file was
+				// not yet visible to the disk-session cache).
+				console.error(`[session-adapter] sendMessage: session ${sessionId} not found on disk`);
+				return false;
+			}
 			await runtime.session.prompt(message, {
 				streamingBehavior: streamingBehavior ?? "followUp",
 			});

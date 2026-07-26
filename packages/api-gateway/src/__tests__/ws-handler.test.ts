@@ -1,5 +1,6 @@
 import { createServer, type Server } from "node:http";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { QueuedMessage } from "../message-queue.js";
 import type { WsOutgoingMessage } from "../types.js";
 import type { WsSendMessagePayload } from "../ws-handler.js";
 
@@ -523,5 +524,119 @@ describe("F-5.7: WebSocket project scope enforcement", () => {
 		const res = await bridge.handleFetch({ url: url.toString() } as Request, server, url);
 		expect(res?.status).toBe(403);
 		expect(server.upgrade).not.toHaveBeenCalled();
+	});
+});
+
+describe("F-5.8: drain-kick race safety", () => {
+	function createMockAdapter() {
+		return {
+			listSessions: vi.fn().mockResolvedValue([]),
+			getSession: vi.fn().mockResolvedValue(null),
+			createSession: vi.fn().mockResolvedValue({ id: "s1", title: "Test" }),
+			deleteSession: vi.fn().mockResolvedValue(false),
+			sendMessage: vi.fn().mockResolvedValue(true),
+			subscribeToSession: vi.fn().mockReturnValue(() => {}),
+			getAvailableModels: vi.fn().mockResolvedValue([]),
+			bindSessionExtensions: vi.fn().mockResolvedValue(undefined),
+			listProjects: vi.fn().mockResolvedValue([]),
+			getActiveSessionId: vi.fn().mockReturnValue(null),
+			isExecuting: vi.fn().mockReturnValue(false),
+		};
+	}
+
+	it("drains a message that was enqueued while busy but became idle before enqueue completed", async () => {
+		const { WsMessageDispatcher } = await import("../ws-handler.js");
+		const { InMemoryMessageQueue } = await import("../message-queue.js");
+		const adapter = createMockAdapter();
+		adapter.isExecuting.mockReturnValue(true);
+		adapter.getActiveSessionId.mockReturnValue("sess-A");
+
+		class DeferredEnqueueQueue extends InMemoryMessageQueue<WsSendMessagePayload> {
+			private releaseFn: (() => void) | null = null;
+			public enqueueStarted = false;
+			override async enqueue(sessionId: string, message: WsSendMessagePayload): Promise<number | null> {
+				this.enqueueStarted = true;
+				await new Promise<void>((resolve) => {
+					this.releaseFn = resolve;
+				});
+				return super.enqueue(sessionId, message);
+			}
+			release() {
+				this.releaseFn?.();
+			}
+		}
+
+		const queue = new DeferredEnqueueQueue();
+		const dispatcher = new WsMessageDispatcher({ sessionAdapter: adapter, messageQueue: queue });
+		const handlePromise = dispatcher.handleMessage("sess-B", { type: "sendMessage", content: "stranded?" }, () => {});
+
+		// Wait until the (slow) enqueue branch has been entered.
+		await vi.waitFor(() => expect(queue.enqueueStarted).toBe(true));
+		// The busy window closes while the enqueue is still in flight.
+		adapter.isExecuting.mockReturnValue(false);
+		queue.release();
+
+		await handlePromise;
+		await vi.waitFor(() => expect(adapter.sendMessage).toHaveBeenCalledWith("sess-B", "stranded?", undefined));
+		expect(adapter.sendMessage).toHaveBeenCalledTimes(1);
+	});
+
+	it("three concurrent idle kicks result in only one drain", async () => {
+		const { WsMessageDispatcher } = await import("../ws-handler.js");
+		const { InMemoryMessageQueue } = await import("../message-queue.js");
+
+		class DeferredDequeueQueue extends InMemoryMessageQueue<WsSendMessagePayload> {
+			private releaseFn: (() => void) | null = null;
+			public dequeueStarted = false;
+			override async dequeueOldest(): Promise<{
+				sessionId: string;
+				item: QueuedMessage<WsSendMessagePayload>;
+			} | null> {
+				this.dequeueStarted = true;
+				await new Promise<void>((resolve) => {
+					this.releaseFn = resolve;
+				});
+				return super.dequeueOldest();
+			}
+			release() {
+				this.releaseFn?.();
+			}
+		}
+
+		const adapter = createMockAdapter();
+		adapter.isExecuting.mockReturnValue(false);
+		const queue = new DeferredDequeueQueue();
+		await queue.enqueue("sess-B", { content: "m" });
+		const dispatcher = new WsMessageDispatcher({ sessionAdapter: adapter, messageQueue: queue });
+
+		// First kick starts the drain; the next two must be no-ops because of the draining flag.
+		dispatcher.notifyIdle();
+		await vi.waitFor(() => expect(queue.dequeueStarted).toBe(true));
+		dispatcher.notifyIdle();
+		dispatcher.notifyIdle();
+		queue.release();
+
+		await vi.waitFor(() => expect(adapter.sendMessage).toHaveBeenCalledTimes(1));
+		expect(adapter.sendMessage).toHaveBeenCalledWith("sess-B", "m", undefined);
+	});
+
+	it("idle kick is a no-op while the engine is busy", async () => {
+		const { WsMessageDispatcher } = await import("../ws-handler.js");
+		const { InMemoryMessageQueue } = await import("../message-queue.js");
+		const adapter = createMockAdapter();
+		adapter.isExecuting.mockReturnValue(true);
+		const queue = new InMemoryMessageQueue<WsSendMessagePayload>();
+		await queue.enqueue("sess-B", { content: "m" });
+		const dispatcher = new WsMessageDispatcher({ sessionAdapter: adapter, messageQueue: queue });
+
+		dispatcher.notifyIdle();
+		await new Promise((resolve) => setTimeout(resolve, 30));
+		expect(adapter.sendMessage).not.toHaveBeenCalled();
+
+		// Once the engine is idle, the next kick drains the queued message.
+		adapter.isExecuting.mockReturnValue(false);
+		dispatcher.notifyIdle();
+		await vi.waitFor(() => expect(adapter.sendMessage).toHaveBeenCalledWith("sess-B", "m", undefined));
+		expect(adapter.sendMessage).toHaveBeenCalledTimes(1);
 	});
 });

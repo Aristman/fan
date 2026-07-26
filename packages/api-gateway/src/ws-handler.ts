@@ -220,6 +220,17 @@ export class WsMessageDispatcher {
 					return;
 				}
 				send({ type: "queued", sessionId, timestamp: new Date().toISOString(), position });
+				// Race guard (found via TC-F-5.8-E2E-1): the busy/dispatch-pending
+				// window that caused the enqueue may have ENDED while the (durable,
+				// potentially slow) enqueue was in flight — the post-dispatch drain
+				// then already ran and found an empty queue. Without this kick the
+				// message would be stranded until the next unrelated dispatch or
+				// agent_end. When the engine is still busy/pending this is a no-op
+				// (the in-flight dispatch's .finally drain handles it); the
+				// `draining` flag inside drainQueue makes a concurrent kick safe.
+				if (!this.dispatchPending && !this.isBusy()) {
+					void this.drainQueue();
+				}
 			} catch (err) {
 				// F-5.5: enqueue can throw after I/O retries. Report a typed error
 				// frame instead of letting the rejection escape as unhandled.

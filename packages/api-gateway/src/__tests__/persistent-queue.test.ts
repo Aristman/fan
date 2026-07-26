@@ -318,3 +318,47 @@ describe("PersistentMessageQueue", () => {
 		expect(index["sess-phantom"]).toBe(false);
 	});
 });
+
+describe("PersistentMessageQueue runtime directory recovery (F-5.5)", () => {
+	let queuesDir: string;
+
+	beforeEach(async () => {
+		queuesDir = await mkdtemp(join(tmpdir(), "fan-pq-recovery-"));
+	});
+
+	afterEach(async () => {
+		await rm(queuesDir, { recursive: true, force: true });
+	});
+
+	it("recovers from a deleted queues directory at runtime and does not lose in-memory messages", async () => {
+		const queue = new PersistentMessageQueue<string>({ queuesDir, retryDelayMs: 0 });
+		await queue.enqueue("sess-1", "A");
+
+		// Simulate an external cleanup or accidental deletion of the queues dir.
+		await rm(queuesDir, { recursive: true, force: true });
+
+		// The next enqueue sees ENOENT, resets the stale ensureDir() promise,
+		// recreates the directory and appends the new message. The previously
+		// cached message (A) is still visible to the same process.
+		expect(await queue.enqueue("sess-1", "B")).toBe(2);
+		expect(await queue.size("sess-1")).toBe(2);
+		expect((await queue.peekAll("sess-1")).map((m) => m.message)).toEqual(["A", "B"]);
+		expect((await queue.dequeue("sess-1"))?.message).toBe("A");
+		expect((await queue.dequeue("sess-1"))?.message).toBe("B");
+		expect(await queue.dequeue("sess-1")).toBeNull();
+	});
+
+	it("throws after retries when the queues path is not a directory (ENOTDIR)", async () => {
+		const parentDir = await mkdtemp(join(tmpdir(), "fan-pq-enotdir-"));
+		const parentFile = join(parentDir, "parentFile");
+		await writeFile(parentFile, "not a directory", "utf-8");
+
+		// A path component is a file, so mkdir(..., { recursive: true }) must fail
+		// with ENOTDIR. The queue retries and then propagates the error.
+		const badQueuesDir = join(parentDir, "parentFile", "queues");
+		const queue = new PersistentMessageQueue<string>({ queuesDir: badQueuesDir, retryDelayMs: 0, maxRetries: 1 });
+		await expect(queue.enqueue("sess-1", "A")).rejects.toMatchObject({ code: "ENOTDIR" });
+
+		await rm(parentDir, { recursive: true, force: true });
+	});
+});
