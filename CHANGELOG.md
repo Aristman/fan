@@ -1,5 +1,91 @@
 # Changelog
 
+## [2.7.0] — 2026-07-26
+
+### Фаза 4 — Автономность (autonomy)
+
+Автономный cron-based планировщик задач `fan-scheduler`: YAML-конфиг,
+однопоточная очередь с персистентностью, retry/backoff, per-task budget
+caps, приоритет чата над автономными задачами, control server
+(pause/resume/state/health), GitHub bot identity + branch policy
+`fan-auto/*` + PR через `gh`, DB backup daily cron. Реализовано 16 фич +
+2 fix (18 коммитов `8b6ca9a..HEAD` = `f114f07..11f270b`).
+Спецификация: `docs/specs/spec_fan-network-agent_phase4-autonomy_2026-07-25.md`,
+отчёт: `docs/features/phase4-autonomy/pipeline-report.md`,
+гайд: `docs/guides/scheduler.md`.
+
+#### Добавлено
+
+- **Пакет `tools/fan-scheduler` (F-4.1..F-4.5)** — автономный runner:
+  YAML config-loader (`TaskConfig { name, schedule, workspace, message,
+  budget_limit?, timeout? }`, синтаксическая валидация cron, дефолты
+  `null`/`3600`), FAN API client (`FAN_API_URL`/`FAN_API_TOKEN`),
+  однопоточная `TaskQueue` (FIFO, state machine idle/running/paused),
+  execution pipeline (`createSession(cwd)` → `sendMessage` →
+  poll completion, timeout), cron loop через Croner + hot-reload конфига
+  (mtime watcher) + graceful shutdown (SIGINT/SIGTERM)
+- **Git/PR политика (F-4.6..F-4.8)** — bot identity: валидация
+  `GITHUB_TOKEN` при старте (кэш, маскирование в логах,
+  `gitEnabled=false` при отсутствии/невалидности — scheduler не падает);
+  branch policy `fan-auto/<id>-<YYYYMMDD-HHmmss>` (git-safe slug,
+  защита `main`/`master`, system-prompt константа
+  `AUTONOMOUS_BRANCH_POLICY`); PR через `gh pr create`
+  (`lib/gh-client.ts`: push всегда до PR, детект base-ветки из
+  `origin/HEAD`, `partial` при отсутствии gh/токена)
+- **Budget cap per task (F-4.9)** — gateway: per-project budget
+  `GET /api/budget?project=` (lifetime usage) + `PUT /api/budget
+  { project, tokenLimit }` (персист в `~/.fan/agent/project-budgets.json`);
+  scheduler: кап ставится **до** `sendMessage`, мониторинг каждые 30 с,
+  enforcement по **per-task delta** (baseline на старте задачи), статус
+  `budget_exceeded`
+- **Retry with exponential backoff (F-4.10)** — `withRetry`: до 3 попыток,
+  задержки 2s/4s/8s; retryable = network/5xx/429, прочие 4xx — fail fast
+- **Structured JSON logging (F-4.11)** — JSONL: `{ timestamp, level,
+  module, event, taskId?, message }`, `LOG_LEVEL` фильтр, stack только для
+  error
+- **Chat interruption (F-4.12)** — scheduler-side `UserActivityMonitor`
+  (polling `GET /api/sessions`, исключение scheduler-owned сессий, окно
+  60 с): живой чат паузит очередь, затухание — resume; приоритет
+  `chat > autonomous`. Gateway не изменялся
+- **Control server (F-4.12)** — localhost HTTP (default 127.0.0.1:3457):
+  `POST /pause`, `POST /resume`, `GET /state`, `GET /health`
+- **Persistent queue (F-4.13)** — `scheduler-pending.json` write-on-change,
+  атомарная запись (tmp+rename), version-check, восстановление на старте;
+  повреждённый файл → `degraded`
+- **Health & metrics (F-4.14)** — `GET /health` на control server +
+  прокси `GET /api/scheduler/health` на gateway (`FAN_SCHEDULER_URL`,
+  503 `scheduler:"down"` при недоступности)
+- **DB backup (F-4.15)** — `deploy/scripts/backup-db.sh`: sqlite3
+  `.backup` (crash-safe для live-БД) с cp-fallback, ротация 7 копий,
+  `chmod 600/700`, cron `0 3 * * *`
+- **E2E (F-4.16)** — секция 12 в `deploy/scripts/e2e-local.sh` (всего 103
+  проверки, PASS ×2 прогона): scheduler как compose-сервис `fan-scheduler`
+  (тот же образ, config mount read-only, `FAN_SCHEDULER_TOKEN`),
+  cron trigger, FIFO-сериализация двух задач, persistent queue на диске,
+  pause/resume через control server, budget cap до `sendMessage`,
+  retry на provider boundary (no-LLM), health proxy, budget API; git/PR/LLM
+  шаги — manual checklist
+
+#### Исправлено
+
+- **Безопасность бэкапов** (`36b8c75`, верификация F-4.15) — `chmod 600`
+  на каждую копию бэкапа (содержит ClientToken); секция «Безопасность
+  бэкапов» в scheduler.md
+- **5 находок верификации** (`11f270b`) — **P1:** budget cap = per-task
+  delta (baseline на старте; fallback на lifetime с warning); P2:
+  `chmod 700` на `BACKUP_DIR`; валидация чисел `timeout`/`budget_limit` в
+  persistent-storage; `tools/fan-scheduler` в biome includes (+29 файлов);
+  `clearTimeout` в `raceWithDeadline`
+
+#### Известные ограничения (backlog)
+
+- Budget enforcement на gateway отсутствует (scheduler-side only)
+- Pause/timeout/budget не абортируют in-flight задачу (нет interruption
+  endpoint в gateway)
+- Branch policy — prompt-level (hard = GitHub branch protection)
+- `gh-client.ts` не подключён в прод-путь (PR делает агент через bash)
+- Задачи, удалённые из config, остаются в pending-файле
+
 ## [2.6.0] — 2026-07-26
 
 ### Фаза 3 — Universal Tasks (universal-tasks)

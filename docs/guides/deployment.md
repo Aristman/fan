@@ -54,6 +54,8 @@ dig +short agent.sea-agents.ru
 | `deploy/scripts/setup-tls.sh` | Idempotent certbot setup/verification script (F-0.8), run on the VPS |
 | `deploy/scripts/e2e-local.sh` | Automated E2E smoke test on local Docker / VPS loopback (F-0.11-E2E, section 7) |
 | `docs/guides/deployment.md` | This guide |
+| `deploy/scheduler/config.yaml` | Default scheduler task config (mounted into `fan-scheduler`, F-4.16) |
+| `deploy/scripts/backup-db.sh` | Daily SQLite backup script with rotation (F-4.15) |
 
 ## 3. Copy files to the VPS
 
@@ -380,8 +382,8 @@ rsync -avz --delete --exclude node_modules --exclude .git --exclude dist \
 ssh root@185.219.41.46 "cd /opt/fan-agent && docker compose up -d --build"
 ```
 
-Data (SQLite `fan.db`, JSONL sessions, tokens) persists in the named
-volumes `fan-data` / `fan-repos` across rebuilds.
+Data (SQLite `filin.db`, JSONL sessions, tokens, scheduler pending queue)
+persists in the named volumes `fan-data` / `fan-repos` across rebuilds.
 
 ### 8.1 Workspaces — multi-project support (Phase 1)
 
@@ -457,6 +459,66 @@ type-aware system prompts.
   `.git` the detector would return `unknown`, so the template name is used
   as the declared type fallback. Run `git init` inside the new project when
   ready.
+
+### 8.4 Autonomous tasks — fan-scheduler service (Phase 4)
+
+`docker-compose.yml` ships a second service, **`fan-scheduler`** — the
+autonomous cron-based task runner (`tools/fan-scheduler`, same image as
+`fan`, command `bun tools/fan-scheduler/dist/scheduler.js
+/data/scheduler/config.yaml`). It reads a YAML task config, enqueues tasks
+on cron triggers and executes them through the gateway API (one task at a
+time, FIFO). Full guide: [scheduler.md](scheduler.md).
+
+- **`FAN_SCHEDULER_TOKEN` (required for task execution).** The scheduler
+  authenticates against the gateway with a regular ClientToken. Provision
+  one via the token bootstrap (section 7.2) and put it into `.env`:
+  `FAN_SCHEDULER_TOKEN=<64-hex>`. Without it the service still starts
+  (control/health server work) but every task fails with
+  `"FAN API token is not configured"`.
+- **Task config** is an operator artifact mounted read-only:
+  `./deploy/scheduler/config.yaml → /data/scheduler/config.yaml` (override
+  the mount source via `FAN_SCHEDULER_CONFIG` in `.env`). `workspace` paths
+  are **container paths** under `/data/repos` (the `fan-repos` volume).
+  The scheduler hot-reloads the file on change (mtime watcher) — edit on
+  the host, no restart needed.
+- **Networking:** the scheduler reaches the gateway over the internal
+  compose network (`FAN_API_URL=http://fan:3456`); its control server
+  (port 3457) is bound to `0.0.0.0` inside the network so the gateway can
+  proxy `GET /api/scheduler/health` (`FAN_SCHEDULER_URL=http://fan-scheduler:3457`
+  on the `fan` service). **Port 3457 is never published to the host.**
+- **Persistence:** the pending queue (`scheduler-pending.json`, F-4.13)
+  lives in the shared `fan-data` volume — pending tasks survive container
+  recreation.
+- **`GITHUB_TOKEN` (optional):** PAT of a dedicated bot account for
+  autonomous git/PR actions (branches `fan-auto/*`, `gh pr create`). Set in
+  `.env`; when unset, git/PR actions are marked unavailable
+  (`gitEnabled=false`) and the scheduler keeps running. Recommended:
+  GitHub branch protection on `main`/`master` (see scheduler.md).
+- **Health:** `curl http://127.0.0.1:3456/api/scheduler/health` →
+  `{"status":"ok","running":false,"pendingCount":0,...}`; `503
+  scheduler:"down"` when the scheduler container is unreachable.
+
+```bash
+docker compose up -d --build        # starts fan + fan-scheduler
+docker compose logs -f fan-scheduler  # JSONL structured logs
+docker compose ps                    # both services (healthy)
+```
+
+#### DB backup cron (F-4.15)
+
+Daily SQLite backup via `deploy/scripts/backup-db.sh` + system cron on the
+VPS (keeps the last 7 copies, `chmod 600` per copy / `chmod 700` on the
+backup dir; uses `sqlite3 .backup` when available — safe for the live DB):
+
+```cron
+# FAN DB backup — daily at 03:00 (F-4.15)
+0 3 * * * /opt/fan-agent/deploy/scripts/backup-db.sh >> /var/log/fan-backup.log 2>&1
+```
+
+Backups are written to `$FAN_AGENT_DIR/backups/` (in Docker: inside the
+`fan-data` volume). See [scheduler.md — DB Backup](scheduler.md) for env
+vars (`DB_PATH`, `BACKUP_DIR`, `KEEP`), the docker exec variant and
+off-site encryption notes.
 
 ## 9. Rollback
 

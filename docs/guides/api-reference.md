@@ -884,8 +884,13 @@ curl -X PUT http://localhost:3456/api/budget \
 > budgets — it does NOT block `sendMessage` when a cap is exhausted (deep
 > integration with BudgetTracker/model-manager was deliberately deferred).
 > Enforcement is the scheduler's job (F-4.9 part B): `fan-scheduler` sets the
-> cap before each task and polls this endpoint during execution, marking the
-> task `budget_exceeded` when `used >= limit`.
+> cap before each task and polls this endpoint during execution. The cap is
+> enforced against the **per-task delta**: the executor snapshots the lifetime
+> `used` as a baseline at task start and marks the task `budget_exceeded` when
+> `used - baseline >= tokenLimit` (a project with historical usage would
+> otherwise trip the cap immediately). If the baseline read fails, the
+> scheduler falls back to comparing lifetime usage directly (warning logged).
+> See [scheduler.md — Budget](scheduler.md) for the full semantics.
 
 ---
 

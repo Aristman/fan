@@ -12,12 +12,13 @@
 | `SETUP.md` | ✅ | Полное руководство по настройке |
 | `MIGRATION.md` | ✅ | Migration from upstream fan/pi |
 | `CONTRIBUTING.md` | ✅ | Contribution guidelines |
-| `CHANGELOG.md` | ✅ | FAN changelog (0.2.0 → [2.6.0] фаза 3 universal-tasks 2026-07-26) |
+| `CHANGELOG.md` | ✅ | FAN changelog (0.2.0 → [2.7.0] фаза 4 autonomy 2026-07-26) |
 | `docs/guides/quick-start.md` | ✅ | Quick start stub — redirects to QUICK-START.md |
 | `docs/guides/configuration.md` | ✅ | Full settings reference |
 | `docs/guides/orchestrator.md` | ✅ | Orchestrator user guide (v7.10.0: `/orchestrator models`, named presets, permission approval, slot pools, Pipeline Mode v3.1.0) |
 | `docs/guides/dashboard.md` | ✅ | Dashboard user guide (project switcher, workspace type icons, create project dialog, slash autocomplete, type editor, session tree, queue indicator) |
 | `docs/guides/api-reference.md` | ✅ | REST API + WebSocket protocol reference (health readiness, project filter, GET /api/projects, cwd whitelist 403) |
+| `docs/guides/scheduler.md` | ✅ | FAN Scheduler — полный гайд (фаза 4): архитектура, установка/compose (FAN_SCHEDULER_TOKEN), config.yaml справочник, budget per-task delta, control server, activity monitor, persistent queue, Git/PR политика, DB backup, troubleshooting, production checklist, backlog |
 | `docs/guides/deployment.md` | ✅ | Деплой FAN на VPS: Docker, nginx + TLS, certbot, healthcheck, workspaces /data/repos (фаза 1) |
 | `docs/guides/mcp.md` | ✅ | MCP integration guide (Russian) — transports, config, OAuth, Worker Proxy, security |
 | `docs/mcp.md` | ✅ | MCP in FAN — comprehensive English reference (TOC, config, widget, commands, filtering, examples, troubleshooting, architecture, security) |
@@ -50,11 +51,13 @@
 | File | Status | Description |
 |------|--------|-------------|
 | `Dockerfile` | ✅ | Мультистейдж сборка (slim runtime image) |
-| `docker-compose.yml` | ✅ | Продакшен compose: сервис `fan`, порт на loopback, volume `/data` |
+| `docker-compose.yml` | ✅ | Продакшен compose: сервисы `fan` + `fan-scheduler` (фаза 4), порт на loopback, volume `/data` |
 | `.dockerignore` | ✅ | Исключения из build-контекста |
 | `deploy/nginx/agent.sea-agents.ru.conf` | ✅ | nginx reverse proxy: TLS termination, WS upgrade → 127.0.0.1:3456 |
 | `deploy/scripts/setup-tls.sh` | ✅ | Идемпотентный certbot setup-скрипт |
-| `deploy/scripts/e2e-local.sh` | ✅ | Локальная E2E-проверка цепочки деплоя (build → health → auth → WS; секции 8–11: фазы 1–3, 76 проверок) |
+| `deploy/scripts/e2e-local.sh` | ✅ | Локальная E2E-проверка цепочки деплоя (build → health → auth → WS; секции 8–11: фазы 1–3; секция 12: фаза 4 scheduler, 103 проверки) |
+| `deploy/scripts/backup-db.sh` | ✅ | Daily SQLite backup (sqlite3 .backup + cp-fallback, ротация 7, chmod 600/700) — F-4.15 |
+| `deploy/scheduler/config.yaml` | ✅ | Default scheduler task config (read-only mount в fan-scheduler, override FAN_SCHEDULER_CONFIG) — F-4.16 |
 
 ## Release & Process
 | File | Status | Description |
@@ -78,6 +81,7 @@
 | `packages/store/README.md` | ✅ | @fan/store — Package manager |
 | `packages/dashboard/README.md` | ✅ | @fan/dashboard — Web UI |
 | `tools/fan-store-server/GUIDE.md` | ✅ | FAN Store server guide |
+| `tools/fan-scheduler/README.md` | ✅ | @fan/scheduler — autonomous cron-based task runner (persistent queue, chat interruption, budget per-task delta, control server) |
 | `extensions/fan-orchestrator/README.md` | ✅ | FAN Orchestrator v7.10.0 — `/orchestrator models`, named presets, multi-provider lists, permission approval, broker-handler |
 
 ## Roadmaps & Research
@@ -95,7 +99,8 @@
 | `docs/features/phase2-workspace-ux/pipeline-report.md` | ✅ | Отчёт пайплайна фазы 2: 15 фич + 2 fix, 17 коммитов (`fba7f65..96bdbb0`) |
 | `docs/features/phase3-universal-tasks/roadmap.md` | ✅ | TDD roadmap: фаза 3 — Universal Tasks (templates/detection/prompts/skills), 12 фич ✅, 4 этапа + 2 E2E ✅ |
 | `docs/features/phase3-universal-tasks/pipeline-report.md` | ✅ | Отчёт пайплайна фазы 3: 12 фич + fix, 12 коммитов (`f29eb35..a1bbbd4`) |
-| `docs/features/phase4-autonomy/roadmap.md` | ✅ | TDD roadmap: фаза 4 — Автономность (scheduler/git-PR/budget caps), 16 фич, 6 этапов + 1 E2E |
+| `docs/features/phase4-autonomy/roadmap.md` | ✅ | TDD roadmap: фаза 4 — Автономность (scheduler/git-PR/budget caps), 16 фич ✅, 6 этапов + 1 E2E ✅ (все TC-чекбоксы отмечены) |
+| `docs/features/phase4-autonomy/pipeline-report.md` | ✅ | Отчёт пайплайна фазы 4: 16 фич + 2 fix, 18 коммитов (`f114f07..11f270b`); находки: F-4.15 backup security, F-4.16 PASS (103/103 ×2), финальная P1 budget per-task delta + 4 P2; backlog |
 | `docs/features/phase5-concurrency/roadmap.md` | ✅ | ⚠️ Опциональная фаза: конкурентность (chdir removal/persistent queue/per-project tokens), 8 фич, 5 этапов + 1 E2E |
 | `docs/research/orchestrator-v4.1-analysis.md` | ✅ | Orchestrator v4.1.0 architecture analysis |
 | `docs/research/idea-lab/confluence-extension/` | ✅ | fan-confluence extension research (русский) |
@@ -141,7 +146,9 @@
 
 All 5 package READMEs have been created — status updated to ✅.
 
-Total: **69 tracked documents** (63 ✅, 6 ⚠️, 0 ❌)
+Total: **74 tracked documents** (68 ✅, 6 ⚠️, 0 ❌)
+
+*Фаза 4 autonomy финализирована (2026-07-26):* pipeline-report.md заполнен (16 ✅, 18 коммитов `f114f07..11f270b`), roadmap — все 16 фич ✅ и все TDD-чекбоксы отмечены; scheduler.md дополнен до полного гайда (архитектура, compose/FAN_SCHEDULER_TOKEN, config.yaml справочник, budget per-task delta, control server, activity monitor, persistent queue, Git/PR, backup, troubleshooting, production checklist); обновлены api-reference.md (enforcement note → per-task delta; budget + scheduler/health уже были от F-4.9/F-4.14), deployment.md (секция 8.4 — fan-scheduler + backup cron, файлы §2, filin.db), README.md (autonomous tasks feature + docs-таблица + Docker-абзац), CHANGELOG.md [2.7.0]. Верификации: F-4.15 backup security (chmod 600/700), F-4.16 E2E PASS (103/103 ×2), финальная P1 budget delta + 4 P2. Backlog: gateway budget enforcement, in-flight abort, prompt-level branch policy, gh-client не в прод-пути, orphan pending-задачи
 
 *Фаза 3 universal-tasks финализирована (2026-07-26):* pipeline-report.md заполнен (12 ✅, 12 коммитов `f29eb35..a1bbbd4`), roadmap — все 12 фич ✅ и все TDD-чекбоксы отмечены (синхронизирована рассинхронизация F-3.5/F-3.11); обновлены api-reference.md (POST /api/projects — полный контракт 201/200/400/403/501, name-валидация, таблица шаблонов; PUT уже был от F-3.10), dashboard.md (иконки типов, диалог создания, slash autocomplete, смена типа; кнопка «+» теперь открывает диалог), deployment.md (секция 8.3 — типы/шаблоны workspaces), CHANGELOG.md [2.6.0]. Backlog: ServiceRegistry/McpSwitcher/prompt-loader standalone (интеграция в runtime — будущая фаза), `.git` нюанс code-шаблона (fallback на имя шаблона), LLM-шаги E2E — manual чеклисты
 
