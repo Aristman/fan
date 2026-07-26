@@ -31,6 +31,7 @@ const mockSessionAdapter = {
 	bindSessionExtensions: vi.fn().mockResolvedValue(undefined),
 	listProjects: vi.fn().mockResolvedValue([]),
 	removeProject: vi.fn().mockResolvedValue(false),
+	updateProject: vi.fn().mockResolvedValue(null),
 	createProject: vi.fn(),
 	getActiveSessionId: vi.fn().mockReturnValue(null),
 };
@@ -85,6 +86,7 @@ describe("HTTP Server", () => {
 		mockSessionAdapter.getAvailableModels.mockResolvedValue([]);
 		mockSessionAdapter.listProjects.mockResolvedValue([]);
 		mockSessionAdapter.removeProject.mockResolvedValue(false);
+		mockSessionAdapter.updateProject.mockResolvedValue(null);
 		mockSessionAdapter.createProject.mockReset();
 		mockSessionAdapter.getActiveSessionId.mockReturnValue(null);
 		mockQueryRawUnsafe.mockResolvedValue([{ 1: 1 }]);
@@ -658,6 +660,114 @@ describe("HTTP Server", () => {
 				expect(data.code).toBe("NOT_IMPLEMENTED");
 			} finally {
 				mockSessionAdapter.removeProject = saved;
+			}
+		});
+
+		// TC-F-3.10-1: PUT {type:'research'} обновляет тип; GET возвращает новый тип
+		it("PUT /api/projects?path= should update the type and return the entry (TC-F-3.10-1)", async () => {
+			mockSessionAdapter.updateProject.mockResolvedValueOnce({
+				path: "/data/repos/proj",
+				name: "proj",
+				type: "research",
+			});
+			mockSessionAdapter.listProjects.mockResolvedValueOnce([
+				{ path: "/data/repos/proj", name: "proj", type: "research" },
+			]);
+			const app = await getApp();
+			const res = await app.request(`/api/projects?path=${encodeURIComponent("/data/repos/proj")}`, {
+				method: "PUT",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ type: "research" }),
+			});
+			expect(res.status).toBe(200);
+			expect(mockSessionAdapter.updateProject).toHaveBeenCalledWith("/data/repos/proj", "research");
+			const data = await json<{ path: string; name: string; type: string }>(res);
+			expect(data).toEqual({ path: "/data/repos/proj", name: "proj", type: "research" });
+
+			// GET returns the new type
+			const getRes = await app.request("/api/projects");
+			const list = await json<{ projects: Array<{ path: string; type: string }> }>(getRes);
+			expect(list.projects[0]).toMatchObject({ path: "/data/repos/proj", type: "research" });
+		});
+
+		it("PUT /api/projects without ?path= should return 400", async () => {
+			const app = await getApp();
+			const res = await app.request("/api/projects", {
+				method: "PUT",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ type: "code" }),
+			});
+			expect(res.status).toBe(400);
+			const data = await json<{ error: string; code: string }>(res);
+			expect(data.code).toBe("BAD_REQUEST");
+			expect(mockSessionAdapter.updateProject).not.toHaveBeenCalled();
+		});
+
+		it("PUT /api/projects with an invalid type should return 400", async () => {
+			const app = await getApp();
+			const res = await app.request(`/api/projects?path=${encodeURIComponent("/p")}`, {
+				method: "PUT",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ type: "bogus" }),
+			});
+			expect(res.status).toBe(400);
+			const data = await json<{ error: string; code: string }>(res);
+			expect(data.code).toBe("BAD_REQUEST");
+			expect(mockSessionAdapter.updateProject).not.toHaveBeenCalled();
+		});
+
+		it("PUT /api/projects with a non-string type should return 400", async () => {
+			const app = await getApp();
+			const res = await app.request(`/api/projects?path=${encodeURIComponent("/p")}`, {
+				method: "PUT",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ type: 42 }),
+			});
+			expect(res.status).toBe(400);
+			expect(mockSessionAdapter.updateProject).not.toHaveBeenCalled();
+		});
+
+		it("PUT /api/projects?path= should return 404 for an unregistered path", async () => {
+			mockSessionAdapter.updateProject.mockResolvedValueOnce(null);
+			const app = await getApp();
+			const res = await app.request(`/api/projects?path=${encodeURIComponent("/never-registered")}`, {
+				method: "PUT",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ type: "code" }),
+			});
+			expect(res.status).toBe(404);
+			const data = await json<{ error: string; code: string }>(res);
+			expect(data.code).toBe("NOT_FOUND");
+		});
+
+		it("PUT /api/projects should return 501 when the adapter lacks updateProject", async () => {
+			const saved = mockSessionAdapter.updateProject;
+			Reflect.deleteProperty(mockSessionAdapter, "updateProject");
+			try {
+				const app = await getApp();
+				const res = await app.request(`/api/projects?path=${encodeURIComponent("/x")}`, {
+					method: "PUT",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ type: "code" }),
+				});
+				expect(res.status).toBe(501);
+				const data = await json<{ error: string; code: string }>(res);
+				expect(data.code).toBe("NOT_IMPLEMENTED");
+			} finally {
+				mockSessionAdapter.updateProject = saved;
+			}
+		});
+
+		it("PUT /api/projects should accept all four known types", async () => {
+			const app = await getApp();
+			for (const type of ["code", "research", "automation", "unknown"]) {
+				mockSessionAdapter.updateProject.mockResolvedValueOnce({ path: "/p", name: "p", type });
+				const res = await app.request(`/api/projects?path=${encodeURIComponent("/p")}`, {
+					method: "PUT",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ type }),
+				});
+				expect(res.status).toBe(200);
 			}
 		});
 

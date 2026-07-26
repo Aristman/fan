@@ -41,7 +41,13 @@ import { resolveCliModel, resolveModelScope, type ScopedModel } from "./core/mod
 import { restoreStdout, takeOverStdout } from "./core/output-guard.js";
 import { autoRegisterProject } from "./core/project-auto-register.js";
 import { sessionBelongsToProject } from "./core/project-path.js";
-import { addToProjects, listProjects, removeFromProjects } from "./core/project-registry.js";
+import {
+	addToProjects,
+	listProjects,
+	type ProjectType,
+	removeFromProjects,
+	updateProjectType,
+} from "./core/project-registry.js";
 import type { CreateAgentSessionOptions } from "./core/sdk.js";
 import {
 	formatMissingSessionCwdPrompt,
@@ -519,6 +525,21 @@ export function createSessionAdapter(runtime: AgentSessionRuntime, defaultCwd?: 
 		// Registry-only: sessions and files on disk are never touched.
 		async removeProject(path: string) {
 			return removeFromProjects(path).removed;
+		},
+
+		// --- updateProject: manual type override (F-3.10) ---
+		// Registry-only: sessions and files on disk are never touched.
+		// NOTE (ServiceRegistry integration): the workspace ServiceRegistry
+		// (src/workspace/service-registry.ts, F-2.1) is currently standalone —
+		// it is not wired into this runtime, so there is no cache to invalidate.
+		// When it gets integrated, a successful type update must call
+		// serviceRegistry.invalidate(cwd) so cached per-workspace services
+		// (which may depend on the project type, e.g. system prompts from
+		// prompt-loader) are rebuilt for the project.
+		async updateProject(path: string, type: string) {
+			const { updated, entry } = updateProjectType(path, type as ProjectType);
+			if (!updated || !entry) return null;
+			return { path: entry.path, name: entry.name, type: entry.type };
 		},
 
 		// --- createProject: create a workspace + register it (F-3.5) ---

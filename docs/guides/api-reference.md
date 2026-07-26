@@ -428,6 +428,56 @@ curl -X DELETE "http://localhost:3456/api/projects?path=%2Fdata%2Frepos%2Fdelete
 | `404`  | Path is not registered (`NOT_FOUND`)                           |
 | `501`  | The session adapter does not support project removal (`NOT_IMPLEMENTED`) |
 
+#### Update Project Type
+
+```
+PUT /api/projects?path=<absolute path>
+```
+
+Manually overrides a project's workspace type in the registry
+(`~/.fan/agent/projects.json`) — used when auto-detection (F-3.2)
+misclassified the project. The path travels as a query parameter (symmetry
+with `DELETE /api/projects`); the body carries only the new type.
+Registry-only: sessions and files on disk are **never** touched.
+
+**Request body:**
+
+```json
+{ "type": "research" }
+```
+
+`type` must be one of `"code"`, `"research"`, `"automation"`, `"unknown"`.
+
+**Example:**
+
+```bash
+curl -X PUT "http://localhost:3456/api/projects?path=%2Fdata%2Frepos%2Fmy-proj" \
+  -H "Authorization: Bearer $FAN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"type":"research"}'
+```
+
+**Response `200`:** the updated registry entry.
+
+```json
+{ "path": "/data/repos/my-proj", "name": "my-proj", "type": "research" }
+```
+
+**Responses:**
+
+| Status | Meaning                                                        |
+|--------|----------------------------------------------------------------|
+| `200`  | Type updated — returns the updated entry                       |
+| `400`  | `path` query parameter missing/empty, or `type` not in the enum |
+| `404`  | Path is not registered (`NOT_FOUND`)                           |
+| `501`  | The session adapter does not support project update (`NOT_IMPLEMENTED`) |
+
+> **ServiceRegistry note (F-2.1):** the workspace `ServiceRegistry` is
+> currently standalone (not wired into the runtime), so no cache
+> invalidation is performed. When it gets integrated, a successful type
+> update must be followed by `serviceRegistry.invalidate(cwd)` so cached
+> per-workspace services are rebuilt for the new type.
+
 ---
 
 ### Models

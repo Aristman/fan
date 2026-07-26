@@ -8,6 +8,7 @@ import {
 	listProjects,
 	PROJECT_TYPES,
 	removeFromProjects,
+	updateProjectType,
 } from "../src/core/project-registry.js";
 
 describe("project-registry (F-1.6)", () => {
@@ -225,6 +226,57 @@ describe("project-registry (F-1.6)", () => {
 			expect(JSON.parse(readFileSync(projectsPath, "utf-8"))).toHaveLength(50);
 			// No tmp leftovers
 			expect(readdirSync(tempDir).filter((f) => f.endsWith(".tmp"))).toEqual([]);
+		});
+	});
+
+	describe("updateProjectType (F-3.10)", () => {
+		// TC-F-3.10-1: PUT обновляет тип в реестре
+		test("updates the type and persists atomically (TC-F-3.10-1)", () => {
+			addToProjects("/data/repos/a", "a", "unknown", projectsPath);
+			addToProjects("/data/repos/b", "b", "code", projectsPath);
+
+			const result = updateProjectType("/data/repos/a", "research", projectsPath);
+
+			expect(result.updated).toBe(true);
+			expect(result.entry?.path).toBe(resolve("/data/repos/a"));
+			expect(result.entry?.type).toBe("research");
+			// name is preserved
+			expect(result.entry?.name).toBe("a");
+
+			const projects = listProjects(projectsPath);
+			expect(projects.find((p) => p.name === "a")?.type).toBe("research");
+			expect(projects.find((p) => p.name === "b")?.type).toBe("code");
+			// File on disk matches and no tmp leftovers
+			const onDisk = JSON.parse(readFileSync(projectsPath, "utf-8"));
+			expect(onDisk.find((e: { name: string }) => e.name === "a").type).toBe("research");
+			expect(readdirSync(tempDir).filter((f) => f.endsWith(".tmp"))).toEqual([]);
+		});
+
+		test("returns updated:false for an unregistered path without touching the file", () => {
+			addToProjects("/data/repos/a", "a", undefined, projectsPath);
+			const before = readFileSync(projectsPath, "utf-8");
+
+			const result = updateProjectType("/data/repos/never-added", "code", projectsPath);
+
+			expect(result.updated).toBe(false);
+			expect(result.entry).toBeUndefined();
+			expect(readFileSync(projectsPath, "utf-8")).toBe(before);
+		});
+
+		test("matches by resolved absolute path (relative equivalent)", () => {
+			addToProjects("sub/project", "rel", undefined, projectsPath);
+
+			const result = updateProjectType(resolve("sub/project"), "automation", projectsPath);
+
+			expect(result.updated).toBe(true);
+			expect(listProjects(projectsPath)[0].type).toBe("automation");
+		});
+
+		test("no-op on a missing registry file", () => {
+			const result = updateProjectType("/data/repos/a", "code", projectsPath);
+
+			expect(result.updated).toBe(false);
+			expect(existsSync(projectsPath)).toBe(false);
 		});
 	});
 

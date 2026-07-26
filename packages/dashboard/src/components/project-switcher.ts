@@ -16,13 +16,16 @@
 //   - "project-remove" with detail { path } — user clicked the remove button of
 //     an unavailable project (F-2.13: available === false / PROJECT_NOT_FOUND).
 //     The app shell calls DELETE /api/projects?path= and reloads the list.
+//   - "project-update-type" with detail { path, type } — user picked a new
+//     workspace type from the inline type editor (F-3.10). The app shell calls
+//     PUT /api/projects?path= { type } and reloads the list (icon refresh).
 
 import type { ProjectSummary } from "@fan/api-gateway/types";
 import { html, LitElement, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import { ChevronDown, FolderOpen, FolderX, Plus, Search, X } from "lucide";
+import { ChevronDown, FolderOpen, FolderX, Pencil, Plus, Search, X } from "lucide";
 import { icon } from "../lib/icon.js";
-import { renderWorkspaceTypeIcon } from "../lib/workspace-type.js";
+import { renderWorkspaceTypeIcon, WORKSPACE_TYPES } from "../lib/workspace-type.js";
 
 @customElement("fan-project-switcher")
 export class FanProjectSwitcher extends LitElement {
@@ -39,6 +42,8 @@ export class FanProjectSwitcher extends LitElement {
 
 	@state() open = false;
 	@state() filter = "";
+	/** F-3.10: path of the project whose inline type editor is open (null = closed). */
+	@state() typeEditorFor: string | null = null;
 
 	// -----------------------------------------------------------------------
 	// No shadow DOM — Tailwind styles need to penetrate
@@ -93,6 +98,7 @@ export class FanProjectSwitcher extends LitElement {
 
 	private _close(): void {
 		this.open = false;
+		this.typeEditorFor = null;
 	}
 
 	selectProject(path: string): void {
@@ -125,6 +131,25 @@ export class FanProjectSwitcher extends LitElement {
 		this.dispatchEvent(
 			new CustomEvent("project-remove", {
 				detail: { path },
+				bubbles: true,
+				composed: true,
+			}),
+		);
+	}
+
+	/** F-3.10: toggle the inline type editor for a project. */
+	toggleTypeEditor(path: string): void {
+		this.typeEditorFor = this.typeEditorFor === path ? null : path;
+	}
+
+	/** F-3.10: emit project-update-type with the picked type; the app shell
+	 *  performs PUT /api/projects?path= and reloads the list (icon refresh).
+	 *  The dropdown stays open; only the editor row closes. */
+	updateProjectType(path: string, type: string): void {
+		this.typeEditorFor = null;
+		this.dispatchEvent(
+			new CustomEvent("project-update-type", {
+				detail: { path, type },
 				bubbles: true,
 				composed: true,
 			}),
@@ -240,9 +265,12 @@ export class FanProjectSwitcher extends LitElement {
 		// list with a "not found" indicator plus a remove-from-registry button.
 		const unavailable = p.available === false;
 
-		// Outer element is a div (role=option) so the remove button of an
-		// unavailable project is not nested inside another button.
+		// Outer element is a wrapper (.project-entry): the clickable row is
+		// .project-item (role=option) so the remove/type-edit buttons are not
+		// nested inside another button, and the F-3.10 inline type editor can
+		// render as a sibling row without triggering project selection.
 		return html`
+      <div class="project-entry">
       <div
         class="project-item w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors cursor-pointer
                ${
@@ -295,6 +323,52 @@ export class FanProjectSwitcher extends LitElement {
             </span>
           `
 			}
+        <!-- F-3.10: manual type override — opens the inline type editor.
+             Registry-only, so it is offered for unavailable projects too. -->
+        <button
+          type="button"
+          class="project-type-edit-btn shrink-0 p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors"
+          title="Change project type"
+          aria-label="Change type of ${p.name}"
+          @click=${(e: Event) => {
+					e.stopPropagation();
+					this.toggleTypeEditor(p.path);
+				}}
+        >
+          ${icon(Pencil, "w-3.5 h-3.5")}
+        </button>
+      </div>
+      ${this.typeEditorFor === p.path ? this._renderTypePicker(p) : nothing}
+      </div>
+    `;
+	}
+
+	/** F-3.10: inline type picker row rendered under the project item while
+	 *  its editor is open. Sibling of .project-item, so clicks never trigger
+	 *  project selection. */
+	private _renderTypePicker(p: ProjectSummary) {
+		return html`
+      <div class="type-picker flex items-center gap-1 px-3 py-1.5 bg-secondary/30 border-l-2 border-transparent">
+        <span class="type-picker-label text-[10px] text-muted-foreground mr-1">Type:</span>
+        ${WORKSPACE_TYPES.map(
+				(t) => html`
+          <button
+            type="button"
+            class="type-option flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] transition-colors
+                   ${
+								p.type === t
+									? "bg-primary/20 text-foreground"
+									: "text-muted-foreground hover:text-foreground hover:bg-secondary/60"
+							}"
+            data-type=${t}
+            title="Set type to ${t}"
+            @click=${() => this.updateProjectType(p.path, t)}
+          >
+            ${renderWorkspaceTypeIcon(t, "w-3 h-3")}
+            <span>${t}</span>
+          </button>
+        `,
+			)}
       </div>
     `;
 	}

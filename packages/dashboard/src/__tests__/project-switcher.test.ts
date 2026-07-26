@@ -276,3 +276,94 @@ describe("fan-project-switcher workspace type icons (F-3.7)", () => {
 		expect(icon.classList.contains("type-automation")).toBe(true);
 	});
 });
+
+describe("fan-project-switcher manual type change (F-3.10)", () => {
+	let el: FanProjectSwitcher;
+
+	beforeEach(() => {
+		el = createEl();
+	});
+
+	afterEach(() => {
+		el.remove();
+	});
+
+	// Each project row has an edit (pencil) button that opens the inline type editor
+	it("opens the inline type editor with all four type options when the edit button is clicked", async () => {
+		el.projects = [{ path: "/a", name: "Alpha", type: "unknown", sessionCount: 1, available: true }];
+		await el.updateComplete;
+		await openDropdown(el);
+
+		expect(el.querySelector(".type-picker")).toBeNull();
+
+		const btn = el.querySelector<HTMLButtonElement>(".project-type-edit-btn")!;
+		expect(btn).not.toBeNull();
+		btn.click();
+		await el.updateComplete;
+
+		const picker = el.querySelector<HTMLElement>(".type-picker")!;
+		expect(picker).not.toBeNull();
+		const options = Array.from(picker.querySelectorAll<HTMLButtonElement>(".type-option"));
+		expect(options.map((o) => o.dataset.type)).toEqual(["code", "research", "automation", "unknown"]);
+	});
+
+	// Picking a type emits project-update-type (not project-select); the PUT is
+	// performed by the app shell
+	it("emits project-update-type (not project-select) when a type option is picked", async () => {
+		el.projects = [{ path: "/a", name: "Alpha", type: "unknown", sessionCount: 1, available: true }];
+		await el.updateComplete;
+		await openDropdown(el);
+
+		const updateEvents: CustomEvent[] = [];
+		const selectEvents: CustomEvent[] = [];
+		el.addEventListener("project-update-type", (e) => updateEvents.push(e as CustomEvent));
+		el.addEventListener("project-select", (e) => selectEvents.push(e as CustomEvent));
+
+		el.querySelector<HTMLButtonElement>(".project-type-edit-btn")!.click();
+		await el.updateComplete;
+
+		const researchBtn = el.querySelector<HTMLButtonElement>('.type-option[data-type="research"]')!;
+		researchBtn.click();
+		await el.updateComplete;
+
+		expect(updateEvents.length).toBe(1);
+		expect(updateEvents[0].detail).toEqual({ path: "/a", type: "research" });
+		expect(updateEvents[0].bubbles).toBe(true);
+		expect(updateEvents[0].composed).toBe(true);
+		expect(selectEvents.length).toBe(0);
+		// Editor row closes after the pick; the dropdown stays open
+		expect(el.querySelector(".type-picker")).toBeNull();
+		expect(el.querySelector(".fan-dropdown-panel")).not.toBeNull();
+	});
+
+	// Clicking the edit button again closes the editor without emitting
+	it("toggles the editor closed on a second edit-button click", async () => {
+		el.projects = [{ path: "/a", name: "Alpha", type: "unknown", sessionCount: 1, available: true }];
+		await el.updateComplete;
+		await openDropdown(el);
+
+		const btn = el.querySelector<HTMLButtonElement>(".project-type-edit-btn")!;
+		btn.click();
+		await el.updateComplete;
+		expect(el.querySelector(".type-picker")).not.toBeNull();
+
+		btn.click();
+		await el.updateComplete;
+		expect(el.querySelector(".type-picker")).toBeNull();
+	});
+
+	// The edit button does not select the project
+	it("does not emit project-select when the edit button is clicked", async () => {
+		el.projects = PROJECTS;
+		await el.updateComplete;
+		await openDropdown(el);
+
+		const selectEvents: CustomEvent[] = [];
+		el.addEventListener("project-select", (e) => selectEvents.push(e as CustomEvent));
+
+		el.querySelector<HTMLButtonElement>(".project-type-edit-btn")!.click();
+		await el.updateComplete;
+
+		expect(selectEvents.length).toBe(0);
+	});
+});

@@ -131,6 +131,24 @@ export interface CreateProjectResult extends CreateProjectResponse {
 	created: boolean;
 }
 
+// --- Project type update (F-3.10) ---
+
+/** PUT /api/projects?path=<encoded> request body. */
+export interface UpdateProjectRequest {
+	/** New project type — one of 'code' | 'research' | 'automation' | 'unknown'. */
+	type: string;
+}
+
+/** PUT /api/projects response body — the updated registry entry. */
+export interface UpdateProjectResponse {
+	/** Absolute path of the project workspace. */
+	path: string;
+	/** Project name. */
+	name: string;
+	/** The new project type. */
+	type: string;
+}
+
 export interface SessionMessage {
 	id: string;
 	role: "user" | "assistant" | "tool";

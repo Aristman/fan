@@ -21,6 +21,8 @@ import type {
 	UpdateBudgetResponse,
 	UpdateModelSettingsRequest,
 	UpdateModelSettingsResponse,
+	UpdateProjectRequest,
+	UpdateProjectResponse,
 } from "@fan/api-gateway/types";
 
 // ---------------------------------------------------------------------------
@@ -200,6 +202,19 @@ export class FanApiClient {
 		const params = new URLSearchParams();
 		params.set("path", path);
 		return this._request<void>("DELETE", `/api/projects?${params.toString()}`);
+	}
+
+	/**
+	 * Manually change a project's workspace type (F-3.10).
+	 * Server contract: PUT /api/projects?path=<encoded> { type } →
+	 * 200 with the updated registry entry; 400 (invalid type),
+	 * 404 (path not registered). Registry-only.
+	 */
+	updateProjectType(path: string, type: UpdateProjectRequest["type"]): Promise<UpdateProjectResponse> {
+		const params = new URLSearchParams();
+		params.set("path", path);
+		const body: UpdateProjectRequest = { type };
+		return this._request<UpdateProjectResponse>("PUT", `/api/projects?${params.toString()}`, body);
 	}
 
 	// -----------------------------------------------------------------------

@@ -38,6 +38,8 @@ import type {
 	UpdateBudgetResponse,
 	UpdateModelSettingsRequest,
 	UpdateModelSettingsResponse,
+	UpdateProjectRequest,
+	UpdateProjectResponse,
 } from "./types.js";
 import { logCwdRejection, resolveAllowedRoots, validateCwd } from "./workspace-validation.js";
 import { attachWebSocketHandler, type BunServerLike, createBunWebSocketBridge } from "./ws-handler.js";
@@ -83,6 +85,12 @@ export interface SessionAdapter {
 	 *  Returns true when an entry was removed, false when it was not registered.
 	 *  Optional — adapters without it cause DELETE /api/projects to answer 501. */
 	removeProject?(path: string): Promise<boolean>;
+	/** Update a project's type in the registry by absolute path (F-3.10 —
+	 *  manual type override). Returns the updated entry, or null when the
+	 *  path is not registered. Registry-only: sessions and files on disk
+	 *  are never touched. Optional — adapters without it cause
+	 *  PUT /api/projects to answer 501. */
+	updateProject?(path: string, type: string): Promise<ProjectInfo | null>;
 	/** Create a project workspace (F-3.5): apply the optional template to
 	 *  `rootPath/name`, auto-detect the type and register the project.
 	 *  Returns metadata plus `created` (false = path already registered,
@@ -155,6 +163,10 @@ function classifyErrorCode(err: unknown): string {
 	if (msg.match(/validation|invalid.*field|missing.*required|malformed.*json/i)) return "BAD_REQUEST";
 	return "INTERNAL_ERROR";
 }
+
+/** Known project types (F-3.1; mirrors PROJECT_TYPES in coding-agent's
+ *  project-registry — duplicated here to keep the gateway dependency-free). */
+const PROJECT_TYPES = ["code", "research", "automation", "unknown"] as const;
 
 /** Mask the value of any `token` query parameter in a log line.
  *  Handles both `?token=...` and `&token=...` without affecting other params.
@@ -524,6 +536,45 @@ async function createApp(
 			return c.json({ error: "Project not found in registry", code: "NOT_FOUND" } satisfies ApiError, 404);
 		}
 		return c.body(null, 204);
+	});
+
+	// F-3.10: manual project type override.
+	// Contract mirrors DELETE /api/projects: the path travels as a query
+	// parameter (?path=<encoded>) because it contains slashes; the body
+	// carries only { type }. Used when auto-detection (F-3.2) classified a
+	// project wrong. 200 with the updated entry on success; 400 when the
+	// param is missing/empty or the type is not one of the four known values;
+	// 404 when the path is not registered; 501 when the adapter does not
+	// implement updateProject. Registry-only — sessions and files on disk
+	// are never touched.
+	app.put("/api/projects", async (c) => {
+		const path = c.req.query("path");
+		if (!path || path.trim().length === 0) {
+			return c.json({ error: "path query parameter is required", code: "BAD_REQUEST" } satisfies ApiError, 400);
+		}
+		const rawBody = await c.req.json();
+		if (rawBody === null || typeof rawBody !== "object" || Array.isArray(rawBody)) {
+			return c.json({ error: "Request body must be a JSON object", code: "BAD_REQUEST" } satisfies ApiError, 400);
+		}
+		const body = rawBody as UpdateProjectRequest;
+		if (typeof body.type !== "string" || !(PROJECT_TYPES as readonly string[]).includes(body.type)) {
+			return c.json(
+				{ error: `type must be one of: ${PROJECT_TYPES.join(", ")}`, code: "BAD_REQUEST" } satisfies ApiError,
+				400,
+			);
+		}
+		if (!sessionAdapter.updateProject) {
+			return c.json(
+				{ error: "project update is not supported by this adapter", code: "NOT_IMPLEMENTED" } satisfies ApiError,
+				501,
+			);
+		}
+		const updated = await sessionAdapter.updateProject(path, body.type);
+		if (!updated) {
+			return c.json({ error: "Project not found in registry", code: "NOT_FOUND" } satisfies ApiError, 404);
+		}
+		const resp: UpdateProjectResponse = { path: updated.path, name: updated.name, type: updated.type };
+		return c.json(resp, 200);
 	});
 
 	// --- Messages ---

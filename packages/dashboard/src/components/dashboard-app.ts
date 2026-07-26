@@ -56,6 +56,7 @@ export class DashboardApp extends LitElement {
 	private _boundHandleProjectCreate?: EventListener;
 	private _boundHandleProjectCreated?: EventListener;
 	private _boundHandleProjectRemove?: EventListener;
+	private _boundHandleProjectUpdateType?: EventListener;
 	private _wsUnsubMessage: (() => void) | null = null;
 	private _wsUnsubStatus: (() => void) | null = null;
 
@@ -175,6 +176,14 @@ export class DashboardApp extends LitElement {
 			void this._removeProject(path);
 		}) as EventListener;
 
+		// F-3.10: manual type override from the switcher's inline type editor
+		this._boundHandleProjectUpdateType = ((ev: CustomEvent) => {
+			const path = ev.detail?.path;
+			const type = ev.detail?.type;
+			if (typeof path !== "string" || !path || typeof type !== "string" || !type) return;
+			void this._updateProjectType(path, type);
+		}) as EventListener;
+
 		this.addEventListener("fan:session-selected", this._boundHandleSessionSelected);
 		this.addEventListener("fan:session-created", this._boundHandleSessionCreated);
 		this.addEventListener("fan:session-deleted", this._boundHandleSessionDeleted);
@@ -183,6 +192,7 @@ export class DashboardApp extends LitElement {
 		this.addEventListener("project-create", this._boundHandleProjectCreate);
 		window.addEventListener("project-created", this._boundHandleProjectCreated);
 		this.addEventListener("project-remove", this._boundHandleProjectRemove);
+		this.addEventListener("project-update-type", this._boundHandleProjectUpdateType);
 
 		// Load project list for the switcher (non-blocking; endpoint may not exist
 		// on older servers — in that case the switcher just shows an empty state).
@@ -231,6 +241,9 @@ export class DashboardApp extends LitElement {
 		if (this._boundHandleProjectRemove) {
 			this.removeEventListener("project-remove", this._boundHandleProjectRemove);
 		}
+		if (this._boundHandleProjectUpdateType) {
+			this.removeEventListener("project-update-type", this._boundHandleProjectUpdateType);
+		}
 
 		super.disconnectedCallback();
 	}
@@ -274,6 +287,20 @@ export class DashboardApp extends LitElement {
 		if (this.currentProject === path) {
 			this.currentProject = null;
 			window.dispatchEvent(new CustomEvent("fan:project-changed", { detail: { path: null } }));
+		}
+		await this._loadProjects();
+	}
+
+	/**
+	 * F-3.10: update a project's type (PUT /api/projects?path= { type }),
+	 * then reload the list so the switcher/sidebar icons reflect the new type.
+	 */
+	private async _updateProjectType(path: string, type: string): Promise<void> {
+		try {
+			await this.apiClient.updateProjectType(path, type);
+		} catch (err) {
+			console.warn("dashboard-app: updateProjectType failed", err);
+			return;
 		}
 		await this._loadProjects();
 	}

@@ -160,6 +160,40 @@ export function addToProjects(
 	return { added: true, entry };
 }
 
+export interface UpdateProjectTypeResult {
+	/** True when the entry was updated; false when the path is not registered. */
+	updated: boolean;
+	/** The updated registry entry (undefined when nothing was updated). */
+	entry?: ProjectEntry;
+}
+
+/**
+ * Update the type of a registered project (F-3.10 — manual type override).
+ *
+ * Matches by resolved absolute path (same normalization as addToProjects).
+ * Only the `type` field is rewritten — `name` and `addedAt` are preserved.
+ * When the path is not registered the registry file is left untouched
+ * (no write) and `updated` is false.
+ */
+export function updateProjectType(
+	path: string,
+	type: ProjectType,
+	projectsPath: string = getProjectsPath(),
+): UpdateProjectTypeResult {
+	const resolvedPath = resolve(path);
+	const projects = listProjects(projectsPath);
+
+	const entry = projects.find((p) => p.path === resolvedPath);
+	if (!entry) {
+		return { updated: false };
+	}
+
+	entry.type = type;
+	writeProjectsAtomic(projectsPath, projects);
+
+	return { updated: true, entry };
+}
+
 export interface RemoveFromProjectsResult {
 	/** True when an entry was removed; false when the path was not registered. */
 	removed: boolean;
