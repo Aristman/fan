@@ -175,15 +175,30 @@ export async function createPullRequest(
 	try {
 		({ stdout } = await exec(
 			"gh",
-			["pr", "create", "--base", base, "--head", params.branch, "--title", `auto: ${params.taskName}`, "--body", body],
+			[
+				"pr",
+				"create",
+				"--base",
+				base,
+				"--head",
+				params.branch,
+				"--title",
+				`auto: ${params.taskName}`,
+				"--body",
+				body,
+			],
 			{ cwd: params.repo },
 		));
 	} catch (error) {
 		if (isNotFoundError(error)) {
-			log.warn("pr_skipped", `[gh-client] ${GH_CLI_NOT_FOUND_REASON} — pull request not created (branch=${params.branch})`, {
-				branch: params.branch,
-				reason: GH_CLI_NOT_FOUND_REASON,
-			});
+			log.warn(
+				"pr_skipped",
+				`[gh-client] ${GH_CLI_NOT_FOUND_REASON} — pull request not created (branch=${params.branch})`,
+				{
+					branch: params.branch,
+					reason: GH_CLI_NOT_FOUND_REASON,
+				},
+			);
 			return { status: "partial", reason: GH_CLI_NOT_FOUND_REASON };
 		}
 		throw new Error(

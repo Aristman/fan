@@ -106,10 +106,7 @@ export function formatBranchTimestamp(date: Date): string {
  * @param now  Clock injection (default: current time) — pass a fixed
  *             function in tests for deterministic output.
  */
-export function generateBranchName(
-	task: BranchPolicyTask | string,
-	now: () => Date = () => new Date(),
-): string {
+export function generateBranchName(task: BranchPolicyTask | string, now: () => Date = () => new Date()): string {
 	const raw = typeof task === "string" ? task : (task.id ?? task.name ?? "");
 	return `${BRANCH_PREFIX}/${sanitizeTaskId(raw)}-${formatBranchTimestamp(now())}`;
 }

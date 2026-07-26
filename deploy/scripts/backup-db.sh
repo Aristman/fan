@@ -66,6 +66,7 @@ fail() { echo -e "    ${RED}[FAIL]${NC} $*" >&2; exit 1; }
     || fail "KEEP must be a positive integer, got: ${KEEP}"
 
 mkdir -p "${BACKUP_DIR}"
+chmod 700 "${BACKUP_DIR}" || warn "chmod 700 failed for ${BACKUP_DIR}"
 
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 DEST="${BACKUP_DIR}/filin-${TIMESTAMP}.db"

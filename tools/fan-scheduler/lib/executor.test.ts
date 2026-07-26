@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-	FanApiError,
 	type CreateSessionResult,
 	type FanApiClient,
+	FanApiError,
 	type FanSessionDetail,
 	type FanSessionMessage,
 } from "./client.js";
@@ -97,7 +97,17 @@ describe("createTaskExecutor (F-4.4)", () => {
 		expect(result.status).toBe("completed");
 		// F-4.9: the budget cap is set BEFORE sendMessage; the final getBudgetUsage
 		// is the post-completion usage report.
-		expect(callOrder).toEqual(["createSession", "setProjectBudget", "sendMessage", "getSession", "getBudgetUsage"]);
+		// P1: a baseline getBudgetUsage call is made at task start before any
+		// tokens are spent; the final getBudgetUsage is the post-completion usage
+		// report.
+		expect(callOrder).toEqual([
+			"getBudgetUsage",
+			"createSession",
+			"setProjectBudget",
+			"sendMessage",
+			"getSession",
+			"getBudgetUsage",
+		]);
 		// Step 1: session created with the task workspace as cwd.
 		expect(mocks.createSession).toHaveBeenCalledWith(task.workspace);
 		// Step 2: budget cap stored for the task workspace before any tokens are spent.
@@ -111,7 +121,7 @@ describe("createTaskExecutor (F-4.4)", () => {
 		expect(Date.parse(result.startedAt)).not.toBeNaN();
 		expect(Date.parse(result.finishedAt)).not.toBeNaN();
 		// Log contains the completed status.
-		expect(console.log).toHaveBeenCalledWith(expect.stringContaining('status=completed'));
+		expect(console.log).toHaveBeenCalledWith(expect.stringContaining("status=completed"));
 	});
 
 	it("polls until the last message is an assistant reply", async () => {
@@ -237,7 +247,10 @@ describe("budget monitor (F-4.9)", () => {
 		const { client } = createMockClient({
 			// The session never completes (no assistant reply).
 			getSession: vi.fn(async () => makeSession([makeMessage("user")])),
-			getBudgetUsage: vi.fn(async (project: string) => ({ project, used: 500, limit: 500 })),
+			getBudgetUsage: vi
+				.fn()
+				.mockResolvedValueOnce({ project: "/proj", used: 0, limit: 500 }) // baseline
+				.mockResolvedValue({ project: "/proj", used: 500, limit: 500 }), // monitor: delta=500
 		});
 		const execute = createTaskExecutor(client, { pollIntervalMs: 100, budgetPollIntervalMs: 100 });
 
@@ -257,14 +270,23 @@ describe("budget monitor (F-4.9)", () => {
 			.find((line) => line.includes('"event":"budget_monitor"'));
 		expect(monitorCall).toBeDefined();
 		const payload = JSON.parse(monitorCall?.slice(monitorCall.indexOf("{")) ?? "{}");
-		expect(payload).toMatchObject({ event: "budget_monitor", project: "/proj", used: 500, limit: 500, percentage: 100 });
+		expect(payload).toMatchObject({
+			event: "budget_monitor",
+			project: "/proj",
+			used: 500,
+			limit: 500,
+			percentage: 100,
+		});
 	});
 
 	// TC-F-4.9-3: usage below the limit → normal completion + usage report.
 	it("TC-F-4.9-3: usage 200/500 → status completed + usage report 'used 200 / 500 tokens'", async () => {
 		const task = makeTask({ budget_limit: 500, workspace: "/proj" });
 		const { client } = createMockClient({
-			getBudgetUsage: vi.fn(async (project: string) => ({ project, used: 200, limit: 500 })),
+			getBudgetUsage: vi
+				.fn()
+				.mockResolvedValueOnce({ project: "/proj", used: 0, limit: 500 }) // baseline
+				.mockResolvedValue({ project: "/proj", used: 200, limit: 500 }), // final report
 		});
 		const execute = createTaskExecutor(client);
 
@@ -296,6 +318,67 @@ describe("budget monitor (F-4.9)", () => {
 
 		expect(result.status).toBe("completed");
 		expect(console.error).toHaveBeenCalledWith(expect.stringContaining("budget poll failed (monitoring continues)"));
+	});
+
+	// Per-task delta semantics (P1): the budget cap applies to THIS task only,
+	// not to the lifetime usage of the project.
+	it("P1: lifetime=1000, limit=500, task spends 200 → completed (delta enforcement)", async () => {
+		const task = makeTask({ budget_limit: 500, workspace: "/proj" });
+		const { client } = createMockClient({
+			getBudgetUsage: vi
+				.fn()
+				.mockResolvedValueOnce({ project: "/proj", used: 1000, limit: 500 }) // baseline
+				.mockResolvedValue({ project: "/proj", used: 1200, limit: 500 }), // final report
+		});
+		const execute = createTaskExecutor(client);
+
+		const result = await execute(task);
+
+		expect(result.status).toBe("completed");
+		expect(result.tokensUsed).toBe(150);
+		// Usage report shows per-task delta AND lifetime.
+		expect(console.log).toHaveBeenCalledWith(
+			expect.stringContaining("usage report: used 200 / 500 tokens (lifetime 1200)"),
+		);
+	});
+
+	it("P1: lifetime=1000, limit=500, task spends 600 → budget_exceeded (delta enforcement)", async () => {
+		vi.useFakeTimers();
+		const task = makeTask({ budget_limit: 500, workspace: "/proj" });
+		const { client } = createMockClient({
+			getSession: vi.fn(async () => makeSession([makeMessage("user")])),
+			getBudgetUsage: vi
+				.fn()
+				.mockResolvedValueOnce({ project: "/proj", used: 1000, limit: 500 }) // baseline
+				.mockResolvedValue({ project: "/proj", used: 1600, limit: 500 }), // monitor: delta=600
+		});
+		const execute = createTaskExecutor(client, { pollIntervalMs: 100, budgetPollIntervalMs: 100 });
+
+		const promise = execute(task);
+		await vi.advanceTimersByTimeAsync(0); // createSession + setProjectBudget + sendMessage + first poll
+		await vi.advanceTimersByTimeAsync(100); // second poll → budget check fires (delta=600 >= 500)
+		const result = await promise;
+
+		expect(result.status).toBe("budget_exceeded");
+		expect(result.tokensUsed).toBe(600);
+		expect(console.error).toHaveBeenCalledWith(expect.stringContaining("budget exceeded (600/500 tokens)"));
+	});
+
+	it("P1: baseline unavailable → falls back to lifetime monitoring with a warning", async () => {
+		const task = makeTask({ budget_limit: 500, workspace: "/proj" });
+		const { client } = createMockClient({
+			getBudgetUsage: vi
+				.fn()
+				.mockRejectedValueOnce(new Error("baseline unavailable")) // baseline capture fails
+				.mockResolvedValue({ project: "/proj", used: 200, limit: 500 }),
+		});
+		const execute = createTaskExecutor(client);
+
+		const result = await execute(task);
+
+		expect(result.status).toBe("completed");
+		expect(console.error).toHaveBeenCalledWith(expect.stringContaining("baseline unavailable"));
+		expect(console.error).toHaveBeenCalledWith(expect.stringContaining("falling back to lifetime budget monitoring"));
 	});
 });
 

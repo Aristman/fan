@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FanApiError } from "./client.js";
 import {
+	computeBackoffDelayMs,
 	DEFAULT_BASE_DELAY_MS,
 	DEFAULT_MAX_RETRIES,
-	RetryExhaustedError,
-	computeBackoffDelayMs,
 	isRetryableError,
+	RetryExhaustedError,
 	withRetry,
 } from "./retry.js";
 
@@ -63,10 +63,7 @@ describe("withRetry (F-4.10)", () => {
 	// TC-F-4.10-1: first attempt fails, second succeeds.
 	it("TC-F-4.10-1: error then success → attempts=2, backoff delay ~2s between attempts", async () => {
 		const { sleep, delays } = createSleepRecorder();
-		const fn = vi
-			.fn()
-			.mockRejectedValueOnce(new FanApiError(500, "Internal Server Error"))
-			.mockResolvedValue("ok");
+		const fn = vi.fn().mockRejectedValueOnce(new FanApiError(500, "Internal Server Error")).mockResolvedValue("ok");
 
 		const outcome = await withRetry(fn, { sleep });
 

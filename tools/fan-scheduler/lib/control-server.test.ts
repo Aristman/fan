@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { startControlServer, type ControlServerHandle, type ControlState, type SchedulerHealth } from "./control-server.js";
 import type { TaskConfig } from "./config-loader.js";
+import {
+	type ControlServerHandle,
+	type ControlState,
+	type SchedulerHealth,
+	startControlServer,
+} from "./control-server.js";
 import { TaskQueue, type TaskResult } from "./queue.js";
 
 function makeTask(name: string): TaskConfig {

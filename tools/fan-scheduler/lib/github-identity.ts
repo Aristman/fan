@@ -132,7 +132,10 @@ export async function validateGitHubIdentity(fetchFn?: FetchLike): Promise<GitHu
 			log.warn("identity_scope_warning", `[github] ${identity.reason}`);
 		}
 	} else {
-		log.warn("identity_unavailable", `[github] git/PR-dependent actions unavailable (gitEnabled=false): ${identity.reason}`);
+		log.warn(
+			"identity_unavailable",
+			`[github] git/PR-dependent actions unavailable (gitEnabled=false): ${identity.reason}`,
+		);
 	}
 	return identity;
 }

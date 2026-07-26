@@ -22,34 +22,21 @@ describe("TC-F-4.7-1: branch name matches the naming convention", () => {
 	});
 
 	it("matches the regex for arbitrary task ids", () => {
-		for (const id of [
-			"review-1",
-			"fix_bug.42",
-			"nightly scan",
-			"Über wichtig!",
-		]) {
-			expect(generateBranchName({ id }, fixedNow)).toMatch(
-				AUTONOMOUS_BRANCH_NAME_REGEX,
-			);
+		for (const id of ["review-1", "fix_bug.42", "nightly scan", "Über wichtig!"]) {
+			expect(generateBranchName({ id }, fixedNow)).toMatch(AUTONOMOUS_BRANCH_NAME_REGEX);
 		}
 	});
 
 	it("falls back to task.name when id is absent", () => {
-		expect(generateBranchName({ name: "code-review" }, fixedNow)).toBe(
-			"fan-auto/code-review-20260725-090000",
-		);
+		expect(generateBranchName({ name: "code-review" }, fixedNow)).toBe("fan-auto/code-review-20260725-090000");
 	});
 
 	it("accepts a raw string identifier", () => {
-		expect(generateBranchName("review-1", fixedNow)).toBe(
-			"fan-auto/review-1-20260725-090000",
-		);
+		expect(generateBranchName("review-1", fixedNow)).toBe("fan-auto/review-1-20260725-090000");
 	});
 
 	it("uses the current time by default and still matches the regex", () => {
-		expect(generateBranchName({ id: "review-1" })).toMatch(
-			AUTONOMOUS_BRANCH_NAME_REGEX,
-		);
+		expect(generateBranchName({ id: "review-1" })).toMatch(AUTONOMOUS_BRANCH_NAME_REGEX);
 	});
 });
 
@@ -67,9 +54,7 @@ describe("TC-F-4.7-2: never targets main/master", () => {
 	it("a slug equal to a protected branch is prefixed with 'task-'", () => {
 		expect(sanitizeTaskId("main")).toBe("task-main");
 		expect(sanitizeTaskId("master")).toBe("task-master");
-		expect(generateBranchName({ id: "main" }, fixedNow)).toBe(
-			"fan-auto/task-main-20260725-090000",
-		);
+		expect(generateBranchName({ id: "main" }, fixedNow)).toBe("fan-auto/task-main-20260725-090000");
 	});
 
 	it("protected branch constants cover main and master", () => {
@@ -81,9 +66,7 @@ describe("TC-F-4.7-2: never targets main/master", () => {
 describe("sanitization: dangerous characters", () => {
 	it("replaces spaces and slashes with dashes", () => {
 		expect(sanitizeTaskId("fix/master bug")).toBe("fix-master-bug");
-		expect(generateBranchName({ name: "fix/master bug" }, fixedNow)).toBe(
-			"fan-auto/fix-master-bug-20260725-090000",
-		);
+		expect(generateBranchName({ name: "fix/master bug" }, fixedNow)).toBe("fan-auto/fix-master-bug-20260725-090000");
 	});
 
 	it("collapses runs of special characters into a single dash", () => {
@@ -106,18 +89,14 @@ describe("sanitization: dangerous characters", () => {
 	it("falls back to 'task' when nothing usable remains", () => {
 		expect(sanitizeTaskId("!!!")).toBe("task");
 		expect(sanitizeTaskId("")).toBe("task");
-		expect(generateBranchName({}, fixedNow)).toBe(
-			"fan-auto/task-20260725-090000",
-		);
+		expect(generateBranchName({}, fixedNow)).toBe("fan-auto/task-20260725-090000");
 	});
 
 	it("truncates very long identifiers to a valid slug", () => {
 		const longName = `x${"a".repeat(200)}`;
 		const slug = sanitizeTaskId(longName);
 		expect(slug.length).toBeLessThanOrEqual(MAX_SLUG_LENGTH);
-		expect(generateBranchName({ name: longName }, fixedNow)).toMatch(
-			AUTONOMOUS_BRANCH_NAME_REGEX,
-		);
+		expect(generateBranchName({ name: longName }, fixedNow)).toMatch(AUTONOMOUS_BRANCH_NAME_REGEX);
 	});
 
 	it("trailing separator is removed after truncation", () => {
@@ -130,9 +109,7 @@ describe("sanitization: dangerous characters", () => {
 describe("helpers", () => {
 	it("formatBranchTimestamp formats UTC as YYYYMMDD-HHmmss with zero padding", () => {
 		expect(formatBranchTimestamp(fixedNow())).toBe("20260725-090000");
-		expect(formatBranchTimestamp(new Date(Date.UTC(2026, 0, 2, 3, 4, 5)))).toBe(
-			"20260102-030405",
-		);
+		expect(formatBranchTimestamp(new Date(Date.UTC(2026, 0, 2, 3, 4, 5)))).toBe("20260102-030405");
 	});
 
 	it("isValidBranchName accepts generated names and rejects foreign ones", () => {
@@ -151,12 +128,8 @@ describe("helpers", () => {
 
 describe("AUTONOMOUS_BRANCH_POLICY prompt template", () => {
 	it("contains the branch policy rules", () => {
-		expect(AUTONOMOUS_BRANCH_POLICY).toContain(
-			"fan-auto/<task-id>-<YYYYMMDD-HHmmss>",
-		);
-		expect(AUTONOMOUS_BRANCH_POLICY).toContain(
-			"NEVER commit or push directly to main/master",
-		);
+		expect(AUTONOMOUS_BRANCH_POLICY).toContain("fan-auto/<task-id>-<YYYYMMDD-HHmmss>");
+		expect(AUTONOMOUS_BRANCH_POLICY).toContain("NEVER commit or push directly to main/master");
 		expect(AUTONOMOUS_BRANCH_POLICY).toContain("git push -u origin");
 		expect(AUTONOMOUS_BRANCH_POLICY).toContain("gh pr create --base main");
 	});

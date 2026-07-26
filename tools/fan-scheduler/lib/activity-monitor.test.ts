@@ -92,10 +92,7 @@ describe("TC-F-4.12-1: chat activity detected → pauseCurrent, isRunning=false,
 
 		// User wrote in their own chat session 5 seconds ago.
 		sessions.push(makeSummary("user-chat", iso(nowValue - 5000)));
-		details.set(
-			"user-chat",
-			makeDetail("user-chat", [{ role: "user", createdAt: iso(nowValue - 5000) }]),
-		);
+		details.set("user-chat", makeDetail("user-chat", [{ role: "user", createdAt: iso(nowValue - 5000) }]));
 
 		const monitor = createMonitor(client, queue);
 		await monitor.checkOnce();
@@ -116,10 +113,7 @@ describe("TC-F-4.12-1: chat activity detected → pauseCurrent, isRunning=false,
 		queue.enqueue(makeTask("auto-1"));
 
 		sessions.push(makeSummary("sched-session", iso(nowValue - 1000)));
-		details.set(
-			"sched-session",
-			makeDetail("sched-session", [{ role: "user", createdAt: iso(nowValue - 1000) }]),
-		);
+		details.set("sched-session", makeDetail("sched-session", [{ role: "user", createdAt: iso(nowValue - 1000) }]));
 
 		const monitor = createMonitor(client, queue);
 		monitor.registerSchedulerSession("sched-session");
@@ -137,10 +131,7 @@ describe("TC-F-4.12-1: chat activity detected → pauseCurrent, isRunning=false,
 		queue.enqueue(makeTask("auto-1"));
 
 		sessions.push(makeSummary("user-chat", iso(nowValue - 120000)));
-		details.set(
-			"user-chat",
-			makeDetail("user-chat", [{ role: "user", createdAt: iso(nowValue - 120000) }]),
-		);
+		details.set("user-chat", makeDetail("user-chat", [{ role: "user", createdAt: iso(nowValue - 120000) }]));
 
 		const monitor = createMonitor(client, queue, 60000);
 		await monitor.checkOnce();

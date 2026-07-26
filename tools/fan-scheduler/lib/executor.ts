@@ -3,12 +3,13 @@ import type { TaskConfig } from "./config-loader.js";
 import { createLogger } from "./logger.js";
 
 const log = createLogger("executor");
+
 import type { TaskExecutor, TaskResult, TaskStatus } from "./queue.js";
 import {
 	DEFAULT_BASE_DELAY_MS,
 	DEFAULT_MAX_RETRIES,
-	RetryExhaustedError,
 	isRetryableError,
+	RetryExhaustedError,
 	withRetry,
 } from "./retry.js";
 
@@ -26,12 +27,15 @@ class TaskTimeoutError extends Error {
 	}
 }
 
-/** Internal marker: the per-project budget cap was reached (F-4.9). */
+/** Internal marker: the per-project budget cap was reached (F-4.9).
+ *  `used` is the per-task delta; `lifetime` is the project's total usage at
+ *  the moment the cap was hit (included for diagnostics). */
 class BudgetExceededError extends Error {
 	constructor(
 		taskName: string,
 		readonly used: number,
 		readonly limit: number,
+		readonly lifetime?: number,
 	) {
 		super(`Task "${taskName}" stopped: budget exceeded (${used}/${limit} tokens)`);
 		this.name = "BudgetExceededError";
@@ -66,19 +70,25 @@ function sumTokens(messages: FanSessionMessage[]): number {
 	return messages.reduce((sum, m) => sum + (typeof m.tokens === "number" ? m.tokens : 0), 0);
 }
 
-/** Emits the F-4.9 budget_monitor log event: { event, project, used, limit, percentage }. */
-function logBudgetMonitor(usage: BudgetUsage): void {
-	const percentage =
-		usage.limit !== null && usage.limit > 0 ? Math.round((usage.used / usage.limit) * 100) : null;
+/** Emits the F-4.9 budget_monitor log event: { event, project, used, limit, percentage, lifetime? }.
+ *  When `baseline` is provided, `used` is reported as the per-task delta
+ *  (lifetime - baseline) and `percentage` is computed against the cap.
+ *  `lifetime` is always reported for visibility. */
+function logBudgetMonitor(usage: BudgetUsage, baseline?: number, overrideLimit?: number | null): void {
+	const lifetime = usage.used;
+	const used = baseline !== undefined ? lifetime - baseline : lifetime;
+	const limit = overrideLimit ?? usage.limit;
+	const percentage = limit !== null && limit > 0 ? Math.round((used / limit) * 100) : null;
 	log.info(
 		"budget_monitor",
-		`budget monitor: ${usage.project} used ${usage.used} / ${usage.limit ?? "unlimited"} tokens` +
+		`budget monitor: ${usage.project} used ${used} / ${limit ?? "unlimited"} tokens` +
 			(percentage !== null ? ` (${percentage}%)` : ""),
 		{
 			project: usage.project,
-			used: usage.used,
-			limit: usage.limit,
+			used,
+			limit,
 			percentage,
+			lifetime,
 		},
 	);
 }
@@ -96,16 +106,20 @@ function logBudgetMonitor(usage: BudgetUsage): void {
  * 4. waitForCompletion(session.id, task.timeout) — polls GET /api/sessions/:id
  *    (see completion-signal note below) and, when budget_limit is set, polls
  *    client.getBudgetUsage(task.workspace) every budgetPollIntervalMs
- *    (default 30s, configurable via TaskExecutorOptions). Each budget poll is
- *    logged as { event: 'budget_monitor', project, used, limit, percentage }.
- *    used >= limit → the wait stops and the task is marked "budget_exceeded"
- *    with a warning. NOTE (same limitation as timeout, F-4.4): the gateway has
- *    no interruption/abort endpoint, so the agent keeps running server-side —
- *    only the scheduler's wait is aborted. Budget poll failures are
- *    best-effort (warning, monitoring continues) — a transient network error
- *    must not fail the task.
- * 5. After completion: a final usage report is logged ("used X / Y tokens")
- *    when budget monitoring was active.
+ *    (default 30s, configurable via TaskExecutorOptions). The cap is enforced
+ *    against the PER-TASK delta: at task start the executor records
+ *    `baseline = getBudgetUsage(workspace).used` and compares
+ *    `used - baseline` against `budget_limit`. If the baseline cannot be read
+ *    (network error), the executor falls back to lifetime monitoring and logs
+ *    a warning. `used >= limit` → the wait stops and the task is marked
+ *    "budget_exceeded" with a warning. NOTE (same limitation as timeout,
+ *    F-4.4): the gateway has no interruption/abort endpoint, so the agent
+ *    keeps running server-side — only the scheduler's wait is aborted. Budget
+ *    poll failures are best-effort (warning, monitoring continues) — a
+ *    transient network error must not fail the task.
+ * 5. After completion: a final usage report is logged
+ *    ("used <delta> / <limit> tokens (lifetime <lifetime>)") when budget
+ *    monitoring was active.
  * 6. TaskResult { status, durationMs, tokensUsed, attempts } is logged and returned.
  *
  * Retry (F-4.10): the whole pipeline (steps 1–4) is wrapped in withRetry —
@@ -144,6 +158,7 @@ export function createTaskExecutor(client: FanApiClient, options: TaskExecutorOp
 		sessionId: string,
 		startedAtMs: number,
 		deadlineMs: number,
+		baseline: number | null,
 	): Promise<number> {
 		const budgetEnabled = task.budget_limit !== null;
 		let nextBudgetPollAt = startedAtMs + budgetPollIntervalMs;
@@ -155,13 +170,17 @@ export function createTaskExecutor(client: FanApiClient, options: TaskExecutorOp
 				return sumTokens(messages);
 			}
 			// F-4.9: budget monitor — poll usage every budgetPollIntervalMs.
+			// P1: enforce against the per-task delta (used - baseline), not the
+			// project's lifetime total. If baseline is null, fall back to lifetime.
 			if (budgetEnabled && now() >= nextBudgetPollAt) {
 				nextBudgetPollAt = now() + budgetPollIntervalMs;
 				try {
 					const usage = await client.getBudgetUsage(task.workspace);
-					logBudgetMonitor(usage);
-					if (usage.limit !== null && usage.used >= usage.limit) {
-						throw new BudgetExceededError(task.name, usage.used, usage.limit);
+					const lifetime = usage.used;
+					const used = baseline !== null ? lifetime - baseline : lifetime;
+					logBudgetMonitor(usage, baseline ?? undefined, task.budget_limit);
+					if (used >= task.budget_limit!) {
+						throw new BudgetExceededError(task.name, used, task.budget_limit!, lifetime);
 					}
 				} catch (error) {
 					if (error instanceof BudgetExceededError) throw error;
@@ -189,12 +208,16 @@ export function createTaskExecutor(client: FanApiClient, options: TaskExecutorOp
 	 * harmless (Promise.race keeps handlers attached, no unhandled rejection).
 	 */
 	function raceWithDeadline<T>(task: TaskConfig, promise: Promise<T>, deadlineMs: number): Promise<T> {
+		let handle: ReturnType<typeof setTimeout> | undefined;
 		const timer = new Promise<never>((_resolve, reject) => {
-			const handle = setTimeout(() => reject(new TaskTimeoutError(task.name, task.timeout)), deadlineMs);
+			handle = setTimeout(() => reject(new TaskTimeoutError(task.name, task.timeout)), deadlineMs);
 			// Do not keep the process alive solely for the deadline timer.
 			if (typeof handle === "object" && typeof handle.unref === "function") handle.unref();
 		});
-		return Promise.race([promise, timer]);
+		return Promise.race([promise, timer]).finally(() => {
+			// P2-4: clean up the deadline timer once the race settles.
+			if (handle !== undefined) clearTimeout(handle);
+		});
 	}
 
 	return async function executeTask(task: TaskConfig): Promise<TaskResult> {
@@ -202,7 +225,32 @@ export function createTaskExecutor(client: FanApiClient, options: TaskExecutorOp
 		const startedAt = new Date(startedAtMs).toISOString();
 		const deadlineMs = startedAtMs + task.timeout * 1000;
 
-		const buildResult = (status: TaskStatus, tokensUsed: number | null, attempts: number, error?: string): TaskResult => {
+		// P1: capture the project's lifetime token usage before this task spends
+		// anything. The budget cap is enforced against the delta (used - baseline),
+		// not the lifetime total. If the baseline read fails, fall back to lifetime
+		// monitoring — the task still runs, but the cap may be hit prematurely if
+		// the project already has significant historical usage.
+		let budgetBaseline: number | null = null;
+		if (task.budget_limit !== null) {
+			try {
+				const baselineUsage = await client.getBudgetUsage(task.workspace);
+				budgetBaseline = baselineUsage.used;
+			} catch (error) {
+				log.warn(
+					"budget_baseline_unavailable",
+					`[executor] task "${task.name}" could not read budget baseline — falling back to lifetime budget monitoring: ` +
+						(error instanceof Error ? error.message : String(error)),
+					{ taskId: task.name, error },
+				);
+			}
+		}
+
+		const buildResult = (
+			status: TaskStatus,
+			tokensUsed: number | null,
+			attempts: number,
+			error?: string,
+		): TaskResult => {
 			const finishedAtMs = now();
 			const result: TaskResult = {
 				taskName: task.name,
@@ -256,7 +304,7 @@ export function createTaskExecutor(client: FanApiClient, options: TaskExecutorOp
 			// Step 3 — dispatch the prompt (REST bypass: never queued server-side).
 			await client.sendMessage(session.id, task.message);
 			// Step 4 — poll until the assistant finishes its turn (+ budget monitor).
-			return await waitForCompletion(task, session.id, startedAtMs, deadlineMs);
+			return await waitForCompletion(task, session.id, startedAtMs, deadlineMs, budgetBaseline);
 		};
 
 		// F-4.10: the whole pipeline is retried with exponential backoff
@@ -320,7 +368,7 @@ export function createTaskExecutor(client: FanApiClient, options: TaskExecutorOp
 					"budget_exceeded",
 					`[executor] task "${task.name}" stopped: budget exceeded (${error.used}/${error.limit} tokens) — ` +
 						"no interruption endpoint in the gateway; the session continues running server-side",
-					{ taskId: task.name, used: error.used, limit: error.limit },
+					{ taskId: task.name, used: error.used, limit: error.limit, lifetime: error.lifetime },
 				);
 				return buildResult("budget_exceeded", error.used, attempts, error.message);
 			}
@@ -333,11 +381,13 @@ export function createTaskExecutor(client: FanApiClient, options: TaskExecutorOp
 		if (task.budget_limit !== null) {
 			try {
 				const usage = await client.getBudgetUsage(task.workspace);
-				logBudgetMonitor(usage);
+				const lifetime = usage.used;
+				const used = budgetBaseline !== null ? lifetime - budgetBaseline : lifetime;
+				logBudgetMonitor(usage, budgetBaseline ?? undefined);
 				log.info(
 					"usage_report",
-					`[executor] task "${task.name}" usage report: used ${usage.used} / ${usage.limit ?? "unlimited"} tokens`,
-					{ taskId: task.name, used: usage.used, limit: usage.limit },
+					`[executor] task "${task.name}" usage report: used ${used} / ${usage.limit ?? "unlimited"} tokens (lifetime ${lifetime})`,
+					{ taskId: task.name, used, limit: usage.limit, lifetime },
 				);
 			} catch (error) {
 				log.warn(

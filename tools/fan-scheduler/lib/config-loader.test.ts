@@ -132,16 +132,12 @@ describe("validation: required fields and cron", () => {
 });
 
 describe("isValidCron", () => {
-	it.each([
-		"* * * * *",
-		"0 9 * * *",
-		"*/15 * * * *",
-		"0 0 1 1 0",
-		"1,2,3 4-6 1-15/2 * 0-7",
-		"30 4 1 * 7",
-	])("accepts %s", (expr) => {
-		expect(isValidCron(expr)).toBe(true);
-	});
+	it.each(["* * * * *", "0 9 * * *", "*/15 * * * *", "0 0 1 1 0", "1,2,3 4-6 1-15/2 * 0-7", "30 4 1 * 7"])(
+		"accepts %s",
+		(expr) => {
+			expect(isValidCron(expr)).toBe(true);
+		},
+	);
 
 	it.each([
 		"",

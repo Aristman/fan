@@ -167,11 +167,9 @@ export class FanApiClient {
 	 * `limit` = stored per-project cap (null when unset).
 	 */
 	async getBudgetUsage(project: string): Promise<BudgetUsage> {
-		const resp = await this.request<{ project: string; used: number; limit: number | null }>(
-			"GET",
-			"/api/budget",
-			{ query: { project } },
-		);
+		const resp = await this.request<{ project: string; used: number; limit: number | null }>("GET", "/api/budget", {
+			query: { project },
+		});
 		return { project: resp.project ?? project, used: resp.used ?? 0, limit: resp.limit ?? null };
 	}
 

@@ -95,12 +95,18 @@ export function savePendingTasks(filePath: string, tasks: readonly TaskConfig[])
 function isTaskConfigLike(entry: unknown): entry is TaskConfig {
 	if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return false;
 	const raw = entry as Record<string, unknown>;
-	return (
-		typeof raw.name === "string" &&
-		typeof raw.schedule === "string" &&
-		typeof raw.workspace === "string" &&
-		typeof raw.message === "string"
-	);
+	if (
+		typeof raw.name !== "string" ||
+		typeof raw.schedule !== "string" ||
+		typeof raw.workspace !== "string" ||
+		typeof raw.message !== "string"
+	) {
+		return false;
+	}
+	// P2-2: numeric fields must have the right type when present.
+	if ("timeout" in raw && typeof raw.timeout !== "number") return false;
+	if ("budget_limit" in raw && raw.budget_limit !== null && typeof raw.budget_limit !== "number") return false;
+	return true;
 }
 
 /**
@@ -150,11 +156,9 @@ export function loadPendingTasksDetailed(filePath: string): PendingLoadResult {
 	try {
 		data = JSON.parse(raw);
 	} catch {
-		log.warn(
-			"pending_file_corrupt",
-			`[persistence] "${filePath}" is not valid JSON — starting with an empty queue`,
-			{ filePath },
-		);
+		log.warn("pending_file_corrupt", `[persistence] "${filePath}" is not valid JSON — starting with an empty queue`, {
+			filePath,
+		});
 		return { tasks: [], corrupt: true };
 	}
 

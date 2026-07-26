@@ -2,7 +2,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { UserActivityMonitor } from "./lib/activity-monitor.js";
 import { FanApiClient } from "./lib/client.js";
 import { loadTasks } from "./lib/config-loader.js";
-import { startControlServer, type ControlServerHandle } from "./lib/control-server.js";
+import { type ControlServerHandle, startControlServer } from "./lib/control-server.js";
 import { CronScheduler, createConfigWatcher, createShutdownHandler } from "./lib/cron-scheduler.js";
 import { createTaskExecutor } from "./lib/executor.js";
 import { validateGitHubIdentity } from "./lib/github-identity.js";

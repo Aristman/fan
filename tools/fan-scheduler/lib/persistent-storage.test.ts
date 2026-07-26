@@ -205,6 +205,56 @@ describe("load failure modes", () => {
 		expect(restored.map((t) => t.name)).toEqual(["good", "also-good"]);
 		expect(stderrEntries().filter((e) => e.event === "pending_task_skipped")).toHaveLength(2);
 	});
+
+	// P2-2: numeric fields must be validated on load.
+	it("skips entries with a non-number timeout", () => {
+		mkdirSync(join(tmpRoot, "state"), { recursive: true });
+		writeFileSync(
+			filePath,
+			JSON.stringify({
+				version: PENDING_QUEUE_VERSION,
+				tasks: [
+					makeTask("good"),
+					{ name: "bad-timeout", schedule: "* * * * *", workspace: "/w", message: "m", timeout: "3600" },
+				],
+			}),
+			"utf8",
+		);
+
+		const restored = loadPendingTasks(filePath);
+		expect(restored.map((t) => t.name)).toEqual(["good"]);
+		expect(stderrEntries().filter((e) => e.event === "pending_task_skipped")).toHaveLength(1);
+	});
+
+	it("skips entries with a non-number, non-null budget_limit", () => {
+		mkdirSync(join(tmpRoot, "state"), { recursive: true });
+		writeFileSync(
+			filePath,
+			JSON.stringify({
+				version: PENDING_QUEUE_VERSION,
+				tasks: [
+					makeTask("good"),
+					{ name: "bad-budget", schedule: "* * * * *", workspace: "/w", message: "m", budget_limit: "500" },
+				],
+			}),
+			"utf8",
+		);
+
+		const restored = loadPendingTasks(filePath);
+		expect(restored.map((t) => t.name)).toEqual(["good"]);
+		expect(stderrEntries().filter((e) => e.event === "pending_task_skipped")).toHaveLength(1);
+	});
+
+	it("keeps entries with budget_limit explicitly set to null", () => {
+		mkdirSync(join(tmpRoot, "state"), { recursive: true });
+		const task = makeTask("null-budget");
+		(task as Record<string, unknown>).budget_limit = null;
+		writeFileSync(filePath, JSON.stringify({ version: PENDING_QUEUE_VERSION, tasks: [task] }), "utf8");
+
+		const restored = loadPendingTasks(filePath);
+		expect(restored.map((t) => t.name)).toEqual(["null-budget"]);
+		expect(restored[0].budget_limit).toBeNull();
+	});
 });
 
 describe("loadPendingTasksDetailed (F-4.14 degraded flag)", () => {

@@ -196,11 +196,9 @@ export class UserActivityMonitor {
 			);
 		} else if (!active && this.paused) {
 			this.paused = false;
-			log.info(
-				"chat_interruption_end",
-				"Chat activity ended — resuming autonomous tasks (runNext)",
-				{ pending: this.queue.pending.length },
-			);
+			log.info("chat_interruption_end", "Chat activity ended — resuming autonomous tasks (runNext)", {
+				pending: this.queue.pending.length,
+			});
 			void this.queue.runNext();
 		}
 	}

@@ -104,7 +104,9 @@ function parseTask(entry: unknown, index: number): TaskConfig {
 
 	const schedule = requireString(raw, "schedule", label);
 	if (!isValidCron(schedule)) {
-		throw new Error(`Invalid config: task "${name}" has invalid cron schedule "${schedule}" (expected 5-field cron expression)`);
+		throw new Error(
+			`Invalid config: task "${name}" has invalid cron schedule "${schedule}" (expected 5-field cron expression)`,
+		);
 	}
 
 	const workspace = requireString(raw, "workspace", label);
@@ -113,7 +115,9 @@ function parseTask(entry: unknown, index: number): TaskConfig {
 	let budgetLimit: number | null = DEFAULT_BUDGET_LIMIT;
 	if (raw.budget_limit !== undefined && raw.budget_limit !== null) {
 		if (typeof raw.budget_limit !== "number" || !Number.isFinite(raw.budget_limit) || raw.budget_limit < 0) {
-			throw new Error(`Invalid config: task "${name}" has invalid "budget_limit" (expected a non-negative number or null)`);
+			throw new Error(
+				`Invalid config: task "${name}" has invalid "budget_limit" (expected a non-negative number or null)`,
+			);
 		}
 		budgetLimit = raw.budget_limit;
 	}
@@ -121,7 +125,9 @@ function parseTask(entry: unknown, index: number): TaskConfig {
 	let timeout = DEFAULT_TIMEOUT;
 	if (raw.timeout !== undefined && raw.timeout !== null) {
 		if (typeof raw.timeout !== "number" || !Number.isFinite(raw.timeout) || raw.timeout <= 0) {
-			throw new Error(`Invalid config: task "${name}" has invalid "timeout" (expected a positive number of seconds)`);
+			throw new Error(
+				`Invalid config: task "${name}" has invalid "timeout" (expected a positive number of seconds)`,
+			);
 		}
 		timeout = raw.timeout;
 	}
@@ -139,7 +145,9 @@ export function loadTasks(configPath: string): TaskConfig[] {
 	try {
 		raw = readFileSync(configPath, "utf8");
 	} catch (error) {
-		throw new Error(`Failed to read config file "${configPath}": ${error instanceof Error ? error.message : String(error)}`);
+		throw new Error(
+			`Failed to read config file "${configPath}": ${error instanceof Error ? error.message : String(error)}`,
+		);
 	}
 
 	let doc: unknown;

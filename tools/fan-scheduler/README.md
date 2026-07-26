@@ -68,11 +68,21 @@ A failed control-server bind is a warning, not a crash — the scheduler keeps r
 When a task has `budget_limit` set:
 
 1. **Before `sendMessage`:** `setProjectBudget(workspace, budget_limit)` → `PUT /api/budget { project, tokenLimit }` (gateway persists the cap in `~/.fan/agent/project-budgets.json`). Best-effort: failures are logged as warnings and ignored.
-2. **During execution:** `getBudgetUsage(workspace)` → `GET /api/budget?project=…` is polled every `budgetPollIntervalMs` (default **30 s**, configurable via `TaskExecutorOptions`). Each poll is logged as JSON: `{ "event": "budget_monitor", "project", "used", "limit", "percentage" }`. Poll failures are best-effort (warning, monitoring continues).
-3. **`used >= limit`:** the wait stops, the task is marked `budget_exceeded` with a warning. Note: the gateway has no interruption endpoint (documented in F-4.4), so the agent keeps running server-side — only the scheduler's wait is aborted.
-4. **After completion:** a final usage report is logged (`usage report: used X / Y tokens`).
+2. **At task start:** the executor reads `baseline = getBudgetUsage(workspace).used`. The cap is enforced against the **per-task delta** (`used - baseline`), not the project's lifetime total. If the baseline read fails, the executor falls back to lifetime monitoring and logs a warning.
+3. **During execution:** `getBudgetUsage(workspace)` → `GET /api/budget?project=…` is polled every `budgetPollIntervalMs` (default **30 s**, configurable via `TaskExecutorOptions`). Each poll is logged as JSON: `{ "event": "budget_monitor", "project", "used", "limit", "percentage", "lifetime" }`, where `used` is the per-task delta and `lifetime` is the project's total usage. Poll failures are best-effort (warning, monitoring continues).
+4. **`used >= limit`:** the wait stops, the task is marked `budget_exceeded` with a warning. Note: the gateway has no interruption endpoint (documented in F-4.4), so the agent keeps running server-side — only the scheduler's wait is aborted.
+5. **After completion:** a final usage report is logged (`usage report: used <delta> / <limit> tokens (lifetime <lifetime>)`).
 
 The gateway itself does **not** block messages on cap exhaustion — enforcement lives here, in the scheduler.
+
+### Per-task delta semantics
+
+`GET /api/budget?project=` returns the **lifetime** token usage of the project (sum of all sessions). Without the delta adjustment, a project with historical usage would permanently trip the cap as soon as `budget_limit` was set. The scheduler therefore treats `budget_limit` as a per-task allowance:
+
+- `baseline` = lifetime usage at task start.
+- `delta` = lifetime usage reported by the next poll - `baseline`.
+- Task stops when `delta >= budget_limit`.
+- If `getBudgetUsage` fails at task start, monitoring falls back to comparing lifetime usage directly against the cap (warning logged, event `budget_baseline_unavailable`).
 
 ## Usage
 
