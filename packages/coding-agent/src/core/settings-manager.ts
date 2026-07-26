@@ -261,6 +261,7 @@ export class SettingsManager {
 	private modifiedProjectNestedFields = new Map<keyof Settings, Set<string>>(); // Track project nested field modifications
 	private globalSettingsLoadError: Error | null = null; // Track if global settings file had parse errors
 	private projectSettingsLoadError: Error | null = null; // Track if project settings file had parse errors
+	private projectOverlayActive = false; // True when project layer is a runtime overlay (F-2.9), not file-backed
 	private writeQueue: Promise<void> = Promise.resolve();
 	private errors: SettingsError[];
 
@@ -313,6 +314,28 @@ export class SettingsManager {
 	static inMemory(settings: Partial<Settings> = {}): SettingsManager {
 		const storage = new InMemorySettingsStorage();
 		return new SettingsManager(storage, settings, {});
+	}
+
+	/**
+	 * Load project settings from `<cwd>/.fan/settings.json` (F-2.9).
+	 *
+	 * Returns an empty object when the file is missing, empty, or unreadable.
+	 * Never throws.
+	 */
+	static loadProjectSettings(cwd: string): Settings {
+		const settingsPath = join(cwd, CONFIG_DIR_NAME, "settings.json");
+		try {
+			if (!existsSync(settingsPath)) {
+				return {};
+			}
+			const content = readFileSync(settingsPath, "utf-8");
+			if (!content.trim()) {
+				return {};
+			}
+			return SettingsManager.migrateSettings(JSON.parse(content) as Record<string, unknown>);
+		} catch {
+			return {};
+		}
 	}
 
 	private static loadFromStorage(storage: SettingsStorage, scope: SettingsScope): Settings {
@@ -386,6 +409,39 @@ export class SettingsManager {
 		return structuredClone(this.projectSettings);
 	}
 
+	/** Effective merged settings (project overlay > project file > global) */
+	getEffectiveSettings(): Settings {
+		return structuredClone(this.settings);
+	}
+
+	/**
+	 * Apply a project settings overlay on top of the global settings (F-2.9).
+	 *
+	 * Replaces the current project layer with the given settings and recomputes
+	 * the merged config with priority: project overlay > global. All
+	 * resource-dependent services reading through this manager's getters
+	 * immediately observe the merged config.
+	 *
+	 * Runtime-only: nothing is persisted, and project-scope writes are skipped
+	 * while an overlay is active (see {@link resetToGlobal}).
+	 */
+	applyOverlay(settings: Settings): void {
+		this.projectSettings = SettingsManager.migrateSettings(structuredClone(settings) as Record<string, unknown>);
+		this.projectOverlayActive = true;
+		this.settings = deepMergeSettings(this.globalSettings, this.projectSettings);
+	}
+
+	/**
+	 * Reset the project overlay back to global settings (F-2.9).
+	 *
+	 * Clears the project layer so the effective settings equal the global ones.
+	 */
+	resetToGlobal(): void {
+		this.projectSettings = {};
+		this.projectOverlayActive = false;
+		this.settings = deepMergeSettings(this.globalSettings, this.projectSettings);
+	}
+
 	async reload(): Promise<void> {
 		await this.writeQueue;
 		const globalLoad = SettingsManager.tryLoadFromStorage(this.storage, "global");
@@ -403,6 +459,7 @@ export class SettingsManager {
 		this.modifiedProjectNestedFields.clear();
 
 		const projectLoad = SettingsManager.tryLoadFromStorage(this.storage, "project");
+		this.projectOverlayActive = false;
 		if (!projectLoad.error) {
 			this.projectSettings = projectLoad.settings;
 			this.projectSettingsLoadError = null;
@@ -528,6 +585,11 @@ export class SettingsManager {
 		this.settings = deepMergeSettings(this.globalSettings, this.projectSettings);
 
 		if (this.projectSettingsLoadError) {
+			return;
+		}
+
+		if (this.projectOverlayActive) {
+			// Overlay is runtime-only (F-2.9); never persist it to the creation-cwd file
 			return;
 		}
 
