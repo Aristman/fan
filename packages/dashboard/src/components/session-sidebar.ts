@@ -24,6 +24,7 @@ import { unsafeSVG } from "lit/directives/unsafe-svg.js";
 import type { IconNode } from "lucide";
 import { Clock, MessageSquare, Plus, Search, Trash2 } from "lucide";
 import type { FanApiClient } from "../api/client.js";
+import { normalizeProjectPath, renderWorkspaceTypeIcon } from "../lib/workspace-type.js";
 
 // ---------------------------------------------------------------------------
 // F-2.7 grouping constants, types & helpers
@@ -125,6 +126,12 @@ export class SessionSidebar extends LitElement {
 
 	@property({ attribute: false }) apiClient!: FanApiClient;
 	@property({ attribute: false }) activeSessionId: string | null = null;
+	/**
+	 * F-3.7: normalized-cwd → workspace type lookup (built by dashboard-app
+	 * from its projects state via buildProjectTypeMap). When a tree group's
+	 * cwd matches a known project, the group header shows the type icon.
+	 */
+	@property({ attribute: false }) projectTypes: Record<string, string> = {};
 
 	@state() sessions: SessionSummary[] = [];
 	@state() loading = false;
@@ -457,6 +464,7 @@ export class SessionSidebar extends LitElement {
           @click=${() => this.toggleGroup(group.key)}
         >
           <span class="toggle-icon w-3 text-center shrink-0 select-none">${collapsed ? "▶" : "▼"}</span>
+          ${this._renderGroupTypeIcon(group)}
           <span class="tree-group-label flex-1 min-w-0 truncate text-left text-sm">
             ${group.label}
           </span>
@@ -479,6 +487,14 @@ export class SessionSidebar extends LitElement {
 			}
       </div>
     `;
+	}
+
+	/** F-3.7: workspace-type icon for a group whose cwd maps to a known project. */
+	private _renderGroupTypeIcon(group: SessionGroup) {
+		if (!group.cwd) return nothing;
+		const type = this.projectTypes[normalizeProjectPath(group.cwd)];
+		if (!type) return nothing;
+		return renderWorkspaceTypeIcon(type, "w-3.5 h-3.5");
 	}
 
 	private _renderSessionItem(session: SessionSummary) {

@@ -5,6 +5,7 @@ import { html, LitElement, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { FanApiClient } from "../api/client.js";
 import { FanWsClient } from "../api/ws-client.js";
+import { buildProjectTypeMap } from "../lib/workspace-type.js";
 import { SettingsDialog } from "./settings-dialog.js";
 
 // Side-effect imports: register all child custom elements
@@ -309,6 +310,7 @@ export class DashboardApp extends LitElement {
         <session-sidebar
           .apiClient=${this.apiClient}
           .activeSessionId=${this.currentSessionId}
+          .projectTypes=${buildProjectTypeMap(this.projects)}
         ></session-sidebar>
       </div>
 

@@ -22,6 +22,7 @@ import { html, LitElement, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { Check, ChevronDown, FolderOpen, FolderX, Plus, Search, X } from "lucide";
 import { icon } from "../lib/icon.js";
+import { renderWorkspaceTypeIcon } from "../lib/workspace-type.js";
 
 @customElement("fan-project-switcher")
 export class FanProjectSwitcher extends LitElement {
@@ -169,7 +170,11 @@ export class FanProjectSwitcher extends LitElement {
           aria-expanded=${this.open ? "true" : "false"}
           @click=${() => this._toggle()}
         >
-          ${icon(FolderOpen, "w-4 h-4 text-muted-foreground")}
+          ${
+					current
+						? renderWorkspaceTypeIcon(current.type, "w-4 h-4")
+						: icon(FolderOpen, "w-4 h-4 text-muted-foreground")
+				}
           <span class="flex-1 min-w-0 truncate text-left">${label}</span>
           ${
 					current
@@ -303,6 +308,7 @@ export class FanProjectSwitcher extends LitElement {
         title=${p.path}
         @click=${() => this.selectProject(p.path)}
       >
+        ${renderWorkspaceTypeIcon(p.type, "w-4 h-4")}
         <span class="flex-1 min-w-0">
           <span class="block truncate font-medium">${p.name}</span>
           <span class="block truncate text-[10px] font-mono text-muted-foreground/70">${p.path}</span>

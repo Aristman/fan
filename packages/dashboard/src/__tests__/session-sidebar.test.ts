@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { FanApiClient } from "../api/client.js";
 import "../components/session-sidebar.js";
 import { NO_PROJECT_LABEL, type SessionSidebar } from "../components/session-sidebar.js";
+import { buildProjectTypeMap } from "../lib/workspace-type.js";
 
 // ---------------------------------------------------------------------------
 // Fixtures & helpers
@@ -215,5 +216,41 @@ describe("session-sidebar tree grouping (F-2.7)", () => {
 		expect(el.querySelectorAll(".tree-group").length).toBe(1);
 		expect(el.querySelectorAll(".tree-item").length).toBe(1);
 		expect(el.textContent).toContain("Beta 1");
+	});
+
+	// F-3.7: group headers show the workspace-type icon when the cwd maps to a known project
+	it("renders workspace type icons on groups whose cwd matches a project (F-3.7)", async () => {
+		createEl(THREE_SESSIONS);
+		el.projectTypes = buildProjectTypeMap([
+			{ path: "/a", type: "research" },
+			{ path: "/b", type: "code" },
+		]);
+		await flush(el);
+
+		const groupA = el.querySelector<HTMLElement>('.tree-group[data-group-key="/a"]')!;
+		const groupB = el.querySelector<HTMLElement>('.tree-group[data-group-key="/b"]')!;
+
+		const iconA = groupA.querySelector<HTMLElement>(".tree-group-header .workspace-type-icon")!;
+		expect(iconA).not.toBeNull();
+		expect(iconA.classList.contains("type-research")).toBe(true);
+
+		const iconB = groupB.querySelector<HTMLElement>(".tree-group-header .workspace-type-icon")!;
+		expect(iconB).not.toBeNull();
+		expect(iconB.classList.contains("type-code")).toBe(true);
+	});
+
+	// F-3.7: no icon when the cwd has no known project type
+	it("renders no type icon for groups without a matching project (F-3.7)", async () => {
+		createEl(THREE_SESSIONS);
+		el.projectTypes = buildProjectTypeMap([{ path: "/a", type: "automation" }]);
+		await flush(el);
+
+		const groupA = el.querySelector<HTMLElement>('.tree-group[data-group-key="/a"]')!;
+		const groupB = el.querySelector<HTMLElement>('.tree-group[data-group-key="/b"]')!;
+
+		expect(
+			groupA.querySelector(".tree-group-header .workspace-type-icon")?.classList.contains("type-automation"),
+		).toBe(true);
+		expect(groupB.querySelector(".tree-group-header .workspace-type-icon")).toBeNull();
 	});
 });

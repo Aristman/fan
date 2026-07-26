@@ -219,3 +219,74 @@ describe("fan-project-switcher", () => {
 		expect(el.querySelector(".project-remove-btn")).toBeNull();
 	});
 });
+
+describe("fan-project-switcher workspace type icons (F-3.7)", () => {
+	let el: FanProjectSwitcher;
+
+	beforeEach(() => {
+		el = createEl();
+	});
+
+	afterEach(() => {
+		el.remove();
+	});
+
+	// TC-F-3.7-1: research project renders the research icon with class type-research
+	it("renders the research icon (type-research) before the project name", async () => {
+		el.projects = [{ path: "/a", name: "Alpha", type: "research", sessionCount: 2, available: true }];
+		await el.updateComplete;
+		await openDropdown(el);
+
+		const item = el.querySelector<HTMLElement>(".project-item")!;
+		const icon = item.querySelector<HTMLElement>(".workspace-type-icon")!;
+		expect(icon).not.toBeNull();
+		expect(icon.classList.contains("type-research")).toBe(true);
+		// Icon is rendered before the project name
+		expect(item.firstElementChild).toBe(icon);
+		expect(item.textContent).toContain("Alpha");
+		// Lucide SVG inside
+		expect(icon.querySelector("svg")).not.toBeNull();
+	});
+
+	// TC-F-3.7-2: unknown type renders the question-mark icon with class type-unknown
+	it("renders the unknown icon (type-unknown) for an unknown type", async () => {
+		el.projects = [{ path: "/b", name: "Beta", type: "unknown", sessionCount: 0, available: true }];
+		await el.updateComplete;
+		await openDropdown(el);
+
+		const icon = el.querySelector<HTMLElement>(".project-item .workspace-type-icon")!;
+		expect(icon).not.toBeNull();
+		expect(icon.classList.contains("type-unknown")).toBe(true);
+	});
+
+	// All four types get their own icon class; unrecognized values fall back to unknown
+	it("maps all four types (and unrecognized values) to their CSS classes", async () => {
+		el.projects = [
+			{ path: "/c", name: "C", type: "code", sessionCount: 0, available: true },
+			{ path: "/r", name: "R", type: "research", sessionCount: 0, available: true },
+			{ path: "/u", name: "U", type: "automation", sessionCount: 0, available: true },
+			{ path: "/x", name: "X", type: "weird", sessionCount: 0, available: true },
+		];
+		await el.updateComplete;
+		await openDropdown(el);
+
+		const icons = Array.from(el.querySelectorAll<HTMLElement>(".project-item .workspace-type-icon"));
+		expect(icons.length).toBe(4);
+		expect(icons[0].classList.contains("type-code")).toBe(true);
+		expect(icons[1].classList.contains("type-research")).toBe(true);
+		expect(icons[2].classList.contains("type-automation")).toBe(true);
+		expect(icons[3].classList.contains("type-unknown")).toBe(true);
+	});
+
+	// The trigger button also shows the current project's type icon
+	it("shows the current project's type icon in the trigger button", async () => {
+		el.projects = [{ path: "/a", name: "Alpha", type: "automation", sessionCount: 1, available: true }];
+		el.currentProject = "/a";
+		await el.updateComplete;
+
+		const trigger = el.querySelector<HTMLElement>(".switcher-trigger")!;
+		const icon = trigger.querySelector<HTMLElement>(".workspace-type-icon")!;
+		expect(icon).not.toBeNull();
+		expect(icon.classList.contains("type-automation")).toBe(true);
+	});
+});

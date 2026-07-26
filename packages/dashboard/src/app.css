@@ -159,3 +159,18 @@ chat-view {
   flex-direction: column;
   min-height: 0;
 }
+
+/* ── Workspace type icons (F-3.7) ───────────────────────────────────── */
+
+.workspace-type-icon.type-code {
+  color: oklch(0.7 0.15 250); /* 💻 blue */
+}
+.workspace-type-icon.type-research {
+  color: oklch(0.72 0.14 160); /* 🔬 green */
+}
+.workspace-type-icon.type-automation {
+  color: oklch(0.75 0.14 75); /* ⚙️ amber */
+}
+.workspace-type-icon.type-unknown {
+  color: oklch(0.65 0.02 260); /* ❓ muted gray */
+}
