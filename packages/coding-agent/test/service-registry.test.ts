@@ -84,6 +84,21 @@ describe("ServiceRegistry (F-2.1)", () => {
 		test("options object sets maxItems", () => {
 			expect(new ServiceRegistry({ maxItems: 7 }).maxItems).toBe(7);
 		});
+
+		test("maxItems = 0 throws", () => {
+			expect(() => new ServiceRegistry(0)).toThrow("maxItems must be a positive integer");
+			expect(() => new ServiceRegistry({ maxItems: 0 })).toThrow("maxItems must be a positive integer");
+		});
+
+		test("negative maxItems throws", () => {
+			expect(() => new ServiceRegistry(-1)).toThrow("maxItems must be a positive integer");
+			expect(() => new ServiceRegistry({ maxItems: -5 })).toThrow("maxItems must be a positive integer");
+		});
+
+		test("non-integer maxItems throws", () => {
+			expect(() => new ServiceRegistry(1.5)).toThrow("maxItems must be a positive integer");
+			expect(() => new ServiceRegistry({ maxItems: 3.14 })).toThrow("maxItems must be a positive integer");
+		});
 	});
 
 	describe("lastAccess tracking", () => {

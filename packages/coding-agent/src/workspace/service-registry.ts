@@ -84,7 +84,11 @@ export class ServiceRegistry {
 
 	constructor(options: ServiceRegistryOptions | number = {}) {
 		const opts: ServiceRegistryOptions = typeof options === "number" ? { maxItems: options } : options;
-		this.maxItemsValue = opts.maxItems ?? DEFAULT_MAX_ITEMS;
+		const maxItems = opts.maxItems ?? DEFAULT_MAX_ITEMS;
+		if (!Number.isInteger(maxItems) || maxItems < 1) {
+			throw new Error(`ServiceRegistry: maxItems must be a positive integer, got ${maxItems}`);
+		}
+		this.maxItemsValue = maxItems;
 		this.cleanupFn = opts.cleanup;
 		this.now = opts.now ?? Date.now;
 		this.watchEnabled = opts.watch ?? true;

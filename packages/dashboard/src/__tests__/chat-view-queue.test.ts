@@ -26,9 +26,7 @@ function createEl(): ChatView {
 
 	const el = document.createElement("chat-view") as ChatView;
 	el.sessionId = SESSION_ID;
-	// biome-ignore lint/suspicious/noExplicitAny: partial mocks of the real clients
 	el.wsClient = wsClient as any;
-	// biome-ignore lint/suspicious/noExplicitAny: partial mocks of the real clients
 	el.apiClient = apiClient as any;
 	document.body.appendChild(el);
 	return el;

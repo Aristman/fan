@@ -1,6 +1,6 @@
 // Tests for <session-sidebar> tree grouping by cwd (F-2.7)
 import type { SessionSummary } from "@fan/api-gateway/types";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { FanApiClient } from "../api/client.js";
 import "../components/session-sidebar.js";
 import { NO_PROJECT_LABEL, type SessionSidebar } from "../components/session-sidebar.js";

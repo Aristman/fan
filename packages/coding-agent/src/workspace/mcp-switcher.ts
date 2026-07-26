@@ -137,10 +137,15 @@ export interface McpSwitcherOptions {
  * - A project config with zero servers yields action "no-servers" (mirrors
  *   the mcp extension's silent no-op on empty config) and is not cached.
  */
+type InitResult = { action: "initialized"; manager: McpConnectionManager } | { action: "no-servers"; manager: null };
+
 export class McpSwitcher {
 	private readonly cache: McpConnectionCache;
 	private readonly createManager: McpSwitcherOptions["createManager"];
 	private readonly loadConfig: (cwd: string) => Promise<McpConfig>;
+	/** In-flight initializations keyed by cwd. Concurrent switches to the same
+	 *  uncached cwd await the first attempt and reuse its result. */
+	private readonly inFlight = new Map<string, Promise<InitResult>>();
 
 	constructor(options: McpSwitcherOptions) {
 		this.cache = options.cache ?? new InMemoryMcpConnectionCache();
@@ -171,14 +176,33 @@ export class McpSwitcher {
 		}
 
 		// 3. New cwd not cached → lazy init from <toCwd>/.fan/mcp.json.
+		//    Guard concurrent switches to the same cwd so only one connect
+		//    runs and every waiter receives the same manager.
+		const existing = this.inFlight.get(toCwd);
+		if (existing) {
+			const result = await existing;
+			return { action: result.action, fromCwd, toCwd, manager: result.manager };
+		}
+
+		const promise = this.initialize(toCwd);
+		this.inFlight.set(toCwd, promise);
+		try {
+			const result = await promise;
+			return { action: result.action, fromCwd, toCwd, manager: result.manager };
+		} finally {
+			this.inFlight.delete(toCwd);
+		}
+	}
+
+	private async initialize(toCwd: string): Promise<InitResult> {
 		const config = await this.loadConfig(toCwd);
 		if (config.servers.length === 0) {
-			return { action: "no-servers", fromCwd, toCwd, manager: null };
+			return { action: "no-servers", manager: null };
 		}
 
 		const manager = await this.createManager(toCwd, config);
 		await manager.connect(config);
 		this.cache.set(toCwd, manager);
-		return { action: "initialized", fromCwd, toCwd, manager };
+		return { action: "initialized", manager };
 	}
 }

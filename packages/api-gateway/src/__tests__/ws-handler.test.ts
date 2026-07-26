@@ -154,6 +154,42 @@ describe("WebSocket Handler", () => {
 			expect(sent.some((m) => m.type === "queued")).toBe(false);
 		});
 
+		it("TC-F-2.5-2b: two rapid sendMessage for inactive session queue the second while dispatch pending", async () => {
+			const { createBunWebSocketBridge } = await import("../ws-handler.js");
+			const adapter = createMockAdapter();
+			adapter.isExecuting.mockReturnValue(false);
+			adapter.getActiveSessionId.mockReturnValue(null);
+
+			let releaseSend: () => void;
+			const sendGate = new Promise<void>((resolve) => {
+				releaseSend = resolve;
+			});
+			adapter.sendMessage.mockImplementation(async () => {
+				await sendGate;
+				return true;
+			});
+
+			const bridge = createBunWebSocketBridge(adapter);
+			const { ws, sent } = makeFakeWs("sess-A");
+			bridge.websocket.open(ws);
+
+			bridge.websocket.message(ws, JSON.stringify({ type: "sendMessage", content: "m1" }));
+			bridge.websocket.message(ws, JSON.stringify({ type: "sendMessage", content: "m2" }));
+
+			// Wait until the first (and only) direct dispatch has entered sendMessage.
+			await vi.waitFor(() => expect(adapter.sendMessage).toHaveBeenCalledTimes(1));
+			expect(adapter.sendMessage).toHaveBeenCalledWith("sess-A", "m1", undefined);
+
+			// The second message must have been queued, not dispatched.
+			const queued = sent.filter((m) => m.type === "queued");
+			expect(queued).toHaveLength(1);
+			expect(queued[0]).toMatchObject({ type: "queued", sessionId: "sess-A", position: 1 });
+
+			releaseSend!();
+			await vi.waitFor(() => expect(adapter.sendMessage).toHaveBeenCalledTimes(2));
+			expect(adapter.sendMessage.mock.calls[1]).toEqual(["sess-A", "m2", undefined]);
+		});
+
 		it("busy engine + SAME active session → direct dispatch (prompt queues via followUp internally)", async () => {
 			const { createBunWebSocketBridge } = await import("../ws-handler.js");
 			const adapter = createMockAdapter();

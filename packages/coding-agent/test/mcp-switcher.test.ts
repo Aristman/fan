@@ -58,6 +58,58 @@ describe("McpSwitcher (F-2.10)", () => {
 		});
 	});
 
+	describe("TC-F-2.10-1b: concurrent switches to uncached cwd serialize on one connect", () => {
+		test("two parallel switches → one connect, both receive the same manager", async () => {
+			const cache = new InMemoryMcpConnectionCache();
+			const managerB = mockManager();
+			const createManager = vi.fn(() => managerB);
+			const loadConfig = vi.fn(async () => configWithServers(1));
+			const switcher = new McpSwitcher({ cache, createManager, loadConfig });
+
+			let releaseConnect: () => void;
+			const connectGate = new Promise<void>((resolve) => {
+				releaseConnect = resolve;
+			});
+			managerB.connect.mockImplementation(async () => {
+				await connectGate;
+			});
+
+			const both = Promise.all([switcher.switchMcpServers("/a", "/b"), switcher.switchMcpServers("/a", "/b")]);
+
+			// Wait until the first (and only) connect call is in flight.
+			await vi.waitFor(() => expect(managerB.connect).toHaveBeenCalledTimes(1));
+			expect(createManager).toHaveBeenCalledTimes(1);
+			releaseConnect!();
+
+			const [result1, result2] = await both;
+
+			expect(result1.action).toBe("initialized");
+			expect(result2.action).toBe("initialized");
+			expect(result1.manager).toBe(managerB);
+			expect(result2.manager).toBe(managerB);
+			expect(cache.get("/b")).toBe(managerB);
+		});
+
+		test("concurrent switch waits for failure and propagates the error", async () => {
+			const cache = new InMemoryMcpConnectionCache();
+			const failingManager = mockManager();
+			failingManager.connect.mockRejectedValue(new Error("connect failed"));
+			const createManager = vi.fn(() => failingManager);
+			const loadConfig = vi.fn(async () => configWithServers(1));
+			const switcher = new McpSwitcher({ cache, createManager, loadConfig });
+
+			const [result1, result2] = await Promise.allSettled([
+				switcher.switchMcpServers("/a", "/b"),
+				switcher.switchMcpServers("/a", "/b"),
+			]);
+
+			expect(result1.status).toBe("rejected");
+			expect(result2.status).toBe("rejected");
+			expect(createManager).toHaveBeenCalledTimes(1);
+			expect(cache.get("/b")).toBeNull();
+		});
+	});
+
 	describe("TC-F-2.10-2: uncached cwd → lazy init, old connections preserved", () => {
 		test("initializes from <toCwd> config and keeps fromCwd connections alive", async () => {
 			const cache = new InMemoryMcpConnectionCache();

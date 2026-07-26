@@ -76,6 +76,14 @@ export class WsMessageDispatcher {
 	private readonly sessionAdapter: SessionAdapter;
 	private readonly queue: InMemoryMessageQueue<WsSendMessagePayload>;
 	private draining = false;
+	/**
+	 * Global in-flight dispatch guard. The single-engine runtime can only
+	 * switch/prompt one session at a time; this flag covers the window between
+	 * the dispatch decision and the moment the adapter reports busy
+	 * (`isExecuting()` true). While true, every incoming `sendMessage` is
+	 * queued so that concurrent `switchSession`+`prompt` calls cannot happen.
+	 */
+	private dispatchPending = false;
 
 	constructor(options: WsMessageDispatcherOptions) {
 		this.sessionAdapter = options.sessionAdapter;
@@ -85,6 +93,17 @@ export class WsMessageDispatcher {
 	/** Engine busy check — adapters without isExecuting() are always idle. */
 	private isBusy(): boolean {
 		return this.sessionAdapter.isExecuting?.() ?? false;
+	}
+
+	/**
+	 * Release the dispatch-pending guard once the adapter reports busy. At
+	 * that point the normal `isBusy()` check takes over and future messages
+	 * for other sessions will queue.
+	 */
+	private releaseDispatchGuardIfBusy(): void {
+		if (this.dispatchPending && this.isBusy()) {
+			this.dispatchPending = false;
+		}
 	}
 
 	/**
@@ -105,8 +124,11 @@ export class WsMessageDispatcher {
 		};
 		const activeSessionId = this.sessionAdapter.getActiveSessionId?.() ?? null;
 
-		if (this.isBusy() && sessionId !== activeSessionId) {
-			// Engine busy with another session → enqueue, notify position.
+		this.releaseDispatchGuardIfBusy();
+
+		if (this.dispatchPending || (this.isBusy() && sessionId !== activeSessionId)) {
+			// Engine busy with another session, or a dispatch is currently
+			// starting → enqueue and notify position.
 			const position = await this.queue.enqueue(sessionId, payload);
 			if (position === null) {
 				// F-2.15: queue overflow — reject with a queue_full notification.
@@ -135,12 +157,14 @@ export class WsMessageDispatcher {
 
 	/** Direct dispatch; triggers the dequeue processor on completion. */
 	private dispatch(sessionId: string, payload: WsSendMessagePayload): void {
+		this.dispatchPending = true;
 		void Promise.resolve()
 			.then(() => this.sessionAdapter.sendMessage(sessionId, payload.content, payload.streamingBehavior))
 			.catch((err) => {
 				console.error(`[ws-handler] sendMessage failed for session ${sessionId}:`, err);
 			})
 			.finally(() => {
+				this.dispatchPending = false;
 				void this.drainQueue();
 			});
 	}
@@ -151,7 +175,8 @@ export class WsMessageDispatcher {
 	 * engine stays idle. Re-entrant calls no-op via the `draining` flag.
 	 */
 	private async drainQueue(): Promise<void> {
-		if (this.draining) return;
+		this.releaseDispatchGuardIfBusy();
+		if (this.draining || this.dispatchPending) return;
 		this.draining = true;
 		try {
 			while (!this.isBusy()) {
