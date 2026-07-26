@@ -11,8 +11,9 @@
 # Full cycle:
 #   docker compose up -d --build
 #   → wait for /api/health (poll with timeout)
-#   → 7 checks (health, auth 401, token bootstrap, sessions CRUD, CORS,
-#     file logging, WebSocket)
+#   → phase 0: 10 checks (health, auth 401, token bootstrap, sessions CRUD,
+#     CORS, file logging, WebSocket)
+#   → phase 1 (F-1.14-E2E): multi-project Workspace API workflow (section 8)
 #   → docker compose down (trap on exit)
 #
 # Exit code 0 only if every check passes (check 7 is optional — skipped
@@ -72,6 +73,9 @@ section() { echo; echo "${C_CYAN}=== $* ===${C_RESET}"; }
 # --- teardown -----------------------------------------------------------
 cleanup() {
 	echo
+	# Best-effort workspace cleanup while the container is still up
+	# (no-op when the stack never started or the function is not defined yet).
+	phase1_cleanup || true
 	info "Teardown: $COMPOSE down"
 	$COMPOSE down >/dev/null 2>&1 || true
 }
@@ -81,6 +85,40 @@ trap cleanup EXIT
 # HTTP status code of a request. Usage: http_status [curl-args...]
 http_status() {
 	curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$@"
+}
+
+# --- Phase 1 (F-1.14-E2E) constants & idempotency cleanup ------------------
+# Fixed project names + thorough cleanup (start-of-section pre-clean AND
+# end-of-run/trap cleanup) keep the section idempotent against the
+# PERSISTENT fan-data / fan-repos volumes: leftovers from a crashed previous
+# run are removed before re-creating anything.
+PROJ_A="/data/repos/e2e-proj-a"
+PROJ_B="/data/repos/e2e-proj-b"
+PROJ_A_NAME="e2e-proj-a"
+PROJ_B_NAME="e2e-proj-b"
+# Session dirs use SessionManager's --encoded-cwd-- scheme
+# (`--${cwd minus leading slash, slashes→dashes}--`, session-manager.ts).
+SESS_DIR_A="/data/.fan/agent/sessions/--data-repos-e2e-proj-a--"
+SESS_DIR_B="/data/.fan/agent/sessions/--data-repos-e2e-proj-b--"
+
+# Remove test workspaces, their session dirs and their projects.json
+# registry entries. Best-effort: never fails the script (used in the trap).
+phase1_cleanup() {
+	MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" \
+		rm -rf "$PROJ_A" "$PROJ_B" "$SESS_DIR_A" "$SESS_DIR_B" 2>/dev/null || true
+	MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" bun -e '
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+const p = "/data/.fan/agent/projects.json";
+if (existsSync(p)) {
+	try {
+		const list = JSON.parse(readFileSync(p, "utf8"));
+		if (Array.isArray(list)) {
+			const keep = list.filter((e) => e && !["/data/repos/e2e-proj-a", "/data/repos/e2e-proj-b"].includes(e.path));
+			writeFileSync(p, JSON.stringify(keep, null, 2));
+		}
+	} catch { /* corrupted registry → app already treats it as empty */ }
+}
+' >/dev/null 2>&1 || true
 }
 
 # =========================================================================
@@ -268,6 +306,164 @@ elif command -v wscat >/dev/null 2>&1; then
 	fi
 else
 	skip "WS check skipped — neither bun nor wscat available on host"
+fi
+
+# =========================================================================
+section "8. Phase 1 — Workspace API (F-1.14-E2E): multi-project workflow"
+# =========================================================================
+# Covers TC-F-1.14-E2E-1..3 against the compose whitelist
+# (FAN_WORKSPACE_ROOT=/data/repos → allowedRoots=[/data/repos], F-1.13):
+#   create projects A/B → sessions in both → registry + ?project= filters →
+#   cross-project delete 403 → path traversal 403 → in-project delete 204.
+#
+# LAZY-JSONL WORKAROUND (documented phase-0 behaviour): a session only
+# appears in GET /api/sessions (and becomes deletable — deleteSession is
+# disk-only and refuses the ACTIVE runtime session) once its JSONL file
+# exists on disk, which normally happens on the first assistant response.
+# An LLM round-trip is not available in this stack, so after creating
+# session A (and then B, which makes A non-active) we seed a minimal
+# v3-header JSONL for session A via docker exec — exactly the header
+# SessionManager.newSession() would write (session-manager.ts). Session B
+# intentionally stays unpersisted: the ?project=B filter check asserts the
+# documented lazy behaviour instead of fighting it.
+SESSION_A_ID=""
+SESSION_B_ID=""
+if [ -z "$TOKEN" ]; then
+	fail "phase 1 checks skipped — no token (see check 3)"
+else
+	# 8.0. Pre-clean: wipe leftovers from a crashed previous run (volumes persist).
+	phase1_cleanup
+
+	# 8.1. Workspace dirs in the container; .git in A → auto-register type=code (F-1.7).
+	if MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" mkdir -p "$PROJ_A/.git" "$PROJ_B" 2>/dev/null; then
+		pass "test workspaces created ($PROJ_A with .git, $PROJ_B)"
+	else
+		fail "failed to create test workspace directories in container"
+	fi
+
+	# 8.2. POST /api/sessions { cwd: PROJ_A } → 201, response.cwd matches (F-1.3/F-1.12).
+	create_a_resp="$(curl -s --max-time 15 -w '\n%{http_code}' -X POST "$BASE_URL/api/sessions" \
+		-H "Authorization: Bearer $TOKEN" \
+		-H "Content-Type: application/json" -d "{\"cwd\": \"$PROJ_A\"}")"
+	create_a_code="${create_a_resp##*$'\n'}"
+	create_a_body="${create_a_resp%$'\n'*}"
+	SESSION_A_ID="$(echo "$create_a_body" | grep -o '"id"[: ]*"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"$/\1/')"
+	create_a_cwd="$(echo "$create_a_body" | grep -o '"cwd"[: ]*"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"$/\1/')"
+	info "POST /api/sessions {cwd: $PROJ_A} → $create_a_code, id: ${SESSION_A_ID:-<none>}, cwd: ${create_a_cwd:-<none>}"
+	if [ "$create_a_code" = "201" ] && [ -n "$SESSION_A_ID" ] && [ "$create_a_cwd" = "$PROJ_A" ]; then
+		pass "session A created in project A (HTTP 201, response.cwd correct)"
+	else
+		fail "POST session A: expected 201 + cwd=$PROJ_A, got code=$create_a_code body=$create_a_body"
+	fi
+
+	# 8.3. POST /api/sessions { cwd: PROJ_B } → 201 (runtime switches to B; A becomes non-active).
+	create_b_resp="$(curl -s --max-time 15 -w '\n%{http_code}' -X POST "$BASE_URL/api/sessions" \
+		-H "Authorization: Bearer $TOKEN" \
+		-H "Content-Type: application/json" -d "{\"cwd\": \"$PROJ_B\"}")"
+	create_b_code="${create_b_resp##*$'\n'}"
+	create_b_body="${create_b_resp%$'\n'*}"
+	SESSION_B_ID="$(echo "$create_b_body" | grep -o '"id"[: ]*"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"$/\1/')"
+	create_b_cwd="$(echo "$create_b_body" | grep -o '"cwd"[: ]*"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"$/\1/')"
+	info "POST /api/sessions {cwd: $PROJ_B} → $create_b_code, id: ${SESSION_B_ID:-<none>}, cwd: ${create_b_cwd:-<none>}"
+	if [ "$create_b_code" = "201" ] && [ -n "$SESSION_B_ID" ] && [ "$create_b_cwd" = "$PROJ_B" ]; then
+		pass "session B created in project B (HTTP 201, response.cwd correct)"
+	else
+		fail "POST session B: expected 201 + cwd=$PROJ_B, got code=$create_b_code body=$create_b_body"
+	fi
+
+	if [ -z "$SESSION_A_ID" ] || [ -z "$SESSION_B_ID" ]; then
+		fail "phase 1 workflow aborted — session ids missing (see checks above)"
+	else
+		# 8.4. Lazy-JSONL workaround: seed session A's JSONL on disk (see section header).
+		seed_out="$(MSYS2_ARG_CONV_EXCL="*" docker exec -e E2E_SID="$SESSION_A_ID" "$CONTAINER_NAME" bun -e '
+import { mkdirSync, writeFileSync } from "node:fs";
+const id = process.env.E2E_SID;
+const ts = new Date().toISOString();
+const dir = "/data/.fan/agent/sessions/--data-repos-e2e-proj-a--";
+mkdirSync(dir, { recursive: true });
+const file = `${dir}/${ts.replace(/[:.]/g, "-")}_${id}.jsonl`;
+const header = { type: "session", version: 3, id, timestamp: ts, cwd: "/data/repos/e2e-proj-a" };
+writeFileSync(file, JSON.stringify(header) + "\n");
+console.log("SEEDED");
+' 2>/dev/null || true)"
+		if [ "$seed_out" = "SEEDED" ]; then
+			pass "session A persisted to disk (manual JSONL seed — lazy-JSONL workaround)"
+		else
+			fail "session A JSONL seed failed (docker exec: ${seed_out:-no output})"
+		fi
+
+		# 8.5. GET /api/projects → both projects auto-registered (F-1.5/F-1.7);
+		# A has type=code (.git) and sessionCount=1 (seeded JSONL counted).
+		projects_body="$(curl -s --max-time 10 "$BASE_URL/api/projects" -H "Authorization: Bearer $TOKEN")"
+		info "GET /api/projects → $projects_body"
+		if echo "$projects_body" | grep -q "\"path\":\"$PROJ_A\"" && echo "$projects_body" | grep -q "\"path\":\"$PROJ_B\""; then
+			pass "GET /api/projects: both projects present (auto-registration F-1.7)"
+		else
+			fail "GET /api/projects: expected $PROJ_A and $PROJ_B, got $projects_body"
+		fi
+		if echo "$projects_body" | grep -q "\"path\":\"$PROJ_A\",\"name\":\"$PROJ_A_NAME\",\"type\":\"code\",\"sessionCount\":1"; then
+			pass "project A entry: type=code (.git detected), sessionCount=1"
+		else
+			fail "project A entry: expected type=code + sessionCount=1, got $projects_body"
+		fi
+
+		# 8.6. GET /api/sessions?project=A → session A listed with correct cwd (F-1.2/F-1.12).
+		filt_a_resp="$(curl -s --max-time 10 -w '\n%{http_code}' "$BASE_URL/api/sessions?project=$PROJ_A" -H "Authorization: Bearer $TOKEN")"
+		filt_a_code="${filt_a_resp##*$'\n'}"
+		filt_a_body="${filt_a_resp%$'\n'*}"
+		if [ "$filt_a_code" = "200" ] && echo "$filt_a_body" | grep -q "\"id\":\"$SESSION_A_ID\"" \
+			&& echo "$filt_a_body" | grep -q "\"cwd\":\"$PROJ_A\"" && ! echo "$filt_a_body" | grep -q "\"id\":\"$SESSION_B_ID\""; then
+			pass "GET /api/sessions?project=A: session A listed with cwd=$PROJ_A (filter F-1.2)"
+		else
+			fail "GET /api/sessions?project=A: expected session A with cwd, got code=$filt_a_code body=$filt_a_body"
+		fi
+
+		# 8.7. GET /api/sessions?project=B → 200 with sessions array; session A
+		# absent. Session B itself is absent too — DOCUMENTED lazy-JSONL
+		# behaviour (no first message → no JSONL → not listed), not a bug.
+		filt_b_resp="$(curl -s --max-time 10 -w '\n%{http_code}' "$BASE_URL/api/sessions?project=$PROJ_B" -H "Authorization: Bearer $TOKEN")"
+		filt_b_code="${filt_b_resp##*$'\n'}"
+		filt_b_body="${filt_b_resp%$'\n'*}"
+		if [ "$filt_b_code" = "200" ] && echo "$filt_b_body" | grep -q '"sessions"' && ! echo "$filt_b_body" | grep -q "\"id\":\"$SESSION_A_ID\""; then
+			pass "GET /api/sessions?project=B: 200, no cross-project leakage (lazy-JSONL: unpersisted B not listed — documented)"
+		else
+			fail "GET /api/sessions?project=B: expected 200 without session A, got code=$filt_b_code body=$filt_b_body"
+		fi
+
+		# 8.8. TC-F-1.14-E2E-2: cross-project delete is rejected and session survives.
+		del_x_code="$(http_status -X DELETE "$BASE_URL/api/sessions/$SESSION_A_ID?project=$PROJ_B" -H "Authorization: Bearer $TOKEN")"
+		still_there="$(curl -s --max-time 10 "$BASE_URL/api/sessions?project=$PROJ_A" -H "Authorization: Bearer $TOKEN")"
+		if [ "$del_x_code" = "403" ] && echo "$still_there" | grep -q "\"id\":\"$SESSION_A_ID\""; then
+			pass "cross-project DELETE (A via ?project=B) → 403, session NOT deleted (F-1.4)"
+		else
+			fail "cross-project DELETE: expected 403 + session intact, got code=$del_x_code list=$still_there"
+		fi
+
+		# 8.9. TC-F-1.14-E2E-3: path traversal outside the whitelist is rejected.
+		trav_resp="$(curl -s --max-time 15 -w '\n%{http_code}' -X POST "$BASE_URL/api/sessions" \
+			-H "Authorization: Bearer $TOKEN" \
+			-H "Content-Type: application/json" -d '{"cwd": "/etc/passwd"}')"
+		trav_code="${trav_resp##*$'\n'}"
+		trav_body="${trav_resp%$'\n'*}"
+		if [ "$trav_code" = "403" ] && echo "$trav_body" | grep -q "cwd rejected"; then
+			pass "POST {cwd: /etc/passwd} → 403 cwd rejected (whitelist F-1.13)"
+		else
+			fail "path traversal: expected 403 + cwd rejected, got code=$trav_code body=$trav_body"
+		fi
+
+		# 8.10. TC-F-1.14-E2E-1 (final): in-project delete succeeds → 204, session gone.
+		del_a_code="$(http_status -X DELETE "$BASE_URL/api/sessions/$SESSION_A_ID?project=$PROJ_A" -H "Authorization: Bearer $TOKEN")"
+		after_del="$(curl -s --max-time 10 "$BASE_URL/api/sessions?project=$PROJ_A" -H "Authorization: Bearer $TOKEN")"
+		if [ "$del_a_code" = "204" ] && ! echo "$after_del" | grep -q "\"id\":\"$SESSION_A_ID\""; then
+			pass "DELETE session A with matching ?project=A → 204, session removed"
+		else
+			fail "in-project DELETE: expected 204 + session gone, got code=$del_a_code list=$after_del"
+		fi
+	fi
+
+	# 8.11. Post-clean: keep the run idempotent (also runs from the EXIT trap).
+	info "Cleanup: removing test workspaces, session dirs and registry entries"
+	phase1_cleanup
 fi
 
 # =========================================================================
