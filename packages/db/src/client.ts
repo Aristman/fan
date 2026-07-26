@@ -64,6 +64,7 @@ const DDL_STATEMENTS = [
     "title" TEXT NOT NULL DEFAULT 'New Session',
     "model" TEXT,
     "provider" TEXT,
+    "cwd" TEXT,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL
 )`,
@@ -116,6 +117,7 @@ const DDL_STATEMENTS = [
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "lastUsed" DATETIME
 )`,
+	`CREATE INDEX IF NOT EXISTS "Session_cwd_idx" ON "Session"("cwd")`,
 	`CREATE INDEX IF NOT EXISTS "Message_sessionId_idx" ON "Message"("sessionId")`,
 	`CREATE INDEX IF NOT EXISTS "Message_sessionId_createdAt_idx" ON "Message"("sessionId", "createdAt")`,
 	`CREATE UNIQUE INDEX IF NOT EXISTS "ModelSetting_provider_model_key" ON "ModelSetting"("provider", "model")`,
@@ -171,7 +173,9 @@ export async function initDatabase(prisma?: PrismaClient): Promise<void> {
 			`SELECT count(*) as count FROM sqlite_master WHERE type='table' AND name='_prisma_migrations'`,
 		);
 		if (result[0]?.count > 0) {
-			return; // Already initialized
+			// Already initialized — still apply idempotent additive migrations
+			await ensureAdditiveColumns(client);
+			return;
 		}
 	} catch {
 		// Table doesn't exist yet — proceed with DDL
@@ -213,6 +217,19 @@ export async function initDatabase(prisma?: PrismaClient): Promise<void> {
 	} catch (err) {
 		console.error(`[db] Failed to insert migration record:`, err);
 	}
+}
+
+/**
+ * Idempotent additive migrations for databases initialized before a column
+ * was introduced. Safe to run on every startup — checks PRAGMA table_info
+ * before issuing ALTER TABLE, so existing data is never touched.
+ */
+async function ensureAdditiveColumns(client: PrismaClient): Promise<void> {
+	const columns: Array<{ name: string }> = await client.$queryRawUnsafe(`PRAGMA table_info("Session")`);
+	if (!columns.some((c) => c.name === "cwd")) {
+		await client.$executeRawUnsafe(`ALTER TABLE "Session" ADD COLUMN "cwd" TEXT`);
+	}
+	await client.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "Session_cwd_idx" ON "Session"("cwd")`);
 }
 
 /** Close the Prisma connection */
