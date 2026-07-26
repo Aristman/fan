@@ -32,6 +32,11 @@ COPY . .
 # Full build: 10 packages (tsgo; packages/db build runs `prisma generate`)
 RUN npm run build
 
+# fan-scheduler (tools/* workspace, phase 4 autonomy): deps were not present
+# during the first `bun install` (only packages/ was copied), so install them
+# now that the full source tree is in place, then compile with tsc.
+RUN bun install && npm --prefix tools/fan-scheduler run build
+
 # Dashboard bundle (served by api-gateway from packages/dashboard/dist).
 # dashboard depends on web-ui via `file:../web-ui`; bun snapshots file: deps
 # into its store at install time (before dist exists), so re-link the dep to
@@ -55,6 +60,8 @@ RUN mkdir -p /deploy \
 				cp -r "$p/dist" "/deploy/$p/dist"; \
 			fi; \
 		done \
+	&& mkdir -p /deploy/tools/fan-scheduler \
+	&& cp -r tools/fan-scheduler/dist /deploy/tools/fan-scheduler/dist \
 	&& mkdir -p /deploy/prisma-gen \
 	&& cp -r /app/node_modules/.bun/@prisma+client@*/node_modules/.prisma /deploy/prisma-gen/.prisma \
 	&& find /deploy/prisma-gen -type f -name "*query_engine*" ! -name "*debian-openssl-3.0.x*" -delete \

@@ -1,0 +1,26 @@
+# FAN Scheduler — production configuration (mounted into the fan-scheduler
+# container at /data/scheduler/config.yaml, read-only).
+#
+# This is the DEFAULT file used by docker-compose.yml. Override the mount
+# source with the FAN_SCHEDULER_CONFIG env var (e.g. in .env):
+#   FAN_SCHEDULER_CONFIG=./deploy/scheduler/my-config.yaml
+#
+# The scheduler authenticates against the FAN API gateway with
+# FAN_SCHEDULER_TOKEN (a ClientToken — provision one in the DB and put it
+# into .env; without it tasks fail with "FAN API token is not configured").
+#
+# Fields per task:
+#   name         (required) unique task name
+#   schedule     (required) 5-field cron expression (minute hour day-of-month month day-of-week)
+#   workspace    (required) project workspace path INSIDE the fan container
+#                           (under the fan-repos volume, e.g. /data/repos/...)
+#   message      (required) prompt sent to the agent
+#   budget_limit (optional) token budget cap for the task, default: null (no cap)
+#   timeout      (optional) execution timeout in seconds, default: 3600
+tasks:
+  - name: daily-code-review
+    schedule: "0 9 * * *"
+    workspace: /data/repos/my-project
+    message: "Review the latest commits and open a PR with improvements."
+    budget_limit: 500
+    timeout: 3600

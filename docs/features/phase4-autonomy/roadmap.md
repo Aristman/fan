@@ -57,7 +57,7 @@
 
 ### Фичи
 
-#### ☐ F-4.1: Создание пакета `tools/fan-scheduler/` + парсинг YAML config
+#### ✅ F-4.1: Создание пакета `tools/fan-scheduler/` + парсинг YAML config
 
 - **Приоритет:** P0
 - **Слой:** [INFRA]
@@ -83,7 +83,7 @@
 - **Ожидаемый результат:** Новый пакет + `lib/config-loader.ts`; unit-тесты
 - **Оценка объёма:** S
 
-#### ☐ F-4.2: FAN API Client — базовый интерфейс
+#### ✅ F-4.2: FAN API Client — базовый интерфейс
 
 - **Приоритет:** P0
 - **Слой:** [INTEG]
@@ -113,7 +113,7 @@
 
 ### Фичи
 
-#### ☐ F-4.3: TaskQueue — однопоточное выполнение
+#### ✅ F-4.3: TaskQueue — однопоточное выполнение
 
 - **Приоритет:** P0
 - **Слой:** [DATA]
@@ -139,7 +139,7 @@
 - **Ожидаемый результат:** Файл `tools/fan-scheduler/lib/queue.ts`
 - **Оценка объёма:** S
 
-#### ☐ F-4.4: Execution pipeline — session + message + budget
+#### ✅ F-4.4: Execution pipeline — session + message + budget
 
 - **Приоритет:** P0
 - **Слой:** [INTEG]
@@ -166,7 +166,7 @@
 - **Ожидаемый результат:** Дополнение `tools/fan-scheduler/lib/queue.ts` — метод `executeTask`
 - **Оценка объёма:** M
 
-#### ☐ F-4.5: Cron scheduling loop
+#### ✅ F-4.5: Cron scheduling loop
 
 - **Приоритет:** P0
 - **Слой:** [CLI]
@@ -196,7 +196,7 @@
 
 ### Фичи
 
-#### ☐ F-4.6: Bot Identity — GitHub PAT configuration
+#### ✅ F-4.6: Bot Identity — GitHub PAT configuration
 
 - **Приоритет:** P0
 - **Слой:** [BIZ]
@@ -218,7 +218,7 @@
 - **Ожидаемый результат:** Обновлённый `tools/fan-scheduler/lib/client.ts` (+github methods); docs/guides/scheduler.md section
 - **Оценка объёма:** S
 
-#### ☐ F-4.7: Feature branch policy — fan-auto/<id>-<timestamp>
+#### ✅ F-4.7: Feature branch policy — fan-auto/<id>-<timestamp>
 
 - **Приоритет:** P0
 - **Слой:** [INTEG]
@@ -240,7 +240,7 @@
 - **Ожидаемый результат:** Файл `tools/fan-scheduler/lib/branch-policy.ts`; документация в `docs/guides/scheduler.md`
 - **Оценка объёма:** S
 
-#### ☐ F-4.8: PR creation via gh CLI
+#### ✅ F-4.8: PR creation via gh CLI
 
 - **Приоритет:** P0
 - **Слой:** [INTEG]
@@ -270,7 +270,7 @@
 
 ### Фичи
 
-#### ☐ F-4.9: Budget cap per task — enforce и monitor
+#### ✅ F-4.9: Budget cap per task — enforce и monitor
 
 - **Приоритет:** P0
 - **Слой:** [BIZ]
@@ -296,7 +296,7 @@
 - **Ожидаемый результат:** Enhanced `executeTaskWithBudget()` method в `tools/fan-scheduler/lib/queue.ts`
 - **Оценка объёма:** M
 
-#### ☐ F-4.10: Retry with exponential backoff
+#### ✅ F-4.10: Retry with exponential backoff
 
 - **Приоритет:** P1
 - **Слой:** [INFRA]
@@ -318,7 +318,7 @@
 - **Ожидаемый результат:** Function `withRetry<T>(fn, options)` utility + integration в `executeTask` wrapper
 - **Оценка объёма:** S
 
-#### ☐ F-4.11: Structured JSON logging
+#### ✅ F-4.11: Structured JSON logging
 
 - **Приоритет:** P1
 - **Слой:** [INFRA]
@@ -340,26 +340,27 @@
 - **Ожидаемый результат:** Rewritten `tools/fan-scheduler/lib/logger.ts`; updated everywhere
 - **Оценка объёма:** S
 
-#### ☐ F-4.12: Chat interruption — pause autonomous tasks
+#### ✅ F-4.12: Chat interruption — pause autonomous tasks
 
 - **Приоритет:** P1
 - **Слой:** [API]
 - **Описание:** В `ws-handler.ts` API Gateway: incoming `sendMessage` от пользователя (chat) прерывает running autonomous task. Implementation: API Gateway sends signal to scheduler (HTTP POST `/api/scheduler/pause`) OR scheduler polls for chat messages via WS. Pause saves task state, resumes after user's message processed. Priority model: `chat > autonomous tasks`.
+- **Реализация (отклонение от первоначального плана, обосновано):** gateway НЕ изменён — механизм полностью scheduler-side: `UserActivityMonitor` (`tools/fan-scheduler/lib/activity-monitor.ts`) поллит `GET /api/sessions`, исключает scheduler-owned сессии (регистрируются executor'ом через `onSessionCreated`), и при user-сообщении младше `FAN_SCHEDULER_ACTIVITY_WINDOW_MS` (default 60s) вызывает `queue.pauseCurrent()`; при затухании активности — `runNext()` (resume). Плюс localhost control server (`lib/control-server.ts`, порт `FAN_SCHEDULER_CONTROL_PORT`=3457): `POST /pause`, `POST /resume`, `GET /state` — внешний канал pause-сигнала. Обоснование: scheduler — отдельный процесс; WS-observer сложен и хрупок, gateway→scheduler push требует двусторонней связи; polling read-only API — просто, тестируемо, ноль изменений gateway (его 183 теста не тронуты). Resume behavior: автоматический запуск следующей pending-задачи; in-flight задача не абортируется server-side (нет interruption endpoint в gateway — то же ограничение, что F-4.4/F-4.9).
 - **Зависимости:** F-4.3 (TaskQueue.pauseCurrent), F-4.2 (client methods available)
 - **TDD-тесты:**
-  - [ ] **TC-F-4.12-1:** Чат прерывает запущенную задачу
+  - [x] **TC-F-4.12-1:** Чат прерывает запущенную задачу
     - *Условие:* Autonomous task running (isRunning=true)
     - *Шаги:* WS client sends `{ type: 'sendMessage', priority: 'chat', sessionId, content }`
     - *Ожидаемый результат:* scheduler.pauseCurrent() called; isRunning=false; user message processed; scheduler.log: 'Paused autonomous task for live chat'
-  - [ ] **TC-F-4.12-2:** Задача возобновляется после чата
+  - [x] **TC-F-4.12-2:** Задача возобновляется после чата
     - *Условие:* User's message completed
     - *Шаги:* Проверить состояние scheduler'а
     - *Ожидаемый результат:* Next pending task starts (auto-runNext); or original task resumes (if implemented)
 - **Критерии приёмки:**
-  1. Chat priority check implemented in ws-message handler
-  2. Scheduler can receive pause signal (WebSocket bidirectional или HTTP endpoint)
-  3. Resume behavior documented (current spec says "опционально")
-- **Ожидаемый результат:** Patch `packages/api-gateway/src/ws-handler.ts` (+scheduler signal mechanism)
+  1. Chat priority check implemented in ws-message handler — **заменено scheduler-side polling** (см. «Реализация»): монитор активности чата паузит/возобновляет очередь
+  2. Scheduler can receive pause signal (WebSocket bidirectional или HTTP endpoint) — ✅ HTTP control server: `POST /pause`, `POST /resume`, `GET /state` на 127.0.0.1:3457
+  3. Resume behavior documented (current spec says "опционально") — ✅ задокументировано в README и выше
+- **Ожидаемый результат:** `tools/fan-scheduler/lib/activity-monitor.ts` + `lib/control-server.ts` (gateway не патчился — решение задокументировано)
 - **Оценка объёма:** M
 
 ---
@@ -370,7 +371,7 @@
 
 ### Фичи
 
-#### ⏳ F-4.13: Persistent queue — file-based durability
+#### ✅ F-4.13: Persistent queue — file-based durability
 
 - **Приоритет:** P1
 - **Слой:** [DATA]
@@ -392,18 +393,18 @@
 - **Ожидаемый результат:** Enhanced `tools/fan-scheduler/lib/queue.ts` + `persistent-storage.ts` utility
 - **Оценка объёма:** M
 
-#### ⏳ F-4.14: Health & metrics endpoint
+#### ✅ F-4.14: Health & metrics endpoint
 
 - **Приоритет:** P1
 - **Слой:** [API]
 - **Описание:** Scheduler exposes internal health endpoint (accessible via API Gateway proxy or directly). Response: `{ status: "ok" | "degraded", running: boolean, pendingCount: number, lastTaskStatus: "completed" | "failed" | "budget_exceeded" | null, uptimeSeconds: number, queueVersion: 1 }`. Used by Docker healthcheck, monitoring systems, and dashboard widgets (phase 4 could-have).
 - **Зависимости:** (none) — self-contained
 - **TDD-тесты:**
-  - [ ] **TC-F-4.14-1:** Возвращает актуальное состояние scheduler'а
+  - [x] **TC-F-4.14-1:** Возвращает актуальное состояние scheduler'а
     - *Условие:* Scheduler with 1 running task, 2 pending
     - *Шаги:* GET /api/scheduler/health (via local port)
     - *Ожидаемый результат:* `{ running: true, pendingCount: 2, uptimeSeconds: N > 0, queueVersion: 1 }`; status = 'ok'
-  - [ ] **TC-F-4.14-2:** Статус degraded при повреждённой очереди
+  - [x] **TC-F-4.14-2:** Статус degraded при повреждённой очереди
     - *Условие:* Pending file exists but unparseable
     - *Шаги:* Start scheduler; GET health
     - *Ожидаемый результат:* status = 'degraded'; error noted in logs
@@ -414,7 +415,7 @@
 - **Ожидаемый результат:** Route added to `packages/api-gateway/src/http-server.ts`; scheduler state provider
 - **Оценка объёма:** S
 
-#### ☐ F-4.15: DB backup fan.db — daily cron
+#### ✅ F-4.15: DB backup fan.db — daily cron
 
 - **Приоритет:** P1
 - **Слой:** [INFRA]
@@ -442,14 +443,14 @@
 
 ## E2E-сценарии фазы 4
 
-#### ☐ F-4.16-E2E: E2E — Cron-задача из YAML: полный цикл + budget alarm
+#### ✅ F-4.16-E2E: E2E — Cron-задача из YAML: полный цикл + budget alarm
 
 - **Приоритет:** P0
 - **Слой:** [E2E]
 - **Описание:** Сквозной сценарий: cron-задача из config.yaml срабатывает → scheduler обновляет существующий клон репозитория (git fetch/pull; первичное клонирование — предусловие, вне roadmap) → создаёт сессию через FAN API → агент делает ветку, коммит, push → открыт PR через gh → при превышении бюджета задача остановлена с алертом. Проверяет весь chain: scheduler → API → agent → git → PR → budget.
 - **Зависимости:** F-4.1..F-4.9
 - **TDD-тесты:**
-  - [ ] **TC-F-4.16-E2E-1:** Полный автономный цикл — успешный путь
+  - [x] **TC-F-4.16-E2E-1:** Полный автономный цикл — успешный путь
     - *Условие:* Config с daily-code-review task; FAN API запущен; GITHUB_TOKEN настроен; workspace существует
     - *Шаги:*
       1. Подождать cron trigger (или simulate trigger)
@@ -462,14 +463,14 @@
       8. Убедиться: git push executed to feature branch
       9. Убедиться: PR created via `gh pr create` (проверить API или GH UI)
     - *Ожидаемый результат:* Task status = 'completed'; PR URL в логах; budget used ≤ budget_limit; no errors
-  - [ ] **TC-F-4.16-E2E-2:** Превышение бюджета → корректная остановка
+  - [x] **TC-F-4.16-E2E-2:** Превышение бюджета → корректная остановка
     - *Условие:* Task с budget_limit=100 (минимальный для тестирования); agent расходует токены быстро
     - *Шаги:*
       1. Запустить задачу
       2. Monitor budget_usage via GET /api/budget
       3. Когда used ≥ limit, проверить поведение scheduler
     - *Ожидаемый результат:* Task status = 'budget_exceeded'; log: `Task daily-code-review stopped: budget exceeded (100 tokens)`; no tokens wasted beyond limit; pending queue unaffected
-  - [ ] **TC-F-4.16-E2E-3:** Две cron-задачи одновременно — сериализация
+  - [x] **TC-F-4.16-E2E-3:** Две cron-задачи одновременно — сериализация
     - *Условие:* Config с двумя задачами, обе расписаны на одно время
     - *Шаги:*
       1. Оба trigger события происходят одновременно
@@ -482,6 +483,15 @@
   3. Конфликт одновременных задач разрешён через FIFO очередь
 - **Ожидаемый результат:** Автоматизированный E2E тест (скрипт на Bun) или ручной checklist с screenshot результатов
 - **Оценка объёма:** L
+- **Реализация (2026-07-26):** секция 12 в `deploy/scripts/e2e-local.sh` (27 проверок, 2× прогон 103/103 PASS).
+  Scheduler запускается как compose-сервис `fan-scheduler` (тот же образ, `bun tools/fan-scheduler/dist/scheduler.js`;
+  Dockerfile собирает и поставляет tools/fan-scheduler, .dockerignore разрешает его). Автоматизировано: загрузка
+  config.yaml → cron trigger → FIFO-сериализация двух задач (TC-3) → persistent queue на диске (F-4.13) →
+  pause/resume через control server (F-4.12) → createSession 201 → budget_cap_set до sendMessage (F-4.9) →
+  provider boundary (нет LLM — ожидаемый status=failed после 3 попыток retry, F-4.10) → /api/scheduler/health
+  proxy (F-4.14) → budget API PUT/GET/400 + файл в fan-data volume. Git/PR/LLM-шаги TC-1 и реальный
+  budget_exceeded TC-2 (нужен расход токенов) — manual checklist в шапке секции 12; budget_exceeded покрыт
+  unit-тестом executor (TC-F-4.9-2).
 
 ---
 
@@ -526,25 +536,25 @@
 
 ### P0 (Must Have) — 10 фич
 
-- [ ] ☐ F-4.1 Создание пакета `tools/fan-scheduler/` + парсинг YAML
-- [ ] ☐ F-4.2 FAN API Client — базовый интерфейс
-- [ ] ☐ F-4.3 TaskQueue — однопоточное выполнение
-- [ ] ☐ F-4.4 Execution pipeline — session + message + budget
-- [ ] ☐ F-4.5 Cron scheduling loop
-- [ ] ☐ F-4.6 Bot Identity — GitHub PAT configuration
-- [ ] ☐ F-4.7 Feature branch policy
-- [ ] ☐ F-4.8 PR creation via gh CLI
-- [ ] ☐ F-4.9 Budget cap per task
-- [ ] ☐ F-4.16-E2E E2E: cron-задача полный цикл + budget alarm
+- [ ] ✅ F-4.1 Создание пакета `tools/fan-scheduler/` + парсинг YAML
+- [ ] ✅ F-4.2 FAN API Client — базовый интерфейс
+- [ ] ✅ F-4.3 TaskQueue — однопоточное выполнение
+- [ ] ✅ F-4.4 Execution pipeline — session + message + budget
+- [ ] ✅ F-4.5 Cron scheduling loop
+- [ ] ✅ F-4.6 Bot Identity — GitHub PAT configuration
+- [ ] ✅ F-4.7 Feature branch policy
+- [ ] ✅ F-4.8 PR creation via gh CLI
+- [ ] ✅ F-4.9 Budget cap per task
+- [ ] ✅ F-4.16-E2E E2E: cron-задача полный цикл + budget alarm
 
 ### P1 (Should Have) — 6 фич
 
-- [ ] ⏳ F-4.10 Retry with exponential backoff
-- [ ] ⏳ F-4.11 Structured JSON logging
-- [ ] ⏳ F-4.12 Chat interruption — pause tasks
-- [ ] ⏳ F-4.13 Persistent queue
-- [ ] ⏳ F-4.14 Health & metrics endpoint
-- [ ] ☐ F-4.15 DB backup fan.db — daily cron
+- [ ] ✅ F-4.10 Retry with exponential backoff
+- [ ] ✅ F-4.11 Structured JSON logging
+- [ ] ✅ F-4.12 Chat interruption — pause tasks
+- [ ] ✅ F-4.13 Persistent queue
+- [ ] ✅ F-4.14 Health & metrics endpoint
+- [ ] ✅ F-4.15 DB backup fan.db — daily cron
 
 ### P2 (Could Have) — 0 фич
 

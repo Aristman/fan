@@ -21,6 +21,9 @@ docs
 
 # Tooling / infra not needed for the build
 tools
+# ...except the fan-scheduler workspace (phase 4 autonomy): built in the
+# image and shipped as the `fan-scheduler` compose service.
+!tools/fan-scheduler
 scripts
 skills
 .vscode

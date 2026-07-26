@@ -126,9 +126,31 @@ export interface ServerOptions {
 	 *  resolved list → bypass (local mode, no restrictions). */
 	allowedRoots?: string[];
 	/** F-4.9: path of the per-project budget store file.
-	 *  Default: `~/.fan/agent/project-budgets.json` (next to projects.json).
-	 *  Overridable for tests / custom agent dirs. */
+	 *  Default: `<agentDir>/project-budgets.json` (next to projects.json), where
+	 *  agentDir honors FAN_CODING_AGENT_DIR / FAN_AGENT_DIR ("~" and "~/…"
+	 *  expanded) and falls back to `~/.fan/agent`. Overridable for tests /
+	 *  custom agent dirs. */
 	projectBudgetsFile?: string;
+}
+
+/**
+ * Default location of the per-project budget store (F-4.9): the FAN agent
+ * dir, honoring FAN_CODING_AGENT_DIR / FAN_AGENT_DIR. In Docker both are set
+ * to /data/.fan/agent (the persistent fan-data volume) — without this the
+ * file would land in /root/.fan/agent and lose all caps on container
+ * recreation.
+ */
+function defaultProjectBudgetsFile(): string {
+	const envDir = process.env.FAN_CODING_AGENT_DIR ?? process.env.FAN_AGENT_DIR;
+	let agentDir: string;
+	if (envDir !== undefined && envDir.trim().length > 0) {
+		if (envDir === "~") agentDir = homedir();
+		else if (envDir.startsWith("~/")) agentDir = resolvePath(homedir(), envDir.slice(2));
+		else agentDir = envDir;
+	} else {
+		agentDir = resolvePath(homedir(), ".fan", "agent");
+	}
+	return resolvePath(agentDir, "project-budgets.json");
 }
 
 // ============================================================================
@@ -685,9 +707,7 @@ async function createApp(
 	// NOTE: enforcement is NOT done here — the gateway only stores/serves the
 	// numbers. Deep integration with BudgetTracker/model-manager was explicitly
 	// deferred; the scheduler monitors usage itself (F-4.9 part B).
-	const projectBudgets = new ProjectBudgetStore(
-		options.projectBudgetsFile ?? resolvePath(homedir(), ".fan", "agent", "project-budgets.json"),
-	);
+	const projectBudgets = new ProjectBudgetStore(options.projectBudgetsFile ?? defaultProjectBudgetsFile());
 
 	app.get("/api/budget", async (c) => {
 		const project = c.req.query("project");

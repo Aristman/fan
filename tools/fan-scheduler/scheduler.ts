@@ -107,10 +107,15 @@ export function main(): void {
 
 	// F-4.12: localhost control server (POST /pause, POST /resume, GET /state)
 	// — the external pause/resume signal channel. Disabled via FAN_SCHEDULER_CONTROL=off.
+	// Bind host defaults to 127.0.0.1 (never exposed); FAN_SCHEDULER_CONTROL_HOST
+	// overrides it (Docker compose: 0.0.0.0 so the gateway's
+	// /api/scheduler/health proxy can reach it across the compose network —
+	// the port is never published to the host).
 	let controlServer: ControlServerHandle | null = null;
 	if (envEnabled("FAN_SCHEDULER_CONTROL", true)) {
 		startControlServer({
 			queue,
+			host: process.env.FAN_SCHEDULER_CONTROL_HOST?.trim() || undefined,
 			port: envInt("FAN_SCHEDULER_CONTROL_PORT", 3457),
 			extraState: () => ({ pausedForChat: monitor.pausedForChat }),
 			degraded: () => pendingFileCorrupt,

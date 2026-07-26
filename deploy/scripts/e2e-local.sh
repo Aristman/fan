@@ -22,6 +22,10 @@
 #   → phase 3 (F-3.12-E2E, part 2): multi-type lifecycle — code/research/
 #     automation projects via the API, per-type disk structures, registry
 #     types, session isolation, per-type system prompts (section 11)
+#   → phase 4 (F-4.16-E2E): autonomy — fan-scheduler compose service:
+#     cron trigger → FIFO queue → persistent queue file → session creation →
+#     budget cap → sendMessage → provider boundary, scheduler health proxy,
+#     per-project budget API (section 12)
 #   → docker compose down (trap on exit)
 #
 # Exit code 0 only if every check passes (check 7 is optional — skipped
@@ -142,6 +146,19 @@ SESS_DIR_P3_CODE="/data/.fan/agent/sessions/--data-repos-e2e-backend-api--"
 SESS_DIR_P3_RESEARCH="/data/.fan/agent/sessions/--data-repos-e2e-competitor-analysis--"
 SESS_DIR_P3_AUTO="/data/.fan/agent/sessions/--data-repos-e2e-backup-pipeline--"
 
+# --- Section 12 (F-4.16-E2E) constants ---
+SCHED_CONTAINER="fan-scheduler"
+SCHED_PROJ="/data/repos/e2e-sched-project"
+SESS_DIR_SCHED="/data/.fan/agent/sessions/--data-repos-e2e-sched-project--"
+SCHED_TASK_A="e2e-sched-task-a"
+SCHED_TASK_B="e2e-sched-task-b"
+SCHED_BUDGET_LIMIT=100000
+SCHED_PENDING_FILE="/data/.fan/agent/scheduler-pending.json"
+SCHED_BUDGET_FILE="/data/.fan/agent/project-budgets.json"
+# Generated cron config mounted into the scheduler container (host path,
+# relative to the compose project dir); removed by the post-clean + trap.
+SCHED_E2E_CONFIG="deploy/scheduler/.e2e-config.yaml"
+
 # Remove test workspaces, their session dirs and their projects.json
 # registry entries. Best-effort: never fails the script (used in the trap).
 e2e_workspace_cleanup() {
@@ -149,7 +166,9 @@ e2e_workspace_cleanup() {
 		rm -rf "$PROJ_A" "$PROJ_B" "$PROJ_C" "$RESEARCH_PROJ" \
 			"$P3_CODE" "$P3_RESEARCH" "$P3_AUTO" \
 			"$SESS_DIR_A" "$SESS_DIR_B" "$SESS_DIR_C" \
-			"$SESS_DIR_P3_CODE" "$SESS_DIR_P3_RESEARCH" "$SESS_DIR_P3_AUTO" 2>/dev/null || true
+			"$SESS_DIR_P3_CODE" "$SESS_DIR_P3_RESEARCH" "$SESS_DIR_P3_AUTO" \
+			"$SCHED_PROJ" "$SESS_DIR_SCHED" "$SCHED_PENDING_FILE" 2>/dev/null || true
+	rm -f "$REPO_ROOT/$SCHED_E2E_CONFIG" 2>/dev/null || true
 	MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" bun -e '
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 const p = "/data/.fan/agent/projects.json";
@@ -161,11 +180,23 @@ if (existsSync(p)) {
 				"/data/repos/e2e-proj-a", "/data/repos/e2e-proj-b", "/data/repos/e2e-proj-c",
 				"/data/repos/e2e-research-lab",
 				"/data/repos/e2e-backend-api", "/data/repos/e2e-competitor-analysis", "/data/repos/e2e-backup-pipeline",
+				"/data/repos/e2e-sched-project",
 			];
 			const keep = list.filter((e) => e && !e2e.includes(e.path));
 			writeFileSync(p, JSON.stringify(keep, null, 2));
 		}
 	} catch { /* corrupted registry → app already treats it as empty */ }
+}
+// F-4.9: drop the E2E entry from the per-project budget store.
+const b = "/data/.fan/agent/project-budgets.json";
+if (existsSync(b)) {
+	try {
+		const j = JSON.parse(readFileSync(b, "utf8"));
+		if (j && typeof j === "object" && j.budgets && typeof j.budgets === "object") {
+			delete j.budgets["/data/repos/e2e-sched-project"];
+			writeFileSync(b, JSON.stringify(j, null, 2));
+		}
+	} catch { /* corrupted store → treated as empty */ }
 }
 ' >/dev/null 2>&1 || true
 }
@@ -173,8 +204,12 @@ if (existsSync(p)) {
 # =========================================================================
 section "0. Build & start stack"
 # =========================================================================
-info "$COMPOSE up -d --build"
-$COMPOSE up -d --build
+info "$COMPOSE up -d --build fan"
+# Only the `fan` service is started here. The companion `fan-scheduler`
+# service (phase 4) requires a provisioned FAN_API_TOKEN, which does not
+# exist until check 3 — section 12 starts it afterwards with the token and
+# an E2E config via FAN_SCHEDULER_TOKEN / FAN_SCHEDULER_CONFIG env vars.
+$COMPOSE up -d --build fan
 
 info "Waiting for $BASE_URL/api/health (timeout ${HEALTH_TIMEOUT}s)..."
 deadline=$(( $(date +%s) + HEALTH_TIMEOUT ))
@@ -1137,6 +1172,402 @@ else
 
 	# 11.10. Post-clean: keep the run idempotent (also runs from the EXIT trap).
 	info "Cleanup: removing multi-type test workspaces, session dirs and registry entries"
+	e2e_workspace_cleanup
+fi
+
+# =========================================================================
+section "12. Phase 4 — Autonomy (F-4.16-E2E): scheduler full cycle + budget"
+# =========================================================================
+# ARCHITECTURE (decision for the phase-4 spec): the scheduler runs INSIDE
+# the docker contour as the compose service `fan-scheduler` — same image as
+# `fan`, different command
+# (bun tools/fan-scheduler/dist/scheduler.js /data/scheduler/config.yaml;
+# the Dockerfile builds tools/fan-scheduler and ships its dist). Env wiring:
+#   FAN_API_URL=http://fan:3456     (compose DNS; no published port needed)
+#   FAN_API_TOKEN=$FAN_SCHEDULER_TOKEN (operator-provisioned ClientToken —
+#     here: the bootstrap token from check 3, passed at service start)
+#   FAN_CODING_AGENT_DIR=/data/.fan/agent (fan-data volume → the F-4.13
+#     persistent queue scheduler-pending.json survives recreation)
+#   FAN_SCHEDULER_CONTROL_HOST=0.0.0.0 (control server reachable from the
+#     `fan` container for the /api/scheduler/health proxy; the port is NOT
+#     published to the host)
+# The gateway proxies GET /api/scheduler/health → FAN_SCHEDULER_URL
+# (http://fan-scheduler:3457, compose env on the `fan` service, F-4.14).
+#
+# NO-LLM BOUNDARY (same as sections 9/10): the container has no API keys,
+# so the task prompt fails at provider validation ("No model selected" /
+# "No API key found" → HTTP 500). For the scheduler pipeline this is the
+# EXPECTED terminal state: createSession (201) → budget cap set →
+# sendMessage → 500 → retry with exponential backoff (3 attempts, F-4.10)
+# → status "failed". Every stage BEFORE the provider is asserted here;
+# a live LLM would turn the same pipeline into "completed".
+#
+# TC MAPPING:
+#   TC-F-4.16-E2E-1 (full cycle → git → PR): the git/PR/LLM-dependent steps
+#     are the MANUAL checklist below; everything up to the provider
+#     boundary is automated (12.1–12.16).
+#   TC-F-4.16-E2E-2 (budget alarm): the cap wiring is automated
+#     (budget_cap_set BEFORE sendMessage; cap persisted and served by
+#     GET /api/budget?project=, 12.14). Actual budget_exceeded needs real
+#     token burn (LLM) → unit-tested (executor.test.ts TC-F-4.9-2) + manual.
+#   TC-F-4.16-E2E-3 (two cron tasks, serialization): automated — two tasks
+#     on the SAME cron trigger: one runs while the other waits pending on
+#     disk (F-4.13 file); pause-while-running holds the pending task
+#     (F-4.12); resume → strict FIFO completion (12.9–12.13).
+#
+# MANUAL CHECKLIST (deployment WITH a configured model + GITHUB_TOKEN):
+#   1. config.yaml with daily-code-review on a real repo workspace.
+#   2. Wait for the trigger → the scheduler creates a session and the agent
+#      runs to completion (lastTaskStatus "completed" via
+#      /api/scheduler/health).
+#   3. Workspace: branch fan-auto/*-YYYYMMDD-* created, changes committed
+#      and pushed; PR opened via gh (URL in the scheduler logs).
+#   4. Set budget_limit to a minimal value → the task stops with
+#      lastTaskStatus "budget_exceeded" and log "stopped: budget exceeded";
+#      the pending queue is unaffected.
+
+# sched_ctl <METHOD> <path> — call the scheduler control server from inside
+# its container (prints the response body, empty on failure).
+sched_ctl() {
+	MSYS2_ARG_CONV_EXCL="*" docker exec "$SCHED_CONTAINER" bun -e "
+const r = await fetch('http://127.0.0.1:3457$2', { method: '$1' });
+console.log(await r.text());
+" 2>/dev/null || true
+}
+
+if [ -z "$TOKEN" ]; then
+	fail "phase 4 checks skipped — no token (see check 3)"
+else
+	# 12.0. Pre-clean: wipe leftovers from a crashed previous run (volumes persist).
+	e2e_workspace_cleanup
+
+	# 12.1. The scheduler is part of the image (Dockerfile ships
+	# tools/fan-scheduler/dist next to the package dists — checked via the
+	# already-running `fan` container, same image).
+	if MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" test -f /app/tools/fan-scheduler/dist/scheduler.js; then
+		pass "scheduler shipped in the image (/app/tools/fan-scheduler/dist/scheduler.js)"
+	else
+		fail "scheduler dist missing in the image (Dockerfile does not ship tools/fan-scheduler)"
+	fi
+
+	# 12.2. Test workspace for the cron tasks (.git + src/ → realistic code
+	# workspace, same detector convention as section 8).
+	if MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" mkdir -p "$SCHED_PROJ/.git" "$SCHED_PROJ/src" 2>/dev/null; then
+		pass "scheduler test workspace created ($SCHED_PROJ)"
+	else
+		fail "failed to create scheduler test workspace in container"
+	fi
+
+	# 12.3. Generate the E2E cron config: two tasks on the SAME trigger
+	# (TC-F-4.16-E2E-3 setup), scheduled 2 minutes from now (UTC — the
+	# container clock). Task A carries a budget cap (F-4.9 wiring), task B
+	# uses the defaults (budget_limit null). Written into the repo so the
+	# compose bind mount (relative path) resolves on any host OS.
+	read -r CRON_M CRON_H CRON_D CRON_MO <<< "$(date -u -d '+2 minutes' '+%-M %-H %-d %-m')"
+	cat > "$REPO_ROOT/$SCHED_E2E_CONFIG" <<EOF
+tasks:
+  - name: $SCHED_TASK_A
+    schedule: "$CRON_M $CRON_H $CRON_D $CRON_MO *"
+    workspace: $SCHED_PROJ
+    message: "e2e scheduler probe A"
+    budget_limit: $SCHED_BUDGET_LIMIT
+    timeout: 120
+  - name: $SCHED_TASK_B
+    schedule: "$CRON_M $CRON_H $CRON_D $CRON_MO *"
+    workspace: $SCHED_PROJ
+    message: "e2e scheduler probe B"
+    timeout: 120
+EOF
+	info "E2E scheduler config: cron \"$CRON_M $CRON_H $CRON_D $CRON_MO *\" (UTC, +2min), tasks $SCHED_TASK_A/$SCHED_TASK_B"
+
+	# 12.4. Start the scheduler service with the bootstrap token and the E2E
+	# config (it was deliberately NOT started in section 0 — no token existed).
+	FAN_SCHEDULER_TOKEN="$TOKEN" FAN_SCHEDULER_CONFIG="./$SCHED_E2E_CONFIG" \
+		$COMPOSE up -d fan-scheduler >/dev/null 2>&1 || true
+	sched_running="$(docker inspect -f '{{.State.Running}}' "$SCHED_CONTAINER" 2>/dev/null || true)"
+	if [ "$sched_running" = "true" ]; then
+		pass "fan-scheduler compose service started (same image, scheduler command)"
+	else
+		fail "fan-scheduler container not running (State.Running=$sched_running)"
+	fi
+
+	# 12.5. Control server readiness (F-4.12): poll /health from inside the
+	# scheduler container until it answers 200.
+	ctl_ready=0
+	deadline=$(( $(date +%s) + 30 ))
+	while [ "$(date +%s)" -lt "$deadline" ]; do
+		if MSYS2_ARG_CONV_EXCL="*" docker exec "$SCHED_CONTAINER" bun -e \
+			"fetch('http://127.0.0.1:3457/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))" \
+			>/dev/null 2>&1; then
+			ctl_ready=1
+			break
+		fi
+		sleep 1
+	done
+	if [ "$ctl_ready" = "1" ]; then
+		pass "scheduler control server up (GET /health → 200 inside the container)"
+	else
+		fail "scheduler control server did not become ready within 30s"
+	fi
+
+	# 12.6. Cross-container reachability: the `fan` container resolves and
+	# reaches http://fan-scheduler:3457 — the exact path the gateway proxy
+	# uses (proves the 0.0.0.0 bind + compose DNS).
+	x_status="$(MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" bun -e \
+		"fetch('http://fan-scheduler:3457/health').then(r => console.log(r.status)).catch(() => console.log('ERR'))" \
+		2>/dev/null || true)"
+	if [ "$x_status" = "200" ]; then
+		pass "control server reachable from the fan container (http://fan-scheduler:3457 → 200)"
+	else
+		fail "control server from fan container: expected 200, got ${x_status:-no output}"
+	fi
+
+	# 12.7. Gateway proxy (F-4.14): GET /api/scheduler/health → 200 with the
+	# scheduler's payload (status/running/pendingCount/queueVersion).
+	proxy_body="$(curl -s --max-time 10 "$BASE_URL/api/scheduler/health")"
+	proxy_code="$(http_status "$BASE_URL/api/scheduler/health")"
+	info "GET /api/scheduler/health → $proxy_code: $proxy_body"
+	if [ "$proxy_code" = "200" ] && echo "$proxy_body" | grep -q '"status":"ok"'; then
+		pass "gateway proxy /api/scheduler/health → 200, status ok (scheduler reachable)"
+	else
+		fail "gateway proxy /api/scheduler/health: expected 200 + status ok, got code=$proxy_code body=$proxy_body"
+	fi
+	if echo "$proxy_body" | grep -q '"queueVersion":1' \
+		&& echo "$proxy_body" | grep -q '"running":false' \
+		&& echo "$proxy_body" | grep -q '"pendingCount":0'; then
+		pass "proxy payload shape: queueVersion=1, running=false, pendingCount=0 (fresh queue)"
+	else
+		fail "proxy payload shape: expected queueVersion=1 + idle queue, got $proxy_body"
+	fi
+
+	# 12.8. Startup logs (F-4.11 JSON lines): scheduler_started with 2 tasks
+	# loaded from the mounted config + per-task task_scheduled entries.
+	sched_logs="$($COMPOSE logs fan-scheduler 2>/dev/null || true)"
+	if echo "$sched_logs" | grep -q '"event":"scheduler_started"' \
+		&& echo "$sched_logs" | grep -q '"taskCount":2'; then
+		pass "config.yaml loaded by the scheduler (scheduler_started, taskCount=2)"
+	else
+		fail "scheduler_started log with taskCount=2 not found (config not loaded?)"
+	fi
+	if echo "$sched_logs" | grep -q "\"event\":\"task_scheduled\"" \
+		&& echo "$sched_logs" | grep -q "$SCHED_TASK_A" && echo "$sched_logs" | grep -q "$SCHED_TASK_B"; then
+		pass "both cron tasks scheduled (task_scheduled for $SCHED_TASK_A and $SCHED_TASK_B)"
+	else
+		fail "task_scheduled log entries missing for the E2E tasks"
+	fi
+
+	# 12.9. Wait for the cron trigger (config fires ~2 minutes after
+	# generation; generous timeout for slow container starts).
+	triggered=0
+	deadline=$(( $(date +%s) + 170 ))
+	while [ "$(date +%s)" -lt "$deadline" ]; do
+		if $COMPOSE logs fan-scheduler 2>/dev/null | grep -q '"event":"task_triggered"'; then
+			triggered=1
+			break
+		fi
+		sleep 2
+	done
+	if [ "$triggered" = "1" ]; then
+		pass "cron trigger fired (task_triggered log, F-4.5)"
+	else
+		fail "cron trigger did not fire within 170s (cron loop broken?)"
+	fi
+
+	# 12.10. TC-F-4.16-E2E-3 (serialization, part 1): both same-minute
+	# triggers enqueue; the queue runs ONE task at a time — the first
+	# enqueued (FIFO; croner does not guarantee config order for
+	# same-minute jobs, so the names are discovered, not assumed) while
+	# the other waits pending. Observe the running task within its
+	# execution window (~15s with retries — no LLM).
+	FIRST_TASK=""
+	cur=""
+	deadline=$(( $(date +%s) + 30 ))
+	while [ "$(date +%s)" -lt "$deadline" ]; do
+		cur="$(sched_ctl GET /state)"
+		if echo "$cur" | grep -q "\"currentTask\":\"$SCHED_TASK_A\""; then FIRST_TASK="$SCHED_TASK_A"; break; fi
+		if echo "$cur" | grep -q "\"currentTask\":\"$SCHED_TASK_B\""; then FIRST_TASK="$SCHED_TASK_B"; break; fi
+		sleep 0.5
+	done
+	SECOND_TASK="$SCHED_TASK_B"
+	[ "$FIRST_TASK" = "$SCHED_TASK_B" ] && SECOND_TASK="$SCHED_TASK_A"
+	if [ -n "$FIRST_TASK" ] && echo "$cur" | grep -q '"pendingCount":1'; then
+		pass "single-consumer serialization: $FIRST_TASK running, $SECOND_TASK pending (pendingCount=1)"
+	else
+		fail "serialization: expected one running + one pending, got ${cur:-no output}"
+	fi
+
+	# 12.11. F-4.12 pause WHILE running + F-4.13 durability: POST /pause →
+	# the in-flight task settles but the pending one does NOT auto-start;
+	# it stays durable on disk in the fan-data volume the whole time.
+	pause_resp="$(sched_ctl POST /pause)"
+	if echo "$pause_resp" | grep -q '"state":"paused"'; then
+		pass "POST /pause while running → state paused (control server, F-4.12)"
+	else
+		fail "POST /pause: expected state paused, got ${pause_resp:-no output}"
+	fi
+	# Wait for the in-flight task to settle (lastResult appears).
+	settled=0
+	deadline=$(( $(date +%s) + 60 ))
+	while [ "$(date +%s)" -lt "$deadline" ]; do
+		cur="$(sched_ctl GET /state)"
+		if echo "$cur" | grep -q '"lastResult":{"taskName"'; then settled=1; break; fi
+		sleep 1
+	done
+	if [ "$settled" = "1" ] && echo "$cur" | grep -q "\"taskName\":\"$FIRST_TASK\"" \
+		&& echo "$cur" | grep -q '"state":"paused"' && echo "$cur" | grep -q '"pendingCount":1'; then
+		pass "pause held: $FIRST_TASK settled, $SECOND_TASK did NOT auto-start (paused, pendingCount=1)"
+	else
+		fail "pause semantics: expected settled $FIRST_TASK + paused + pendingCount=1, got ${cur:-no output}"
+	fi
+	pending_file="$(MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" cat "$SCHED_PENDING_FILE" 2>/dev/null || true)"
+	if echo "$pending_file" | grep -qE '"version": *1' && echo "$pending_file" | grep -q "$SECOND_TASK" \
+		&& ! echo "$pending_file" | grep -q "$FIRST_TASK"; then
+		pass "persistent queue file: $SECOND_TASK pending on disk while paused ($SCHED_PENDING_FILE, version 1)"
+	else
+		fail "persistent queue file: expected only $SECOND_TASK, got ${pending_file:-<missing>}"
+	fi
+
+	# 12.12. Resume → the pending task starts (FIFO: it runs strictly
+	# AFTER the first one settled — serialization, TC-F-4.16-E2E-3).
+	resume_resp="$(sched_ctl POST /resume)"
+	fifo_ok=0
+	deadline=$(( $(date +%s) + 15 ))
+	while [ "$(date +%s)" -lt "$deadline" ]; do
+		cur="$(sched_ctl GET /state)"
+		if echo "$cur" | grep -q "\"currentTask\":\"$SECOND_TASK\""; then fifo_ok=1; break; fi
+		sleep 0.5
+	done
+	if echo "$resume_resp" | grep -q '"ok":true' && [ "$fifo_ok" = "1" ]; then
+		pass "POST /resume → $SECOND_TASK started after $FIRST_TASK settled (strict FIFO, no task lost)"
+	else
+		fail "resume/FIFO: resume=${resume_resp:-no output}, currentTask observed=${cur:-no output}"
+	fi
+
+	# 12.13. Both tasks run to their (expected) terminal state serially:
+	# lastResult = the second task, queue drained, runner idle. Each task
+	# fails at the provider boundary after 3 attempts (~15s — no LLM).
+	done_ok=0
+	deadline=$(( $(date +%s) + 120 ))
+	while [ "$(date +%s)" -lt "$deadline" ]; do
+		cur="$(sched_ctl GET /state)"
+		if echo "$cur" | grep -q "\"taskName\":\"$SECOND_TASK\"" \
+			&& echo "$cur" | grep -q '"pendingCount":0' \
+			&& echo "$cur" | grep -q '"isRunning":false'; then
+			done_ok=1
+			break
+		fi
+		sleep 2
+	done
+	if [ "$done_ok" = "1" ]; then
+		pass "both tasks executed serially to completion (order $FIRST_TASK → $SECOND_TASK, queue drained, idle)"
+	else
+		fail "serial execution did not settle within 120s (last state: ${cur:-no output})"
+	fi
+	# The pending file survives as an empty durable queue (write-on-change).
+	pending_final="$(MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" cat "$SCHED_PENDING_FILE" 2>/dev/null || true)"
+	if echo "$pending_final" | grep -qE '"tasks": *\[\]'; then
+		pass "persistent queue drained on disk after execution (tasks: [])"
+	else
+		fail "persistent queue after execution: expected tasks: [], got ${pending_final:-<missing>}"
+	fi
+
+	# 12.14. Pipeline evidence in the scheduler logs (F-4.11):
+	#  - both tasks terminally failed at the provider boundary (expected —
+	#    no LLM; proves config→cron→queue→session→message chain),
+	#  - retry/backoff ran (attempts=3, task_retry events, F-4.10),
+	#  - the budget cap was set BEFORE the prompt (budget_cap_set, F-4.9).
+	sched_logs="$($COMPOSE logs fan-scheduler 2>/dev/null || true)"
+	if echo "$sched_logs" | grep -q "\"event\":\"task_failed\"" \
+		&& echo "$sched_logs" | grep '"event":"task_result"' | grep -q "$SCHED_TASK_A" \
+		&& echo "$sched_logs" | grep '"event":"task_result"' | grep -q "$SCHED_TASK_B" \
+		&& echo "$sched_logs" | grep '"event":"task_result"' | grep -q '"status":"failed"'; then
+		pass "both tasks reached the provider boundary (task_result status=failed ×2 — expected without LLM)"
+	else
+		fail "task_result logs: expected status=failed for both tasks"
+	fi
+	if echo "$sched_logs" | grep '"event":"task_result"' | grep -q '"attempts":3' \
+		&& echo "$sched_logs" | grep -q '"event":"task_retry"'; then
+		pass "retry with exponential backoff ran (attempts=3, task_retry events, F-4.10)"
+	else
+		fail "retry evidence missing (expected attempts=3 + task_retry events)"
+	fi
+	if echo "$sched_logs" | grep -q '"event":"budget_cap_set"' \
+		&& echo "$sched_logs" | grep '"event":"budget_cap_set"' | grep -q "$SCHED_PROJ"; then
+		pass "budget cap set before the prompt (budget_cap_set $SCHED_BUDGET_LIMIT for $SCHED_PROJ, F-4.9)"
+	else
+		fail "budget_cap_set log missing (cap not wired before sendMessage)"
+	fi
+
+	# 12.15. Gateway-side evidence (app.log, F-0.10): the scheduler's REST
+	# calls hit the gateway (POST /api/sessions) and the failure happened at
+	# provider validation — not in transport, auth or dispatch.
+	gw_sessions="$(MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" \
+		grep -c "POST /api/sessions" /data/logs/app.log 2>/dev/null || true)"
+	gw_provider="$(MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" \
+		grep -E "No model selected|No API key found" /data/logs/app.log 2>/dev/null | head -1 || true)"
+	if [ -n "$gw_sessions" ] && [ "$gw_sessions" -ge 1 ] 2>/dev/null; then
+		pass "gateway served the scheduler's session creations (POST /api/sessions ×$gw_sessions in app.log)"
+	else
+		fail "app.log: no POST /api/sessions entries (scheduler never reached the gateway?)"
+	fi
+	if [ -n "$gw_provider" ]; then
+		pass "gateway error log confirms the provider boundary (no API key/model — expected without LLM)"
+		info "log: $(echo "$gw_provider" | cut -c1-140)"
+	else
+		fail "app.log: no provider-validation error (unexpected failure stage?)"
+	fi
+
+	# 12.16. Budget API (F-4.9 part A): the cap the executor pushed is
+	# served back by GET /api/budget?project=; direct PUT/GET round-trip;
+	# validation; durable storage in the fan-data volume.
+	budget_body="$(curl -s --max-time 10 "$BASE_URL/api/budget?project=$SCHED_PROJ" -H "Authorization: Bearer $TOKEN")"
+	info "GET /api/budget?project=$SCHED_PROJ → $budget_body"
+	if echo "$budget_body" | grep -q "\"limit\":$SCHED_BUDGET_LIMIT" && echo "$budget_body" | grep -q '"used":0'; then
+		pass "GET /api/budget?project= serves the executor-pushed cap (limit=$SCHED_BUDGET_LIMIT, used=0 — no LLM spend)"
+	else
+		fail "GET /api/budget?project=: expected limit=$SCHED_BUDGET_LIMIT + used=0, got $budget_body"
+	fi
+	put_resp="$(curl -s --max-time 10 -w '\n%{http_code}' -X PUT "$BASE_URL/api/budget" \
+		-H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+		-d "{\"project\": \"$SCHED_PROJ\", \"tokenLimit\": 12345}")"
+	put_code="${put_resp##*$'\n'}"
+	put_body="${put_resp%$'\n'*}"
+	get_after_put="$(curl -s --max-time 10 "$BASE_URL/api/budget?project=$SCHED_PROJ" -H "Authorization: Bearer $TOKEN")"
+	if [ "$put_code" = "200" ] && echo "$put_body" | grep -q '"limit":12345' \
+		&& echo "$get_after_put" | grep -q '"limit":12345'; then
+		pass "PUT /api/budget {project, tokenLimit} → 200, cap persisted and served back (12345)"
+	else
+		fail "budget PUT/GET round-trip: put=$put_code/$put_body get=$get_after_put"
+	fi
+	bad_put_code="$(http_status -X PUT "$BASE_URL/api/budget" \
+		-H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+		-d "{\"project\": \"$SCHED_PROJ\", \"tokenLimit\": -5}")"
+	if [ "$bad_put_code" = "400" ]; then
+		pass "PUT /api/budget with negative tokenLimit → 400 (validation)"
+	else
+		fail "negative tokenLimit: expected 400, got $bad_put_code"
+	fi
+	if MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" test -f "$SCHED_BUDGET_FILE" \
+		&& MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" grep -q "e2e-sched-project" "$SCHED_BUDGET_FILE"; then
+		pass "budget store durable in the fan-data volume ($SCHED_BUDGET_FILE — survives container recreation)"
+	else
+		fail "budget store missing from the fan-data volume ($SCHED_BUDGET_FILE)"
+	fi
+
+	# 12.17. Terminal state visible through the gateway proxy (F-4.14).
+	proxy_final="$(curl -s --max-time 10 "$BASE_URL/api/scheduler/health")"
+	if echo "$proxy_final" | grep -q '"lastTaskStatus":"failed"' && echo "$proxy_final" | grep -q '"running":false'; then
+		pass "proxy /api/scheduler/health reflects the terminal state (lastTaskStatus=failed, running=false)"
+	else
+		fail "proxy terminal state: expected lastTaskStatus=failed + idle, got $proxy_final"
+	fi
+
+	# 12.18. Manual checklist for the LLM/GitHub-bound steps (see section header).
+	info "MANUAL (needs LLM + GITHUB_TOKEN): full cycle → branch fan-auto/* → commit/push → PR via gh;"
+	info "  minimal budget_limit → lastTaskStatus budget_exceeded + 'stopped: budget exceeded' log"
+
+	# 12.19. Post-clean: keep the run idempotent (also runs from the EXIT trap).
+	info "Cleanup: removing scheduler test workspace, queue/budget artifacts and the E2E config"
 	e2e_workspace_cleanup
 fi
 

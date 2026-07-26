@@ -41,6 +41,11 @@ services:
       # (error|warn|info|debug); docker logs is unaffected.
       LOG_DIR: /data/logs
       LOG_LEVEL: "${LOG_LEVEL:-info}"
+      # F-4.14: base URL of the fan-scheduler control server, proxied by
+      # GET /api/scheduler/health. The scheduler runs as the companion
+      # `fan-scheduler` service on the internal compose network (its control
+      # port is never published to the host).
+      FAN_SCHEDULER_URL: "http://fan-scheduler:3457"
     volumes:
       # Persistent agent data: SQLite DB (fan.db), sessions, settings, tokens.
       - fan-data:/data/.fan/agent
@@ -65,6 +70,67 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+
+  # =========================================================================
+  # fan-scheduler (phase 4 autonomy) — autonomous cron-based task runner.
+  # Same image, different command: the Dockerfile ships
+  # tools/fan-scheduler/dist next to the package dists.
+  #
+  # Operator setup (one-time):
+  #   1. Provision a ClientToken for the scheduler (same way as any API
+  #      client) and put it into .env as FAN_SCHEDULER_TOKEN.
+  #   2. Optionally point FAN_SCHEDULER_CONFIG at your own config.yaml
+  #      (default: ./deploy/scheduler/config.yaml, mounted read-only).
+  # Without FAN_SCHEDULER_TOKEN the scheduler still starts (health/control
+  # server work) but task execution fails with "token is not configured".
+  # =========================================================================
+  fan-scheduler:
+    build: .
+    image: fan-agent:latest
+    container_name: fan-scheduler
+    # Explicit config path: the baked-in relative default (../config.yaml
+    # next to dist/scheduler.js) is not part of the image by design — the
+    # config is an operator artifact, mounted below.
+    command: ["bun", "tools/fan-scheduler/dist/scheduler.js", "/data/scheduler/config.yaml"]
+    environment:
+      # In-cluster gateway address (compose DNS resolves the `fan` service).
+      FAN_API_URL: "http://fan:3456"
+      FAN_API_TOKEN: "${FAN_SCHEDULER_TOKEN:-}"
+      # Same agent dir as the fan service: the persistent queue
+      # (scheduler-pending.json, F-4.13) lives in the fan-data volume and
+      # survives container recreation.
+      FAN_CODING_AGENT_DIR: /data/.fan/agent
+      # Control server (F-4.12/F-4.14): bound to 0.0.0.0 so the gateway's
+      # /api/scheduler/health proxy can reach it over the internal network.
+      # The port is NOT published to the host (no `ports:` mapping).
+      FAN_SCHEDULER_CONTROL_HOST: "0.0.0.0"
+      FAN_SCHEDULER_CONTROL_PORT: "3457"
+      # GitHub bot identity (F-4.6) — optional; git/PR actions are marked
+      # unavailable when unset.
+      GITHUB_TOKEN: "${GITHUB_TOKEN:-}"
+    volumes:
+      - fan-data:/data/.fan/agent
+      - fan-repos:/data/repos
+      # Task configuration (read-only; hot-reloaded on change by the
+      # scheduler's mtime watcher — edit the file on the host).
+      - "${FAN_SCHEDULER_CONFIG:-./deploy/scheduler/config.yaml}:/data/scheduler/config.yaml:ro"
+    depends_on:
+      fan:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      # Probe the control server's /health endpoint (F-4.14).
+      test:
+        [
+          "CMD",
+          "bun",
+          "-e",
+          "fetch('http://127.0.0.1:3457/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
 volumes:
   fan-data:
