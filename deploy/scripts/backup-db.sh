@@ -99,6 +99,10 @@ else
     ok "Backup created via cp (fallback — DB assumed idle)"
 fi
 
+# Backups contain the same secrets as the DB (ClientToken, sessions) —
+# restrict permissions to owner-only.
+chmod 600 "${DEST}" || warn "chmod 600 failed for ${DEST}"
+
 # ── 3. Rotation: keep newest $KEEP ──────────────────────
 step "Rotating backups in ${BACKUP_DIR} (keep ${KEEP})"
 
