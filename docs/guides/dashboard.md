@@ -91,6 +91,23 @@ When the agent uses tools (read, write, edit, bash, etc.), each call is shown wi
 
 Hover over any message to reveal a **copy** button. Click it to copy the raw message content to your clipboard.
 
+### Queue Indicator
+
+The runtime executes one session at a time. If you send a message while the engine is busy with another session, your message is queued server-side (see [Message Queueing](api-reference.md#message-queueing-phase-2)):
+
+- **"В очереди, позиция N"** — a yellow indicator above the input shows your 1-based queue position (server sent `queued`). It hides automatically when the engine picks up your message and streaming starts.
+- **Queue overflow warning** — if the session's queue is full (50 messages), the message is rejected (`queue_full` / `QUEUE_OVERFLOW`) and a warning is shown instead; dismiss it manually.
+
+## Project Switcher
+
+The sidebar header contains the **project switcher** (`<fan-project-switcher>`) — a dropdown over the project registry (`GET /api/projects`):
+
+- **Select project** — click a project to scope the session list to it. The active project is highlighted; its name is shown in the switcher button.
+- **Search** — the filter input matches project name or path (case-insensitive).
+- **Session counts** — each entry shows the number of sessions in that project.
+- **Add project** — the **+** button opens an inline form; submit an absolute path to register a new project workspace.
+- **Unavailable projects** — projects whose directory was deleted from disk are marked with a "Not found on disk" indicator (`available: false` / `PROJECT_NOT_FOUND` from the API) and offer a **remove** button that calls `DELETE /api/projects?path=` to drop the entry from the registry. Sessions and files on disk are never touched.
+
 ## Session Management
 
 All sessions are stored as JSONL files on disk. The dashboard provides CRUD operations over them.
@@ -100,6 +117,15 @@ All sessions are stored as JSONL files on disk. The dashboard provides CRUD oper
 - **Search** — Use the search field to filter sessions by name (case-insensitive).
 - **Delete** — Right-click a session and select **Delete**. Removes the session file from disk permanently.
 - **History** — Each session shows its creation date and message count. Most recently active appears first.
+
+### Grouping by Project (cwd)
+
+The session list is rendered as a **tree grouped by project** (`cwd` of each session):
+
+- Each unique `cwd` forms a collapsible group (toggle ▼/▶) labelled with the path basename and a session counter; the full path is available as a tooltip.
+- When a project is selected in the [project switcher](#project-switcher), the list is additionally scoped to that project server-side (`?project=` filter).
+- Legacy sessions without a `cwd` (created before workspace support) are collected into a **«Без проекта»** group, rendered last.
+- **Status dots** colour-code each session: 🟢 active (currently open), 🔵 completed (has messages), 🟡 error/empty.
 
 ## Budget Visualization
 

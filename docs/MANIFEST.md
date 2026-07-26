@@ -12,11 +12,11 @@
 | `SETUP.md` | ✅ | Полное руководство по настройке |
 | `MIGRATION.md` | ✅ | Migration from upstream fan/pi |
 | `CONTRIBUTING.md` | ✅ | Contribution guidelines |
-| `CHANGELOG.md` | ✅ | FAN changelog (0.2.0 → [2.4.0] фаза 1 workspace-api 2026-07-25) |
+| `CHANGELOG.md` | ✅ | FAN changelog (0.2.0 → [2.5.0] фаза 2 workspace-ux 2026-07-26) |
 | `docs/guides/quick-start.md` | ✅ | Quick start stub — redirects to QUICK-START.md |
 | `docs/guides/configuration.md` | ✅ | Full settings reference |
 | `docs/guides/orchestrator.md` | ✅ | Orchestrator user guide (v7.10.0: `/orchestrator models`, named presets, permission approval, slot pools, Pipeline Mode v3.1.0) |
-| `docs/guides/dashboard.md` | ✅ | Dashboard user guide |
+| `docs/guides/dashboard.md` | ✅ | Dashboard user guide (project switcher, session tree по cwd, queue indicator) |
 | `docs/guides/api-reference.md` | ✅ | REST API + WebSocket protocol reference (health readiness, project filter, GET /api/projects, cwd whitelist 403) |
 | `docs/guides/deployment.md` | ✅ | Деплой FAN на VPS: Docker, nginx + TLS, certbot, healthcheck, workspaces /data/repos (фаза 1) |
 | `docs/guides/mcp.md` | ✅ | MCP integration guide (Russian) — transports, config, OAuth, Worker Proxy, security |
@@ -91,7 +91,8 @@
 | `docs/features/phase0-network-contour/pipeline-report.md` | ✅ | Отчёт пайплайна фазы 0: 11 фич + fix, 10 коммитов (`684de18..006ef96`) |
 | `docs/features/phase1-workspace-api/roadmap.md` | ✅ | TDD roadmap: фаза 1 — Workspace-aware API (cwd/project/whitelist), 14 фич ✅, 6 этапов + 1 E2E ✅ |
 | `docs/features/phase1-workspace-api/pipeline-report.md` | ✅ | Отчёт пайплайна фазы 1: 14 фич + fix, 15 коммитов (`5b0b944..ee49635`) |
-| `docs/features/phase2-workspace-ux/roadmap.md` | ✅ | TDD roadmap: фаза 2 — Workspace UX (Service Registry/queue/dashboard switcher), 15 фич, 5 этапов + 1 E2E |
+| `docs/features/phase2-workspace-ux/roadmap.md` | ✅ | TDD roadmap: фаза 2 — Workspace UX (Service Registry/queue/dashboard switcher), 15 фич ✅, 5 этапов + 1 E2E ✅ |
+| `docs/features/phase2-workspace-ux/pipeline-report.md` | ✅ | Отчёт пайплайна фазы 2: 15 фич + 2 fix, 17 коммитов (`fba7f65..96bdbb0`) |
 | `docs/features/phase3-universal-tasks/roadmap.md` | ✅ | TDD roadmap: фаза 3 — Universal Tasks (templates/detection/prompts/skills), 12 фич, 4 этапа + 2 E2E |
 | `docs/features/phase4-autonomy/roadmap.md` | ✅ | TDD roadmap: фаза 4 — Автономность (scheduler/git-PR/budget caps), 16 фич, 6 этапов + 1 E2E |
 | `docs/features/phase5-concurrency/roadmap.md` | ✅ | ⚠️ Опциональная фаза: конкурентность (chdir removal/persistent queue/per-project tokens), 8 фич, 5 этапов + 1 E2E |
@@ -139,7 +140,9 @@
 
 All 5 package READMEs have been created — status updated to ✅.
 
-Total: **67 tracked documents** (61 ✅, 6 ⚠️, 0 ❌)
+Total: **68 tracked documents** (62 ✅, 6 ⚠️, 0 ❌)
+
+*Фаза 2 workspace-ux финализирована (2026-07-26):* pipeline-report.md заполнен (15 ✅, 17 коммитов `fba7f65..96bdbb0`), roadmap — все 15 фич ✅ и все TDD-чекбоксы отмечены; обновлены api-reference.md (WS `sendMessage`, `queued`/`queue_full`, секция Message Queueing; GET/DELETE /api/projects уже были от F-2.13), dashboard.md (project switcher, tree grouping по cwd, queue indicator), deployment.md (секция 8.2 — очередь при busy), CHANGELOG.md [2.5.0]. Backlog: ServiceRegistry/McpSwitcher standalone (интеграция в runtime — следующая фаза), mutexes Map растёт неограниченно (documented)
 
 *Фаза 1 workspace-api финализирована (2026-07-26):* pipeline-report.md заполнен (14 ✅, 15 коммитов `5b0b944..ee49635`), roadmap F-1.14-E2E ☐→✅ (все 14 фич ✅); обновлены api-reference.md (`?project=` фильтр, `cwd` в POST/ответах, DELETE 204/403, `GET /api/projects`, коды 400/403), configuration.md (`FAN_WORKSPACE_ROOT`), deployment.md (секция 8.1 workspaces + whitelist в security notes), README.md (multi-project в features и Docker), CHANGELOG.md [2.4.0]
 

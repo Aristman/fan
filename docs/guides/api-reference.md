@@ -876,6 +876,44 @@ Emitted when an error occurs on the session's WebSocket stream.
 }
 ```
 
+#### `queued`
+
+The `sendMessage` was **accepted into the queue** because the engine is busy executing another session (F-2.5). The message will be dispatched automatically once the engine becomes idle.
+
+```json
+{
+  "type": "queued",
+  "sessionId": "sess_e5f6g7h8",
+  "position": 2,
+  "timestamp": "2026-07-26T10:35:02.000Z"
+}
+```
+
+| Field     | Type     | Description                                          |
+|-----------|----------|------------------------------------------------------|
+| sessionId | `string` | Session the message was queued for                   |
+| position  | `number` | 1-based position in that session's queue             |
+
+#### `queue_full`
+
+The `sendMessage` was **rejected** — the session's queue reached its capacity (F-2.15, default 50 messages). The message is dropped; nothing is dispatched.
+
+```json
+{
+  "type": "queue_full",
+  "sessionId": "sess_e5f6g7h8",
+  "error": "QUEUE_OVERFLOW",
+  "limit": 50,
+  "timestamp": "2026-07-26T10:35:03.000Z"
+}
+```
+
+| Field     | Type     | Description                                          |
+|-----------|----------|------------------------------------------------------|
+| sessionId | `string` | Session whose queue is full                          |
+| error     | `string` | Stable machine-readable code: `"QUEUE_OVERFLOW"`     |
+| limit     | `number` | Per-session queue capacity that was reached          |
+
 ### Client → Server Messages
 
 #### `ping`
@@ -899,6 +937,35 @@ Reserved for future use. Currently a no-op.
 ```json
 { "type": "subscribe" }
 ```
+
+#### `sendMessage`
+
+Send a user message to the agent in this session over the WebSocket connection.
+
+```json
+{ "type": "sendMessage", "content": "List all files in src", "streamingBehavior": "steer" }
+```
+
+| Field             | Type     | Required | Description                                    |
+|-------------------|----------|----------|------------------------------------------------|
+| content           | `string` | Yes      | The user message text                          |
+| streamingBehavior | `string` | No       | `"steer"` or `"followUp"` (steering preference) |
+
+The runtime executes **one session at a time** (single engine). How the message is handled depends on the engine state (see [Message Queueing](#message-queueing-phase-2) below):
+
+- **Engine idle** (or busy with *this same* session) → dispatched immediately; the reply streams as `agent_event` messages.
+- **Engine busy with another session** → the message is queued; you receive a [`queued`](#queued) notification with the position.
+- **Queue full** → the message is rejected with a [`queue_full`](#queue_full) notification.
+
+### Message Queueing (Phase 2)
+
+Because the runtime executes one session at a time, `WsMessageDispatcher` (`packages/api-gateway/src/ws-handler.ts`) serializes `sendMessage` requests:
+
+- **Enqueue on busy:** when the engine is streaming a response for session A, a `sendMessage` for session B is appended to B's per-session FIFO queue (`InMemoryMessageQueue`, `packages/api-gateway/src/message-queue.ts`) and acknowledged with `{ type: "queued", position: N }`. A message for the *active* session is dispatched directly (the agent's internal steer/followUp queue handles it).
+- **Global FIFO drain:** after a turn completes (`agent_end` event or dispatch settlement), the **globally oldest** queued message across all sessions is dispatched first, regardless of which session it belongs to.
+- **Overflow protection (F-2.15):** each session's queue is capped at 50 messages (configurable server-side). New messages beyond the cap are rejected with `{ type: "queue_full", error: "QUEUE_OVERFLOW", limit: 50 }`.
+- **In-memory only:** queued messages are **lost on server restart** (MVP; persistence is out of scope).
+- **REST bypass:** `POST /api/sessions/:id/messages` dispatches directly and is never queued.
 
 ---
 

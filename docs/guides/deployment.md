@@ -410,6 +410,21 @@ The container treats `/data/repos` as the **workspace root**
   Or via any `fan` binary on the host: `fan project register /data/repos/my-project`,
   `fan project list`.
 
+### 8.2 Message queue when the engine is busy (Phase 2)
+
+The runtime executes one session at a time. When the engine is busy and a
+`sendMessage` arrives for another session (e.g. a second browser tab working
+in a different project), the WebSocket dispatcher enqueues it per session
+(FIFO, cap 50 messages) and acknowledges the client with
+`{ type: "queued", position: N }`; beyond the cap the message is rejected
+with `{ type: "queue_full", error: "QUEUE_OVERFLOW", limit: 50 }`. After
+each turn completes, the globally-oldest queued message is dispatched
+automatically. The queue is **in-memory only** — pending messages are lost
+on `docker compose restart`, so clients should re-send after reconnect if
+they never received an `agent_event` for a queued message. Registry cleanup
+for deleted workspaces: `DELETE /api/projects?path=` (removes the entry
+from `projects.json` only — sessions and files are never touched).
+
 ## 9. Rollback
 
 nginx layer (takes agent.sea-agents.ru offline, FAN Store unaffected):

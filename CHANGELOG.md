@@ -1,5 +1,77 @@
 # Changelog
 
+## [2.5.0] — 2026-07-26
+
+### Фаза 2 — Workspace UX (workspace-ux)
+
+UX многопроектной работы: кеш сервисов по cwd с LRU, FIFO-очередь
+сообщений при занятом движке, переключатель проектов и древо сессий в
+dashboard, settings overlay и MCP reconnect при смене проекта.
+Реализовано 15 фич + 2 fix (17 коммитов `fba7f65..96bdbb0`).
+Спецификация: `docs/specs/spec_fan-network-agent_phase2-workspace-ux_2026-07-25.md`,
+отчёт: `docs/features/phase2-workspace-ux/pipeline-report.md`.
+
+#### Добавлено
+
+- **ServiceRegistry** — кеш `AgentSessionServices` по cwd с LRU-eviction
+  (default `maxItems = 5`), cleanup-hook при invalidate/clear/eviction,
+  валидация `maxItems` (`packages/coding-agent/src/workspace/service-registry.ts`).
+  Standalone-модуль — интеграция в runtime запланирована следующей фазой
+- **Auto-invalidation кеша по mtime settings** — polling
+  `<cwd>/.fan/settings.json` (default 5 s, инъектируемый интервал); watcher
+  стартует при first access, останавливается при invalidate/clear/eviction
+- **InMemoryMutex** — асинхронный FIFO-мьютекс с `withLock()`
+  (`packages/api-gateway/src/mutex.ts`)
+- **InMemoryMessageQueue** — per-session FIFO-очередь сообщений под
+  мьютексом; лимит 50 на сессию (overflow → отказ); `dequeueOldest()` —
+  глобальный FIFO по timestamp между сессиями
+  (`packages/api-gateway/src/message-queue.ts`). In-memory: очередь
+  теряется при рестарте сервера (MVP)
+- **WS enqueue on busy** — `WsMessageDispatcher` в `ws-handler.ts`: при
+  занятом движке `sendMessage` для другой сессии ставится в очередь,
+  клиент получает `{ type: "queued", position }`; при переполнении —
+  `{ type: "queue_full", error: "QUEUE_OVERFLOW", limit }`; фоновый drain
+  по `agent_end` и после завершения dispatch; guard `dispatchPending`
+  против гонки switchSession+prompt
+- **`<fan-project-switcher>`** — dropdown проектов в сайдбаре dashboard:
+  поиск по имени/пути, счётчик сессий, inline-форма «+», индикатор
+  недоступного проекта + кнопка удаления из реестра (события
+  `project-select` / `project-add` / `project-remove`)
+- **Древо сессий по cwd** — session sidebar группирует сессии по `cwd`
+  (сворачиваемые группы со счётчиком, цветовой status-dot); legacy-сессии
+  без cwd — группа «Без проекта»
+- **Project-aware API client (dashboard)** — методы клиента принимают
+  опциональный `project` (`?project=` query); добавлен `removeProject(path)`
+- **Settings overlay API** — `SettingsManager.loadProjectSettings(cwd)`
+  (чтение `<cwd>/.fan/settings.json`), `applyOverlay()`, `resetToGlobal()`
+- **McpSwitcher** — reconnect MCP-серверов при смене проекта: lazy init из
+  `<cwd>/.fan/mcp.json`, per-cwd in-flight Map против конкурентных
+  подключений; старые соединения не разрываются
+  (`packages/coding-agent/src/workspace/mcp-switcher.ts`). Standalone-модуль
+- **`available` / `error` в `GET /api/projects`** — проекты с удалённой
+  с диска директорией помечаются `available: false,
+  error: "PROJECT_NOT_FOUND"` (не исключаются из списка — видны для
+  удаления)
+- **`DELETE /api/projects?path=`** — удаление проекта из реестра:
+  204/400/404/501; сессии и файлы на диске не затрагиваются
+- **Индикатор очереди в чате** — «В очереди, позиция N» при `queued`;
+  предупреждение при `queue_full` (`chat-view.ts`)
+- **E2E многопроектной работы** — секция 9 в `deploy/scripts/e2e-local.sh`
+  (8 проверок; всего 29 в скрипте): timed switching A→B→C→A < 2 s
+  (факт ~20 ms), WS sendMessage end-to-end, dispatch evidence в app.log;
+  ветки очереди (queued/queue_full) покрыты vitest — без LLM движок не
+  становится busy (обоснование в шапке секции 9)
+
+#### Исправлено
+
+- **tsgo-совместимость** `session-sidebar.test.ts` (`baa59e7`) —
+  spread NodeListOf → `Array.from`, untyped querySelectorAll + cast
+- **4 находки верификации** (`96bdbb0`) — race в диспетчере (guard
+  `dispatchPending`, TOCTOU rapid sendMessage), race в McpSwitcher
+  (per-cwd in-flight Map — конкурентный switch ждёт первого, один
+  connect), восстановлен biome strict gate (unused import, мёртвые
+  suppressions), валидация `maxItems` в ServiceRegistry (integer ≥ 1)
+
 ## [2.4.0] — 2026-07-25
 
 ### Фаза 1 — Workspace-aware API (workspace-api)
