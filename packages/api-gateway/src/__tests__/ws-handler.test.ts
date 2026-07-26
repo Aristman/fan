@@ -1,5 +1,6 @@
 import { createServer, type Server } from "node:http";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { WsSendMessagePayload } from "../ws-handler.js";
 
 // Mock the 'ws' module — ws-handler does a dynamic import("ws")
 vi.mock("ws", () => ({
@@ -244,6 +245,43 @@ describe("WebSocket Handler", () => {
 			// Global timestamp order: from-C (enqueued first) executes before from-B
 			expect(adapter.sendMessage.mock.calls[0]).toEqual(["sess-C", "from-C", undefined]);
 			expect(adapter.sendMessage.mock.calls[1]).toEqual(["sess-B", "from-B", undefined]);
+		});
+
+		it("TC-F-2.15-2: full queue → queue_full notification with QUEUE_OVERFLOW and limit", async () => {
+			const { createBunWebSocketBridge } = await import("../ws-handler.js");
+			const { InMemoryMessageQueue } = await import("../message-queue.js");
+			const adapter = createMockAdapter();
+			adapter.isExecuting.mockReturnValue(true);
+			adapter.getActiveSessionId.mockReturnValue("sess-A");
+
+			// Small limit keeps the test fast; default is 50.
+			const messageQueue = new InMemoryMessageQueue<WsSendMessagePayload>({ maxSize: 2 });
+			const bridge = createBunWebSocketBridge(adapter, "/api/ws/", messageQueue);
+			const { ws, sent } = makeFakeWs("sess-B");
+			bridge.websocket.open(ws);
+
+			// Fill the queue (positions 1 and 2).
+			bridge.websocket.message(ws, JSON.stringify({ type: "sendMessage", content: "m1" }));
+			bridge.websocket.message(ws, JSON.stringify({ type: "sendMessage", content: "m2" }));
+			await vi.waitFor(() => {
+				expect(sent.filter((m) => m.type === "queued").map((m) => m.position)).toEqual([1, 2]);
+			});
+
+			// Third message → rejected with queue_full instead of queued.
+			bridge.websocket.message(ws, JSON.stringify({ type: "sendMessage", content: "m3" }));
+			await vi.waitFor(() => {
+				expect(sent.some((m) => m.type === "queue_full")).toBe(true);
+			});
+			const queueFull = sent.find((m) => m.type === "queue_full");
+			expect(queueFull).toMatchObject({
+				type: "queue_full",
+				sessionId: "sess-B",
+				error: "QUEUE_OVERFLOW",
+				limit: 2,
+			});
+			// Rejected message was never queued or dispatched.
+			expect(await messageQueue.size("sess-B")).toBe(2);
+			expect(adapter.sendMessage).not.toHaveBeenCalled();
 		});
 	});
 });

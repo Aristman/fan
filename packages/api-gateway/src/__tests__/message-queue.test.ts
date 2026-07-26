@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { InMemoryMessageQueue } from "../message-queue.js";
+import { DEFAULT_QUEUE_MAX_SIZE, InMemoryMessageQueue } from "../message-queue.js";
 
 // ============================================================================
 // Unit tests — InMemoryMessageQueue (F-2.4)
@@ -147,5 +147,66 @@ describe("InMemoryMessageQueue", () => {
 		expect(third?.item.message).toBe("b2");
 
 		expect(await queue.dequeueOldest()).toBeNull();
+	});
+
+	describe("overflow protection (F-2.15)", () => {
+		it("TC-F-2.15-1: 51st message is rejected when the queue holds 50 (default limit); size stays 50", async () => {
+			const queue = new InMemoryMessageQueue<string>();
+			expect(queue.maxSize).toBe(DEFAULT_QUEUE_MAX_SIZE);
+			expect(DEFAULT_QUEUE_MAX_SIZE).toBe(50);
+
+			// Fill the queue to the default limit.
+			for (let i = 1; i <= DEFAULT_QUEUE_MAX_SIZE; i++) {
+				const position = await queue.enqueue("sess-1", `m${i}`);
+				expect(position).toBe(i);
+			}
+			expect(await queue.size("sess-1")).toBe(50);
+
+			// 51st message → rejected (null), queue unchanged.
+			const rejected = await queue.enqueue("sess-1", "overflow");
+			expect(rejected).toBeNull();
+			expect(await queue.size("sess-1")).toBe(50);
+
+			// The rejected message must NOT be retrievable; head is still m1.
+			expect((await queue.peek("sess-1"))?.message).toBe("m1");
+		});
+
+		it("after dequeue, enqueue succeeds again (limit is not a hard stop)", async () => {
+			const queue = new InMemoryMessageQueue<string>({ maxSize: 2 });
+
+			expect(await queue.enqueue("sess-1", "A")).toBe(1);
+			expect(await queue.enqueue("sess-1", "B")).toBe(2);
+			expect(await queue.enqueue("sess-1", "C")).toBeNull();
+
+			// Free one slot → enqueue works again.
+			expect((await queue.dequeue("sess-1"))?.message).toBe("A");
+			expect(await queue.enqueue("sess-1", "C")).toBe(2);
+			expect(await queue.size("sess-1")).toBe(2);
+
+			// FIFO preserved: B, then C.
+			expect((await queue.dequeue("sess-1"))?.message).toBe("B");
+			expect((await queue.dequeue("sess-1"))?.message).toBe("C");
+			expect(await queue.dequeue("sess-1")).toBeNull();
+		});
+
+		it("limit is configurable via constructor and applies per session", async () => {
+			const queue = new InMemoryMessageQueue<string>({ maxSize: 2 });
+			expect(queue.maxSize).toBe(2);
+
+			await queue.enqueue("sess-1", "a1");
+			await queue.enqueue("sess-1", "a2");
+			expect(await queue.enqueue("sess-1", "a3")).toBeNull();
+
+			// Other sessions are unaffected by sess-1 being full.
+			expect(await queue.enqueue("sess-2", "b1")).toBe(1);
+			expect(await queue.enqueue("sess-2", "b2")).toBe(2);
+			expect(await queue.enqueue("sess-2", "b3")).toBeNull();
+		});
+
+		it("rejects invalid maxSize (non-integer / < 1)", () => {
+			expect(() => new InMemoryMessageQueue({ maxSize: 0 })).toThrow();
+			expect(() => new InMemoryMessageQueue({ maxSize: -1 })).toThrow();
+			expect(() => new InMemoryMessageQueue({ maxSize: 1.5 })).toThrow();
+		});
 	});
 });

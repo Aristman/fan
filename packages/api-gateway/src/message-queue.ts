@@ -17,10 +17,14 @@ import { Mutex } from "./mutex.js";
  * Known limitations (MVP):
  * - **In-memory only**: all queued messages are LOST on server restart.
  *   Persistence is out of scope for MVP.
- * - **No overflow limit**: queues grow unbounded. Overflow protection
- *   (default limit 50, `QUEUE_OVERFLOW` rejection) is implemented
- *   separately in F-2.15, which will extend this class. This is an
- *   intentional decision to keep the base implementation clean.
+ *
+ * Overflow protection (F-2.15):
+ * - Each session's queue is capped at `maxSize` messages (default
+ *   {@link DEFAULT_QUEUE_MAX_SIZE} = 50, configurable via the constructor).
+ * - When the queue is full, `enqueue()` REJECTS the message and returns
+ *   `null` (documented refusal contract — see the interface below). The
+ *   WS dispatcher (F-2.5) translates this into a `queue_full` notification
+ *   with error code `QUEUE_OVERFLOW`.
  */
 
 /** A single queued message with its enqueue timestamp (ms since epoch). */
@@ -34,11 +38,24 @@ export interface QueuedMessage<T = unknown> {
 	seq: number;
 }
 
+/** Default per-session queue capacity (F-2.15). */
+export const DEFAULT_QUEUE_MAX_SIZE = 50;
+
+/** Options for {@link InMemoryMessageQueue}. */
+export interface InMemoryMessageQueueOptions {
+	/** Maximum number of queued messages per session (F-2.15).
+	 *  `enqueue()` rejects (returns `null`) once this limit is reached.
+	 *  Default: {@link DEFAULT_QUEUE_MAX_SIZE} (50). */
+	maxSize?: number;
+}
+
 /** Message queue interface — per-session FIFO operations. */
 export interface MessageQueue<T = unknown> {
 	/** Append a message to the tail of the session's queue.
-	 *  Returns the 1-based position of the message in the session's queue. */
-	enqueue(sessionId: string, message: T): Promise<number>;
+	 *  Returns the 1-based position of the message in the session's queue,
+	 *  or `null` when the queue is full (overflow, F-2.15) and the message
+	 *  was rejected. */
+	enqueue(sessionId: string, message: T): Promise<number | null>;
 	/** Remove and return the head message, or `null` if the queue is empty. */
 	dequeue(sessionId: string): Promise<QueuedMessage<T> | null>;
 	/** Return the head message WITHOUT removing it, or `null` if empty. */
@@ -52,6 +69,18 @@ export class InMemoryMessageQueue<T = unknown> implements MessageQueue<T> {
 	private readonly mutexes = new Map<string, Mutex>();
 	private seq = 0;
 
+	/** Per-session queue capacity (F-2.15). Read by the WS dispatcher to
+	 *  report the limit in `queue_full` notifications. */
+	readonly maxSize: number;
+
+	constructor(options: InMemoryMessageQueueOptions = {}) {
+		const maxSize = options.maxSize ?? DEFAULT_QUEUE_MAX_SIZE;
+		if (!Number.isInteger(maxSize) || maxSize < 1) {
+			throw new Error(`InMemoryMessageQueue: maxSize must be a positive integer, got ${maxSize}`);
+		}
+		this.maxSize = maxSize;
+	}
+
 	/** Get (or lazily create) the mutex guarding the session's queue. */
 	private mutexFor(sessionId: string): Mutex {
 		let mutex = this.mutexes.get(sessionId);
@@ -63,13 +92,20 @@ export class InMemoryMessageQueue<T = unknown> implements MessageQueue<T> {
 	}
 
 	/** Append `message` to the tail of the session's queue (FIFO).
-	 *  Returns the 1-based position of the message in the session's queue. */
-	async enqueue(sessionId: string, message: T): Promise<number> {
+	 *  Returns the 1-based position of the message in the session's queue.
+	 *  Overflow (F-2.15): when the session's queue already holds `maxSize`
+	 *  messages, the message is REJECTED (not stored) and `null` is
+	 *  returned — callers must handle the refusal (the F-2.5 dispatcher
+	 *  sends a `queue_full` notification in that case). */
+	async enqueue(sessionId: string, message: T): Promise<number | null> {
 		return this.mutexFor(sessionId).withLock(() => {
 			let queue = this.queues.get(sessionId);
 			if (!queue) {
 				queue = [];
 				this.queues.set(sessionId, queue);
+			}
+			if (queue.length >= this.maxSize) {
+				return null;
 			}
 			queue.push({ message, timestamp: Date.now(), seq: this.seq++ });
 			return queue.length;

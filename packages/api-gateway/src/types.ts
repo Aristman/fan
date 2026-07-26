@@ -285,7 +285,17 @@ export interface WsQueued extends WsMessage {
 	position: number;
 }
 
-export type WsOutgoingMessage = WsAgentEvent | WsBudgetAlert | WsModelSwitch | WsError | WsQueued;
+/** Server notification: the message was REJECTED because the session's queue
+ *  is full (F-2.15). Sent instead of `queued` when enqueue hits the limit. */
+export interface WsQueueFull extends WsMessage {
+	type: "queue_full";
+	/** Stable machine-readable error code */
+	error: "QUEUE_OVERFLOW";
+	/** Per-session queue capacity that was reached */
+	limit: number;
+}
+
+export type WsOutgoingMessage = WsAgentEvent | WsBudgetAlert | WsModelSwitch | WsError | WsQueued | WsQueueFull;
 
 /** Incoming WebSocket messages from client */
 export type WsIncomingMessage =

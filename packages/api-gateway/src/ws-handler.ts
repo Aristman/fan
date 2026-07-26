@@ -52,6 +52,10 @@ export interface WsMessageDispatcherOptions {
  *   (switching the engine mid-stream would corrupt the running turn) and
  *   notify the client with `{ type: "queued", position: N }` (1-based
  *   position in the per-session queue).
+ * - Queue full (F-2.15): when the session's queue already holds `maxSize`
+ *   messages (default 50), `enqueue()` rejects and the client receives
+ *   `{ type: "queue_full", error: "QUEUE_OVERFLOW", limit: N }` instead
+ *   of `queued`. The message is dropped — nothing is dispatched.
  * - Busy + message for the SAME (active) session → direct dispatch:
  *   `AgentSession.prompt()` already queues it internally via steer/followUp.
  * - Idle → direct dispatch via `sessionAdapter.sendMessage()` (which performs
@@ -104,6 +108,17 @@ export class WsMessageDispatcher {
 		if (this.isBusy() && sessionId !== activeSessionId) {
 			// Engine busy with another session → enqueue, notify position.
 			const position = await this.queue.enqueue(sessionId, payload);
+			if (position === null) {
+				// F-2.15: queue overflow — reject with a queue_full notification.
+				send({
+					type: "queue_full",
+					sessionId,
+					timestamp: new Date().toISOString(),
+					error: "QUEUE_OVERFLOW",
+					limit: this.queue.maxSize,
+				});
+				return;
+			}
 			send({ type: "queued", sessionId, timestamp: new Date().toISOString(), position });
 			return;
 		}
