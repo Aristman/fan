@@ -34,9 +34,10 @@ describe("project-auto-register (F-1.7)", () => {
 	}
 
 	describe("TC-F-1.7-1: git repo is registered as 'code'", () => {
-		test("cwd with .git directory → registry entry type='code'", () => {
+		test("cwd with .git directory + src/ → registry entry type='code'", () => {
 			const projectDir = makeProject("repo-with-git");
 			mkdirSync(join(projectDir, ".git"));
+			mkdirSync(join(projectDir, "src"));
 
 			const result = autoRegisterProject(projectDir, { projectsPath });
 
@@ -51,9 +52,10 @@ describe("project-auto-register (F-1.7)", () => {
 			expect(projects[0].type).toBe("code");
 		});
 
-		test(".git file (worktree gitfile) also counts as 'code'", () => {
+		test(".git file (worktree gitfile) + package.json also counts as 'code'", () => {
 			const projectDir = makeProject("worktree");
 			writeFileSync(join(projectDir, ".git"), "gitdir: /elsewhere\n", "utf-8");
+			writeFileSync(join(projectDir, "package.json"), "{}\n", "utf-8");
 
 			const result = autoRegisterProject(projectDir, { projectsPath });
 
@@ -63,6 +65,7 @@ describe("project-auto-register (F-1.7)", () => {
 		test("second registration of same path is a no-op (dedup)", () => {
 			const projectDir = makeProject("dup");
 			mkdirSync(join(projectDir, ".git"));
+			mkdirSync(join(projectDir, "src"));
 
 			const first = autoRegisterProject(projectDir, { projectsPath });
 			const second = autoRegisterProject(projectDir, { projectsPath });
@@ -122,9 +125,9 @@ describe("project-auto-register (F-1.7)", () => {
 	});
 
 	describe("type detection", () => {
-		test("docs/ without .git → 'research'", () => {
+		test("docs/research/ without .git → 'research'", () => {
 			const projectDir = makeProject("research-notes");
-			mkdirSync(join(projectDir, "docs"));
+			mkdirSync(join(projectDir, "docs", "research"), { recursive: true });
 
 			const result = autoRegisterProject(projectDir, { projectsPath });
 
@@ -132,12 +135,25 @@ describe("project-auto-register (F-1.7)", () => {
 			expect(listProjects(projectsPath)[0].type).toBe("research");
 		});
 
-		test(".git wins over docs/ → 'code'", () => {
+		test(".git + src/ wins over docs/research/ → 'code'", () => {
 			const projectDir = makeProject("both");
 			mkdirSync(join(projectDir, ".git"));
-			mkdirSync(join(projectDir, "docs"));
+			mkdirSync(join(projectDir, "src"));
+			mkdirSync(join(projectDir, "docs", "research"), { recursive: true });
 
 			expect(detectProjectType(projectDir)).toBe("code");
+		});
+
+		test("scripts/ + config files without .git → 'automation'", () => {
+			const projectDir = makeProject("automation-hub");
+			mkdirSync(join(projectDir, "scripts"));
+			writeFileSync(join(projectDir, "scripts", "daily.sh"), "#!/bin/sh\n", "utf-8");
+			mkdirSync(join(projectDir, "config"));
+
+			const result = autoRegisterProject(projectDir, { projectsPath });
+
+			expect(result?.entry.type).toBe("automation");
+			expect(listProjects(projectsPath)[0].type).toBe("automation");
 		});
 
 		test("docs as a file (not directory) does not count", () => {
@@ -215,6 +231,7 @@ describe("project-auto-register (F-1.7)", () => {
 		test("relative cwd resolves to absolute path in registry", () => {
 			const projectDir = makeProject("relative-test");
 			mkdirSync(join(projectDir, ".git"));
+			mkdirSync(join(projectDir, "src"));
 			const relative = `.${sep}${relativePath(process.cwd(), projectDir)}`;
 
 			const result = autoRegisterProject(relative, { projectsPath });

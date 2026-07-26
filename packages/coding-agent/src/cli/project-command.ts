@@ -12,8 +12,8 @@
  *   that case and the type falls back to "unknown" (no filesystem evidence),
  *   unless --type is given explicitly.
  * - When the directory exists and --type is omitted, the type is
- *   auto-detected via detectProjectType (.git → code, docs/ → research,
- *   otherwise unknown).
+ *   auto-detected via detectProjectType (canonical detector, F-3.2:
+ *   code > research > automation > unknown).
  * - System-path exclusions do NOT apply to manual registration: an explicit
  *   user command is treated as intent.
  * - Re-registering an existing path is a no-op (dedup by resolved path in

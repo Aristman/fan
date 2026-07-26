@@ -71,6 +71,7 @@ describe("fan project CLI (F-1.8)", () => {
 		test("existing git repo → exit 0, registry entry type=code, confirmation output", () => {
 			const projectDir = join(workDir, "manual-test");
 			mkdirSync(join(projectDir, ".git"), { recursive: true });
+			mkdirSync(join(projectDir, "src"));
 
 			const code = run(["register", projectDir]);
 
@@ -142,6 +143,7 @@ describe("fan project CLI (F-1.8)", () => {
 		test("registerProject returns outcome without touching the CLI", () => {
 			const projectDir = join(workDir, "direct");
 			mkdirSync(join(projectDir, ".git"), { recursive: true });
+			mkdirSync(join(projectDir, "src"));
 
 			const outcome = registerProject(projectDir, undefined, projectsPath);
 
@@ -175,7 +177,8 @@ describe("fan project CLI (F-1.8)", () => {
 			const a = join(workDir, "project-a");
 			const b = join(workDir, "project-b");
 			mkdirSync(join(a, ".git"), { recursive: true });
-			mkdirSync(join(b, "docs"), { recursive: true });
+			mkdirSync(join(a, "src"));
+			mkdirSync(join(b, "docs", "research"), { recursive: true });
 			expect(run(["register", a])).toBe(0);
 			expect(run(["register", b])).toBe(0);
 			outLines = [];

@@ -3,10 +3,7 @@
  *
  * When a session is created with a non-empty, non-system cwd, the workspace
  * is automatically added to the project registry (~/.fan/agent/projects.json)
- * with a detected type:
- * - has `.git` entry        → "code"
- * - has `docs/` directory   → "research"
- * - otherwise               → "unknown"
+ * with the type detected by `detectWorkspaceType` (workspace/detector.ts, F-3.2).
  *
  * Exclusion rules (documented system paths):
  * - The OS temp directory (os.tmpdir()) and everything inside it.
@@ -28,7 +25,8 @@
 
 import { existsSync, statSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join, resolve, sep } from "node:path";
+import { resolve, sep } from "node:path";
+import { detectWorkspaceType } from "../workspace/detector.js";
 import { type AddToProjectsResult, addToProjects, type ProjectType } from "./project-registry.js";
 
 /** POSIX system directories excluded from auto-registration. */
@@ -93,19 +91,15 @@ export function isSystemPath(path: string): boolean {
 }
 
 /**
- * Detect the project type via filesystem checks:
- * `.git` (dir or file — worktrees/submodules use a gitfile) → "code",
- * `docs/` directory → "research", otherwise "unknown".
+ * Detect the project type via filesystem checks.
+ *
+ * Delegates to the canonical full implementation `detectWorkspaceType`
+ * (workspace/detector.ts, F-3.2): `.git` + (`src/` or `package.json`) → "code",
+ * `docs/research/` or `.fan/prompts/` → "research", scripts + config →
+ * "automation", otherwise "unknown". Never throws.
  */
 export function detectProjectType(cwd: string): ProjectType {
-	try {
-		if (existsSync(join(cwd, ".git"))) return "code";
-		const docsPath = join(cwd, "docs");
-		if (existsSync(docsPath) && statSync(docsPath).isDirectory()) return "research";
-	} catch {
-		// fs errors (permissions, races) → fall through to "unknown"
-	}
-	return "unknown";
+	return detectWorkspaceType(cwd);
 }
 
 export interface AutoRegisterOptions {
