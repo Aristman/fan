@@ -9,6 +9,7 @@ import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { generateToken as createToken, isAuthDisabled, listTokens, revokeToken, tokenAuth } from "./auth.js";
 import { resolveCorsOrigin } from "./cors-config.js";
+import { type DrainableMessageQueue, InMemoryMessageQueue, PersistentMessageQueue } from "./message-queue.js";
 import { ProjectBudgetStore } from "./project-budgets.js";
 import type {
 	ApiError,
@@ -47,7 +48,14 @@ import type {
 	UpdateProjectResponse,
 } from "./types.js";
 import { logCwdRejection, resolveAllowedRoots, validateCwd } from "./workspace-validation.js";
-import { attachWebSocketHandler, type BunServerLike, createBunWebSocketBridge } from "./ws-handler.js";
+import {
+	attachWebSocketHandler,
+	type BunServerLike,
+	createBunWebSocketBridge,
+	type QueuesRestoredInfo,
+	restoreQueuesOnStartup,
+	type WsSendMessagePayload,
+} from "./ws-handler.js";
 
 // Version is passed via ServerOptions to avoid __dirname resolution issues
 // in compiled Bun binaries where __dirname points inside the runtime.
@@ -131,6 +139,15 @@ export interface ServerOptions {
 	 *  expanded) and falls back to `~/.fan/agent`. Overridable for tests /
 	 *  custom agent dirs. */
 	projectBudgetsFile?: string;
+	/** F-5.5/F-5.6: injectable message queue for the WS dispatcher (drop-in).
+	 *  When provided, it is used as-is and `persistentQueue` is ignored. */
+	messageQueue?: DrainableMessageQueue<WsSendMessagePayload>;
+	/** F-5.6: whether the WS dispatcher queue is a {@link PersistentMessageQueue}
+	 *  when no explicit `messageQueue` is injected.
+	 *  Default: `true` in server mode ({@link startServer}) — queued messages
+	 *  survive restarts and active queues are restored on startup; `false`
+	 *  selects the legacy in-memory queue (tests, ephemeral runs). */
+	persistentQueue?: boolean;
 }
 
 /**
@@ -881,6 +898,22 @@ export async function startServer(
 	const { port = 3456, host = "localhost" } = options;
 	const app = await createApp(modelManager, sessionAdapter, options);
 
+	// F-5.6: dispatcher queue for server mode. Documented default decision:
+	// PERSISTENT (PersistentMessageQueue over <agentDir>/queues) — a server
+	// restart must not silently lose queued client messages. Pass
+	// `persistentQueue: false` for the legacy in-memory queue, or inject a
+	// custom `messageQueue` (tests). After creating the queue, active queues
+	// are restored from disk BEFORE the server starts accepting connections;
+	// the snapshot is delivered to each WS client on connect
+	// (`queues_restored` frame — only when restoredCount > 0; empty starts
+	// stay silent). Restoration errors are logged and non-fatal.
+	const messageQueue: DrainableMessageQueue<WsSendMessagePayload> =
+		options.messageQueue ??
+		(options.persistentQueue === false
+			? new InMemoryMessageQueue<WsSendMessagePayload>()
+			: new PersistentMessageQueue<WsSendMessagePayload>());
+	const restoredQueues: QueuesRestoredInfo | null = await restoreQueuesOnStartup(messageQueue);
+
 	// Dynamic import to support both Bun and Node.js
 	let stop: () => Promise<void>;
 
@@ -895,7 +928,7 @@ export async function startServer(
 		// through to the SPA fallback (HTTP 200 HTML instead of 101).
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const bunGlobal = (globalThis as any).Bun as any;
-		const wsBridge = createBunWebSocketBridge(sessionAdapter);
+		const wsBridge = createBunWebSocketBridge(sessionAdapter, "/api/ws/", messageQueue, restoredQueues ?? undefined);
 		const server = bunGlobal.serve({
 			port,
 			hostname: host,
@@ -917,7 +950,12 @@ export async function startServer(
 		const httpServer = serve({ fetch: app.fetch, port, hostname: host });
 
 		// Attach WebSocket handler (requires 'ws' package)
-		const wsHandler = attachWebSocketHandler({ server: httpServer as any, sessionAdapter });
+		const wsHandler = attachWebSocketHandler({
+			server: httpServer as any,
+			sessionAdapter,
+			messageQueue,
+			restoredQueues: restoredQueues ?? undefined,
+		});
 
 		stop = async () => {
 			wsHandler.close();

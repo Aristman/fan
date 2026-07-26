@@ -411,7 +411,34 @@ export interface WsQueueFull extends WsMessage {
 	limit: number;
 }
 
-export type WsOutgoingMessage = WsAgentEvent | WsBudgetAlert | WsModelSwitch | WsError | WsQueued | WsQueueFull;
+/** Server notification: persistent message queues were restored from disk on
+ *  server startup (F-5.6).
+ *
+ *  Delivery model (documented decision): the restore happens during server
+ *  bootstrap — BEFORE any client can connect — so a broadcast at restore time
+ *  would reach nobody. Instead the server computes the snapshot once and sends
+ *  this frame to EVERY WebSocket client right after the `connected` welcome
+ *  frame, but ONLY when restoredCount > 0. On a fresh/empty start NO event is
+ *  sent (avoids noise on every boot; TC-F-5.6-2 allows either behavior).
+ *  `sessionId` is the id of the connection the frame is delivered on (the
+ *  event itself is server-wide). */
+export interface WsQueuesRestored extends WsMessage {
+	type: "queues_restored";
+	/** Number of session queues with pending messages recovered from disk
+	 *  (=== sessions.length). */
+	restoredCount: number;
+	/** Session ids that have at least one pending (recovered) message. */
+	sessions: string[];
+}
+
+export type WsOutgoingMessage =
+	| WsAgentEvent
+	| WsBudgetAlert
+	| WsModelSwitch
+	| WsError
+	| WsQueued
+	| WsQueueFull
+	| WsQueuesRestored;
 
 /** Incoming WebSocket messages from client */
 export type WsIncomingMessage =

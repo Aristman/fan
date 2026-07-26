@@ -3,7 +3,7 @@ import type { WebSocket as WsWebSocket } from "ws";
 import { isAuthDisabled, validateToken } from "./auth.js";
 import type { SessionAdapter } from "./http-server.js";
 import { type DrainableMessageQueue, InMemoryMessageQueue, type QueuedMessage } from "./message-queue.js";
-import type { WsIncomingMessage, WsOutgoingMessage } from "./types.js";
+import type { WsIncomingMessage, WsOutgoingMessage, WsQueuesRestored } from "./types.js";
 
 // ============================================================================
 // Types
@@ -18,12 +18,86 @@ export interface WsHandlerOptions {
 	 *  Injectable for tests — any DrainableMessageQueue works as a drop-in
 	 *  (e.g. PersistentMessageQueue, F-5.5). */
 	messageQueue?: DrainableMessageQueue<WsSendMessagePayload>;
+	/** F-5.6: snapshot of restored persistent queues, computed once at server
+	 *  startup via {@link restoreQueuesOnStartup}. When present and
+	 *  `restoredCount > 0`, every connecting client receives a
+	 *  `queues_restored` frame right after the `connected` welcome frame. */
+	restoredQueues?: QueuesRestoredInfo;
 }
 
 interface ClientConnection {
 	ws: WsWebSocket;
 	sessionId: string;
 	unsubscribe: () => void;
+}
+
+// ============================================================================
+// Queue restoration on server startup (F-5.6)
+// ============================================================================
+
+/** Snapshot of the persistent queues recovered from disk at server startup
+ *  (F-5.6). Computed once during bootstrap and delivered to WS clients on
+ *  connect (see {@link restoreQueuesOnStartup} for the delivery decision). */
+export interface QueuesRestoredInfo {
+	/** Number of session queues with pending messages (=== sessions.length). */
+	restoredCount: number;
+	/** Session ids with at least one pending message. */
+	sessions: string[];
+}
+
+/** Persistence capability probed structurally — any queue exposing
+ *  `getAllActive()` (PersistentMessageQueue, F-5.5) is restorable; the
+ *  in-memory queue is not and yields `null`. */
+interface RestorableMessageQueue {
+	getAllActive(): Promise<string[]>;
+}
+
+/**
+ * F-5.6: restore active queues at server startup.
+ *
+ * Returns the snapshot of sessions with pending messages, or `null` when the
+ * queue is not persistent (in-memory) OR when restoration failed. Errors are
+ * logged and NON-FATAL — a broken queue store must never prevent the server
+ * from starting; it simply boots as if there were nothing to restore.
+ *
+ * Delivery decision (documented): the restore runs during bootstrap, before
+ * any client can connect, so broadcasting at restore time would reach nobody.
+ * The snapshot is therefore passed to the WS handlers and sent per-client on
+ * connect — simpler and more reliable than broadcast timing. A client that
+ * connects later still learns about recovered queues. On an empty start
+ * (`restoredCount = 0`) NO `queues_restored` frame is sent at all.
+ */
+export async function restoreQueuesOnStartup(
+	queue: DrainableMessageQueue<unknown>,
+): Promise<QueuesRestoredInfo | null> {
+	const restorable = queue as Partial<RestorableMessageQueue>;
+	if (typeof restorable.getAllActive !== "function") {
+		return null; // in-memory queue: nothing persisted, nothing to restore
+	}
+	try {
+		const sessions = await restorable.getAllActive();
+		if (sessions.length > 0) {
+			console.log(
+				`[api-gateway] Restored ${sessions.length} message queue(s) with pending messages: ${sessions.join(", ")}`,
+			);
+		}
+		return { restoredCount: sessions.length, sessions };
+	} catch (err) {
+		console.error("[api-gateway] Queue restoration failed (continuing without restored queues):", err);
+		return null;
+	}
+}
+
+/** Build the `queues_restored` frame for a connecting client. `sessionId` is
+ *  the connection the frame is delivered on (the event is server-wide). */
+function queuesRestoredFrame(sessionId: string, info: QueuesRestoredInfo): WsQueuesRestored {
+	return {
+		type: "queues_restored",
+		sessionId,
+		timestamp: new Date().toISOString(),
+		restoredCount: info.restoredCount,
+		sessions: info.sessions,
+	};
 }
 
 // ============================================================================
@@ -371,6 +445,12 @@ export function attachWebSocketHandler(options: WsHandlerOptions): { close: () =
 					}),
 				);
 
+				// F-5.6: notify about queues restored at server startup (only
+				// when there is something to report — empty starts stay silent).
+				if (options.restoredQueues && options.restoredQueues.restoredCount > 0) {
+					ws.send(JSON.stringify(queuesRestoredFrame(connSessionId, options.restoredQueues)));
+				}
+
 				// Handle incoming messages
 				ws.on("message", (data: Buffer) => {
 					try {
@@ -481,6 +561,9 @@ export function createBunWebSocketBridge(
 	sessionAdapter: SessionAdapter,
 	pathPrefix = "/api/ws/",
 	messageQueue?: DrainableMessageQueue<WsSendMessagePayload>,
+	/** F-5.6: snapshot of queues restored at server startup — delivered to
+	 *  each client on connect when `restoredCount > 0`. */
+	restoredQueues?: QueuesRestoredInfo,
 ): BunWebSocketBridge {
 	const unsubscribes = new Map<BunWebSocket, () => void>();
 	// F-2.5: enqueue-on-busy dispatcher (shared queue across all connections)
@@ -534,6 +617,11 @@ export function createBunWebSocketBridge(
 						timestamp: new Date().toISOString(),
 					}),
 				);
+				// F-5.6: notify about queues restored at server startup (only when
+				// there is something to report — empty starts stay silent).
+				if (restoredQueues && restoredQueues.restoredCount > 0) {
+					ws.send(JSON.stringify(queuesRestoredFrame(sessionId, restoredQueues)));
+				}
 			},
 			message(ws, message) {
 				try {

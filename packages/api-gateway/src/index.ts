@@ -29,5 +29,15 @@ export {
 export * from "./types.js";
 export type { CwdValidationResult } from "./workspace-validation.js";
 export { isWithinRoot, logCwdRejection, resolveAllowedRoots, validateCwd } from "./workspace-validation.js";
-export type { WsHandlerOptions, WsMessageDispatcherOptions, WsSendMessagePayload } from "./ws-handler.js";
-export { attachWebSocketHandler, createBunWebSocketBridge, WsMessageDispatcher } from "./ws-handler.js";
+export type {
+	QueuesRestoredInfo,
+	WsHandlerOptions,
+	WsMessageDispatcherOptions,
+	WsSendMessagePayload,
+} from "./ws-handler.js";
+export {
+	attachWebSocketHandler,
+	createBunWebSocketBridge,
+	restoreQueuesOnStartup,
+	WsMessageDispatcher,
+} from "./ws-handler.js";
