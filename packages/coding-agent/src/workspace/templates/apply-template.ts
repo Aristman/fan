@@ -7,13 +7,15 @@
  * already-present entries are reported in `skipped`, making repeated
  * calls idempotent.
  *
- * Templates are registered by name (currently only `'code'` from F-3.3;
- * F-3.4 will add `'research'` and `'automation'` plus a barrel index).
+ * Templates are registered by name: `'code'` (F-3.3), `'research'` and
+ * `'automation'` (F-3.4). The barrel `index.ts` re-exports everything.
  */
 
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
+import { automationHubTemplate } from "./automation-hub.js";
 import { codeProjectTemplate } from "./code-project.js";
+import { researchLabTemplate } from "./research-lab.js";
 import type { ApplyTemplateResult, TemplateContext, WorkspaceTemplate } from "./types.js";
 
 /** Registry of available templates, keyed by template name. */
@@ -35,6 +37,8 @@ export function listTemplates(): string[] {
 }
 
 registerTemplate(codeProjectTemplate);
+registerTemplate(researchLabTemplate);
+registerTemplate(automationHubTemplate);
 
 /**
  * Apply a workspace template to a target directory.

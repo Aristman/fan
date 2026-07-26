@@ -1,9 +1,13 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { detectWorkspaceType } from "../src/workspace/detector.js";
 import { applyTemplate, getTemplate, listTemplates } from "../src/workspace/templates/apply-template.js";
+import { automationHubTemplate } from "../src/workspace/templates/automation-hub.js";
 import { codeProjectTemplate } from "../src/workspace/templates/code-project.js";
+import { createProject } from "../src/workspace/templates/index.js";
+import { researchLabTemplate } from "../src/workspace/templates/research-lab.js";
 
 describe("workspace templates — code project (F-3.3)", () => {
 	let workDir: string;
@@ -125,5 +129,167 @@ describe("workspace templates — code project (F-3.3)", () => {
 			expect(result.template).toBe("code");
 			expect(existsSync(join(target, "src"))).toBe(true);
 		});
+	});
+});
+
+describe("workspace templates — research lab (F-3.4)", () => {
+	let workDir: string;
+
+	beforeEach(() => {
+		workDir = mkdtempSync(join(tmpdir(), "fan-ws-research-"));
+	});
+
+	afterEach(() => {
+		if (workDir && existsSync(workDir)) {
+			rmSync(workDir, { recursive: true, force: true });
+		}
+	});
+
+	describe("TC-F-3.4-1: research template creates the correct structure", () => {
+		test("applyTemplate('research', newDir) creates .fan/prompts/, settings, docs/research/, data/, reports/", () => {
+			const target = join(workDir, "my-research");
+			const result = applyTemplate("research", target);
+
+			// directories
+			expect(existsSync(join(target, ".fan", "prompts"))).toBe(true);
+			expect(statSync(join(target, ".fan", "prompts")).isDirectory()).toBe(true);
+			expect(existsSync(join(target, "docs", "research"))).toBe(true);
+			expect(existsSync(join(target, "data"))).toBe(true);
+			expect(existsSync(join(target, "reports"))).toBe(true);
+
+			// files
+			expect(existsSync(join(target, ".fan", "settings.json"))).toBe(true);
+			expect(JSON.parse(readFileSync(join(target, ".fan", "settings.json"), "utf-8"))).toEqual({});
+
+			// result report
+			expect(result.template).toBe("research");
+			expect(result.createdDirectories).toEqual([".fan", ".fan/prompts", "docs/research", "data", "reports"]);
+			expect(result.createdFiles).toEqual([".fan/settings.json"]);
+			expect(result.skipped).toEqual([]);
+		});
+
+		test("freshly applied research template detects as 'research'", () => {
+			const target = join(workDir, "detected-research");
+			applyTemplate("research", target);
+
+			expect(detectWorkspaceType(target)).toBe("research");
+		});
+
+		test("'research' is registered and resolvable via the barrel registry", () => {
+			expect(listTemplates()).toContain("research");
+			expect(getTemplate("research")).toBe(researchLabTemplate);
+		});
+	});
+});
+
+describe("workspace templates — automation hub (F-3.4)", () => {
+	let workDir: string;
+
+	beforeEach(() => {
+		workDir = mkdtempSync(join(tmpdir(), "fan-ws-automation-"));
+	});
+
+	afterEach(() => {
+		if (workDir && existsSync(workDir)) {
+			rmSync(workDir, { recursive: true, force: true });
+		}
+	});
+
+	describe("TC-F-3.4-2: automation template creates the correct structure", () => {
+		test("applyTemplate('automation', newDir) creates settings, scripts/, config/, output/, logs/", () => {
+			const target = join(workDir, "my-automation");
+			const result = applyTemplate("automation", target);
+
+			// directories
+			expect(existsSync(join(target, "scripts"))).toBe(true);
+			expect(existsSync(join(target, "config"))).toBe(true);
+			expect(existsSync(join(target, "output"))).toBe(true);
+			expect(existsSync(join(target, "logs"))).toBe(true);
+
+			// files
+			expect(existsSync(join(target, ".fan", "settings.json"))).toBe(true);
+			expect(JSON.parse(readFileSync(join(target, ".fan", "settings.json"), "utf-8"))).toEqual({});
+
+			// placeholder script (required for automation detection)
+			const script = readFileSync(join(target, "scripts", "example.sh"), "utf-8");
+			expect(script.startsWith("#!/usr/bin/env bash")).toBe(true);
+			expect(script).toContain("my-automation");
+
+			// result report
+			expect(result.template).toBe("automation");
+			expect(result.createdDirectories).toEqual([".fan", "scripts", "config", "output", "logs"]);
+			expect(result.createdFiles).toEqual([".fan/settings.json", "scripts/example.sh"]);
+			expect(result.skipped).toEqual([]);
+		});
+
+		test("freshly applied automation template detects as 'automation'", () => {
+			const target = join(workDir, "detected-automation");
+			applyTemplate("automation", target);
+
+			expect(detectWorkspaceType(target)).toBe("automation");
+		});
+
+		test("'automation' is registered and resolvable via the barrel registry", () => {
+			expect(listTemplates()).toContain("automation");
+			expect(getTemplate("automation")).toBe(automationHubTemplate);
+		});
+	});
+});
+
+describe("createProject orchestration (F-3.4)", () => {
+	let workDir: string;
+
+	beforeEach(() => {
+		workDir = mkdtempSync(join(tmpdir(), "fan-create-project-"));
+	});
+
+	afterEach(() => {
+		if (workDir && existsSync(workDir)) {
+			rmSync(workDir, { recursive: true, force: true });
+		}
+	});
+
+	test("createProject('code', 'myproj', root) returns metadata { path, name, type, template }", () => {
+		const metadata = createProject("code", "myproj", workDir);
+
+		expect(metadata).toEqual({
+			path: resolve(workDir, "myproj"),
+			name: "myproj",
+			type: "code",
+			template: "code",
+		});
+
+		// structure was materialized; type falls back to the template name
+		// because 'code' detection requires .git, which the template doesn't create
+		expect(existsSync(join(workDir, "myproj", "package.json"))).toBe(true);
+		expect(existsSync(join(workDir, "myproj", "src"))).toBe(true);
+		expect(detectWorkspaceType(join(workDir, "myproj"))).toBe("unknown");
+	});
+
+	test("createProject('research', ...) detects type 'research' from the template structure", () => {
+		const metadata = createProject("research", "study", workDir);
+
+		expect(metadata.type).toBe("research");
+		expect(metadata.template).toBe("research");
+		expect(metadata.path).toBe(resolve(workDir, "study"));
+	});
+
+	test("createProject('automation', ...) detects type 'automation' thanks to the placeholder script", () => {
+		const metadata = createProject("automation", "pipeline", workDir);
+
+		expect(metadata.type).toBe("automation");
+		expect(metadata.template).toBe("automation");
+		expect(metadata.path).toBe(resolve(workDir, "pipeline"));
+	});
+
+	test("detection result wins over the template-name fallback when it matches", () => {
+		// a .git directory makes the code template detect as 'code' directly
+		mkdirSync(join(workDir, "with-git", ".git"), { recursive: true });
+		const metadata = createProject("code", "with-git", workDir);
+		expect(metadata.type).toBe("code");
+	});
+
+	test("unknown template name → error, no directory created", () => {
+		expect(() => createProject("nope", "x", workDir)).toThrow("Unknown template: nope");
 	});
 });
