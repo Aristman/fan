@@ -1,5 +1,6 @@
 // @fan/dashboard/components — root <dashboard-app> element
 
+import type { ProjectSummary } from "@fan/api-gateway/types";
 import { html, LitElement, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { FanApiClient } from "../api/client.js";
@@ -8,6 +9,7 @@ import { SettingsDialog } from "./settings-dialog.js";
 
 // Side-effect imports: register all child custom elements
 import "./session-sidebar.js";
+import "./project-switcher.js";
 import "./chat-view.js";
 import "./budget-panel.js";
 import "./budget-alert-toast.js";
@@ -32,6 +34,10 @@ export class DashboardApp extends LitElement {
 	@state() connectionStatus: "connected" | "disconnected" | "error" = "connected";
 	@state() settingsOpen = false;
 	@state() currentModel: { provider: string; model: string } | null = null;
+	/** All projects from GET /api/projects (F-2.6) */
+	@state() projects: ProjectSummary[] = [];
+	/** Currently selected project path; null = all projects (F-2.6) */
+	@state() currentProject: string | null = null;
 
 	// -----------------------------------------------------------------------
 	// Internal
@@ -43,6 +49,8 @@ export class DashboardApp extends LitElement {
 	private _boundHandleSessionCreated?: EventListener;
 	private _boundHandleSessionDeleted?: EventListener;
 	private _boundHandleNavigate?: EventListener;
+	private _boundHandleProjectSelect?: EventListener;
+	private _boundHandleProjectAdd?: EventListener;
 	private _wsUnsubMessage: (() => void) | null = null;
 	private _wsUnsubStatus: (() => void) | null = null;
 
@@ -133,10 +141,34 @@ export class DashboardApp extends LitElement {
 			}
 		}) as EventListener;
 
+		// F-2.6: project switcher events
+		this._boundHandleProjectSelect = ((ev: CustomEvent) => {
+			const path = ev.detail?.path ?? null;
+			this.currentProject = path;
+			// Notify sibling components (session list scoping is F-2.7 territory)
+			window.dispatchEvent(new CustomEvent("fan:project-changed", { detail: { path } }));
+		}) as EventListener;
+
+		this._boundHandleProjectAdd = ((ev: CustomEvent) => {
+			const path = ev.detail?.path;
+			if (typeof path !== "string" || !path) return;
+			// MVP: there is no server-side "register project" endpoint yet, so the app
+			// re-broadcasts the intent on window for future handlers (e.g. "create
+			// session with this cwd") and switches to the path optimistically.
+			window.dispatchEvent(new CustomEvent("fan:project-add", { detail: { path } }));
+			this.currentProject = path;
+		}) as EventListener;
+
 		this.addEventListener("fan:session-selected", this._boundHandleSessionSelected);
 		this.addEventListener("fan:session-created", this._boundHandleSessionCreated);
 		this.addEventListener("fan:session-deleted", this._boundHandleSessionDeleted);
 		this.addEventListener("fan:navigate", this._boundHandleNavigate);
+		this.addEventListener("project-select", this._boundHandleProjectSelect);
+		this.addEventListener("project-add", this._boundHandleProjectAdd);
+
+		// Load project list for the switcher (non-blocking; endpoint may not exist
+		// on older servers — in that case the switcher just shows an empty state).
+		void this._loadProjects();
 	}
 
 	override willUpdate(changed: Map<string, unknown>): void {
@@ -169,8 +201,27 @@ export class DashboardApp extends LitElement {
 		if (this._boundHandleNavigate) {
 			this.removeEventListener("fan:navigate", this._boundHandleNavigate);
 		}
+		if (this._boundHandleProjectSelect) {
+			this.removeEventListener("project-select", this._boundHandleProjectSelect);
+		}
+		if (this._boundHandleProjectAdd) {
+			this.removeEventListener("project-add", this._boundHandleProjectAdd);
+		}
 
 		super.disconnectedCallback();
+	}
+
+	// -----------------------------------------------------------------------
+	// Projects (F-2.6)
+	// -----------------------------------------------------------------------
+
+	private async _loadProjects(): Promise<void> {
+		try {
+			const res = await this.apiClient.listProjects();
+			this.projects = res.projects;
+		} catch (err) {
+			console.warn("dashboard-app: listProjects failed (project switcher disabled)", err);
+		}
 	}
 
 	// -----------------------------------------------------------------------
@@ -215,10 +266,20 @@ export class DashboardApp extends LitElement {
 
 		// Sidebar content (shared between desktop and mobile)
 		const sidebarContent = html`
-      <session-sidebar
-        .apiClient=${this.apiClient}
-        .activeSessionId=${this.currentSessionId}
-      ></session-sidebar>
+      <!-- Project switcher (F-2.6) — above the session list -->
+      <div class="px-3 pt-3 pb-2 border-b border-border">
+        <fan-project-switcher
+          .projects=${this.projects}
+          .currentProject=${this.currentProject}
+        ></fan-project-switcher>
+      </div>
+
+      <div class="px-3 pt-2">
+        <session-sidebar
+          .apiClient=${this.apiClient}
+          .activeSessionId=${this.currentSessionId}
+        ></session-sidebar>
+      </div>
 
       <!-- Budget mini widget -->
       <div class="border-t border-border px-3 pt-3 pb-1">
