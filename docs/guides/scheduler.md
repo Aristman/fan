@@ -108,4 +108,64 @@ fan-auto/<task-id>-<YYYYMMDD-HHmmss>
 
 ---
 
+## DB Backup — daily cron (F-4.15)
+
+Ежедневный бэкап живой SQLite-базы `filin.db` (реальное имя файла — upstream hardcode, см. `packages/db/src/client.ts`; в ранних roadmap ошибочно упоминалась как `fan.db`). Реализация — standalone-скрипт **`deploy/scripts/backup-db.sh`** + системный cron на VPS. Scheduler не изменялся: бэкап — отдельная cron-задача ОС, сбой бэкапа изолирован и не влияет на scheduler.
+
+### Что делает скрипт
+
+1. Копирует `$FAN_AGENT_DIR/filin.db` (default `~/.fan/agent/filin.db`) в `$FAN_AGENT_DIR/backups/filin-YYYYMMDD-HHmmss.db`.
+2. Ротирует старые копии — хранит **последние 7** (настраивается `KEEP`).
+3. Идемпотентен: повторный запуск в ту же секунду пропускает копирование; ротация всегда сходится к `KEEP` файлам.
+4. Сбой логируется в stderr и завершает скрипт с exit code 1 — процесс scheduler'а не затрагивается (задача выполняется системным cron'ом, не scheduler'ом).
+
+### Механизм копирования: sqlite3 `.backup` vs cp
+
+`filin.db` — **живая** БД. Голый `cp` может скопировать файл в середине записи (в WAL-режиме некоммиченные страницы лежат в `-wal`-сайдкаре, который cp не захватит согласованно). Поэтому скрипт выбирает механизм автоматически:
+
+| Условие | Механизм | Гарантии |
+|---------|----------|----------|
+| `sqlite3` CLI доступен (предпочтительно) | `sqlite3 "$DB" ".backup '<dest>'"` — SQLite Online Backup API | Crash-safe для живой БД (корректен при WAL и активных писателях); результат проверяется `PRAGMA integrity_check` |
+| `sqlite3` отсутствует (fallback) | `cp` + WARN в лог | Допустимо только потому, что окно 03:00 не пересекается с запланированными задачами — БД почти наверняка idle. Установите sqlite3: `apt-get install -y sqlite3` |
+
+**Выбор задокументирован:** primary path — `.backup` (единственный безопасный способ для live-БД без остановки сервиса); cp — явно помеченный fallback с оговоркой про WAL.
+
+### Cron-запись на VPS
+
+```cron
+# FAN DB backup — daily at 03:00 (F-4.15)
+0 3 * * * /opt/fan-agent/deploy/scripts/backup-db.sh >> /var/log/fan-backup.log 2>&1
+```
+
+Установка: `crontab -e` под root, либо `/etc/cron.d/fan-backup`.
+
+### Docker / volumes
+
+- В контейнере БД живёт в `/data/.fan/agent/filin.db` (volume **`fan-data`**, env `FAN_AGENT_DIR=/data/.fan/agent`).
+- Бэкапы по умолчанию пишутся в `/data/.fan/agent/backups/` — **в тот же volume `fan-data`** (отдельный volume `fan-backups` не требуется; compose не изменялся).
+- Скрипт запускается **на хосте** через `docker exec` — в slim-образе нет sqlite3, поэтому cron-команда на VPS:
+
+```cron
+0 3 * * * docker exec fan-agent sh -c 'cp /data/.fan/agent/filin.db /data/.fan/agent/backups/filin-$(date +\%Y\%m\%d-\%H\%M\%S).db' >> /var/log/fan-backup.log 2>&1
+```
+
+либо (рекомендуется) примонтировать директорию `backups` из volume наружу и запускать хостовый `backup-db.sh` с `DB_PATH`/`BACKUP_DIR`, где хостовый sqlite3 даст безопасный `.backup`. Локальный запуск вне Docker (без контейнера) — прямой вызов скрипта, как в первой cron-записи.
+
+### Env vars скрипта
+
+| Переменная | Default | Назначение |
+|-----------|---------|-----------|
+| `FAN_AGENT_DIR` | `~/.fan/agent` | Директория данных агента (в Docker: `/data/.fan/agent`) |
+| `DB_PATH` | `$FAN_AGENT_DIR/filin.db` | Полный путь к БД |
+| `BACKUP_DIR` | `$FAN_AGENT_DIR/backups` | Директория бэкапов |
+| `KEEP` | `7` | Сколько последних копий хранить |
+
+### Проверка (TDD)
+
+- **TC-F-4.15-1:** запуск скрипта → создан `filin-YYYYMMDD-HHmmss.db`; содержимое проверено через SQL (`SELECT` + `PRAGMA integrity_check` = ok). Побайтовое совпадение **не** гарантируется при `.backup` (online backup API перепаковывает БД) — корректность проверяется данными и integrity check; при cp-fallback копия побайтова.
+- **TC-F-4.15-2:** 8-й запуск → самая старая копия удалена, осталось ровно 7 файлов.
+- `bash -n` чист; реальные прогоны на тестовой БД (оба пути: sqlite3 и cp-fallback) — PASS.
+
+---
+
 *Остальные разделы (config.yaml, очередь, budget caps, мониторинг) будут добавлены по мере реализации соответствующих фич Phase 4.*
