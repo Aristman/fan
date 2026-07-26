@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { addToProjects, getProjectsPath, listProjects } from "../src/core/project-registry.js";
+import { addToProjects, getProjectsPath, listProjects, removeFromProjects } from "../src/core/project-registry.js";
 
 describe("project-registry (F-1.6)", () => {
 	let tempDir: string;
@@ -160,6 +160,53 @@ describe("project-registry (F-1.6)", () => {
 			expect(JSON.parse(readFileSync(projectsPath, "utf-8"))).toHaveLength(50);
 			// No tmp leftovers
 			expect(readdirSync(tempDir).filter((f) => f.endsWith(".tmp"))).toEqual([]);
+		});
+	});
+
+	describe("removeFromProjects (F-2.13)", () => {
+		test("removes a registered entry and persists atomically", () => {
+			addToProjects("/data/repos/a", "a", "code", projectsPath);
+			addToProjects("/data/repos/b", "b", "research", projectsPath);
+
+			const result = removeFromProjects("/data/repos/a", projectsPath);
+
+			expect(result.removed).toBe(true);
+			expect(result.entry?.path).toBe(resolve("/data/repos/a"));
+			expect(result.entry?.name).toBe("a");
+
+			const remaining = listProjects(projectsPath);
+			expect(remaining).toHaveLength(1);
+			expect(remaining[0].name).toBe("b");
+			// File on disk matches and no tmp leftovers
+			expect(JSON.parse(readFileSync(projectsPath, "utf-8"))).toHaveLength(1);
+			expect(readdirSync(tempDir).filter((f) => f.endsWith(".tmp"))).toEqual([]);
+		});
+
+		test("returns removed:false for an unregistered path without touching the file", () => {
+			addToProjects("/data/repos/a", "a", undefined, projectsPath);
+			const before = readFileSync(projectsPath, "utf-8");
+
+			const result = removeFromProjects("/data/repos/never-added", projectsPath);
+
+			expect(result.removed).toBe(false);
+			expect(result.entry).toBeUndefined();
+			expect(readFileSync(projectsPath, "utf-8")).toBe(before);
+		});
+
+		test("matches by resolved absolute path (relative equivalent)", () => {
+			addToProjects("sub/project", "rel", undefined, projectsPath);
+
+			const result = removeFromProjects(resolve("sub/project"), projectsPath);
+
+			expect(result.removed).toBe(true);
+			expect(listProjects(projectsPath)).toHaveLength(0);
+		});
+
+		test("no-op on a missing registry file", () => {
+			const result = removeFromProjects("/data/repos/a", projectsPath);
+
+			expect(result.removed).toBe(false);
+			expect(existsSync(projectsPath)).toBe(false);
 		});
 	});
 });

@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { getPrismaClient } from "@fan/db";
 import type { ModelManager, RoutingRuleData } from "@fan/model-manager";
 import { serveStatic } from "@hono/node-server/serve-static";
@@ -73,6 +74,10 @@ export interface SessionAdapter {
 	bindSessionExtensions(): Promise<void>;
 	/** List registered projects/workspaces (F-1.5; source: project-registry in coding-agent) */
 	listProjects(): Promise<ProjectInfo[]>;
+	/** Remove a project from the registry by absolute path (F-2.13).
+	 *  Returns true when an entry was removed, false when it was not registered.
+	 *  Optional — adapters without it cause DELETE /api/projects to answer 501. */
+	removeProject?(path: string): Promise<boolean>;
 	/** Get the id of the currently active session (null if none). Optional — used by /api/health readiness. */
 	getActiveSessionId?(): string | null;
 	/** F-2.5: whether the engine is currently executing a prompt (streaming).
@@ -288,6 +293,11 @@ async function createApp(
 		// the full list is returned (backward compatible).
 		// F-1.9: the filter is also pushed down into the adapter; the handler-side
 		// filter stays as defense-in-depth for adapters that ignore the param.
+		// F-2.13: a ?project= path that does not exist on disk is NOT an error —
+		// the whitelist (F-1.13) allows not-yet-created directories inside a root,
+		// and orphaned sessions of a deleted project must stay visible/manageable.
+		// The endpoint simply returns the cwd-filtered list (empty when no session
+		// ever ran with that cwd). No error, no warning header.
 		const project = c.req.query("project");
 		let sessions = await sessionAdapter.listSessions(project);
 		if (project) {
@@ -346,16 +356,47 @@ async function createApp(
 		const resp: ListProjectsResponse = {
 			projects: projects.map((p): ProjectSummary => {
 				const normalizedPath = normalizeProjectPath(p.path);
+				// F-2.13: check directory existence at the API boundary (adapter-
+				// agnostic). Missing projects are NOT excluded from the list — the
+				// user must see them to remove them via DELETE /api/projects.
+				const available = existsSync(p.path);
 				return {
 					path: p.path,
 					// name from the registry when present; otherwise basename of the path
 					name: p.name && p.name.length > 0 ? p.name : pathBasename(normalizedPath),
 					type: p.type,
 					sessionCount: countByCwd.get(normalizedPath) ?? 0,
+					available,
+					...(available ? {} : { error: "PROJECT_NOT_FOUND" as const }),
 				};
 			}),
 		};
 		return c.json(resp);
+	});
+
+	// F-2.13: remove a project from the registry by absolute path.
+	// Contract: query param ?path= (not body — DELETE bodies are poorly
+	// supported by proxies/clients, and ?path= mirrors the ?project= convention
+	// used by the session endpoints). 204 on success; 400 when the param is
+	// missing/empty; 404 when the path is not registered; 501 when the adapter
+	// does not implement removeProject. Only the registry entry is removed —
+	// sessions and files on disk are never touched.
+	app.delete("/api/projects", async (c) => {
+		const path = c.req.query("path");
+		if (!path || path.trim().length === 0) {
+			return c.json({ error: "path query parameter is required", code: "BAD_REQUEST" } satisfies ApiError, 400);
+		}
+		if (!sessionAdapter.removeProject) {
+			return c.json(
+				{ error: "project removal is not supported by this adapter", code: "NOT_IMPLEMENTED" } satisfies ApiError,
+				501,
+			);
+		}
+		const removed = await sessionAdapter.removeProject(path);
+		if (!removed) {
+			return c.json({ error: "Project not found in registry", code: "NOT_FOUND" } satisfies ApiError, 404);
+		}
+		return c.body(null, 204);
 	});
 
 	// --- Messages ---

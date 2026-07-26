@@ -253,7 +253,9 @@ export class SessionSidebar extends LitElement {
 		try {
 			// F-2.8: scope to the selected project when one is active (server-side
 			// filter); null = full list, still grouped by cwd client-side (F-2.7).
-			const res = await this.apiClient.listSessions(this.currentProject ? { project: this.currentProject } : undefined);
+			const res = await this.apiClient.listSessions(
+				this.currentProject ? { project: this.currentProject } : undefined,
+			);
 			this.sessions = res.sessions;
 		} catch (err: unknown) {
 			const message = err instanceof Error ? err.message : "Failed to load sessions";
@@ -467,14 +469,14 @@ export class SessionSidebar extends LitElement {
         </button>
 
         ${
-					collapsed
-						? nothing
-						: html`
+				collapsed
+					? nothing
+					: html`
               <div class="tree-items flex flex-col gap-0.5 pl-2 border-l border-border/60 ml-2 mt-0.5">
                 ${group.sessions.map((session) => this._renderSessionItem(session))}
               </div>
             `
-				}
+			}
       </div>
     `;
 	}

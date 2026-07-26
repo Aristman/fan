@@ -178,6 +178,17 @@ export class FanApiClient {
 		return this._request<ListProjectsResponse>("GET", "/api/projects");
 	}
 
+	/**
+	 * Remove a project from the registry (F-2.13).
+	 * Server contract: DELETE /api/projects?path=<encoded> → 204 (no body).
+	 * Registry-only: sessions and files on disk are not touched.
+	 */
+	removeProject(path: string): Promise<void> {
+		const params = new URLSearchParams();
+		params.set("path", path);
+		return this._request<void>("DELETE", `/api/projects?${params.toString()}`);
+	}
+
 	// -----------------------------------------------------------------------
 	// Messages
 	// -----------------------------------------------------------------------

@@ -237,6 +237,20 @@ describe("FanApiClient", () => {
 			expect(opts.method).toBe("GET");
 		});
 
+		it("removeProject() calls DELETE /api/projects?path= with encoded path (F-2.13)", async () => {
+			mockFetch.mockResolvedValueOnce({
+				ok: true,
+				status: 204,
+				json: () => Promise.resolve(undefined),
+			});
+			const result = await client.removeProject("/deleted-proj");
+			expect(result).toBeUndefined();
+
+			const [url, opts] = mockFetch.mock.calls[0];
+			expect(url).toBe("http://localhost:3456/api/projects?path=%2Fdeleted-proj");
+			expect(opts.method).toBe("DELETE");
+		});
+
 		it("deleteSession with project appends ?project= query", async () => {
 			mockFetch.mockResolvedValueOnce({
 				ok: true,

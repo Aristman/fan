@@ -358,26 +358,75 @@ curl http://localhost:3456/api/projects \
       "path": "/data/repos/my-project",
       "name": "my-project",
       "type": "code",
-      "sessionCount": 3
+      "sessionCount": 3,
+      "available": true
     },
     {
       "path": "/data/repos/research-notes",
       "name": "research-notes",
       "type": "research",
-      "sessionCount": 0
+      "sessionCount": 0,
+      "available": true
+    },
+    {
+      "path": "/data/repos/deleted-project",
+      "name": "deleted-project",
+      "type": "unknown",
+      "sessionCount": 0,
+      "available": false,
+      "error": "PROJECT_NOT_FOUND"
     }
   ]
 }
 ```
 
-| Field        | Type     | Description                                             |
-|--------------|----------|---------------------------------------------------------|
-| path         | `string` | Absolute path of the project workspace                  |
-| name         | `string` | Display name (from the registry; basename fallback)     |
-| type         | `string` | `"code"` \| `"research"` \| `"automation"` \| `"unknown"` |
-| sessionCount | `number` | Sessions whose `cwd` matches the project path (normalized comparison) |
+| Field        | Type      | Description                                                                |
+|--------------|-----------|----------------------------------------------------------------------------|
+| path         | `string`  | Absolute path of the project workspace                                     |
+| name         | `string`  | Display name (from the registry; basename fallback)                        |
+| type         | `string`  | `"code"` \| `"research"` \| `"automation"` \| `"unknown"`                   |
+| sessionCount | `number`  | Sessions whose `cwd` matches the project path (normalized comparison)      |
+| available    | `boolean` | `false` when the project directory no longer exists on disk (F-2.13)       |
+| error        | `string`  | `"PROJECT_NOT_FOUND"` — present only when `available` is `false` (F-2.13)  |
 
 An empty or missing registry yields `{ "projects": [] }` with HTTP 200.
+
+> **F-2.13 — unavailable projects:** projects whose directory was deleted from
+> disk are **not excluded** from the list. They are flagged with
+> `"available": false, "error": "PROJECT_NOT_FOUND"` so the user can see them
+> and remove them from the registry (see `DELETE /api/projects` below).
+> Similarly, `GET /api/sessions?project=<path>` with a non-existent path is
+> **not an error** — the whitelist allows not-yet-created directories inside a
+> workspace root, and orphaned sessions of a deleted project must remain
+> visible/manageable. The endpoint simply returns the cwd-filtered list
+> (empty when no session ever ran with that cwd).
+
+#### Remove Project from Registry
+
+```
+DELETE /api/projects?path=<absolute path>
+```
+
+Removes a project entry from the registry (`~/.fan/agent/projects.json`).
+Registry-only: sessions and files on disk are **never** touched. The path is
+passed as a query parameter (not a body) for symmetry with the `?project=`
+convention of the session endpoints.
+
+**Example:**
+
+```bash
+curl -X DELETE "http://localhost:3456/api/projects?path=%2Fdata%2Frepos%2Fdeleted-project" \
+  -H "Authorization: Bearer $FAN_TOKEN"
+```
+
+**Responses:**
+
+| Status | Meaning                                                        |
+|--------|----------------------------------------------------------------|
+| `204`  | Entry removed (no body)                                        |
+| `400`  | `path` query parameter missing or empty                        |
+| `404`  | Path is not registered (`NOT_FOUND`)                           |
+| `501`  | The session adapter does not support project removal (`NOT_IMPLEMENTED`) |
 
 ---
 

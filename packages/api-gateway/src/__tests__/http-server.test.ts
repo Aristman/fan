@@ -30,6 +30,7 @@ const mockSessionAdapter = {
 	getAvailableModels: vi.fn().mockResolvedValue([]),
 	bindSessionExtensions: vi.fn().mockResolvedValue(undefined),
 	listProjects: vi.fn().mockResolvedValue([]),
+	removeProject: vi.fn().mockResolvedValue(false),
 	getActiveSessionId: vi.fn().mockReturnValue(null),
 };
 
@@ -82,6 +83,7 @@ describe("HTTP Server", () => {
 		mockSessionAdapter.sendMessage.mockResolvedValue(true);
 		mockSessionAdapter.getAvailableModels.mockResolvedValue([]);
 		mockSessionAdapter.listProjects.mockResolvedValue([]);
+		mockSessionAdapter.removeProject.mockResolvedValue(false);
 		mockSessionAdapter.getActiveSessionId.mockReturnValue(null);
 		mockQueryRawUnsafe.mockResolvedValue([{ 1: 1 }]);
 		mockRandomBytes.mockReturnValue({
@@ -529,8 +531,24 @@ describe("HTTP Server", () => {
 				projects: Array<{ path: string; name: string; type: string; sessionCount: number }>;
 			}>(res);
 			expect(data.projects).toHaveLength(2);
-			expect(data.projects[0]).toEqual({ path: "/data/repos/a", name: "a", type: "code", sessionCount: 3 });
-			expect(data.projects[1]).toEqual({ path: "/data/repos/b", name: "b", type: "research", sessionCount: 7 });
+			// F-2.13: /data/repos/* does not exist on the test machine → entries are
+			// flagged available:false + PROJECT_NOT_FOUND (but NOT excluded).
+			expect(data.projects[0]).toEqual({
+				path: "/data/repos/a",
+				name: "a",
+				type: "code",
+				sessionCount: 3,
+				available: false,
+				error: "PROJECT_NOT_FOUND",
+			});
+			expect(data.projects[1]).toEqual({
+				path: "/data/repos/b",
+				name: "b",
+				type: "research",
+				sessionCount: 7,
+				available: false,
+				error: "PROJECT_NOT_FOUND",
+			});
 		});
 
 		// TC-F-1.5-2: пустой/отсутствующий projects.json → { projects: [] }, 200
@@ -571,6 +589,74 @@ describe("HTTP Server", () => {
 			expect(res.status).toBe(200);
 			const data = await json<{ projects: Array<{ path: string; sessionCount: number }> }>(res);
 			expect(data.projects[0].sessionCount).toBe(2);
+		});
+
+		// TC-F-2.13-1: проект удалён с диска → entry с available:false + error
+		// PROJECT_NOT_FOUND, проект НЕ исключается из списка
+		it("GET /api/projects flags missing directories as PROJECT_NOT_FOUND (TC-F-2.13-1)", async () => {
+			mockSessionAdapter.listProjects.mockResolvedValueOnce([
+				{ path: "/deleted-proj", name: "deleted-proj", type: "code" },
+				{ path: process.cwd(), name: "existing", type: "code" },
+			]);
+			mockSessionAdapter.listSessions.mockResolvedValueOnce([]);
+			const app = await getApp();
+			const res = await app.request("/api/projects");
+			expect(res.status).toBe(200);
+			const data = await json<{
+				projects: Array<{ path: string; available: boolean; error?: string }>;
+			}>(res);
+			// Both entries stay in the list — the user must see the broken one
+			expect(data.projects).toHaveLength(2);
+			expect(data.projects[0]).toMatchObject({
+				path: "/deleted-proj",
+				available: false,
+				error: "PROJECT_NOT_FOUND",
+			});
+			expect(data.projects[1].available).toBe(true);
+			expect(data.projects[1].error).toBeUndefined();
+		});
+
+		it("DELETE /api/projects without ?path= should return 400", async () => {
+			const app = await getApp();
+			const res = await app.request("/api/projects", { method: "DELETE" });
+			expect(res.status).toBe(400);
+			const data = await json<{ error: string; code: string }>(res);
+			expect(data.code).toBe("BAD_REQUEST");
+		});
+
+		it("DELETE /api/projects?path= should remove a registered project (204)", async () => {
+			mockSessionAdapter.removeProject.mockResolvedValueOnce(true);
+			const app = await getApp();
+			const res = await app.request(`/api/projects?path=${encodeURIComponent("/deleted-proj")}`, {
+				method: "DELETE",
+			});
+			expect(res.status).toBe(204);
+			expect(mockSessionAdapter.removeProject).toHaveBeenCalledWith("/deleted-proj");
+		});
+
+		it("DELETE /api/projects?path= should return 404 for an unregistered path", async () => {
+			mockSessionAdapter.removeProject.mockResolvedValueOnce(false);
+			const app = await getApp();
+			const res = await app.request(`/api/projects?path=${encodeURIComponent("/never-registered")}`, {
+				method: "DELETE",
+			});
+			expect(res.status).toBe(404);
+			const data = await json<{ error: string; code: string }>(res);
+			expect(data.code).toBe("NOT_FOUND");
+		});
+
+		it("DELETE /api/projects should return 501 when the adapter lacks removeProject", async () => {
+			const saved = mockSessionAdapter.removeProject;
+			Reflect.deleteProperty(mockSessionAdapter, "removeProject");
+			try {
+				const app = await getApp();
+				const res = await app.request(`/api/projects?path=${encodeURIComponent("/x")}`, { method: "DELETE" });
+				expect(res.status).toBe(501);
+				const data = await json<{ error: string; code: string }>(res);
+				expect(data.code).toBe("NOT_IMPLEMENTED");
+			} finally {
+				mockSessionAdapter.removeProject = saved;
+			}
 		});
 	});
 

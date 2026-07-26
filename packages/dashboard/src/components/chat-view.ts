@@ -4,19 +4,7 @@ import type { GetSessionResponse, SessionMessage } from "@fan/api-gateway/types"
 import { html, LitElement, nothing } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
-import {
-	AlertTriangle,
-	Brain,
-	Check,
-	ChevronRight,
-	Clock,
-	Copy,
-	FileText,
-	Loader2,
-	Send,
-	Terminal,
-	X,
-} from "lucide";
+import { AlertTriangle, Brain, Check, ChevronRight, Clock, Copy, FileText, Loader2, Send, Terminal, X } from "lucide";
 import type { FanApiClient } from "../api/client.js";
 import type { FanWsClient } from "../api/ws-client.js";
 import { icon } from "../lib/icon.js";
@@ -692,8 +680,8 @@ export class ChatView extends LitElement {
 	private renderQueueIndicator() {
 		return html`
       ${
-				this.queueFullLimit !== null
-					? html`
+			this.queueFullLimit !== null
+				? html`
             <div class="max-w-4xl mx-auto mb-2">
               <div
                 data-testid="queue-full-alert"
@@ -713,11 +701,11 @@ export class ChatView extends LitElement {
               </div>
             </div>
           `
-					: nothing
-			}
+				: nothing
+		}
       ${
-				this.queuePosition !== null
-					? html`
+			this.queuePosition !== null
+				? html`
             <div class="max-w-4xl mx-auto mb-2">
               <div
                 data-testid="queue-position-alert"
@@ -729,8 +717,8 @@ export class ChatView extends LitElement {
               </div>
             </div>
           `
-					: nothing
-			}
+				: nothing
+		}
     `;
 	}
 

@@ -5,8 +5,8 @@ import "../components/project-switcher.js";
 import type { FanProjectSwitcher } from "../components/project-switcher.js";
 
 const PROJECTS: ProjectSummary[] = [
-	{ path: "/a", name: "Alpha", type: "unknown", sessionCount: 2 },
-	{ path: "/b", name: "Beta", type: "unknown", sessionCount: 5 },
+	{ path: "/a", name: "Alpha", type: "unknown", sessionCount: 2, available: true },
+	{ path: "/b", name: "Beta", type: "unknown", sessionCount: 5, available: true },
 ];
 
 function createEl(): FanProjectSwitcher {
@@ -151,5 +151,71 @@ describe("fan-project-switcher", () => {
 
 		expect(el.querySelectorAll(".project-item").length).toBe(0);
 		expect(el.textContent).toContain("No projects yet");
+	});
+
+	// F-2.13: unavailable project shows a "Not found on disk" indicator
+	it("shows a not-found indicator for a project missing on disk (F-2.13)", async () => {
+		el.projects = [
+			...PROJECTS,
+			{
+				path: "/gone",
+				name: "Gone",
+				type: "unknown",
+				sessionCount: 1,
+				available: false,
+				error: "PROJECT_NOT_FOUND",
+			},
+		];
+		await el.updateComplete;
+		await openDropdown(el);
+
+		const items = el.querySelectorAll(".project-item");
+		expect(items.length).toBe(3);
+		const gone = items[2];
+		expect(gone.querySelector(".not-found-label")).not.toBeNull();
+		expect(gone.textContent).toContain("Not found on disk");
+		// Available projects have no indicator
+		expect(items[0].querySelector(".not-found-label")).toBeNull();
+	});
+
+	// F-2.13: remove button emits project-remove and does NOT select the project
+	it("emits project-remove (not project-select) from the remove button of an unavailable project", async () => {
+		el.projects = [
+			{
+				path: "/gone",
+				name: "Gone",
+				type: "unknown",
+				sessionCount: 0,
+				available: false,
+				error: "PROJECT_NOT_FOUND",
+			},
+		];
+		await el.updateComplete;
+		await openDropdown(el);
+
+		const removeEvents: CustomEvent[] = [];
+		const selectEvents: CustomEvent[] = [];
+		el.addEventListener("project-remove", (e) => removeEvents.push(e as CustomEvent));
+		el.addEventListener("project-select", (e) => selectEvents.push(e as CustomEvent));
+
+		const btn = el.querySelector<HTMLButtonElement>(".project-remove-btn");
+		expect(btn).not.toBeNull();
+		btn!.click();
+
+		expect(removeEvents.length).toBe(1);
+		expect(removeEvents[0].detail).toEqual({ path: "/gone" });
+		expect(removeEvents[0].bubbles).toBe(true);
+		expect(removeEvents[0].composed).toBe(true);
+		// Click must not bubble into a project selection
+		expect(selectEvents.length).toBe(0);
+	});
+
+	// F-2.13: available projects have no remove button
+	it("does not render a remove button for available projects", async () => {
+		el.projects = PROJECTS;
+		await el.updateComplete;
+		await openDropdown(el);
+
+		expect(el.querySelector(".project-remove-btn")).toBeNull();
 	});
 });

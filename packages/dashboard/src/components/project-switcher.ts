@@ -13,11 +13,14 @@
 //   - "project-add" with detail { path }    — user submitted the inline "+" form.
 //     MVP: the component only emits the event; registering the project on the
 //     server (or creating a session with that cwd) is the app shell's decision.
+//   - "project-remove" with detail { path } — user clicked the remove button of
+//     an unavailable project (F-2.13: available === false / PROJECT_NOT_FOUND).
+//     The app shell calls DELETE /api/projects?path= and reloads the list.
 
 import type { ProjectSummary } from "@fan/api-gateway/types";
 import { html, LitElement, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import { Check, ChevronDown, FolderOpen, Plus, Search, X } from "lucide";
+import { Check, ChevronDown, FolderOpen, FolderX, Plus, Search, X } from "lucide";
 import { icon } from "../lib/icon.js";
 
 @customElement("fan-project-switcher")
@@ -124,6 +127,18 @@ export class FanProjectSwitcher extends LitElement {
 		this._resetTransient();
 	}
 
+	/** F-2.13: emit project-remove for an unavailable project (stopPropagation
+	 *  so the click does not also select the project). */
+	removeProject(path: string): void {
+		this.dispatchEvent(
+			new CustomEvent("project-remove", {
+				detail: { path },
+				bubbles: true,
+				composed: true,
+			}),
+		);
+	}
+
 	// -----------------------------------------------------------------------
 	// Render
 	// -----------------------------------------------------------------------
@@ -157,10 +172,10 @@ export class FanProjectSwitcher extends LitElement {
           ${icon(FolderOpen, "w-4 h-4 text-muted-foreground")}
           <span class="flex-1 min-w-0 truncate text-left">${label}</span>
           ${
-				current
-					? html`<span class="session-count shrink-0 px-1.5 py-0 rounded bg-foreground/5 text-[10px] font-mono text-muted-foreground">${current.sessionCount}</span>`
-					: nothing
-			}
+					current
+						? html`<span class="session-count shrink-0 px-1.5 py-0 rounded bg-foreground/5 text-[10px] font-mono text-muted-foreground">${current.sessionCount}</span>`
+						: nothing
+				}
           ${icon(ChevronDown, `w-4 h-4 text-muted-foreground transition-transform ${this.open ? "rotate-180" : ""}`)}
         </button>
 
@@ -198,27 +213,27 @@ export class FanProjectSwitcher extends LitElement {
         <!-- Project list -->
         <div class="max-h-56 overflow-y-auto py-1">
           ${
-				this.filteredProjects.length === 0
-					? html`
+					this.filteredProjects.length === 0
+						? html`
                 <div class="px-3 py-4 text-center text-xs text-muted-foreground">
                   ${this.projects.length === 0 ? "No projects yet" : `No projects match "${this.filter}"`}
                 </div>
               `
-					: this.filteredProjects.map((p) => this._renderProjectItem(p))
-			}
+						: this.filteredProjects.map((p) => this._renderProjectItem(p))
+				}
         </div>
 
         <!-- Add-project area -->
         <div class="border-t border-border p-1.5">
           ${
-				this.adding
-					? html`
+					this.adding
+						? html`
                 <form
                   class="add-form flex items-center gap-1.5"
                   @submit=${(e: Event) => {
-						e.preventDefault();
-						this.submitNewProject();
-					}}
+							e.preventDefault();
+							this.submitNewProject();
+						}}
                 >
                   <input
                     type="text"
@@ -228,8 +243,8 @@ export class FanProjectSwitcher extends LitElement {
                            focus:outline-none focus:ring-1 focus:ring-primary/50 font-mono"
                     .value=${this.newPath}
                     @input=${(e: Event) => {
-							this.newPath = (e.target as HTMLInputElement).value;
-						}}
+								this.newPath = (e.target as HTMLInputElement).value;
+							}}
                   />
                   <button
                     type="submit"
@@ -249,19 +264,19 @@ export class FanProjectSwitcher extends LitElement {
                   </button>
                 </form>
               `
-					: html`
+						: html`
                 <button
                   class="add-project-btn w-full flex items-center gap-2 px-2.5 py-1.5 text-sm rounded-md
                          text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
                   @click=${() => {
-						this.adding = true;
-					}}
+							this.adding = true;
+						}}
                 >
                   ${icon(Plus, "w-4 h-4")}
                   <span>Add project…</span>
                 </button>
               `
-			}
+				}
         </div>
       </div>
     `;
@@ -269,15 +284,20 @@ export class FanProjectSwitcher extends LitElement {
 
 	private _renderProjectItem(p: ProjectSummary) {
 		const isActive = p.path === this.currentProject;
+		// F-2.13: a project whose directory no longer exists on disk stays in the
+		// list with a "not found" indicator plus a remove-from-registry button.
+		const unavailable = p.available === false;
 
+		// Outer element is a div (role=option) so the remove button of an
+		// unavailable project is not nested inside another button.
 		return html`
-      <button
-        class="project-item w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors
+      <div
+        class="project-item w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors cursor-pointer
                ${
-					isActive
-						? "active bg-secondary/80 border-l-2 border-primary text-foreground"
-						: "hover:bg-secondary/50 text-muted-foreground hover:text-foreground border-l-2 border-transparent"
-				}"
+						isActive
+							? "active bg-secondary/80 border-l-2 border-primary text-foreground"
+							: "hover:bg-secondary/50 text-muted-foreground hover:text-foreground border-l-2 border-transparent"
+					}"
         role="option"
         aria-selected=${isActive ? "true" : "false"}
         title=${p.path}
@@ -286,14 +306,43 @@ export class FanProjectSwitcher extends LitElement {
         <span class="flex-1 min-w-0">
           <span class="block truncate font-medium">${p.name}</span>
           <span class="block truncate text-[10px] font-mono text-muted-foreground/70">${p.path}</span>
+          ${
+					unavailable
+						? html`
+                <span class="not-found-label flex items-center gap-1 mt-0.5 text-[10px] text-yellow-500">
+                  ${icon(FolderX, "w-3 h-3 shrink-0")}
+                  <span>Not found on disk</span>
+                </span>
+              `
+						: nothing
+				}
         </span>
-        <span
-          class="session-count shrink-0 px-1.5 py-0 rounded bg-foreground/5 text-[10px] font-mono text-muted-foreground"
-          title="${p.sessionCount} session(s)"
-        >
-          ${p.sessionCount}
-        </span>
-      </button>
+        ${
+				unavailable
+					? html`
+              <button
+                type="button"
+                class="project-remove-btn shrink-0 p-1 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                title="Remove from registry"
+                aria-label="Remove ${p.name} from registry"
+                @click=${(e: Event) => {
+							e.stopPropagation();
+							this.removeProject(p.path);
+						}}
+              >
+                ${icon(X, "w-3.5 h-3.5")}
+              </button>
+            `
+					: html`
+            <span
+              class="session-count shrink-0 px-1.5 py-0 rounded bg-foreground/5 text-[10px] font-mono text-muted-foreground"
+              title="${p.sessionCount} session(s)"
+            >
+              ${p.sessionCount}
+            </span>
+          `
+			}
+      </div>
     `;
 	}
 }

@@ -145,3 +145,33 @@ export function addToProjects(
 
 	return { added: true, entry };
 }
+
+export interface RemoveFromProjectsResult {
+	/** True when an entry was removed; false when the path was not registered. */
+	removed: boolean;
+	/** The removed registry entry (undefined when nothing was removed). */
+	entry?: ProjectEntry;
+}
+
+/**
+ * Remove a project from the registry (F-2.13).
+ *
+ * Matches by resolved absolute path (same normalization as addToProjects).
+ * When the path is not registered the registry file is left untouched
+ * (no write) and `removed` is false. The removal only affects the registry —
+ * sessions and files on disk are never deleted.
+ */
+export function removeFromProjects(path: string, projectsPath: string = getProjectsPath()): RemoveFromProjectsResult {
+	const resolvedPath = resolve(path);
+	const projects = listProjects(projectsPath);
+
+	const index = projects.findIndex((p) => p.path === resolvedPath);
+	if (index === -1) {
+		return { removed: false };
+	}
+
+	const [entry] = projects.splice(index, 1);
+	writeProjectsAtomic(projectsPath, projects);
+
+	return { removed: true, entry };
+}

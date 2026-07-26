@@ -77,7 +77,9 @@ describe("session-sidebar tree grouping (F-2.7)", () => {
 		const keys = Array.from(groups).map((g) => g.dataset.groupKey);
 		expect(keys).toEqual(["/a", "/b"]);
 
-		const counts = Array.from(el.querySelectorAll<HTMLElement>(".tree-group-count")).map((c) => c.textContent?.trim());
+		const counts = Array.from(el.querySelectorAll<HTMLElement>(".tree-group-count")).map((c) =>
+			c.textContent?.trim(),
+		);
 		expect(counts).toEqual(["2", "1"]);
 
 		// Sessions are nested inside their groups

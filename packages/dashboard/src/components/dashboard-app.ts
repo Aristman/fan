@@ -51,6 +51,7 @@ export class DashboardApp extends LitElement {
 	private _boundHandleNavigate?: EventListener;
 	private _boundHandleProjectSelect?: EventListener;
 	private _boundHandleProjectAdd?: EventListener;
+	private _boundHandleProjectRemove?: EventListener;
 	private _wsUnsubMessage: (() => void) | null = null;
 	private _wsUnsubStatus: (() => void) | null = null;
 
@@ -159,12 +160,20 @@ export class DashboardApp extends LitElement {
 			this.currentProject = path;
 		}) as EventListener;
 
+		// F-2.13: remove an unavailable project from the registry
+		this._boundHandleProjectRemove = ((ev: CustomEvent) => {
+			const path = ev.detail?.path;
+			if (typeof path !== "string" || !path) return;
+			void this._removeProject(path);
+		}) as EventListener;
+
 		this.addEventListener("fan:session-selected", this._boundHandleSessionSelected);
 		this.addEventListener("fan:session-created", this._boundHandleSessionCreated);
 		this.addEventListener("fan:session-deleted", this._boundHandleSessionDeleted);
 		this.addEventListener("fan:navigate", this._boundHandleNavigate);
 		this.addEventListener("project-select", this._boundHandleProjectSelect);
 		this.addEventListener("project-add", this._boundHandleProjectAdd);
+		this.addEventListener("project-remove", this._boundHandleProjectRemove);
 
 		// Load project list for the switcher (non-blocking; endpoint may not exist
 		// on older servers — in that case the switcher just shows an empty state).
@@ -207,6 +216,9 @@ export class DashboardApp extends LitElement {
 		if (this._boundHandleProjectAdd) {
 			this.removeEventListener("project-add", this._boundHandleProjectAdd);
 		}
+		if (this._boundHandleProjectRemove) {
+			this.removeEventListener("project-remove", this._boundHandleProjectRemove);
+		}
 
 		super.disconnectedCallback();
 	}
@@ -222,6 +234,25 @@ export class DashboardApp extends LitElement {
 		} catch (err) {
 			console.warn("dashboard-app: listProjects failed (project switcher disabled)", err);
 		}
+	}
+
+	/**
+	 * F-2.13: remove a project from the registry (DELETE /api/projects?path=),
+	 * then reload the list. When the removed project was the current selection,
+	 * the selection resets to "All projects".
+	 */
+	private async _removeProject(path: string): Promise<void> {
+		try {
+			await this.apiClient.removeProject(path);
+		} catch (err) {
+			console.warn("dashboard-app: removeProject failed", err);
+			return;
+		}
+		if (this.currentProject === path) {
+			this.currentProject = null;
+			window.dispatchEvent(new CustomEvent("fan:project-changed", { detail: { path: null } }));
+		}
+		await this._loadProjects();
 	}
 
 	// -----------------------------------------------------------------------

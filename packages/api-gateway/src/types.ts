@@ -85,6 +85,14 @@ export interface ProjectInfo {
 export interface ProjectSummary extends ProjectInfo {
 	/** Number of sessions whose cwd matches the project path (normalized comparison) */
 	sessionCount: number;
+	/**
+	 * F-2.13: false when the project directory no longer exists on disk.
+	 * Unavailable projects are NOT excluded from the list — the user must be
+	 * able to see them and remove them from the registry (DELETE /api/projects).
+	 */
+	available: boolean;
+	/** F-2.13: machine-readable error marker, present only when available === false. */
+	error?: "PROJECT_NOT_FOUND";
 }
 
 export interface ListProjectsResponse {

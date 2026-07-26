@@ -41,7 +41,7 @@ import { resolveCliModel, resolveModelScope, type ScopedModel } from "./core/mod
 import { restoreStdout, takeOverStdout } from "./core/output-guard.js";
 import { autoRegisterProject } from "./core/project-auto-register.js";
 import { sessionBelongsToProject } from "./core/project-path.js";
-import { listProjects } from "./core/project-registry.js";
+import { listProjects, removeFromProjects } from "./core/project-registry.js";
 import type { CreateAgentSessionOptions } from "./core/sdk.js";
 import {
 	formatMissingSessionCwdPrompt,
@@ -511,6 +511,12 @@ export function createSessionAdapter(runtime: AgentSessionRuntime, defaultCwd?: 
 		// --- listProjects: project registry (F-1.5, ~/.fan/agent/projects.json) ---
 		async listProjects() {
 			return listProjects().map((p) => ({ path: p.path, name: p.name, type: p.type }));
+		},
+
+		// --- removeProject: drop an entry from the registry (F-2.13) ---
+		// Registry-only: sessions and files on disk are never touched.
+		async removeProject(path: string) {
+			return removeFromProjects(path).removed;
 		},
 
 		// --- getActiveSessionId (F-0.9: /api/health readiness) ---

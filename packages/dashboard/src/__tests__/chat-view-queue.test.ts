@@ -118,15 +118,11 @@ describe("chat-view queue indicator (F-2.12 / F-2.15)", () => {
 
 		simulateWs(queuedMsg(2));
 		await el.updateComplete;
-		expect(el.querySelector('[data-testid="queue-position-alert"]')!.textContent).toContain(
-			"В очереди, позиция 2",
-		);
+		expect(el.querySelector('[data-testid="queue-position-alert"]')!.textContent).toContain("В очереди, позиция 2");
 
 		simulateWs(queuedMsg(5));
 		await el.updateComplete;
-		expect(el.querySelector('[data-testid="queue-position-alert"]')!.textContent).toContain(
-			"В очереди, позиция 5",
-		);
+		expect(el.querySelector('[data-testid="queue-position-alert"]')!.textContent).toContain("В очереди, позиция 5");
 	});
 
 	it("ignores queued messages for other sessions", async () => {
