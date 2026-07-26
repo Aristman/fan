@@ -10,6 +10,7 @@ import type {
 	GetModelsResponse,
 	GetSessionResponse,
 	HealthResponse,
+	ListProjectsResponse,
 	ListSessionsResponse,
 	ListTokensResponse,
 	RevokeTokenResponse,
@@ -23,6 +24,29 @@ import type {
 // ---------------------------------------------------------------------------
 // FanApiError — thrown on non-2xx responses
 // ---------------------------------------------------------------------------
+
+/**
+ * Options for session endpoints that accept an optional project filter (F-2.8).
+ * `project` is the absolute workspace path; it is sent as `?project=<encoded>`.
+ */
+export interface ProjectOptions {
+	/** Absolute project/workspace path to scope the request to (sent as ?project=). */
+	project?: string;
+}
+
+/** Alias kept for roadmap naming (F-2.8). */
+export type ListSessionsOptions = ProjectOptions;
+
+/**
+ * Pure URL builder: appends `?project=<encoded>` via URLSearchParams when set.
+ * Without a project the path is returned unchanged (backward compatible).
+ */
+export function buildSessionUrl(path: string, project?: string): string {
+	if (project === undefined) return path;
+	const params = new URLSearchParams();
+	params.set("project", project);
+	return `${path}?${params.toString()}`;
+}
 
 export class FanApiError extends Error {
 	/** HTTP status code */
@@ -130,20 +154,28 @@ export class FanApiClient {
 	// Sessions
 	// -----------------------------------------------------------------------
 
-	listSessions(): Promise<ListSessionsResponse> {
-		return this._request<ListSessionsResponse>("GET", "/api/sessions");
+	listSessions(options?: ListSessionsOptions): Promise<ListSessionsResponse> {
+		return this._request<ListSessionsResponse>("GET", buildSessionUrl("/api/sessions", options?.project));
 	}
 
-	getSession(id: string): Promise<GetSessionResponse> {
-		return this._request<GetSessionResponse>("GET", `/api/sessions/${id}`);
+	getSession(id: string, options?: ProjectOptions): Promise<GetSessionResponse> {
+		return this._request<GetSessionResponse>("GET", buildSessionUrl(`/api/sessions/${id}`, options?.project));
 	}
 
 	createSession(opts?: CreateSessionRequest): Promise<CreateSessionResponse> {
 		return this._request<CreateSessionResponse>("POST", "/api/sessions", opts);
 	}
 
-	deleteSession(id: string): Promise<DeleteSessionResponse> {
-		return this._request<DeleteSessionResponse>("DELETE", `/api/sessions/${id}`);
+	deleteSession(id: string, options?: ProjectOptions): Promise<DeleteSessionResponse> {
+		return this._request<DeleteSessionResponse>("DELETE", buildSessionUrl(`/api/sessions/${id}`, options?.project));
+	}
+
+	// -----------------------------------------------------------------------
+	// Projects (F-1.5)
+	// -----------------------------------------------------------------------
+
+	listProjects(): Promise<ListProjectsResponse> {
+		return this._request<ListProjectsResponse>("GET", "/api/projects");
 	}
 
 	// -----------------------------------------------------------------------

@@ -1,7 +1,7 @@
 import { readFileSync } from "fs";
 import { join } from "path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { FanApiClient, FanApiError } from "../api/client.js";
+import { buildSessionUrl, FanApiClient, FanApiError } from "../api/client.js";
 
 const apiGatewayPkg = JSON.parse(
 	readFileSync(join(__dirname, "../../../../packages/api-gateway/package.json"), "utf8"),
@@ -175,6 +175,107 @@ describe("FanApiClient", () => {
 			const [url, opts] = mockFetch.mock.calls[0];
 			expect(url).toBe("http://localhost:3456/api/budget");
 			expect(opts.method).toBe("PUT");
+		});
+	});
+
+	describe("project-aware requests (F-2.8)", () => {
+		it("TC-F-2.8-1: listSessions({ project }) appends encoded ?project= query", async () => {
+			mockFetch.mockResolvedValueOnce({
+				ok: true,
+				status: 200,
+				json: () => Promise.resolve({ sessions: [] }),
+			});
+			await client.listSessions({ project: "/a/b" });
+
+			const [url] = mockFetch.mock.calls[0];
+			expect(url).toBe("http://localhost:3456/api/sessions?project=%2Fa%2Fb");
+		});
+
+		it("TC-F-2.8-2: listSessions() without options sends no query params", async () => {
+			mockFetch.mockResolvedValueOnce({
+				ok: true,
+				status: 200,
+				json: () => Promise.resolve({ sessions: [] }),
+			});
+			await client.listSessions();
+
+			const [url] = mockFetch.mock.calls[0];
+			expect(url).toBe("http://localhost:3456/api/sessions");
+		});
+
+		it("createSession({ cwd }) sends cwd in the JSON body", async () => {
+			mockFetch.mockResolvedValueOnce({
+				ok: true,
+				status: 201,
+				json: () =>
+					Promise.resolve({ id: "s1", title: "New", createdAt: new Date().toISOString(), cwd: "/data/repos/x" }),
+			});
+			const result = await client.createSession({ cwd: "/data/repos/x" });
+			expect(result.cwd).toBe("/data/repos/x");
+
+			const [url, opts] = mockFetch.mock.calls[0];
+			expect(url).toBe("http://localhost:3456/api/sessions");
+			expect(opts.method).toBe("POST");
+			expect(JSON.parse(opts.body)).toEqual({ cwd: "/data/repos/x" });
+		});
+
+		it("listProjects() calls GET /api/projects", async () => {
+			mockFetch.mockResolvedValueOnce({
+				ok: true,
+				status: 200,
+				json: () =>
+					Promise.resolve({
+						projects: [{ path: "/data/repos/a", name: "a", type: "code", sessionCount: 3 }],
+					}),
+			});
+			const result = await client.listProjects();
+			expect(result.projects).toHaveLength(1);
+			expect(result.projects[0]).toEqual({ path: "/data/repos/a", name: "a", type: "code", sessionCount: 3 });
+
+			const [url, opts] = mockFetch.mock.calls[0];
+			expect(url).toBe("http://localhost:3456/api/projects");
+			expect(opts.method).toBe("GET");
+		});
+
+		it("deleteSession with project appends ?project= query", async () => {
+			mockFetch.mockResolvedValueOnce({
+				ok: true,
+				status: 200,
+				json: () => Promise.resolve({ success: true }),
+			});
+			await client.deleteSession("s1", { project: "/a/b" });
+
+			const [url, opts] = mockFetch.mock.calls[0];
+			expect(url).toBe("http://localhost:3456/api/sessions/s1?project=%2Fa%2Fb");
+			expect(opts.method).toBe("DELETE");
+		});
+
+		it("deleteSession without project keeps the previous URL (backward compat)", async () => {
+			mockFetch.mockResolvedValueOnce({
+				ok: true,
+				status: 200,
+				json: () => Promise.resolve({ success: true }),
+			});
+			await client.deleteSession("s1");
+
+			const [url] = mockFetch.mock.calls[0];
+			expect(url).toBe("http://localhost:3456/api/sessions/s1");
+		});
+	});
+
+	describe("buildSessionUrl (pure URL builder)", () => {
+		it("returns path unchanged when project is undefined", () => {
+			expect(buildSessionUrl("/api/sessions")).toBe("/api/sessions");
+		});
+
+		it("encodes the project path via URLSearchParams", () => {
+			expect(buildSessionUrl("/api/sessions", "/a/b")).toBe("/api/sessions?project=%2Fa%2Fb");
+		});
+
+		it("encodes Windows-style paths and spaces", () => {
+			expect(buildSessionUrl("/api/sessions", "C:\\Users\\My Proj")).toBe(
+				"/api/sessions?project=C%3A%5CUsers%5CMy+Proj",
+			);
 		});
 	});
 
