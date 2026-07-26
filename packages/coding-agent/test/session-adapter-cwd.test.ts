@@ -15,10 +15,9 @@ const { listAllMock } = vi.hoisted(() => ({
 
 vi.mock("../src/core/session-manager.js", async (importOriginal) => {
 	const orig = await importOriginal<typeof import("../src/core/session-manager.js")>();
-	class FakeSessionManager extends orig.SessionManager {
-		static override listAll = listAllMock;
-	}
-	return { ...orig, SessionManager: FakeSessionManager };
+	// The adapter only uses the static SessionManager.listAll — replace it with a
+	// stub instead of extending the class (its constructor is private).
+	return { ...orig, SessionManager: { ...orig.SessionManager, listAll: listAllMock } };
 });
 
 import { createSessionAdapter } from "../src/main.js";

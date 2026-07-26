@@ -33,6 +33,7 @@ import type {
 	UpdateModelSettingsRequest,
 	UpdateModelSettingsResponse,
 } from "./types.js";
+import { logCwdRejection, resolveAllowedRoots, validateCwd } from "./workspace-validation.js";
 import { attachWebSocketHandler, type BunServerLike, createBunWebSocketBridge } from "./ws-handler.js";
 
 // Version is passed via ServerOptions to avoid __dirname resolution issues
@@ -85,6 +86,10 @@ export interface ServerOptions {
 	host?: string;
 	dashboardDir?: string; // Path to dashboard dist directory. If provided, serves the dashboard.
 	version?: string; // Application version (passed from caller to avoid __dirname issues in compiled binaries)
+	/** F-1.13: workspace whitelist for cwd validation. When omitted, resolved
+	 *  from FAN_WORKSPACE_ROOT (env pattern like ALLOWED_ORIGINS). An empty
+	 *  resolved list → bypass (local mode, no restrictions). */
+	allowedRoots?: string[];
 }
 
 // ============================================================================
@@ -204,6 +209,10 @@ async function createApp(
 	options: ServerOptions = {},
 ): Promise<Hono> {
 	if (options.version) _version = options.version;
+	// F-1.13: whitelist for cwd validation. Explicit option wins (server mode
+	// passes [FAN_WORKSPACE_ROOT → ~/projects]); otherwise the env-based
+	// resolution. Empty list → bypass (local mode).
+	const allowedRoots = options.allowedRoots ?? resolveAllowedRoots();
 	const app = new Hono();
 
 	// Middleware
@@ -240,10 +249,17 @@ async function createApp(
 	app.post("/api/sessions", async (c) => {
 		const body = await c.req.json<CreateSessionRequest>();
 		// F-1.3: optional cwd — normalized for consistent storage/comparison.
-		// Whitelist validation is F-1.13; here the path is accepted as-is.
 		// Without cwd the adapter falls back to the server process cwd (backward compat).
 		if (body.cwd !== undefined) {
 			body.cwd = normalizeProjectPath(body.cwd);
+			// F-1.13: whitelist validation BEFORE the runtime touches the path
+			// (previously an invalid directory surfaced as a 500 on process.chdir).
+			// Rejections are audit-logged (structured field → F-0.10 file logger).
+			const validation = validateCwd(body.cwd, allowedRoots);
+			if (!validation.valid) {
+				logCwdRejection({ cwd: body.cwd, reason: validation.reason ?? "rejected", allowedRoots });
+				return c.json({ error: `cwd rejected: ${validation.reason}`, code: "FORBIDDEN" } satisfies ApiError, 403);
+			}
 		}
 		const session = await sessionAdapter.createSession(body);
 		return c.json(session, 201);

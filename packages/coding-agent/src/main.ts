@@ -1251,6 +1251,9 @@ export async function main(args: string[]) {
 			host: resolveHost(parsed.host),
 			dashboardDir: getDashboardDir(),
 			version: VERSION,
+			// F-1.13: whitelist = the resolved workspace root (FAN_WORKSPACE_ROOT →
+			// ~/projects). Session cwd outside it is rejected with HTTP 403.
+			allowedRoots: [resolveWorkspaceRoot()],
 		});
 
 		// Write server info for background management (daemon mode)
