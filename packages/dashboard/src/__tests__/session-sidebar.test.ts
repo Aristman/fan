@@ -74,10 +74,10 @@ describe("session-sidebar tree grouping (F-2.7)", () => {
 		const groups = el.querySelectorAll<HTMLElement>(".tree-group");
 		expect(groups.length).toBe(2);
 
-		const keys = [...groups].map((g) => g.dataset.groupKey);
+		const keys = Array.from(groups).map((g) => g.dataset.groupKey);
 		expect(keys).toEqual(["/a", "/b"]);
 
-		const counts = [...el.querySelectorAll<HTMLElement>(".tree-group-count")].map((c) => c.textContent?.trim());
+		const counts = Array.from(el.querySelectorAll<HTMLElement>(".tree-group-count")).map((c) => c.textContent?.trim());
 		expect(counts).toEqual(["2", "1"]);
 
 		// Sessions are nested inside their groups
@@ -130,7 +130,7 @@ describe("session-sidebar tree grouping (F-2.7)", () => {
 		]);
 		await flush(el);
 
-		const groups = [...el.querySelectorAll<HTMLElement>(".tree-group")];
+		const groups = Array.from(el.querySelectorAll<HTMLElement>(".tree-group"));
 		expect(groups.length).toBe(2);
 
 		const legacyGroup = groups[groups.length - 1];
@@ -167,7 +167,8 @@ describe("session-sidebar tree grouping (F-2.7)", () => {
 		await flush(el);
 
 		const dotOf = (title: string) => {
-			const item = [...el.querySelectorAll<HTMLElement>(".tree-item")].find((i) => i.textContent?.includes(title))!;
+			const items = Array.from(el.querySelectorAll(".tree-item")) as HTMLElement[];
+			const item = items.find((i) => i.textContent?.includes(title))!;
 			return item.querySelector<HTMLElement>(".status-dot")!;
 		};
 
