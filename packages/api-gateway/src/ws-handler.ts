@@ -2,7 +2,7 @@ import type { IncomingMessage, Server } from "node:http";
 import type { WebSocket as WsWebSocket } from "ws";
 import { isAuthDisabled, validateToken } from "./auth.js";
 import type { SessionAdapter } from "./http-server.js";
-import { InMemoryMessageQueue } from "./message-queue.js";
+import { type DrainableMessageQueue, InMemoryMessageQueue, type QueuedMessage } from "./message-queue.js";
 import type { WsIncomingMessage, WsOutgoingMessage } from "./types.js";
 
 // ============================================================================
@@ -15,8 +15,9 @@ export interface WsHandlerOptions {
 	/** Path prefix for WebSocket connections. Default: "/api/ws/" */
 	pathPrefix?: string;
 	/** F-2.5: optional shared message queue (default: new InMemoryMessageQueue).
-	 *  Injectable for tests. */
-	messageQueue?: InMemoryMessageQueue<WsSendMessagePayload>;
+	 *  Injectable for tests — any DrainableMessageQueue works as a drop-in
+	 *  (e.g. PersistentMessageQueue, F-5.5). */
+	messageQueue?: DrainableMessageQueue<WsSendMessagePayload>;
 }
 
 interface ClientConnection {
@@ -37,8 +38,9 @@ export interface WsSendMessagePayload {
 
 export interface WsMessageDispatcherOptions {
 	sessionAdapter: SessionAdapter;
-	/** Injectable for tests; a fresh InMemoryMessageQueue is created otherwise. */
-	messageQueue?: InMemoryMessageQueue<WsSendMessagePayload>;
+	/** Injectable for tests; a fresh InMemoryMessageQueue is created otherwise.
+	 *  Any DrainableMessageQueue works as a drop-in (e.g. PersistentMessageQueue, F-5.5). */
+	messageQueue?: DrainableMessageQueue<WsSendMessagePayload>;
 }
 
 /**
@@ -74,7 +76,7 @@ export interface WsMessageDispatcherOptions {
  */
 export class WsMessageDispatcher {
 	private readonly sessionAdapter: SessionAdapter;
-	private readonly queue: InMemoryMessageQueue<WsSendMessagePayload>;
+	private readonly queue: DrainableMessageQueue<WsSendMessagePayload>;
 	private draining = false;
 	/**
 	 * Global in-flight dispatch guard. The single-engine runtime can only
@@ -129,19 +131,32 @@ export class WsMessageDispatcher {
 		if (this.dispatchPending || (this.isBusy() && sessionId !== activeSessionId)) {
 			// Engine busy with another session, or a dispatch is currently
 			// starting → enqueue and notify position.
-			const position = await this.queue.enqueue(sessionId, payload);
-			if (position === null) {
-				// F-2.15: queue overflow — reject with a queue_full notification.
+			try {
+				const position = await this.queue.enqueue(sessionId, payload);
+				if (position === null) {
+					// F-2.15: queue overflow — reject with a queue_full notification.
+					send({
+						type: "queue_full",
+						sessionId,
+						timestamp: new Date().toISOString(),
+						error: "QUEUE_OVERFLOW",
+						limit: this.queue.maxSize,
+					});
+					return;
+				}
+				send({ type: "queued", sessionId, timestamp: new Date().toISOString(), position });
+			} catch (err) {
+				// F-5.5: enqueue can throw after I/O retries. Report a typed error
+				// frame instead of letting the rejection escape as unhandled.
+				console.error(`[ws-handler] enqueue failed for session ${sessionId}:`, err);
 				send({
-					type: "queue_full",
+					type: "error",
 					sessionId,
 					timestamp: new Date().toISOString(),
-					error: "QUEUE_OVERFLOW",
-					limit: this.queue.maxSize,
+					code: "QUEUE_PERSISTENCE_ERROR",
+					message: "Failed to persist queued message",
 				});
-				return;
 			}
-			send({ type: "queued", sessionId, timestamp: new Date().toISOString(), position });
 			return;
 		}
 
@@ -180,7 +195,14 @@ export class WsMessageDispatcher {
 		this.draining = true;
 		try {
 			while (!this.isBusy()) {
-				const next = await this.queue.dequeueOldest();
+				let next: { sessionId: string; item: QueuedMessage<WsSendMessagePayload> } | null;
+				try {
+					next = await this.queue.dequeueOldest();
+				} catch (err) {
+					// F-5.5: persistent queue I/O failure — stop draining safely.
+					console.error("[ws-handler] dequeueOldest failed:", err);
+					break;
+				}
 				if (!next) break;
 				try {
 					await this.sessionAdapter.sendMessage(
@@ -198,7 +220,12 @@ export class WsMessageDispatcher {
 		// Race guard: a message may have been enqueued between the last
 		// dequeueOldest() and the flag release above. One extra scan is cheap.
 		if (!this.isBusy()) {
-			const pending = await this.queue.dequeueOldest();
+			let pending: { sessionId: string; item: QueuedMessage<WsSendMessagePayload> } | null = null;
+			try {
+				pending = await this.queue.dequeueOldest();
+			} catch (err) {
+				console.error("[ws-handler] dequeueOldest failed in race guard:", err);
+			}
 			if (pending) {
 				// Put it back at the head is not possible — dispatch it directly
 				// instead: the engine is idle, so ordering is preserved.
@@ -453,7 +480,7 @@ export interface BunWebSocketBridge {
 export function createBunWebSocketBridge(
 	sessionAdapter: SessionAdapter,
 	pathPrefix = "/api/ws/",
-	messageQueue?: InMemoryMessageQueue<WsSendMessagePayload>,
+	messageQueue?: DrainableMessageQueue<WsSendMessagePayload>,
 ): BunWebSocketBridge {
 	const unsubscribes = new Map<BunWebSocket, () => void>();
 	// F-2.5: enqueue-on-busy dispatcher (shared queue across all connections)

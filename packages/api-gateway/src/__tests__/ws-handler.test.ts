@@ -1,5 +1,6 @@
 import { createServer, type Server } from "node:http";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { WsOutgoingMessage } from "../types.js";
 import type { WsSendMessagePayload } from "../ws-handler.js";
 
 // Mock the 'ws' module — ws-handler does a dynamic import("ws")
@@ -55,6 +56,17 @@ describe("WebSocket Handler", () => {
 		};
 	}
 
+	// Minimal BunWebSocket fake — only the surface the bridge touches.
+	function makeFakeWs(sessionId: string) {
+		const sent: Array<Record<string, unknown>> = [];
+		const ws = {
+			data: { sessionId },
+			send: (data: string) => sent.push(JSON.parse(data)),
+			close: vi.fn(),
+		};
+		return { ws, sent };
+	}
+
 	describe("attachWebSocketHandler", () => {
 		it("should attach upgrade handler to server and return close function", async () => {
 			const { attachWebSocketHandler } = await import("../ws-handler.js");
@@ -104,17 +116,6 @@ describe("WebSocket Handler", () => {
 	});
 
 	describe("F-2.5: enqueue on busy (Bun bridge)", () => {
-		// Minimal BunWebSocket fake — only the surface the bridge touches.
-		function makeFakeWs(sessionId: string) {
-			const sent: Array<Record<string, unknown>> = [];
-			const ws = {
-				data: { sessionId },
-				send: (data: string) => sent.push(JSON.parse(data)),
-				close: vi.fn(),
-			};
-			return { ws, sent };
-		}
-
 		it("TC-F-2.5-1: busy engine + different session → queued notification, message enqueued", async () => {
 			const { createBunWebSocketBridge } = await import("../ws-handler.js");
 			const adapter = createMockAdapter();
@@ -318,6 +319,126 @@ describe("WebSocket Handler", () => {
 			// Rejected message was never queued or dispatched.
 			expect(await messageQueue.size("sess-B")).toBe(2);
 			expect(adapter.sendMessage).not.toHaveBeenCalled();
+		});
+	});
+
+	describe("F-5.5: dispatcher safety + persistent queue integration", () => {
+		it("TC-F-5.5-F1: enqueue throw is caught and client receives an error frame", async () => {
+			const { WsMessageDispatcher } = await import("../ws-handler.js");
+			const { InMemoryMessageQueue } = await import("../message-queue.js");
+
+			class ThrowingEnqueueQueue extends InMemoryMessageQueue<WsSendMessagePayload> {
+				override async enqueue(): Promise<number | null> {
+					throw new Error("disk fail");
+				}
+			}
+
+			const adapter = createMockAdapter();
+			adapter.isExecuting.mockReturnValue(true);
+			adapter.getActiveSessionId.mockReturnValue("sess-A");
+
+			const sent: Array<WsOutgoingMessage> = [];
+			const dispatcher = new WsMessageDispatcher({
+				sessionAdapter: adapter,
+				messageQueue: new ThrowingEnqueueQueue(),
+			});
+
+			await dispatcher.handleMessage("sess-B", { type: "sendMessage", content: "x" }, (out) => {
+				sent.push(out);
+			});
+
+			expect(sent).toHaveLength(1);
+			expect(sent[0]).toMatchObject({
+				type: "error",
+				sessionId: "sess-B",
+				code: "QUEUE_PERSISTENCE_ERROR",
+			});
+			expect(adapter.sendMessage).not.toHaveBeenCalled();
+		});
+
+		it("TC-F-5.5-F2: dequeueOldest throw in drainQueue is caught; dispatcher stays alive", async () => {
+			const { WsMessageDispatcher } = await import("../ws-handler.js");
+			const { InMemoryMessageQueue } = await import("../message-queue.js");
+
+			class FailingOnceDequeueQueue extends InMemoryMessageQueue<WsSendMessagePayload> {
+				private failures = 0;
+				override async dequeueOldest(): Promise<{ sessionId: string; item: any } | null> {
+					if (this.failures++ === 0) {
+						throw new Error("dequeue fail");
+					}
+					return super.dequeueOldest();
+				}
+			}
+
+			const adapter = createMockAdapter();
+			adapter.isExecuting.mockReturnValue(false);
+			const queue = new FailingOnceDequeueQueue();
+			await queue.enqueue("sess-B", { content: "m1" });
+
+			const dispatcher = new WsMessageDispatcher({ sessionAdapter: adapter, messageQueue: queue });
+			const unhandled: unknown[] = [];
+			const onUnhandled = (reason: unknown) => {
+				unhandled.push(reason);
+			};
+			process.on("unhandledRejection", onUnhandled);
+			try {
+				dispatcher.notifyIdle();
+				await new Promise((resolve) => setTimeout(resolve, 30));
+				expect(unhandled).toHaveLength(0);
+
+				dispatcher.notifyIdle();
+				await vi.waitFor(() => {
+					expect(adapter.sendMessage).toHaveBeenCalledWith("sess-B", "m1", undefined);
+				});
+			} finally {
+				process.off("unhandledRejection", onUnhandled);
+			}
+		});
+
+		it("TC-F-5.5-INT: dispatcher + PersistentMessageQueue drains queued messages in global FIFO order", async () => {
+			const { createBunWebSocketBridge } = await import("../ws-handler.js");
+			const { PersistentMessageQueue } = await import("../message-queue.js");
+			const fs = await import("node:fs/promises");
+			const os = await import("node:os");
+			const path = await import("node:path");
+
+			const queuesDir = await fs.mkdtemp(path.join(os.tmpdir(), "fan-dispatcher-pq-"));
+			try {
+				const adapter = createMockAdapter();
+				let executing = true;
+				adapter.isExecuting.mockImplementation(() => executing);
+				adapter.getActiveSessionId.mockReturnValue("sess-A");
+
+				let eventHandler: ((event: unknown) => void) | null = null;
+				adapter.subscribeToSession.mockImplementation((_id: string, handler: (event: unknown) => void) => {
+					eventHandler = handler;
+					return () => {};
+				});
+
+				const messageQueue = new PersistentMessageQueue<WsSendMessagePayload>({ queuesDir });
+				const bridge = createBunWebSocketBridge(adapter, "/api/ws/", messageQueue);
+
+				const clientB = makeFakeWs("sess-B");
+				const clientC = makeFakeWs("sess-C");
+				bridge.websocket.open(clientB.ws);
+				bridge.websocket.open(clientC.ws);
+
+				bridge.websocket.message(clientC.ws, JSON.stringify({ type: "sendMessage", content: "from-C" }));
+				await vi.waitFor(() => expect(clientC.sent.some((m) => m.type === "queued")).toBe(true));
+				bridge.websocket.message(clientB.ws, JSON.stringify({ type: "sendMessage", content: "from-B" }));
+				await vi.waitFor(() => expect(clientB.sent.some((m) => m.type === "queued")).toBe(true));
+
+				expect(adapter.sendMessage).not.toHaveBeenCalled();
+
+				executing = false;
+				eventHandler!({ type: "agent_end" });
+
+				await vi.waitFor(() => expect(adapter.sendMessage).toHaveBeenCalledTimes(2));
+				expect(adapter.sendMessage.mock.calls[0]).toEqual(["sess-C", "from-C", undefined]);
+				expect(adapter.sendMessage.mock.calls[1]).toEqual(["sess-B", "from-B", undefined]);
+			} finally {
+				await fs.rm(queuesDir, { recursive: true, force: true });
+			}
 		});
 	});
 });
