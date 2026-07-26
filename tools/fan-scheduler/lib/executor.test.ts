@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { CreateSessionResult, FanApiClient, FanSessionDetail, FanSessionMessage } from "./client.js";
+import {
+	FanApiError,
+	type CreateSessionResult,
+	type FanApiClient,
+	type FanSessionDetail,
+	type FanSessionMessage,
+} from "./client.js";
 import type { TaskConfig } from "./config-loader.js";
 import { createTaskExecutor } from "./executor.js";
 import { TaskQueue, type TaskResult } from "./queue.js";
@@ -176,15 +182,19 @@ describe("createTaskExecutor (F-4.4)", () => {
 
 	it("marks the task failed when the API call rejects", async () => {
 		const task = makeTask({ budget_limit: null });
-		const { client } = createMockClient({
+		const { client, mocks } = createMockClient({
 			createSession: vi.fn().mockRejectedValue(new Error("connection refused")),
 		});
-		const execute = createTaskExecutor(client);
+		// Injected sleep keeps the F-4.10 backoff delays (2s/4s/8s) instant.
+		const execute = createTaskExecutor(client, { sleep: vi.fn(async () => {}) });
 
 		const result = await execute(task);
 
 		expect(result.status).toBe("failed");
 		expect(result.error).toBe("connection refused");
+		// Network errors are retryable (F-4.10): all 3 attempts are made.
+		expect(result.attempts).toBe(3);
+		expect(mocks.createSession).toHaveBeenCalledTimes(3);
 	});
 
 	it("ignores budget update errors with a warning (best-effort)", async () => {
@@ -285,5 +295,141 @@ describe("budget monitor (F-4.9)", () => {
 
 		expect(result.status).toBe("completed");
 		expect(console.log).toHaveBeenCalledWith(expect.stringContaining("budget poll failed (monitoring continues)"));
+	});
+});
+
+describe("retry with exponential backoff (F-4.10)", () => {
+	/** Injected sleep that records backoff delays instead of waiting — fast tests. */
+	function createSleepRecorder() {
+		const delays: number[] = [];
+		const sleep = vi.fn(async (ms: number) => {
+			delays.push(ms);
+		});
+		return { sleep, delays };
+	}
+
+	// TC-F-4.10-1: the pipeline fails once, then succeeds on the second attempt.
+	it("TC-F-4.10-1: HTTP 500 on first attempt, success on second → attempts=2, backoff delay ~2s", async () => {
+		const { sleep, delays } = createSleepRecorder();
+		const task = makeTask({ budget_limit: null });
+		const { client, mocks } = createMockClient({
+			createSession: vi
+				.fn()
+				.mockRejectedValueOnce(new FanApiError(500, "FAN API POST /api/sessions failed with HTTP 500: boom"))
+				.mockResolvedValue({ id: "session-1", title: "t", createdAt: "", updatedAt: "" }),
+		});
+		const execute = createTaskExecutor(client, { sleep });
+
+		const result = await execute(task);
+
+		expect(result.status).toBe("completed");
+		expect(result.attempts).toBe(2);
+		expect(mocks.createSession).toHaveBeenCalledTimes(2);
+		// Exactly one backoff delay between attempts: baseDelayMs * 2^(1-1) = 2s.
+		expect(delays).toEqual([2000]);
+		expect(console.log).toHaveBeenCalledWith(expect.stringContaining("attempt 1/3 failed"));
+		expect(console.log).toHaveBeenCalledWith(expect.stringContaining("retrying in 2000ms"));
+	});
+
+	// TC-F-4.10-2: all attempts fail → task failed, queue advances.
+	it("TC-F-4.10-2: always HTTP 500 → 3 attempts, delays 2s/4s/8s, status failed, queue continues", async () => {
+		const { sleep, delays } = createSleepRecorder();
+		const failingTask = makeTask({ name: "flaky", budget_limit: null });
+		const nextTask = makeTask({ name: "next", budget_limit: null });
+
+		const { client } = createMockClient();
+		const createSessionMock = client.createSession as ReturnType<typeof vi.fn>;
+		// First three calls = the 3 attempts of the failing task; the 4th serves the next task.
+		createSessionMock.mockReset();
+		createSessionMock
+			.mockRejectedValueOnce(new FanApiError(500, "boom"))
+			.mockRejectedValueOnce(new FanApiError(500, "boom"))
+			.mockRejectedValueOnce(new FanApiError(500, "boom"))
+			.mockResolvedValue({ id: "session-2", title: "t", createdAt: "", updatedAt: "" });
+
+		const results: TaskResult[] = [];
+		const base = createTaskExecutor(client, { sleep });
+		const queue = new TaskQueue(async (task) => {
+			const result = await base(task);
+			results.push(result);
+			return result;
+		});
+
+		queue.enqueue(failingTask);
+		queue.enqueue(nextTask);
+		// Wait until the queue drains (backoff sleeps are injected — no real waiting).
+		await vi.waitFor(() => {
+			expect(results).toHaveLength(2);
+		});
+
+		expect(results[0].taskName).toBe("flaky");
+		expect(results[0].status).toBe("failed");
+		expect(results[0].attempts).toBe(3);
+		expect(results[0].error).toContain("boom");
+		// Exponential backoff: 2s, 4s, 8s — one delay per failed attempt.
+		expect(delays).toEqual([2000, 4000, 8000]);
+		// The queue moved on to the pending task.
+		expect(results[1].taskName).toBe("next");
+		expect(results[1].status).toBe("completed");
+		expect(results[1].attempts).toBe(1);
+		expect(console.log).toHaveBeenCalledWith(expect.stringContaining("attempts exhausted"));
+	});
+
+	it("HTTP 400 → 1 attempt, fails immediately without backoff", async () => {
+		const { sleep, delays } = createSleepRecorder();
+		const task = makeTask({ budget_limit: null });
+		const { client, mocks } = createMockClient({
+			createSession: vi.fn().mockRejectedValue(new FanApiError(400, "bad request")),
+		});
+		const execute = createTaskExecutor(client, { sleep });
+
+		const result = await execute(task);
+
+		expect(result.status).toBe("failed");
+		expect(result.attempts).toBe(1);
+		expect(result.error).toContain("bad request");
+		expect(mocks.createSession).toHaveBeenCalledTimes(1);
+		expect(delays).toEqual([]);
+	});
+
+	it("HTTP 429 → retryable: succeeds on the 2nd attempt", async () => {
+		const { sleep, delays } = createSleepRecorder();
+		const task = makeTask({ budget_limit: null });
+		const { client, mocks } = createMockClient({
+			createSession: vi
+				.fn()
+				.mockRejectedValueOnce(new FanApiError(429, "rate limited"))
+				.mockResolvedValue({ id: "session-1", title: "t", createdAt: "", updatedAt: "" }),
+		});
+		const execute = createTaskExecutor(client, { sleep });
+
+		const result = await execute(task);
+
+		expect(result.status).toBe("completed");
+		expect(result.attempts).toBe(2);
+		expect(mocks.createSession).toHaveBeenCalledTimes(2);
+		expect(delays).toEqual([2000]);
+	});
+
+	it("task timeout and budget_exceeded are NOT retried (attempts=1)", async () => {
+		vi.useFakeTimers();
+		const { sleep, delays } = createSleepRecorder();
+		const task = makeTask({ name: "slow", timeout: 2, budget_limit: null });
+		const never = new Promise<void>(() => {});
+		const { client, mocks } = createMockClient({
+			sendMessage: vi.fn(async () => {
+				await never;
+			}),
+		});
+		const execute = createTaskExecutor(client, { sleep, pollIntervalMs: 100 });
+
+		const promise = execute(task);
+		await vi.advanceTimersByTimeAsync(2000);
+		const result = await promise;
+
+		expect(result.status).toBe("timeout");
+		expect(result.attempts).toBe(1);
+		expect(mocks.createSession).toHaveBeenCalledTimes(1);
+		expect(delays).toEqual([]);
 	});
 });

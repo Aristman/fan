@@ -2,6 +2,13 @@ import type { BudgetUsage, FanApiClient, FanSessionMessage } from "./client.js";
 import type { TaskConfig } from "./config-loader.js";
 import { logger } from "./logger.js";
 import type { TaskExecutor, TaskResult, TaskStatus } from "./queue.js";
+import {
+	DEFAULT_BASE_DELAY_MS,
+	DEFAULT_MAX_RETRIES,
+	RetryExhaustedError,
+	isRetryableError,
+	withRetry,
+} from "./retry.js";
 
 /** Default delay between completion polls of GET /api/sessions/:id. */
 export const DEFAULT_POLL_INTERVAL_MS = 5000;
@@ -36,8 +43,13 @@ export interface TaskExecutorOptions {
 	budgetPollIntervalMs?: number;
 	/** Clock override (default Date.now) — for tests. */
 	now?: () => number;
-	/** Sleep override (default setTimeout-based) — for tests. */
+	/** Sleep override (default setTimeout-based) — for tests. Shared by polling
+	 *  and the retry backoff (F-4.10). */
 	sleep?: (ms: number) => Promise<void>;
+	/** Retry config (F-4.10): total attempts per task (default 3). */
+	maxRetries?: number;
+	/** Retry config (F-4.10): base backoff delay in ms (default 2000). */
+	retryBaseDelayMs?: number;
 }
 
 function defaultSleep(ms: number): Promise<void> {
@@ -86,7 +98,14 @@ function logBudgetMonitor(usage: BudgetUsage): void {
  *    must not fail the task.
  * 5. After completion: a final usage report is logged ("used X / Y tokens")
  *    when budget monitoring was active.
- * 6. TaskResult { status, durationMs, tokensUsed } is logged and returned.
+ * 6. TaskResult { status, durationMs, tokensUsed, attempts } is logged and returned.
+ *
+ * Retry (F-4.10): the whole pipeline (steps 1–4) is wrapped in withRetry —
+ * up to maxRetries attempts (default 3) with exponential backoff
+ * (baseDelayMs * 2^(attempt-1) = 2s, 4s, 8s). Retryable: network errors,
+ * timeouts, HTTP 5xx and 429; HTTP 4xx (except 429) fails immediately.
+ * The task's own timeout and budget_exceeded are never retried. After all
+ * attempts are exhausted the task is marked "failed" (queue continues).
  *
  * Completion signal (gateway reality check — packages/api-gateway):
  * - GetSessionResponse has NO streaming/isExecuting field;
@@ -106,6 +125,8 @@ function logBudgetMonitor(usage: BudgetUsage): void {
 export function createTaskExecutor(client: FanApiClient, options: TaskExecutorOptions = {}): TaskExecutor {
 	const pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
 	const budgetPollIntervalMs = options.budgetPollIntervalMs ?? DEFAULT_BUDGET_POLL_INTERVAL_MS;
+	const maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES;
+	const retryBaseDelayMs = options.retryBaseDelayMs ?? DEFAULT_BASE_DELAY_MS;
 	const now = options.now ?? (() => Date.now());
 	const sleep = options.sleep ?? defaultSleep;
 
@@ -170,7 +191,7 @@ export function createTaskExecutor(client: FanApiClient, options: TaskExecutorOp
 		const startedAt = new Date(startedAtMs).toISOString();
 		const deadlineMs = startedAtMs + task.timeout * 1000;
 
-		const buildResult = (status: TaskStatus, tokensUsed: number | null, error?: string): TaskResult => {
+		const buildResult = (status: TaskStatus, tokensUsed: number | null, attempts: number, error?: string): TaskResult => {
 			const finishedAtMs = now();
 			const result: TaskResult = {
 				taskName: task.name,
@@ -179,15 +200,16 @@ export function createTaskExecutor(client: FanApiClient, options: TaskExecutorOp
 				startedAt,
 				finishedAt: new Date(finishedAtMs).toISOString(),
 				tokensUsed,
+				attempts,
 			};
 			if (error !== undefined) result.error = error;
 			logger.info(
-				`[executor] task "${task.name}" status=${status} durationMs=${result.durationMs} tokensUsed=${tokensUsed ?? "unknown"}`,
+				`[executor] task "${task.name}" status=${status} durationMs=${result.durationMs} tokensUsed=${tokensUsed ?? "unknown"} attempts=${attempts}`,
 			);
 			return result;
 		};
 
-		const pipeline = (async (): Promise<number> => {
+		const runPipeline = async (): Promise<number> => {
 			// Step 1 — create a session bound to the task workspace.
 			const session = await client.createSession(task.workspace);
 			// Step 2 — set the per-project budget cap BEFORE any tokens are spent
@@ -208,12 +230,47 @@ export function createTaskExecutor(client: FanApiClient, options: TaskExecutorOp
 			await client.sendMessage(session.id, task.message);
 			// Step 4 — poll until the assistant finishes its turn (+ budget monitor).
 			return await waitForCompletion(task, session.id, startedAtMs, deadlineMs);
-		})();
+		};
+
+		// F-4.10: the whole pipeline is retried with exponential backoff
+		// (2s, 4s, 8s, …). Each attempt runs the full pipeline with a fresh
+		// session and a fresh per-attempt deadline. Retryable: network errors,
+		// timeouts, HTTP 5xx and 429. Non-retryable (fail immediately): HTTP 4xx
+		// other than 429, the task's own timeout (the deadline is already spent)
+		// and budget_exceeded (a terminal business state). After all attempts
+		// are exhausted the task is marked "failed" and the queue moves on.
+		const retryingPipeline = withRetry(() => raceWithDeadline(task, runPipeline(), task.timeout * 1000), {
+			maxRetries,
+			baseDelayMs: retryBaseDelayMs,
+			sleep,
+			isRetryable: (error) =>
+				!(error instanceof TaskTimeoutError) && !(error instanceof BudgetExceededError) && isRetryableError(error),
+			onRetry: ({ attempt, delayMs, error, willRetry }) => {
+				const message = error instanceof Error ? error.message : String(error);
+				if (willRetry) {
+					logger.warn(
+						`[executor] task "${task.name}" attempt ${attempt}/${maxRetries} failed (${message}) — retrying in ${delayMs}ms`,
+					);
+				} else {
+					logger.warn(
+						`[executor] task "${task.name}" attempt ${attempt}/${maxRetries} failed (${message}) — attempts exhausted`,
+					);
+				}
+			},
+		});
 
 		let tokensUsed: number;
+		let attempts = 1;
 		try {
-			tokensUsed = await raceWithDeadline(task, pipeline, task.timeout * 1000);
-		} catch (error) {
+			const outcome = await retryingPipeline;
+			tokensUsed = outcome.value;
+			attempts = outcome.attempts;
+		} catch (thrown) {
+			let error: unknown = thrown;
+			if (error instanceof RetryExhaustedError) {
+				attempts = error.attempts;
+				error = error.cause;
+			}
 			if (error instanceof TaskTimeoutError) {
 				// No abort API exists — the agent keeps running server-side; we only
 				// mark the result and let the queue move on (documented limitation).
@@ -221,7 +278,7 @@ export function createTaskExecutor(client: FanApiClient, options: TaskExecutorOp
 					`[executor] task "${task.name}" timed out after ${task.timeout}s — ` +
 						"no interruption endpoint in the gateway; the session continues running server-side",
 				);
-				return buildResult("timeout", null, error.message);
+				return buildResult("timeout", null, attempts, error.message);
 			}
 			if (error instanceof BudgetExceededError) {
 				// F-4.9: same no-interruption limitation as timeout (F-4.4) — the wait
@@ -230,11 +287,11 @@ export function createTaskExecutor(client: FanApiClient, options: TaskExecutorOp
 					`[executor] task "${task.name}" stopped: budget exceeded (${error.used}/${error.limit} tokens) — ` +
 						"no interruption endpoint in the gateway; the session continues running server-side",
 				);
-				return buildResult("budget_exceeded", error.used, error.message);
+				return buildResult("budget_exceeded", error.used, attempts, error.message);
 			}
 			const message = error instanceof Error ? error.message : String(error);
 			logger.error(`[executor] task "${task.name}" failed: ${message}`);
-			return buildResult("failed", null, message);
+			return buildResult("failed", null, attempts, message);
 		}
 
 		// Step 5 — final usage report (F-4.9) when budget monitoring was active.
@@ -253,6 +310,6 @@ export function createTaskExecutor(client: FanApiClient, options: TaskExecutorOp
 		}
 
 		// Step 6 — result logging happens in buildResult.
-		return buildResult("completed", tokensUsed);
+		return buildResult("completed", tokensUsed, attempts);
 	};
 }
