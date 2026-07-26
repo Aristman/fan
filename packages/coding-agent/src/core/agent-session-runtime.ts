@@ -116,6 +116,10 @@ export class AgentSessionRuntime {
 	}
 
 	private apply(result: CreateAgentSessionRuntimeResult): void {
+		// F-1.10: process.chdir() is preserved on switch (built-in tools still
+		// resolve against the process cwd; full removal is phase 5), but all
+		// cwd-bound services (SettingsManager, ResourceLoader, ...) are replaced
+		// with instances created for the session cwd, not the process cwd.
 		if (process.cwd() !== result.services.cwd) {
 			process.chdir(result.services.cwd);
 		}
