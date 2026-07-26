@@ -1273,7 +1273,12 @@ export class SessionManager {
 	 * @param cwdOverride Optional cwd override instead of the session header cwd.
 	 */
 	static open(path: string, sessionDir?: string, cwdOverride?: string): SessionManager {
-		// Extract cwd from session header if possible, otherwise use process.cwd()
+		// Extract cwd from session header if possible. The process.cwd() fallback
+		// exists ONLY for legacy session files written before the cwd header
+		// field was introduced (F-5.4: kept for backward compatibility — do not
+		// remove). Callers on modern paths pass cwdOverride explicitly, and the
+		// CLI/server entry points detect header-less sessions up front
+		// (getMissingSessionCwdIssue) and resolve a cwd before opening.
 		const entries = loadEntriesFromFile(path);
 		const header = entries.find((e) => e.type === "session") as SessionHeader | undefined;
 		const cwd = cwdOverride ?? header?.cwd ?? process.cwd();

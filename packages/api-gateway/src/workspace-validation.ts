@@ -4,7 +4,8 @@
 //
 // Security-critical module: validates a requested session cwd against a
 // whitelist of allowed workspace roots before the runtime touches the
-// filesystem (process.chdir, ResourceLoader, etc.).
+// filesystem (ResourceLoader, tool path resolution, etc. — the runtime no
+// longer calls process.chdir since F-5.4).
 //
 // Decisions (documented per spec):
 //

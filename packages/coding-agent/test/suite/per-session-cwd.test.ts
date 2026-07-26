@@ -1,6 +1,6 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	type CreateAgentSessionRuntimeFactory,
@@ -92,7 +92,7 @@ describe("F-1.10: per-session cwd services", () => {
 		expect(agentsFiles.some((file) => file.path === join(workspace, "AGENTS.md"))).toBe(true);
 	});
 
-	it("TC-F-1.10-2: switchSession keeps process.chdir but recreates services for the target cwd", async () => {
+	it("TC-F-1.10-2: switchSession recreates services for the target cwd without touching process.cwd()", async () => {
 		const agentDir = createTempDir("fan-f110-agent-dir2");
 		const workspaceA = createTempDir("fan-f110-workspace-a");
 		const workspaceB = createTempDir("fan-f110-workspace-b");
@@ -127,6 +127,9 @@ describe("F-1.10: per-session cwd services", () => {
 			};
 		};
 
+		// F-5.4: the runtime never mutates the global process cwd.
+		const initialProcessCwd = process.cwd();
+
 		const runtime = await createAgentSessionRuntime(createRuntime, {
 			cwd: workspaceA,
 			agentDir,
@@ -136,8 +139,8 @@ describe("F-1.10: per-session cwd services", () => {
 			await runtime.dispose();
 		});
 
-		// Initial state: runtime lives in project A.
-		expect(resolve(process.cwd())).toBe(resolve(workspaceA));
+		// Initial state: runtime lives in project A, global cwd untouched.
+		expect(process.cwd()).toBe(initialProcessCwd);
 		expect(runtime.services.cwd).toBe(workspaceA);
 		expect(runtime.services.settingsManager.getDefaultModel()).toBe("model-a");
 		const servicesA = runtime.services;
@@ -145,9 +148,9 @@ describe("F-1.10: per-session cwd services", () => {
 		const result = await runtime.switchSession(sessionFileB);
 		expect(result.cancelled).toBe(false);
 
-		// process.chdir() is preserved on switch (full removal is phase 5)...
-		expect(resolve(process.cwd())).toBe(resolve(workspaceB));
-		// ...but services are recreated bound to the session cwd, not the process.
+		// F-5.4: process.cwd() is NOT changed on switch...
+		expect(process.cwd()).toBe(initialProcessCwd);
+		// ...services are recreated bound to the session cwd, not the process.
 		expect(runtime.services).not.toBe(servicesA);
 		expect(runtime.services.cwd).toBe(workspaceB);
 		expect(runtime.session.sessionManager.getCwd()).toBe(workspaceB);
@@ -203,7 +206,8 @@ describe("F-1.10: per-session cwd services", () => {
 		const result = await runtime.newSession({ cwd: workspaceB });
 		expect(result.cancelled).toBe(false);
 
-		expect(resolve(process.cwd())).toBe(resolve(workspaceB));
+		// F-5.4: the session cwd moves to workspace B, the global process cwd
+		// does not.
 		expect(runtime.services.cwd).toBe(workspaceB);
 		expect(runtime.session.sessionManager.getCwd()).toBe(workspaceB);
 		expect(runtime.services.settingsManager.getDefaultModel()).toBe("model-b");

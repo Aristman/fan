@@ -237,11 +237,12 @@ describe("AgentSessionRuntime characterization", () => {
 		await expect(runtime.fork("missing-entry")).rejects.toThrow("Invalid entry ID for forking");
 	});
 
-	it("updates process.cwd() on cross-cwd session replacement", async () => {
+	it("recreates the runtime for the target cwd without changing process.cwd()", async () => {
 		const firstDir = join(tmpdir(), `pi-runtime-cwd-a-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		const secondDir = join(tmpdir(), `pi-runtime-cwd-b-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		mkdirSync(firstDir, { recursive: true });
 		mkdirSync(secondDir, { recursive: true });
+		const initialProcessCwd = process.cwd();
 		const { runtime, faux, tempDir } = await createRuntimeForTest(() => {}, { cwd: firstDir });
 		const otherAuthStorage = AuthStorage.inMemory();
 		otherAuthStorage.setRuntimeApiKey(faux.getModel().provider, "faux-key");
@@ -305,7 +306,10 @@ describe("AgentSessionRuntime characterization", () => {
 
 		await runtime.switchSession(otherSessionFile);
 
-		expect(realpathSync(process.cwd())).toBe(realpathSync(secondDir));
+		// F-5.4: the global process cwd is never mutated on session replacement;
+		// the target cwd is observable via services / the session manager.
+		expect(realpathSync(process.cwd())).toBe(realpathSync(initialProcessCwd));
+		expect(realpathSync(runtime.services.cwd)).toBe(realpathSync(secondDir));
 		expect(realpathSync(runtime.session.sessionManager.getCwd())).toBe(realpathSync(secondDir));
 	});
 

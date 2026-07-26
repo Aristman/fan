@@ -50,6 +50,11 @@ function extractUserMessageText(content: string | Array<{ type: string; text?: s
  * Session replacement methods tear down the current runtime first, then create
  * and apply the next runtime. If creation fails, the error is propagated to the
  * caller. The caller is responsible for user-facing error handling.
+ *
+ * F-5.4: the runtime never mutates the global process cwd. All cwd-dependent
+ * state (tools, settings, resources) is bound to the session cwd captured in
+ * {@link AgentSessionServices}; consumers read `runtime.services.cwd` or
+ * `sessionManager.getCwd()` instead of `process.cwd()`.
  */
 export class AgentSessionRuntime {
 	constructor(
@@ -116,13 +121,9 @@ export class AgentSessionRuntime {
 	}
 
 	private apply(result: CreateAgentSessionRuntimeResult): void {
-		// F-1.10: process.chdir() is preserved on switch (built-in tools still
-		// resolve against the process cwd; full removal is phase 5), but all
-		// cwd-bound services (SettingsManager, ResourceLoader, ...) are replaced
-		// with instances created for the session cwd, not the process cwd.
-		if (process.cwd() !== result.services.cwd) {
-			process.chdir(result.services.cwd);
-		}
+		// F-5.4: no process.chdir() here — cwd-bound services (SettingsManager,
+		// ResourceLoader, tools, ...) are created for the session cwd, so the
+		// global process cwd never needs to change on session replacement.
 		this._session = result.session;
 		this._services = result.services;
 		this._diagnostics = result.diagnostics;
@@ -317,9 +318,8 @@ export async function createAgentSessionRuntime(
 ): Promise<AgentSessionRuntime> {
 	assertSessionCwdExists(options.sessionManager, options.cwd);
 	const result = await createRuntime(options);
-	if (process.cwd() !== result.services.cwd) {
-		process.chdir(result.services.cwd);
-	}
+	// F-5.4: the runtime cwd lives on result.services.cwd; the global process
+	// cwd is intentionally left untouched.
 	return new AgentSessionRuntime(
 		result.session,
 		result.services,
