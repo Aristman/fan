@@ -65,6 +65,28 @@ export interface ListSessionsResponse {
 	sessions: SessionSummary[];
 }
 
+// --- Projects (F-1.5) ---
+
+/** Registry project entry as provided by the SessionAdapter (source: project-registry in coding-agent) */
+export interface ProjectInfo {
+	/** Absolute path to the project workspace */
+	path: string;
+	/** Display name (basename of the path by default) */
+	name: string;
+	/** Project classification */
+	type: string;
+}
+
+/** Project entry in the API response, enriched with session count */
+export interface ProjectSummary extends ProjectInfo {
+	/** Number of sessions whose cwd matches the project path (normalized comparison) */
+	sessionCount: number;
+}
+
+export interface ListProjectsResponse {
+	projects: ProjectSummary[];
+}
+
 export interface SessionMessage {
 	id: string;
 	role: "user" | "assistant" | "tool";

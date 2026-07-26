@@ -29,6 +29,7 @@ const mockSessionAdapter = {
 	subscribeToSession: vi.fn().mockReturnValue(() => {}),
 	getAvailableModels: vi.fn().mockResolvedValue([]),
 	bindSessionExtensions: vi.fn().mockResolvedValue(undefined),
+	listProjects: vi.fn().mockResolvedValue([]),
 	getActiveSessionId: vi.fn().mockReturnValue(null),
 };
 
@@ -80,6 +81,7 @@ describe("HTTP Server", () => {
 		mockSessionAdapter.deleteSession.mockResolvedValue(false);
 		mockSessionAdapter.sendMessage.mockResolvedValue(true);
 		mockSessionAdapter.getAvailableModels.mockResolvedValue([]);
+		mockSessionAdapter.listProjects.mockResolvedValue([]);
 		mockSessionAdapter.getActiveSessionId.mockReturnValue(null);
 		mockQueryRawUnsafe.mockResolvedValue([{ 1: 1 }]);
 		mockRandomBytes.mockReturnValue({
@@ -414,6 +416,88 @@ describe("HTTP Server", () => {
 			const data = await json<{ error: string }>(res);
 			expect(data.error).toBe("session does not belong to this project");
 			expect(mockSessionAdapter.deleteSession).not.toHaveBeenCalled();
+		});
+	});
+
+	describe("Projects (F-1.5)", () => {
+		const sessionOf = (id: string, cwd: string) => ({
+			id,
+			title: id,
+			createdAt: "2026-01-01",
+			updatedAt: "2026-01-01",
+			messageCount: 1,
+			cwd,
+		});
+
+		// TC-F-1.5-1: 2 проекта (3 и 7 сессий) → sessionCount корректный
+		it("GET /api/projects should return projects with correct session counts (TC-F-1.5-1)", async () => {
+			mockSessionAdapter.listProjects.mockResolvedValueOnce([
+				{ path: "/data/repos/a", name: "a", type: "code" },
+				{ path: "/data/repos/b", name: "b", type: "research" },
+			]);
+			mockSessionAdapter.listSessions.mockResolvedValueOnce([
+				sessionOf("a1", "/data/repos/a"),
+				sessionOf("a2", "/data/repos/a"),
+				sessionOf("a3", "/data/repos/a"),
+				sessionOf("b1", "/data/repos/b"),
+				sessionOf("b2", "/data/repos/b"),
+				sessionOf("b3", "/data/repos/b"),
+				sessionOf("b4", "/data/repos/b"),
+				sessionOf("b5", "/data/repos/b"),
+				sessionOf("b6", "/data/repos/b"),
+				sessionOf("b7", "/data/repos/b"),
+				// sessions outside the registry must not affect counts
+				sessionOf("x1", "/data/repos/other"),
+			]);
+			const app = await getApp();
+			const res = await app.request("/api/projects");
+			expect(res.status).toBe(200);
+			const data = await json<{
+				projects: Array<{ path: string; name: string; type: string; sessionCount: number }>;
+			}>(res);
+			expect(data.projects).toHaveLength(2);
+			expect(data.projects[0]).toEqual({ path: "/data/repos/a", name: "a", type: "code", sessionCount: 3 });
+			expect(data.projects[1]).toEqual({ path: "/data/repos/b", name: "b", type: "research", sessionCount: 7 });
+		});
+
+		// TC-F-1.5-2: пустой/отсутствующий projects.json → { projects: [] }, 200
+		it("GET /api/projects with empty registry should return empty array (TC-F-1.5-2)", async () => {
+			mockSessionAdapter.listProjects.mockResolvedValueOnce([]);
+			const app = await getApp();
+			const res = await app.request("/api/projects");
+			expect(res.status).toBe(200);
+			const data = await json<{ projects: unknown[] }>(res);
+			expect(data.projects).toEqual([]);
+		});
+
+		// TC-F-1.5-3: name из basename, если в реестре нет name
+		it("GET /api/projects should derive name from path basename when missing (TC-F-1.5-3)", async () => {
+			mockSessionAdapter.listProjects.mockResolvedValueOnce([
+				{ path: "/data/repos/my-project", name: "", type: "unknown" },
+			]);
+			mockSessionAdapter.listSessions.mockResolvedValueOnce([sessionOf("s1", "/data/repos/my-project")]);
+			const app = await getApp();
+			const res = await app.request("/api/projects");
+			expect(res.status).toBe(200);
+			const data = await json<{ projects: Array<{ name: string; sessionCount: number }> }>(res);
+			expect(data.projects[0].name).toBe("my-project");
+			expect(data.projects[0].sessionCount).toBe(1);
+		});
+
+		// Session count matches project path after normalization (trailing slash, backslashes)
+		it("GET /api/projects should count sessions by normalized cwd", async () => {
+			mockSessionAdapter.listProjects.mockResolvedValueOnce([
+				{ path: "C:\\repos\\proj", name: "proj", type: "code" },
+			]);
+			mockSessionAdapter.listSessions.mockResolvedValueOnce([
+				sessionOf("w1", "c:\\repos\\proj\\"),
+				sessionOf("w2", "C:/repos/proj"),
+			]);
+			const app = await getApp();
+			const res = await app.request("/api/projects");
+			expect(res.status).toBe(200);
+			const data = await json<{ projects: Array<{ path: string; sessionCount: number }> }>(res);
+			expect(data.projects[0].sessionCount).toBe(2);
 		});
 	});
 

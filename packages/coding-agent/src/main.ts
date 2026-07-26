@@ -39,6 +39,7 @@ import { KeybindingsManager } from "./core/keybindings.js";
 import type { ModelRegistry } from "./core/model-registry.js";
 import { resolveCliModel, resolveModelScope, type ScopedModel } from "./core/model-resolver.js";
 import { restoreStdout, takeOverStdout } from "./core/output-guard.js";
+import { listProjects } from "./core/project-registry.js";
 import type { CreateAgentSessionOptions } from "./core/sdk.js";
 import {
 	formatMissingSessionCwdPrompt,
@@ -458,6 +459,11 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 		},
 
 		bindSessionExtensions,
+
+		// --- listProjects: project registry (F-1.5, ~/.fan/agent/projects.json) ---
+		async listProjects() {
+			return listProjects().map((p) => ({ path: p.path, name: p.name, type: p.type }));
+		},
 
 		// --- getActiveSessionId (F-0.9: /api/health readiness) ---
 		getActiveSessionId() {

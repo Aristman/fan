@@ -17,9 +17,12 @@ import type {
 	GetModelsResponse,
 	GetSessionResponse,
 	HealthResponse,
+	ListProjectsResponse,
 	ListSessionsResponse,
 	ListTokensResponse,
 	ModelInfo,
+	ProjectInfo,
+	ProjectSummary,
 	RevokeTokenResponse,
 	RoutingRuleInfo,
 	SendMessageRequest,
@@ -58,6 +61,8 @@ export interface SessionAdapter {
 	getAvailableModels(): Promise<ModelInfo[]>;
 	/** Bind extensions to the current session (called after session switch/create) */
 	bindSessionExtensions(): Promise<void>;
+	/** List registered projects/workspaces (F-1.5; source: project-registry in coding-agent) */
+	listProjects(): Promise<ProjectInfo[]>;
 	/** Get the id of the currently active session (null if none). Optional — used by /api/health readiness. */
 	getActiveSessionId?(): string | null;
 }
@@ -149,6 +154,12 @@ function normalizeProjectPath(p: string): string {
 	// Windows: case-insensitive filesystem — compare case-folded
 	if (/^[A-Za-z]:/.test(normalized)) normalized = normalized.toLowerCase();
 	return normalized;
+}
+
+/** Basename of a normalized path (pure string-based, no fs access). */
+function pathBasename(p: string): string {
+	const segments = p.split("/").filter((seg) => seg.length > 0);
+	return segments.length > 0 ? segments[segments.length - 1] : p;
 }
 
 // ============================================================================
@@ -273,6 +284,34 @@ async function createApp(
 			return c.json({ error: "Session not found", code: "NOT_FOUND" } satisfies ApiError, 404);
 		}
 		return c.body(null, 204);
+	});
+
+	// --- Projects (F-1.5) ---
+	app.get("/api/projects", async (c) => {
+		// Projects come from the adapter (project registry); session counts are
+		// derived from listSessions() grouped by normalized cwd.
+		const [projects, sessions] = await Promise.all([sessionAdapter.listProjects(), sessionAdapter.listSessions()]);
+
+		const countByCwd = new Map<string, number>();
+		for (const s of sessions) {
+			if (s.cwd === undefined) continue;
+			const key = normalizeProjectPath(s.cwd);
+			countByCwd.set(key, (countByCwd.get(key) ?? 0) + 1);
+		}
+
+		const resp: ListProjectsResponse = {
+			projects: projects.map((p): ProjectSummary => {
+				const normalizedPath = normalizeProjectPath(p.path);
+				return {
+					path: p.path,
+					// name from the registry when present; otherwise basename of the path
+					name: p.name && p.name.length > 0 ? p.name : pathBasename(normalizedPath),
+					type: p.type,
+					sessionCount: countByCwd.get(normalizedPath) ?? 0,
+				};
+			}),
+		};
+		return c.json(resp);
 	});
 
 	// --- Messages ---

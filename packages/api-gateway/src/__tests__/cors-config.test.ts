@@ -35,6 +35,7 @@ const mockSessionAdapter = {
 	subscribeToSession: vi.fn().mockReturnValue(() => {}),
 	getAvailableModels: vi.fn().mockResolvedValue([]),
 	bindSessionExtensions: vi.fn().mockResolvedValue(undefined),
+	listProjects: vi.fn().mockResolvedValue([]),
 };
 
 describe("resolveAllowedOrigins (F-0.4)", () => {
