@@ -2,7 +2,13 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { addToProjects, getProjectsPath, listProjects, removeFromProjects } from "../src/core/project-registry.js";
+import {
+	addToProjects,
+	getProjectsPath,
+	listProjects,
+	PROJECT_TYPES,
+	removeFromProjects,
+} from "../src/core/project-registry.js";
 
 describe("project-registry (F-1.6)", () => {
 	let tempDir: string;
@@ -118,11 +124,17 @@ describe("project-registry (F-1.6)", () => {
 			expect(warnSpy).not.toHaveBeenCalled();
 		});
 
-		test("malformed entries are filtered out", () => {
+		test("structurally malformed entries are filtered out", () => {
 			const valid = { path: "/data/repos/ok", name: "ok", type: "code", addedAt: new Date().toISOString() };
 			writeFileSync(
 				projectsPath,
-				JSON.stringify([valid, { name: "no-path" }, null, { path: "/x", name: "x", type: "bogus", addedAt: "t" }]),
+				JSON.stringify([
+					valid,
+					{ name: "no-path" },
+					null,
+					{ path: "", name: "x", type: "code", addedAt: "t" },
+					{ path: "/x", name: "x", type: "code" },
+				]),
 				"utf-8",
 			);
 
@@ -137,6 +149,59 @@ describe("project-registry (F-1.6)", () => {
 
 			expect(added).toBe(true);
 			expect(JSON.parse(readFileSync(projectsPath, "utf-8"))).toEqual([entry]);
+		});
+	});
+
+	describe("workspace types (F-3.1)", () => {
+		test("TC-F-3.1-1: every entry exposes a string type; addToProjects defaults to 'unknown'", () => {
+			addToProjects("/data/repos/a", "a", undefined, projectsPath);
+			addToProjects("/data/repos/b", "b", "automation", projectsPath);
+
+			const projects = listProjects(projectsPath);
+			expect(projects).toHaveLength(2);
+			for (const p of projects) {
+				expect(typeof p.type).toBe("string");
+				expect(PROJECT_TYPES).toContain(p.type);
+			}
+			expect(projects[0].type).toBe("unknown");
+			expect(projects[1].type).toBe("automation");
+
+			// PROJECT_TYPES contains exactly the 4 spec values
+			expect([...PROJECT_TYPES].sort()).toEqual(["automation", "code", "research", "unknown"]);
+		});
+
+		test("TC-F-3.1-2: legacy entry without type reads back as 'unknown'", () => {
+			// Simulate a registry written before the `type` field existed
+			const legacy = { path: "/data/repos/legacy", name: "legacy", addedAt: new Date().toISOString() };
+			writeFileSync(projectsPath, JSON.stringify([legacy]), "utf-8");
+
+			const projects = listProjects(projectsPath);
+			expect(projects).toEqual([{ ...legacy, type: "unknown" }]);
+		});
+
+		test("invalid type value in file is normalized to 'unknown'", () => {
+			const addedAt = new Date().toISOString();
+			writeFileSync(
+				projectsPath,
+				JSON.stringify([
+					{ path: "/data/repos/bogus", name: "bogus", type: "bogus", addedAt },
+					{ path: "/data/repos/nonstring", name: "nonstring", type: 42, addedAt },
+					{ path: "/data/repos/nulltype", name: "nulltype", type: null, addedAt },
+					{ path: "/data/repos/ok", name: "ok", type: "research", addedAt },
+				]),
+				"utf-8",
+			);
+
+			const projects = listProjects(projectsPath);
+			expect(projects.map((p) => p.type)).toEqual(["unknown", "unknown", "unknown", "research"]);
+		});
+
+		test("addToProjects accepts each of the 4 project types", () => {
+			for (const type of PROJECT_TYPES) {
+				const { entry } = addToProjects(`/data/repos/t-${type}`, `t-${type}`, type, projectsPath);
+				expect(entry.type).toBe(type);
+			}
+			expect(listProjects(projectsPath).map((p) => p.type)).toEqual([...PROJECT_TYPES]);
 		});
 	});
 

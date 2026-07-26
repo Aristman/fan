@@ -13,6 +13,12 @@
  *   The existing entry is returned unchanged — `name`/`type` are NOT overwritten.
  * - Missing or corrupted registry file: read operations return an empty array
  *   (with a warning logged for corrupted content) instead of throwing.
+ * - Backward compatibility (F-3.1): entries written before the `type` field
+ *   existed, or with an unrecognized `type` value, are NOT dropped on read —
+ *   they are normalized to `type: 'unknown'` (default). Only structurally
+ *   malformed entries (missing/invalid `path`, `name`, or `addedAt`) are
+ *   filtered out. Normalization happens in memory on read; the file on disk
+ *   is only rewritten on the next mutating operation.
  */
 
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "fs";
@@ -39,16 +45,24 @@ export function getProjectsPath(): string {
 	return join(getAgentDir(), "projects.json");
 }
 
-function isValidEntry(entry: unknown): entry is ProjectEntry {
-	if (typeof entry !== "object" || entry === null) return false;
+/**
+ * Normalize a raw registry entry (F-3.1).
+ *
+ * Returns null for structurally malformed entries (missing/invalid `path`,
+ * `name`, or `addedAt`). Otherwise returns a valid ProjectEntry where a
+ * missing or unrecognized `type` is normalized to `'unknown'` — this gives
+ * backward compatibility for registries written before the `type` field
+ * existed and protects against hand-edited files with bogus type values.
+ */
+function normalizeEntry(entry: unknown): ProjectEntry | null {
+	if (typeof entry !== "object" || entry === null) return null;
 	const e = entry as Record<string, unknown>;
-	return (
-		typeof e.path === "string" &&
-		e.path.length > 0 &&
-		typeof e.name === "string" &&
-		PROJECT_TYPES.includes(e.type as ProjectType) &&
-		typeof e.addedAt === "string"
-	);
+	if (typeof e.path !== "string" || e.path.length === 0) return null;
+	if (typeof e.name !== "string") return null;
+	if (typeof e.addedAt !== "string") return null;
+
+	const type = PROJECT_TYPES.includes(e.type as ProjectType) ? (e.type as ProjectType) : "unknown";
+	return { path: e.path, name: e.name, type, addedAt: e.addedAt };
 }
 
 /**
@@ -78,7 +92,7 @@ export function listProjects(projectsPath: string = getProjectsPath()): ProjectE
 		return [];
 	}
 
-	return parsed.filter(isValidEntry);
+	return parsed.map(normalizeEntry).filter((e): e is ProjectEntry => e !== null);
 }
 
 /**
