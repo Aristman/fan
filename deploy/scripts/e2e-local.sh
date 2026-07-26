@@ -16,6 +16,9 @@
 #   → phase 1 (F-1.14-E2E): multi-project Workspace API workflow (section 8)
 #   → phase 2 (F-2.14-E2E): Workspace UX — WS dispatch path + 3-project
 #     switching performance (section 9)
+#   → phase 3 (F-3.11-E2E, part 1): Universal Tasks — research workspace
+#     lifecycle: template creation, type detection, prompt override,
+#     manual type change (section 10)
 #   → docker compose down (trap on exit)
 #
 # Exit code 0 only if every check passes (check 7 is optional — skipped
@@ -118,11 +121,18 @@ SESS_DIR_A="/data/.fan/agent/sessions/--data-repos-e2e-proj-a--"
 SESS_DIR_B="/data/.fan/agent/sessions/--data-repos-e2e-proj-b--"
 SESS_DIR_C="/data/.fan/agent/sessions/--data-repos-e2e-proj-c--"
 
+# --- Section 10 (F-3.11-E2E, part 1) constants ---
+RESEARCH_PROJ="/data/repos/e2e-research-lab"
+RESEARCH_PROJ_NAME="e2e-research-lab"
+# Dist path of the F-3.6 prompt loader inside the runtime image (Dockerfile
+# stage 2 copies each package's dist/ to /app/packages/<pkg>/dist).
+PROMPT_LOADER_DIST="/app/packages/coding-agent/dist/workspace/prompt-loader.js"
+
 # Remove test workspaces, their session dirs and their projects.json
 # registry entries. Best-effort: never fails the script (used in the trap).
 e2e_workspace_cleanup() {
 	MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" \
-		rm -rf "$PROJ_A" "$PROJ_B" "$PROJ_C" "$SESS_DIR_A" "$SESS_DIR_B" "$SESS_DIR_C" 2>/dev/null || true
+		rm -rf "$PROJ_A" "$PROJ_B" "$PROJ_C" "$RESEARCH_PROJ" "$SESS_DIR_A" "$SESS_DIR_B" "$SESS_DIR_C" 2>/dev/null || true
 	MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" bun -e '
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 const p = "/data/.fan/agent/projects.json";
@@ -130,7 +140,7 @@ if (existsSync(p)) {
 	try {
 		const list = JSON.parse(readFileSync(p, "utf8"));
 		if (Array.isArray(list)) {
-			const e2e = ["/data/repos/e2e-proj-a", "/data/repos/e2e-proj-b", "/data/repos/e2e-proj-c"];
+			const e2e = ["/data/repos/e2e-proj-a", "/data/repos/e2e-proj-b", "/data/repos/e2e-proj-c", "/data/repos/e2e-research-lab"];
 			const keep = list.filter((e) => e && !e2e.includes(e.path));
 			writeFileSync(p, JSON.stringify(keep, null, 2));
 		}
@@ -635,6 +645,186 @@ try {
 
 	# 9.5. Post-clean: keep the run idempotent (also runs from the EXIT trap).
 	info "Cleanup: removing phase-2 test workspaces, session dirs and registry entries"
+	e2e_workspace_cleanup
+fi
+
+# =========================================================================
+section "10. Phase 3 — Universal Tasks (F-3.11-E2E, part 1): research workspace"
+# =========================================================================
+# Covers the non-LLM part of TC-F-3.11-E2E-1 against the live container:
+#   POST /api/projects (template=research, F-3.5) → disk structure (F-3.4)
+#   → registry entry type=research (F-3.1/F-3.2) → prompt default + override
+#   (F-3.6, executed against the REAL dist build in the container) → manual
+#   type change round-trip (F-3.10) → idempotent re-POST.
+#
+# DOCUMENTED CONSTRAINTS — LLM-dependent steps are a MANUAL checklist:
+#   TC-F-3.11-E2E-1 steps 5–8 (`/idea-lab:analyze` → SWOT doc in
+#   docs/research/) and all of TC-F-3.11-E2E-2 (`/research-spec:generate`)
+#   require a live LLM, which this stack deliberately does not have (no API
+#   keys in the container — same boundary as section 9). A slash command is
+#   just prompt text for the agent; without a model there is nothing to
+#   assert. Manual checklist (run on a deployment WITH a configured model):
+#     1. Create project from the «Research Lab» template (dashboard dialog).
+#     2. Chat: /idea-lab:analyze "AI-powered code review tool"
+#     3. Assert docs/research/ contains a non-empty SWOT markdown doc.
+#     4. Chat: /research-spec:generate "Distributed task queue architecture"
+#     5. Assert the generated spec has TOC + architecture sections.
+#   Everything BEFORE the LLM boundary is checked here (10.1–10.8).
+#
+# SKILLS IN THE CONTAINER (investigated, documented): the runtime image
+# contains only package.json + dist/ per package (Dockerfile /deploy stage)
+# — the repo `skills/` sources are NOT baked in. At runtime skills are
+# discovered from <agentDir>/skills (= /data/.fan/agent/skills, the fan-data
+# volume; resource-loader.ts) and <cwd>/.fan/skills, populated via
+# `fan store install`. Check 10.8 therefore verifies the skill SOURCES
+# host-side (prerequisite for the manual scenario) instead of executing
+# LLM-bound skills in the container.
+if [ -z "$TOKEN" ]; then
+	fail "phase 3 checks skipped — no token (see check 3)"
+else
+	# 10.0. Pre-clean: wipe leftovers from a crashed previous run (volumes persist).
+	e2e_workspace_cleanup
+
+	# 10.1. TC-F-3.5-2: unknown template is rejected with 400 BEFORE any fs write.
+	bad_tmpl_resp="$(curl -s --max-time 15 -w '\n%{http_code}' -X POST "$BASE_URL/api/projects" \
+		-H "Authorization: Bearer $TOKEN" \
+		-H "Content-Type: application/json" \
+		-d "{\"name\": \"$RESEARCH_PROJ_NAME\", \"template\": \"nonexistent\", \"rootPath\": \"/data/repos\"}")"
+	bad_tmpl_code="${bad_tmpl_resp##*$'\n'}"
+	bad_tmpl_body="${bad_tmpl_resp%$'\n'*}"
+	if [ "$bad_tmpl_code" = "400" ] && echo "$bad_tmpl_body" | grep -q "Unknown template: nonexistent"; then
+		pass "POST /api/projects with unknown template → 400 'Unknown template' (F-3.5, TC-F-3.5-2)"
+	else
+		fail "unknown template: expected 400 + 'Unknown template: nonexistent', got code=$bad_tmpl_code body=$bad_tmpl_body"
+	fi
+
+	# 10.2. TC-F-3.5-1/3 + TC-F-3.11-E2E-1 steps 1+3: create the research
+	# workspace via the API → 201 with type+template=research (auto-detected
+	# from the template-created docs/research/, F-3.2).
+	create_resp="$(curl -s --max-time 15 -w '\n%{http_code}' -X POST "$BASE_URL/api/projects" \
+		-H "Authorization: Bearer $TOKEN" \
+		-H "Content-Type: application/json" \
+		-d "{\"name\": \"$RESEARCH_PROJ_NAME\", \"template\": \"research\", \"rootPath\": \"/data/repos\"}")"
+	create_code="${create_resp##*$'\n'}"
+	create_body="${create_resp%$'\n'*}"
+	info "POST /api/projects {name: $RESEARCH_PROJ_NAME, template: research} → $create_code: $create_body"
+	if [ "$create_code" = "201" ] && echo "$create_body" | grep -q "\"path\":\"$RESEARCH_PROJ\"" \
+		&& echo "$create_body" | grep -q "\"type\":\"research\"" && echo "$create_body" | grep -q "\"template\":\"research\""; then
+		pass "research project created via API (HTTP 201, type=research auto-detected, template=research)"
+	else
+		fail "POST /api/projects research: expected 201 + path/type/template=research, got code=$create_code body=$create_body"
+	fi
+
+	# 10.3. TC-F-3.4-1 / TC-F-3.11-E2E-1 step 2: template directory structure
+	# materialized on disk (inside the container).
+	if MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" test -d "$RESEARCH_PROJ/.fan/prompts" \
+		&& MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" test -d "$RESEARCH_PROJ/docs/research" \
+		&& MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" test -d "$RESEARCH_PROJ/data" \
+		&& MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" test -d "$RESEARCH_PROJ/reports" \
+		&& MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" test -f "$RESEARCH_PROJ/.fan/settings.json"; then
+		pass "research template structure on disk: .fan/prompts, docs/research, data, reports, .fan/settings.json (F-3.4)"
+	else
+		fail "research template structure incomplete under $RESEARCH_PROJ"
+	fi
+
+	# 10.4. GET /api/projects → registry entry with type=research (F-3.1).
+	projects_body="$(curl -s --max-time 10 "$BASE_URL/api/projects" -H "Authorization: Bearer $TOKEN")"
+	if echo "$projects_body" | grep -q "\"path\":\"$RESEARCH_PROJ\",\"name\":\"$RESEARCH_PROJ_NAME\",\"type\":\"research\""; then
+		pass "GET /api/projects: $RESEARCH_PROJ_NAME registered with type=research (F-3.1/F-3.2)"
+	else
+		fail "GET /api/projects: expected $RESEARCH_PROJ with type=research, got $projects_body"
+	fi
+
+	# 10.5. F-3.6 default prompt, executed against the REAL dist build inside
+	# the container (prompt-loader.js imports only node builtins + the sibling
+	# detector.js — verified): the research base prompt names the role and
+	# the docs/research output path, with variables substituted.
+	default_prompt="$(MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" bun -e "
+import { loadSystemPrompt } from \"$PROMPT_LOADER_DIST\";
+console.log(loadSystemPrompt(\"/data/repos/e2e-research-lab\"));
+" 2>/dev/null || true)"
+	if echo "$default_prompt" | grep -q "research assistant" \
+		&& echo "$default_prompt" | grep -q "$RESEARCH_PROJ/docs/research" \
+		&& echo "$default_prompt" | grep -q "e2e-research-lab"; then
+		pass "loadSystemPrompt (dist, in-container): research default prompt mentions docs/research + substituted variables (F-3.6)"
+	else
+		fail "loadSystemPrompt default: expected 'research assistant' + '$RESEARCH_PROJ/docs/research', got: $(echo "$default_prompt" | head -3)"
+	fi
+
+	# 10.6. F-3.6 custom override (TC-F-3.6-2 at container level): write
+	# .fan/prompts/system.md → the loader returns the custom content INSTEAD
+	# of the research template (full replacement, no merge).
+	write_out="$(MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" bun -e '
+import { writeFileSync } from "node:fs";
+writeFileSync("/data/repos/e2e-research-lab/.fan/prompts/system.md", "E2E_CUSTOM_PROMPT_OVERRIDE_MARKER for {project_name}\n");
+console.log("WROTE");
+' 2>/dev/null || true)"
+	override_prompt="$(MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" bun -e "
+import { loadSystemPrompt } from \"$PROMPT_LOADER_DIST\";
+console.log(loadSystemPrompt(\"/data/repos/e2e-research-lab\"));
+" 2>/dev/null || true)"
+	if [ "$write_out" = "WROTE" ] \
+		&& MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" test -f "$RESEARCH_PROJ/.fan/prompts/system.md" \
+		&& echo "$override_prompt" | grep -q "E2E_CUSTOM_PROMPT_OVERRIDE_MARKER for e2e-research-lab" \
+		&& ! echo "$override_prompt" | grep -q "research assistant"; then
+		pass ".fan/prompts/system.md override respected: custom prompt replaces template, variables substituted (F-3.6, TC-F-3.6-2)"
+	else
+		fail "prompt override: write_out=$write_out, loader returned: $(echo "$override_prompt" | head -3)"
+	fi
+
+	# 10.7. F-3.10 (TC-F-3.10-1): manual type change round-trip via
+	# PUT /api/projects?path= — research → automation → back to research.
+	put_auto_resp="$(curl -s --max-time 15 -w '\n%{http_code}' -X PUT "$BASE_URL/api/projects?path=$RESEARCH_PROJ" \
+		-H "Authorization: Bearer $TOKEN" \
+		-H "Content-Type: application/json" -d '{"type": "automation"}')"
+	put_auto_code="${put_auto_resp##*$'\n'}"
+	put_auto_body="${put_auto_resp%$'\n'*}"
+	put_back_resp="$(curl -s --max-time 15 -w '\n%{http_code}' -X PUT "$BASE_URL/api/projects?path=$RESEARCH_PROJ" \
+		-H "Authorization: Bearer $TOKEN" \
+		-H "Content-Type: application/json" -d '{"type": "research"}')"
+	put_back_code="${put_back_resp##*$'\n'}"
+	put_back_body="${put_back_resp%$'\n'*}"
+	final_type="$(curl -s --max-time 10 "$BASE_URL/api/projects" -H "Authorization: Bearer $TOKEN" \
+		| grep -o "\"path\":\"$RESEARCH_PROJ\",\"name\":\"$RESEARCH_PROJ_NAME\",\"type\":\"[a-z]*\"" \
+		| sed 's/.*"type":"\([a-z]*\)"/\1/' || true)"
+	if [ "$put_auto_code" = "200" ] && echo "$put_auto_body" | grep -q "\"type\":\"automation\"" \
+		&& [ "$put_back_code" = "200" ] && echo "$put_back_body" | grep -q "\"type\":\"research\"" \
+		&& [ "$final_type" = "research" ]; then
+		pass "PUT /api/projects?path= type round-trip: research → automation → research, registry confirms (F-3.10)"
+	else
+		fail "type round-trip: auto=$put_auto_code/$put_auto_body back=$put_back_code/$put_back_body final=$final_type"
+	fi
+
+	# 10.8. Idempotency: re-POST the same project → 200 (registry dedup,
+	# created=false); applyTemplate never overwrites — the custom prompt
+	# override from 10.6 survives.
+	repost_resp="$(curl -s --max-time 15 -w '\n%{http_code}' -X POST "$BASE_URL/api/projects" \
+		-H "Authorization: Bearer $TOKEN" \
+		-H "Content-Type: application/json" \
+		-d "{\"name\": \"$RESEARCH_PROJ_NAME\", \"template\": \"research\", \"rootPath\": \"/data/repos\"}")"
+	repost_code="${repost_resp##*$'\n'}"
+	repost_body="${repost_resp%$'\n'*}"
+	if [ "$repost_code" = "200" ] && echo "$repost_body" | grep -q "\"type\":\"research\"" \
+		&& MSYS2_ARG_CONV_EXCL="*" docker exec "$CONTAINER_NAME" \
+			grep -q "E2E_CUSTOM_PROMPT_OVERRIDE_MARKER" "$RESEARCH_PROJ/.fan/prompts/system.md"; then
+		pass "re-POST same project → 200 (idempotent), existing files NOT overwritten (override survived)"
+	else
+		fail "idempotent re-POST: expected 200 + intact override, got code=$repost_code body=$repost_body"
+	fi
+
+	# 10.9. Skill sources for the manual LLM scenario exist host-side
+	# (idea-lab + research-spec-generator, shipped in skills/; installable via
+	# FAN Store). The container image does not bundle them — see section
+	# header. Skill EXECUTION is the manual checklist (LLM required).
+	if [ -f "$REPO_ROOT/skills/idea-lab/SKILL.md" ] && [ -f "$REPO_ROOT/skills/research-spec-generator/SKILL.md" ]; then
+		pass "skill sources present (skills/idea-lab, skills/research-spec-generator) — prerequisite for manual TC-F-3.11-E2E-1/2"
+		info "MANUAL (needs LLM): /idea-lab:analyze → SWOT doc in docs/research/; /research-spec:generate → spec doc"
+	else
+		fail "skill sources missing under $REPO_ROOT/skills (idea-lab / research-spec-generator)"
+	fi
+
+	# 10.10. Post-clean: keep the run idempotent (also runs from the EXIT trap).
+	info "Cleanup: removing research test workspace and registry entry"
 	e2e_workspace_cleanup
 fi
 
