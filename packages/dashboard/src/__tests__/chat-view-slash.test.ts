@@ -16,7 +16,10 @@ import { filterSlashCommands, getSlashCommands, isSlashCommandContext } from "..
 
 const SESSION_ID = "sess-1";
 
-function createEl(projectType: string | null = null): { el: ChatView; apiClient: { sendMessage: ReturnType<typeof vi.fn> } } {
+function createEl(projectType: string | null = null): {
+	el: ChatView;
+	apiClient: { sendMessage: ReturnType<typeof vi.fn> };
+} {
 	const wsClient = {
 		onMessage: vi.fn(() => () => {}),
 		onStatusChange: vi.fn(() => () => {}),

@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { resolve as resolvePath } from "node:path";
+import { normalize as normalizePath, resolve as resolvePath } from "node:path";
 import { getPrismaClient } from "@fan/db";
 import type { ModelManager, RoutingRuleData } from "@fan/model-manager";
 import { serveStatic } from "@hono/node-server/serve-static";
@@ -435,10 +435,10 @@ async function createApp(
 			);
 		}
 		const name = body.name.trim();
-		if (name.includes("/") || name.includes("\\") || name.includes("..")) {
+		if (name.includes("/") || name.includes("\\") || name === ".." || name === ".") {
 			return c.json(
 				{
-					error: "name must be a single path segment (no '/', '\\\\' or '..')",
+					error: "name must be a single path segment (no '/', '\\\\', '..' or '.')",
 					code: "BAD_REQUEST",
 				} satisfies ApiError,
 				400,
@@ -473,6 +473,12 @@ async function createApp(
 
 		// F-1.13: whitelist validation BEFORE the adapter touches the filesystem.
 		const fullPath = resolvePath(rootPath, name);
+		if (normalizePath(fullPath) === normalizePath(resolvePath(rootPath))) {
+			return c.json(
+				{ error: "name cannot resolve to the workspace root", code: "BAD_REQUEST" } satisfies ApiError,
+				400,
+			);
+		}
 		const validation = validateCwd(fullPath, allowedRoots);
 		if (!validation.valid) {
 			logCwdRejection({ cwd: fullPath, reason: validation.reason ?? "rejected", allowedRoots });

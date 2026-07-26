@@ -22,7 +22,7 @@ import type { CreateProjectRequest, CreateProjectResponse } from "@fan/api-gatew
 import { html, LitElement, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { CodeXml, Cog, FlaskConical, Folder, FolderPlus, type IconNode, X } from "lucide";
-import { FanApiClient, FanApiError } from "../api/client.js";
+import { type FanApiClient, FanApiError } from "../api/client.js";
 import { icon } from "../lib/icon.js";
 
 /** Template choices shown as a radio group (spec section 4.2). "" = empty folder. */
@@ -96,8 +96,8 @@ export class FanCreateProjectDialog extends LitElement {
 	get nameError(): string | null {
 		const n = this.name.trim();
 		if (!n) return null; // emptiness is handled by the disabled submit button
-		if (n.includes("/") || n.includes("\\") || n.includes("..")) {
-			return "Name must be a single path segment (no '/', '\\' or '..')";
+		if (n.includes("/") || n.includes("\\") || n === ".." || n === ".") {
+			return "Name must be a single path segment (no '/', '\\', '..' or '.')";
 		}
 		return null;
 	}
@@ -209,19 +209,21 @@ export class FanCreateProjectDialog extends LitElement {
                        text-foreground placeholder:text-muted-foreground
                        focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary
                        transition-colors ${
-						this.nameError ? "name-invalid border-destructive ring-1 ring-destructive/50" : "border-border"
-					}"
+									this.nameError
+										? "name-invalid border-destructive ring-1 ring-destructive/50"
+										: "border-border"
+								}"
                 placeholder="my-project"
                 .value=${this.name}
                 @input=${(e: Event) => {
-						this.name = (e.target as HTMLInputElement).value;
-					}}
+							this.name = (e.target as HTMLInputElement).value;
+						}}
               />
               ${
-					this.nameError
-						? html`<p class="name-error mt-1.5 text-xs text-destructive">${this.nameError}</p>`
-						: nothing
-				}
+						this.nameError
+							? html`<p class="name-error mt-1.5 text-xs text-destructive">${this.nameError}</p>`
+							: nothing
+					}
             </div>
 
             <!-- Template radio group -->
@@ -229,14 +231,14 @@ export class FanCreateProjectDialog extends LitElement {
               <legend class="block text-sm font-medium text-foreground mb-1.5">Template</legend>
               <div class="template-options space-y-1.5">
                 ${TEMPLATES.map(
-						(t) => html`
+							(t) => html`
                     <label
                       class="template-option flex items-center gap-3 px-3 py-2 rounded-lg border cursor-pointer transition-colors
                              ${
-								this.template === t.value
-									? "border-primary bg-primary/5"
-									: "border-border hover:bg-secondary/40"
-							}"
+											this.template === t.value
+												? "border-primary bg-primary/5"
+												: "border-border hover:bg-secondary/40"
+										}"
                     >
                       <input
                         type="radio"
@@ -245,8 +247,8 @@ export class FanCreateProjectDialog extends LitElement {
                         .value=${t.value}
                         .checked=${this.template === t.value}
                         @change=${() => {
-								this.template = t.value;
-							}}
+									this.template = t.value;
+								}}
                       />
                       ${icon(t.iconNode, "w-4 h-4 text-muted-foreground")}
                       <span class="min-w-0">
@@ -255,7 +257,7 @@ export class FanCreateProjectDialog extends LitElement {
                       </span>
                     </label>
                   `,
-					)}
+						)}
               </div>
             </fieldset>
 
@@ -274,8 +276,8 @@ export class FanCreateProjectDialog extends LitElement {
                 placeholder="Default: workspace root (server)"
                 .value=${this.rootPath}
                 @input=${(e: Event) => {
-						this.rootPath = (e.target as HTMLInputElement).value;
-					}}
+							this.rootPath = (e.target as HTMLInputElement).value;
+						}}
               />
               <p class="mt-1.5 text-xs text-muted-foreground">
                 The project directory is created inside this folder. Leave empty to use the server default.

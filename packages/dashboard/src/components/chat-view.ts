@@ -488,29 +488,29 @@ export class ChatView extends LitElement {
         class="absolute bottom-full left-0 right-0 mb-2 max-h-64 overflow-y-auto rounded-xl border border-border bg-background shadow-lg"
       >
         ${items.map(
-					(cmd, i) => html`
+				(cmd, i) => html`
             <button
               type="button"
               role="option"
               aria-selected=${i === this.slashSelectedIndex ? "true" : "false"}
               data-testid="slash-item-${cmd.name}"
               class="flex w-full items-baseline gap-2 px-3 py-2 text-left text-sm transition-colors ${
-								i === this.slashSelectedIndex ? "bg-primary/10" : "hover:bg-foreground/5"
-							}"
+						i === this.slashSelectedIndex ? "bg-primary/10" : "hover:bg-foreground/5"
+					}"
               @mousedown=${(e: Event) => {
-								// mousedown (not click) so selection happens before textarea blur
-								e.preventDefault();
-								this.selectSlashCommand(cmd);
-							}}
+						// mousedown (not click) so selection happens before textarea blur
+						e.preventDefault();
+						this.selectSlashCommand(cmd);
+					}}
               @mouseenter=${() => {
-								this.slashSelectedIndex = i;
-							}}
+						this.slashSelectedIndex = i;
+					}}
             >
               <span class="font-mono text-xs shrink-0">/${cmd.name}</span>
               <span class="text-xs text-muted-foreground truncate">${cmd.description}</span>
             </button>
           `,
-				)}
+			)}
       </div>
     `;
 	}

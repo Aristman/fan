@@ -856,6 +856,36 @@ describe("HTTP Server", () => {
 			},
 		);
 
+		// Доп: имена, которые разрешаются в rootPath → 400
+		it.each([".", " . ", "  ..  "])("POST /api/projects with root-like name %j should return 400", async (name) => {
+			const app = await getApp();
+			const res = await app.request("/api/projects", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ name, rootPath: "/tmp" }),
+			});
+			expect(res.status).toBe(400);
+			expect(mockSessionAdapter.createProject).not.toHaveBeenCalled();
+		});
+
+		// Доп: корректные имена с точками → 201
+		it.each(["my.proj", "a..b"])("POST /api/projects with valid dotted name %j should return 201", async (name) => {
+			mockSessionAdapter.createProject.mockResolvedValueOnce({
+				path: `/tmp/${name}`,
+				name,
+				type: "unknown",
+				created: true,
+			});
+			const app = await getApp();
+			const res = await app.request("/api/projects", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ name, rootPath: "/tmp" }),
+			});
+			expect(res.status).toBe(201);
+			expect(mockSessionAdapter.createProject).toHaveBeenCalledWith({ name, rootPath: "/tmp" });
+		});
+
 		// Доп: path вне whitelist → 403 (F-1.13 применяется и к созданию проектов)
 		it("POST /api/projects with rootPath outside the whitelist should return 403", async () => {
 			const app = await createApp(mockModelManager as unknown as ModelManager, mockSessionAdapter, {

@@ -1,18 +1,22 @@
 // Tests for <fan-create-project-dialog> (F-3.8)
 import type { CreateProjectResponse } from "@fan/api-gateway/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { FanApiClient, FanApiError } from "../api/client.js";
+import { type FanApiClient, FanApiError } from "../api/client.js";
 import "../components/create-project-dialog.js";
 import { FanCreateProjectDialog } from "../components/create-project-dialog.js";
 
 function stubClient(createProjectImpl?: () => Promise<CreateProjectResponse>): FanApiClient {
 	return {
-		createProject: vi.fn(createProjectImpl ?? (() => Promise.resolve({
-			path: "/tmp/MyProj",
-			name: "MyProj",
-			type: "code",
-			template: "code",
-		}))),
+		createProject: vi.fn(
+			createProjectImpl ??
+				(() =>
+					Promise.resolve({
+						path: "/tmp/MyProj",
+						name: "MyProj",
+						type: "code",
+						template: "code",
+					})),
+		),
 	} as unknown as FanApiClient;
 }
 
@@ -155,7 +159,9 @@ describe("fan-create-project-dialog", () => {
 
 	// Server error (403) is shown inline; the dialog stays open
 	it("shows a 403 server error message and keeps the dialog open", async () => {
-		client = stubClient(() => Promise.reject(new FanApiError(403, "FORBIDDEN", "path rejected: outside allowed roots")));
+		client = stubClient(() =>
+			Promise.reject(new FanApiError(403, "FORBIDDEN", "path rejected: outside allowed roots")),
+		);
 		el = openDialog(client);
 		await el.updateComplete;
 

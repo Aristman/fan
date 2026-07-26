@@ -25,6 +25,15 @@
 
 import type { WorkspaceTemplate } from "./types.js";
 
+/**
+ * Escape a value for safe use inside a POSIX double-quoted string by wrapping
+ * it in single quotes and escaping any embedded single quote as `'"'"'`.
+ * This prevents command substitution (`$(...)`, backticks) and quote breaking.
+ */
+function shellQuote(value: string): string {
+	return `'${value.replace(/'/g, `'"'"'`)}'`;
+}
+
 export const automationHubTemplate: WorkspaceTemplate = {
 	name: "automation",
 	description: "Automation hub: scripts/, config/, output/ and logs/ for scripting and ops automation",
@@ -43,7 +52,7 @@ export const automationHubTemplate: WorkspaceTemplate = {
 					"# Conventions: configuration lives in config/, artifacts in output/, logs in logs/.",
 					"set -euo pipefail",
 					"",
-					`echo "Hello from ${projectName} automation workspace"`,
+					`echo "Hello from ${shellQuote(projectName)} automation workspace"`,
 					"",
 				].join("\n"),
 		},

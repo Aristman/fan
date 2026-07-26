@@ -233,6 +233,17 @@ describe("workspace templates — automation hub (F-3.4)", () => {
 			expect(listTemplates()).toContain("automation");
 			expect(getTemplate("automation")).toBe(automationHubTemplate);
 		});
+
+		test("shell metacharacters in projectName are escaped in example.sh", () => {
+			const target = join(workDir, "$(touch pwn)");
+			applyTemplate("automation", target);
+
+			const script = readFileSync(join(target, "scripts", "example.sh"), "utf-8");
+			// The injected name must appear literally, but wrapped in single quotes so it
+			// is not executed by the shell.
+			expect(script).toContain("$(touch pwn)");
+			expect(script).toContain(`echo "Hello from '$(touch pwn)' automation workspace"`);
+		});
 	});
 });
 
