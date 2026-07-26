@@ -5,6 +5,7 @@
   "version": "2.3.6",
   "workspaces": [
     "packages/*",
+    "tools/*",
     "packages/web-ui/example",
     "packages/coding-agent/examples/extensions/with-deps",
     "packages/coding-agent/examples/extensions/custom-provider-anthropic",

@@ -1,0 +1,16 @@
+# FAN Scheduler — example configuration
+# Each task is executed by the FAN agent on the given cron schedule.
+# Fields:
+#   name         (required) unique task name
+#   schedule     (required) 5-field cron expression (minute hour day-of-month month day-of-week)
+#   workspace    (required) path to the project workspace (used as session cwd)
+#   message      (required) prompt sent to the agent
+#   budget_limit (optional) token budget cap for the task, default: null (no cap)
+#   timeout      (optional) execution timeout in seconds, default: 3600
+tasks:
+  - name: daily-code-review
+    schedule: "0 9 * * *"
+    workspace: /data/repos/my-project
+    message: "Review the latest commits and open a PR with improvements."
+    budget_limit: 500
+    timeout: 3600

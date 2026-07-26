@@ -1,0 +1,23 @@
+{
+	"name": "@fan/scheduler",
+	"version": "0.1.0",
+	"private": true,
+	"description": "FAN Scheduler — autonomous cron-based task runner (Phase 4 autonomy)",
+	"type": "module",
+	"main": "dist/scheduler.js",
+	"scripts": {
+		"clean": "shx rm -rf dist",
+		"build": "tsc",
+		"start": "bun dist/scheduler.js",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"yaml": "^2.8.2"
+	},
+	"devDependencies": {
+		"@types/node": "^22.10.5",
+		"shx": "^0.4.0",
+		"typescript": "^5.9.2",
+		"vitest": "^3.2.4"
+	}
+}
