@@ -15,6 +15,8 @@ export const DEFAULTS = {
     cloud: { model: "", models: {} },
     local: { model: "", models: {} },
     providerMode: "cloud",
+    presets: {},
+    activePreset: null,
     coordinatorDefault: true,
     parallelWorkers: 3,
     workerTimeout: 600,
@@ -134,6 +136,103 @@ function normalizeConfigKeys(config) {
         config.workerTimeout = config.stallTimeout;
     }
 }
+const RESERVED_PRESET_NAMES = new Set(["__proto__", "constructor", "prototype", "➕ Create new preset"]);
+
+/**
+ * Validate a preset value. A valid preset is an object with cloud and local
+ * objects, each optionally containing a string model and an object models,
+ * and a providerMode of "auto", "cloud", or "local".
+ */
+function isValidPreset(preset) {
+    if (!preset || typeof preset !== "object" || Array.isArray(preset))
+        return false;
+    for (const key of ["cloud", "local"]) {
+        const section = preset[key];
+        if (!section || typeof section !== "object" || Array.isArray(section))
+            return false;
+        if (section.model !== undefined && typeof section.model !== "string")
+            return false;
+        if (section.models !== undefined &&
+            (typeof section.models !== "object" || Array.isArray(section.models)))
+            return false;
+    }
+    return ["auto", "cloud", "local"].includes(preset.providerMode);
+}
+
+/**
+ * Ensure preset fields exist with safe defaults (migration for old config.json files).
+ * Drops invalid preset entries and resets activePreset when it is dangling or invalid.
+ */
+function normalizePresetConfig(config) {
+    if (!config.presets || typeof config.presets !== "object" || Array.isArray(config.presets)) {
+        config.presets = {};
+    }
+    else {
+        for (const name of Object.keys(config.presets)) {
+            if (!isValidPreset(config.presets[name])) {
+                delete config.presets[name];
+            }
+        }
+    }
+    if (config.activePreset === undefined ||
+        typeof config.activePreset !== "string" ||
+        !Object.hasOwn(config.presets, config.activePreset)) {
+        config.activePreset = null;
+    }
+}
+
+/**
+ * Save the current model-related config (cloud, local, providerMode) as a named preset.
+ * Sets the preset as active. Deep-copies the snapshot.
+ * Returns false for reserved names (e.g. __proto__, constructor, prototype, "➕ Create new preset").
+ */
+export function savePreset(config, name) {
+    if (RESERVED_PRESET_NAMES.has(name))
+        return false;
+    if (!config.presets || typeof config.presets !== "object" || Array.isArray(config.presets))
+        config.presets = {};
+    config.presets[name] = structuredClone({
+        cloud: config.cloud,
+        local: config.local,
+        providerMode: config.providerMode,
+    });
+    config.activePreset = name;
+    return true;
+}
+/**
+ * Apply a named preset: copies its cloud/local/providerMode back into top-level
+ * config fields (deep-copy) and marks it active. Returns false if the preset
+ * does not exist or has an invalid shape.
+ */
+export function applyPreset(config, name) {
+    const preset = config.presets?.[name];
+    if (!isValidPreset(preset))
+        return false;
+    const copy = structuredClone(preset);
+    config.cloud = copy.cloud;
+    config.local = copy.local;
+    config.providerMode = copy.providerMode;
+    config.activePreset = name;
+    return true;
+}
+/**
+ * Delete a named preset. If it was the active preset, clears activePreset.
+ * Returns true if the preset existed as an own property.
+ */
+export function deletePreset(config, name) {
+    if (!config.presets || typeof config.presets !== "object" || Array.isArray(config.presets))
+        return false;
+    if (!Object.hasOwn(config.presets, name))
+        return false;
+    delete config.presets[name];
+    if (config.activePreset === name)
+        config.activePreset = null;
+    return true;
+}
+/** List all preset names. */
+export function listPresets(config) {
+    return Object.keys(config.presets || {});
+}
 
 /**
  * Load orchestrator configuration.
@@ -172,6 +271,7 @@ export function loadConfig() {
                 const example = JSON.parse(fs.readFileSync(examplePath, "utf-8"));
                 normalizeConfigKeys(example);
                 normalizeTemperatureConfig(example);
+                normalizePresetConfig(example);
                 const merged = deepMerge(DEFAULTS, example);
                 saveConfig(merged);
                 console.log("[FAN Orchestrator] Created config.json from config.example.json");
@@ -181,7 +281,7 @@ export function loadConfig() {
             }
         }
         console.log("[FAN Orchestrator] No config.json found. Using defaults. Run /orchestrator init to configure.");
-        return { ...DEFAULTS };
+        return { ...DEFAULTS, presets: {}, activePreset: null };
     }
     // Load and merge with defaults
     try {
@@ -189,11 +289,12 @@ export function loadConfig() {
         const userConfig = JSON.parse(raw);
         normalizeConfigKeys(userConfig);
         normalizeTemperatureConfig(userConfig);
+        normalizePresetConfig(userConfig);
         return deepMerge(DEFAULTS, userConfig);
     }
     catch (e) {
         console.warn(`[FAN Orchestrator] Failed to parse config.json: ${e.message}. Using defaults.`);
-        return { ...DEFAULTS };
+        return { ...DEFAULTS, presets: {}, activePreset: null };
     }
 }
 /**

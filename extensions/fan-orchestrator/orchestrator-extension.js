@@ -19,7 +19,9 @@
  */
 import { brokerHandler } from "./broker-handler.js";
 import { COORDINATOR_PROMPT, buildCoordinatorPrompt, discoverAgents } from "./agents.js";
-import { DEFAULTS, configExists, loadConfig, resolveWorkerModel, resolveWorkerTemperature, saveConfig } from "./config.js";
+import { DEFAULTS, applyPreset, configExists, deletePreset, listPresets, loadConfig, resolveWorkerModel, resolveWorkerTemperature, saveConfig, savePreset } from "./config.js";
+import { isCustomUIAvailable, showPresetSelector } from "./preset-selector.js";
+import { showModelEditor } from "./model-editor.js";
 import { registerOrchestratorTools } from "./orchestrator-tools.js";
 import { isDangerousCommand } from "./permissions.js";
 import { logAuditDecision } from "./audit.js";
@@ -420,6 +422,7 @@ export const orchestratorExtension = (fan) => {
                     const tempOverrides = Object.entries(config.agentTemperature || {}).map(([t, tmp]) => `  ${t}: ${tmp}`);
                     const configLines = [
                         `📊 ${config.providerMode.toUpperCase()} | Parallel: ${config.parallelWorkers} | Worker: ${config.workerTimeout}s | Stall: ${config.stallTimeout}s | Retries: ${config.maxRetries}`,
+                        `⭐ Preset: ${config.activePreset || "(none)"} (${Object.keys(config.presets || {}).length} saved)`,
                         `☁️  ${config.cloud.model || "(session)"} (cloud default)`,
                         ...cloudOverrides,
                         `🏠 ${config.local.model || "(session)"} (local default)`,
@@ -470,6 +473,227 @@ export const orchestratorExtension = (fan) => {
                     for (const m of allAvailable) {
                         if (!modelsByProvider.has(m.provider)) modelsByProvider.set(m.provider, []);
                         modelsByProvider.get(m.provider).push(m);
+                    }
+
+                    // === Preset selection flow ===
+                    // Step 1: Show preset list (if presets exist)
+                    // Step 2: Show preset detail + action menu (Edit/Rename/Delete/Back)
+                    // "Create new preset" and "Edit" enter the edit flow below.
+                    const RESERVED_PRESET_NAMES = new Set(["__proto__", "constructor", "prototype", "➕ Create new preset"]);
+                    let postEditAction = null; // null | "createPreset"
+
+                    function buildPresetSummary(name, data) {
+                        const lines = [
+                            `📦 Preset: ${name}`,
+                            `⚙️  Provider mode: ${data.providerMode || "cloud"}`,
+                            ``,
+                        ];
+                        const mode = data.providerMode === "local" ? "local" : "cloud";
+                        const defaultModel = data[mode]?.model || "(none)";
+                        lines.push(`Default model: ${defaultModel}`);
+                        lines.push(``);
+                        lines.push(`Worker models:`);
+                        for (const type of agentTypes) {
+                            const model = data[mode]?.models?.[type];
+                            const display = model || `(default)`;
+                            lines.push(`  ${agentIcons[type]} ${type}: ${display}`);
+                        }
+                        return lines.join("\n");
+                    }
+
+                    const presetNames = listPresets(config);
+                    if (presetNames.length > 0) {
+                        // Custom preset selector requires TUI mode — ctx.ui.custom
+                        // returns undefined in RPC/headless mode, so fall back to select.
+                        const customUIAvailable = await isCustomUIAvailable(ctx);
+                        let loopDone = false;
+                        while (!loopDone) {
+                            // Step 1: Preset list
+                            let selectedPreset;
+                            if (customUIAvailable) {
+                                const result = await showPresetSelector({
+                                    presets: presetNames,
+                                    activePreset: config.activePreset,
+                                    ctx,
+                                });
+                                if (result !== undefined) {
+                                    if (result.action === "create") {
+                                        postEditAction = "createPreset";
+                                        loopDone = true;
+                                        break;
+                                    }
+                                    if (result.action === "activate") {
+                                        if (!config.presets?.[result.preset]) {
+                                            ctx.ui.notify(`Preset "${result.preset}" not found.`);
+                                            continue;
+                                        }
+                                        applyPreset(config, result.preset);
+                                        saveConfig(config);
+                                        Object.assign(config, loadConfig());
+                                        ctx.ui.notify(`⭐ Activated preset: ${result.preset}`);
+                                        return;
+                                    }
+                                    selectedPreset = result.preset;
+                                }
+                                // If the custom selector returned undefined (cancel or error),
+                                // fall through to the standard ctx.ui.select path below.
+                            }
+
+                            if (selectedPreset === undefined) {
+                                // Fallback: standard select (RPC/headless mode, or custom UI error)
+                                const presetOptions = presetNames.map(n => {
+                                    return n === config.activePreset ? `⭐ ${n} (active)` : n;
+                                });
+                                presetOptions.push("➕ Create new preset");
+
+                                const presetChoice = await ctx.ui.select("Model presets:", presetOptions);
+                                if (presetChoice === undefined) {
+                                    ctx.ui.notify("Models configuration cancelled.");
+                                    return;
+                                }
+
+                                if (presetChoice === "➕ Create new preset") {
+                                    postEditAction = "createPreset";
+                                    loopDone = true;
+                                    break;
+                                }
+
+                                // Extract preset name (strip "⭐ " prefix and " (active)" suffix)
+                                selectedPreset = presetChoice
+                                    .replace(/^⭐\s*/, "")
+                                    .replace(/\s*\(active\)$/, "")
+                                    .trim();
+                            }
+
+                            // Step 2: Show models summary for selected preset
+                            const presetData = config.presets[selectedPreset];
+                            if (!presetData) {
+                                ctx.ui.notify(`Preset "${selectedPreset}" not found.`);
+                                continue;
+                            }
+
+                            // Inner loop: action menu for the selected preset
+                            let actionDone = false;
+                            while (!actionDone) {
+                                ctx.ui.notify(buildPresetSummary(selectedPreset, presetData));
+
+                                const action = await ctx.ui.select(`Preset "${selectedPreset}":`, [
+                                    "✏️ Edit — reconfigure models for this preset",
+                                    "📝 Rename — rename this preset",
+                                    "🗑 Delete — delete this preset",
+                                    "← Back — return to preset list",
+                                ]);
+                                if (action === undefined) {
+                                    ctx.ui.notify("Models configuration cancelled.");
+                                    return;
+                                }
+
+                                if (action.startsWith("✏️")) {
+                                    if (customUIAvailable) {
+                                        // Edit (TUI mode): inline model editor — the wizard is never launched.
+                                        const result = await showModelEditor({
+                                            presetData: config.presets[selectedPreset],
+                                            presetName: selectedPreset,
+                                            allModels: allAvailable,
+                                            ctx,
+                                        });
+                                        if (result?.action === "save") {
+                                            // Update the preset snapshot
+                                            config.presets[selectedPreset] = {
+                                                cloud: result.data.cloud,
+                                                local: result.data.local,
+                                                providerMode: result.data.providerMode,
+                                            };
+                                            // If this is the active preset, apply to live config
+                                            if (config.activePreset === selectedPreset) {
+                                                applyPreset(config, selectedPreset);
+                                            }
+                                            saveConfig(config);
+                                            Object.assign(config, loadConfig());
+                                            ctx.ui.notify(`✅ Preset "${selectedPreset}" updated.`);
+                                        }
+                                        // Return to preset list
+                                        actionDone = true;
+                                        break;
+                                    }
+                                    // Edit (RPC/headless fallback): apply preset to config, then enter edit flow
+                                    applyPreset(config, selectedPreset);
+                                    saveConfig(config);
+                                    Object.assign(config, loadConfig());
+                                    loopDone = true;
+                                    actionDone = true;
+                                    break;
+                                }
+
+                                if (action.startsWith("📝")) {
+                                    // Rename
+                                    const rawNewName = await ctx.ui.input("New preset name", selectedPreset);
+                                    if (rawNewName === undefined) {
+                                        continue; // cancelled, back to action menu
+                                    }
+                                    const newName = (rawNewName || "").trim();
+                                    if (!newName) {
+                                        ctx.ui.notify("Preset name cannot be empty.");
+                                        continue;
+                                    }
+                                    if (newName === selectedPreset) {
+                                        continue; // no change, back to action menu
+                                    }
+                                    // Check reserved names FIRST (before duplicate check)
+                                    if (RESERVED_PRESET_NAMES.has(newName)) {
+                                        ctx.ui.notify("Preset name is reserved.");
+                                        continue;
+                                    }
+                                    // Use Object.hasOwn to avoid prototype chain false positives
+                                    if (Object.hasOwn(config.presets, newName)) {
+                                        ctx.ui.notify(`A preset named "${newName}" already exists.`);
+                                        continue;
+                                    }
+                                    config.presets[newName] = structuredClone(presetData);
+                                    delete config.presets[selectedPreset];
+                                    if (config.activePreset === selectedPreset) {
+                                        config.activePreset = newName;
+                                    }
+                                    saveConfig(config);
+                                    Object.assign(config, loadConfig());
+                                    ctx.ui.notify(`📝 Preset renamed: "${selectedPreset}" → "${newName}"`);
+                                    // Update local presetNames for the loop
+                                    const idx = presetNames.indexOf(selectedPreset);
+                                    if (idx >= 0) presetNames[idx] = newName;
+                                    actionDone = true;
+                                    break;
+                                }
+
+                                if (action.startsWith("🗑")) {
+                                    // Delete
+                                    const confirmed = await ctx.ui.confirm(
+                                        `Delete preset "${selectedPreset}"?`,
+                                        "This will permanently remove the preset.",
+                                    );
+                                    if (!confirmed) {
+                                        continue;
+                                    }
+                                    deletePreset(config, selectedPreset);
+                                    saveConfig(config);
+                                    Object.assign(config, loadConfig());
+                                    ctx.ui.notify(`🗑 Preset "${selectedPreset}" deleted.`);
+                                    // Update local presetNames for the loop
+                                    const idx = presetNames.indexOf(selectedPreset);
+                                    if (idx >= 0) presetNames.splice(idx, 1);
+                                    if (presetNames.length === 0) {
+                                        loopDone = true; // no more presets, fall through to edit flow
+                                    }
+                                    actionDone = true;
+                                    break;
+                                }
+
+                                if (action.startsWith("←")) {
+                                    // Back — return to preset list
+                                    actionDone = true;
+                                    break;
+                                }
+                            }
+                        }
                     }
 
                     // === Smart assignment scoring ===
@@ -563,21 +787,6 @@ export const orchestratorExtension = (fan) => {
                     function buildModelOptions(modelList) {
                         const options = ["(reset — use session default)"];
                         for (const m of modelList) {
-                            options.push(modelLabel(m));
-                        }
-                        return options;
-                    }
-
-                    // Build options list with a specific model pre-selected (first in list)
-                    function buildOptionsWithDefault(modelList, defaultModel) {
-                        const options = [];
-                        // First: the suggested/default model (will be pre-selected in TUI)
-                        if (defaultModel) options.push(modelLabel(defaultModel));
-                        // Second: reset option
-                        options.push("(reset — use session default)");
-                        // Rest: other models (skip the default to avoid duplicates)
-                        for (const m of modelList) {
-                            if (defaultModel && m.id === defaultModel.id) continue;
                             options.push(modelLabel(m));
                         }
                         return options;
@@ -681,6 +890,34 @@ export const orchestratorExtension = (fan) => {
                     }
                     const allModelOptions = buildModelOptions(providerModels);
 
+                    // Combined multi-provider list for model pickers:
+                    // chosen provider's (brand-filtered) models first, then all other providers
+                    // grouped alphabetically (no brand filter), marked with a provider suffix.
+                    function buildOptionsAllProviders(defaultModel) {
+                        const options = [];
+                        // First: the suggested/default model (pre-selected in TUI)
+                        if (defaultModel) options.push(modelLabel(defaultModel));
+                        // Second: reset option
+                        options.push("(reset — use session default)");
+                        const isDefault = (m) => defaultModel && m.id === defaultModel.id && m.provider === defaultModel.provider;
+                        // Chosen provider's brand-filtered models
+                        for (const m of providerModels) {
+                            if (isDefault(m)) continue;
+                            options.push(modelLabel(m));
+                        }
+                        // Other providers: alphabetical, unfiltered, provider marked in label
+                        const otherProviders = [...modelsByProvider.keys()]
+                            .filter(p => p !== chosenProvider)
+                            .sort((a, b) => a.localeCompare(b));
+                        for (const p of otherProviders) {
+                            for (const m of modelsByProvider.get(p) || []) {
+                                if (isDefault(m)) continue;
+                                options.push(`${modelLabel(m)} · ${m.provider}`);
+                            }
+                        }
+                        return options;
+                    }
+
                     // 3. Compute smart assignment — iterate in priority order for diversity
                     const smartAssignment = {};
                     const usedModelIds = new Set();
@@ -709,6 +946,7 @@ export const orchestratorExtension = (fan) => {
                         : `${providerModels.length} models`;
                     const summaryLines = [
                         `🤖 ${chosenProvider} — ${countStr}`,
+                        `⭐ Preset: ${config.activePreset || "(none)"}`,
                         `Default: ${modelLabel(defaultModel)}`,
                     ];
                     for (const [, { model, types }] of modelGroups) {
@@ -756,8 +994,9 @@ export const orchestratorExtension = (fan) => {
                             }
                         } else {
                             // Customize — suggested model is pre-selected (first in list)
+                            // Lists show ALL providers' models (chosen provider first).
                             // First, default model
-                            const defOptions = buildOptionsWithDefault(providerModels, defaultModel);
+                            const defOptions = buildOptionsAllProviders(defaultModel);
                             const defChoice = await ctx.ui.select(
                                 `${icon} Default ${mode} model`,
                                 defOptions,
@@ -771,7 +1010,7 @@ export const orchestratorExtension = (fan) => {
                             // Then per-agent — suggested model is first (pre-selected)
                             for (const type of agentTypes) {
                                 const suggested = smartAssignment[type];
-                                const agentOptions = buildOptionsWithDefault(providerModels, suggested);
+                                const agentOptions = buildOptionsAllProviders(suggested);
                                 const choice = await ctx.ui.select(
                                     `${agentIcons[type]} ${type}`,
                                     agentOptions,
@@ -795,12 +1034,62 @@ export const orchestratorExtension = (fan) => {
                         config[mode].models = newModels;
                     }
 
-                    // 5. Save
+                    // 5. Save (keep the active preset snapshot in sync with edits)
+                    if (config.activePreset && config.presets?.[config.activePreset]) {
+                        savePreset(config, config.activePreset);
+                    }
                     saveConfig(config);
                     const fresh = loadConfig();
                     Object.assign(config, fresh);
                     ctx.ui.setWidget("orchestrator", undefined);
                     ctx.ui.notify("✅ Model configuration saved!");
+                    // Handle "Create new preset" post-edit action
+                    if (postEditAction === "createPreset") {
+                        let presetNameDone = false;
+                        while (!presetNameDone) {
+                            const rawName = await ctx.ui.input("Preset name", "my-preset");
+                            if (rawName === undefined) {
+                                break; // cancelled
+                            }
+                            const name = (rawName || "").trim();
+                            if (!name) continue;
+                            if (Object.hasOwn(config.presets, name)) {
+                                const overwrite = await ctx.ui.confirm(
+                                    "Overwrite preset?",
+                                    `A preset named "${name}" already exists. Overwrite?`,
+                                );
+                                if (!overwrite) {
+                                    continue; // ask for a new name
+                                }
+                            }
+                            if (!savePreset(config, name)) {
+                                ctx.ui.notify("Preset name is reserved.");
+                                continue;
+                            }
+                            saveConfig(config);
+                            Object.assign(config, loadConfig());
+                            ctx.ui.notify(`✅ Preset "${name}" saved.`);
+                            presetNameDone = true;
+                        }
+                        return;
+                    }
+                    // Offer to save as a preset when none exist yet
+                    if (listPresets(config).length === 0) {
+                        const wantPreset = await ctx.ui.confirm("Save as preset?", "Store this model configuration as a named preset for quick switching.");
+                        if (wantPreset) {
+                            const rawName = await ctx.ui.input("Preset name", "my-preset");
+                            const name = (rawName || "").trim();
+                            if (name) {
+                                if (!savePreset(config, name)) {
+                                    ctx.ui.notify("Preset name is reserved.");
+                                    return;
+                                }
+                                saveConfig(config);
+                                Object.assign(config, loadConfig());
+                                ctx.ui.notify(`✅ Preset "${name}" saved.`);
+                            }
+                        }
+                    }
                     return;
                 }
                 case "retry": {
@@ -826,6 +1115,7 @@ export const orchestratorExtension = (fan) => {
                     const statusLines = [
                         `🎭 Orchestration: ${coordinatorActive ? "ON" : "OFF"}`,
                         `📡 Provider: ${config.providerMode}`,
+                        ...(config.activePreset ? [`⭐ Active preset: ${config.activePreset}`] : []),
                         `👷 Active: ${counts.in_progress} / ${config.parallelWorkers} | Queue: ${workers.length}`,
                     ];
                     if (workers.length > 0) {

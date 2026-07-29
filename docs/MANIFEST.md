@@ -1,5 +1,5 @@
 # Documentation Manifest
-> Last updated: 2026-07-18
+> Last updated: 2026-07-29
 > Comprehensive index of all project documentation.
 > Maintainer: docs-impl agent
 
@@ -15,7 +15,7 @@
 | `CHANGELOG.md` | ✅ | FAN changelog (0.2.0 → MCP Integration 2026-07-16) |
 | `docs/guides/quick-start.md` | ✅ | Quick start stub — redirects to QUICK-START.md |
 | `docs/guides/configuration.md` | ✅ | Full settings reference |
-| `docs/guides/orchestrator.md` | ✅ | Orchestrator user guide (Pipeline Mode v3.1.0) |
+| `docs/guides/orchestrator.md` | ✅ | Orchestrator user guide (v7.10.0: `/orchestrator models`, named presets, permission approval, slot pools, Pipeline Mode v3.1.0) |
 | `docs/guides/dashboard.md` | ✅ | Dashboard user guide |
 | `docs/guides/api-reference.md` | ✅ | REST API + WebSocket protocol reference |
 | `docs/guides/mcp.md` | ✅ | MCP integration guide (Russian) — transports, config, OAuth, Worker Proxy, security |
@@ -60,6 +60,7 @@
 | `packages/store/README.md` | ✅ | @fan/store — Package manager |
 | `packages/dashboard/README.md` | ✅ | @fan/dashboard — Web UI |
 | `tools/fan-store-server/GUIDE.md` | ✅ | FAN Store server guide |
+| `extensions/fan-orchestrator/README.md` | ✅ | FAN Orchestrator v7.10.0 — `/orchestrator models`, named presets, multi-provider lists, permission approval, broker-handler |
 
 ## Roadmaps & Research
 | File | Status | Description |
@@ -112,4 +113,4 @@
 
 All 5 package READMEs have been created — status updated to ✅.
 
-Total: **45 tracked documents** (43 ✅, 6 ⚠️, 0 ❌)
+Total: **46 tracked documents** (44 ✅, 6 ⚠️, 0 ❌)

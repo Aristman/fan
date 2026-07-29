@@ -22,6 +22,19 @@ export type TaskStatus = "pending" | "in_progress" | "completed" | "failed" | "b
 /** Per-agent model overrides */
 export type AgentModelMap = Partial<Record<WorkerType, string>>;
 
+/** Named snapshot of the model-related part of the config */
+export interface ModelPreset {
+  cloud: {
+    model: string;
+    models: AgentModelMap;
+  };
+  local: {
+    model: string;
+    models: AgentModelMap;
+  };
+  providerMode: ProviderMode;
+}
+
 /** Per-agent temperature overrides */
 export type AgentTemperatureMap = Partial<Record<WorkerType, number | null>>;
 
@@ -39,6 +52,10 @@ export interface OrchestratorConfig {
     models: AgentModelMap;
   };
   providerMode: ProviderMode;
+  /** Named model-config presets */
+  presets: Record<string, ModelPreset>;
+  /** Currently active preset name (null = none) */
+  activePreset: string | null;
   coordinatorDefault: boolean;
   parallelWorkers: number;
   workerTimeout: number;
