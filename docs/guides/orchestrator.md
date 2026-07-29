@@ -2,6 +2,8 @@
 
 Multi-agent task decomposition and coordination for FAN.
 
+> Covers **fan-orchestrator v7.10.0** — `/orchestrator models` (smart model assignment, multi-provider lists), named model-config presets, interactive permission approval, parallel read-only slot pools, Pipeline Mode v3.1.0.
+
 ## Overview
 
 The orchestrator is a FAN extension that turns a single LLM session into a team of specialized workers. Instead of one agent trying to explore, plan, implement, and verify all at once, the coordinator decomposes your request into tasks and delegates each to the right worker type.
@@ -9,8 +11,8 @@ The orchestrator is a FAN extension that turns a single LLM session into a team 
 **Why multi-agent?**
 
 - **Focused context.** Each worker gets a fresh context window with only what it needs — no conversation bloat.
-- **Parallelism.** Exploration and verification can run simultaneously while an implement worker handles changes.
-- **Safety.** Read-only workers can't accidentally modify files. Dangerous commands require explicit approval.
+- **Parallelism.** Read-only workers (exploration, research, verification) run concurrently in their own slot pools while write workers execute changes one at a time.
+- **Safety.** Read-only workers can't accidentally modify files. Dangerous commands trigger an interactive Allow/Block approval prompt.
 - **Observability.** Tasks are tracked with statuses and dependencies so you always know what's happening.
 
 At a high level: you describe what you want → the coordinator breaks it down → workers execute → results are verified → you get a summary.
@@ -33,9 +35,13 @@ To disable the orchestrator, remove or rename its folder in `~/.fan/agent/extens
 
 > **Architecture note:** The orchestrator is a standalone extension — it is NOT hardcoded into the `@seaagents/fan-coding-agent` core. It's loaded at runtime through FAN's extension system.
 
+### Configuration file
+
+The config lives at `~/.fan/agent/extensions/fan-orchestrator/config.json` (next to the extension module). `config.json` is **excluded from the package** — on first load it is automatically created from the bundled `config.example.json` (merged with built-in defaults). If no config exists, a warning is shown at session start: run `/orchestrator init` (interactive wizard) or `/orchestrator models` (model settings only) to configure.
+
 ## Coordinator Mode
 
-Coordinator mode changes the LLM's role from "doer" to "manager." When active, the agent does **not** use code tools directly — it only delegates via `Agent` and tracks progress with `TaskCreate`/`TaskUpdate`.
+Coordinator mode changes the LLM's role from "doer" to "manager." When active, the agent does **not** use code tools directly — it only delegates via `delegate_task` and tracks progress with `TaskCreate`/`TaskUpdate`.
 
 ### Enabling Coordinator Mode
 
@@ -43,12 +49,14 @@ Coordinator mode changes the LLM's role from "doer" to "manager." When active, t
 - **`/orchestrator on`** — Enable via slash command.
 - **`/orchestrator off`** — Disable via slash command.
 
+By default the coordinator is **active at session start** (`coordinatorDefault: true` in config).
+
 ### What Changes
 
 | Aspect | Normal Mode | Coordinator Mode |
 |--------|------------|-----------------|
 | Agent role | Direct executor | Delegation manager |
-| Tool usage | Agent reads/writes/runs | Agent only calls `Agent`, `TaskCreate`, etc. |
+| Tool usage | Agent reads/writes/runs | Agent only calls `delegate_task`, `TaskCreate`, etc. |
 | Task tracking | None | Automatic task creation and status updates |
 | Verification | Manual | Automatic verify worker after implementation |
 
@@ -69,90 +77,126 @@ The coordinator receives your request and:
 
 | Type | Tools | Access | Use For |
 |------|-------|--------|---------|
-| **explore** | read, grep, find, ls, bash | Read-only | Fast codebase exploration, file search, structure mapping |
-| **plan** | read, grep, find, ls | Read-only | Deep architectural analysis, implementation planning |
+| **explore** | read, bash, grep, find, ls | Read-only | Fast codebase exploration, file search, structure mapping |
+| **plan** | read, bash, grep, find, ls | Read-only | Deep architectural analysis, implementation planning |
 | **implement** | read, write, edit, bash, grep, find, ls | Full | Making code changes, running tests, building |
-| **verify** | read, grep, find, ls, bash | Read-only | Build checks, test runs, lint, adversarial code review |
+| **verify** | read, bash, grep, find, ls | Read-only | Build checks, test runs, lint, adversarial code review |
 | **bug-fix** | read, write, edit, bash, grep, find, ls | Full | Targeted bug fixes with minimal changes |
-| **code-research** | read, grep, find, ls, bash | Read-only | Deep code analysis, dependency tracing, pattern mining |
+| **code-research** | read, bash, grep, find, ls | Read-only | Deep code analysis, dependency tracing, pattern mining |
 | **tests-impl** | read, write, edit, bash, grep, find, ls | Full | Writing unit/integration tests for existing code |
 | **docs-impl** | read, write, edit, bash, grep, find, ls | Full | Writing and updating documentation |
 
-### Concurrency Rules
+Read-only vs. write access is derived from each agent's `readOnly` flag (set from its declared tools), not from a hardcoded list — custom agents with read-only tools automatically get read-only treatment.
 
-- **Implement workers:** maximum 1 at a time (exclusive write slot).
-- **Explore/plan/verify workers:** up to `parallelWorkers` concurrently (default: 3).
-- Workers queue automatically when the pool is full.
+### Concurrency Rules (Slot Pools)
+
+- **Read-only workers** (explore, plan, verify, code-research, and any custom agent with `readOnly: true`): each agent type gets its **own parallel slot pool**, up to `parallelWorkers` concurrently (default: 3).
+- **Write workers** (implement, bug-fix, tests-impl, docs-impl): **exclusive write slot** — parallel write workers are blocked until the slot is free.
+- Workers queue automatically (FIFO) when a pool is full.
 
 ## Orchestrator Tools
 
-The orchestrator provides 6 tools for the coordinator:
+The orchestrator provides 9 tools for the coordinator (registered in `orchestrator-tools.js`):
 
-### `Agent`
-
-Spawns a worker to execute a task. Called by the coordinator to delegate work.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `agentType` | string | Yes | One of: `explore`, `plan`, `implement`, `verify`, `bug-fix`, `code-research`, `tests-impl`, `docs-impl` |
-| `task` | string | Yes | Self-contained task description with all context |
-| `context` | string | No | Additional context (e.g., explore output, plan text) |
-
-### `SendMessage`
-
-Sends a message from the coordinator to a running worker (interactive follow-up).
-
-### `StopAgent`
-
-Stops a running worker by agent ID.
-
-### `TaskCreate`
-
-Creates a new task with subject, description, and optional dependencies.
-
-### `TaskUpdate`
-
-Updates task status, owner, or other fields.
-
-### `TaskList`
-
-Lists tasks with optional status filter.
+| Tool | Description |
+|------|-------------|
+| `delegate_task` | Spawn worker(s): single (`agent` + `task`), parallel (`tasks` array), or chain (sequential steps with `{previous}` placeholder) |
+| `TaskCreate` | Create a tracked task with subject, description, and optional `blocks[]` dependencies |
+| `TaskUpdate` | Update task status (`pending` → `in_progress` → `completed`/`failed`) |
+| `TaskClear` | Clear completed/failed tasks from the board |
+| `list_tasks` | List tasks with an optional status filter |
+| `cancel_task` | Cancel a running or pending task by ID |
+| `classify_task` | Classify a description to suggest the best agent type |
+| `assess_task` | Multi-level task complexity assessment (L1/L2/L3) |
+| `stop_worker` | Stop a running worker by ID |
 
 ### Worker Isolation
 
-Workers run as separate `fan --mode rpc` processes communicating via JSON-over-stdio. They cannot see:
+Workers run as separate `fan --mode rpc` processes communicating via JSONL-over-stdio (Pi-style protocol: `prompt`, `get_state`, `get_last_assistant_text`, with a single `stallTimer` reset on any stdout). They are spawned with `--no-extensions --no-skills --no-prompt-templates` and cannot see:
 
 - The main conversation history
-- Other workers' outputs (unless passed via `context`)
+- Other workers' outputs (unless passed via the task description or `{previous}` in chains)
 - The coordinator's reasoning
 
 This means **worker prompts must be self-contained.** Include file paths, line numbers, exact change descriptions, and any relevant code snippets.
 
+### MCP Tool Broker
+
+When the fan-mcp extension is active, workers can use remote MCP tools through the broker (`broker-handler.js`): it subscribes to the EventBus channel `mcp:catalog`, answers `remote_tool_request` messages from workers, and applies **per-worker profile filtering** (`all` for write workers, `read-only` — only tools with `annotations.readOnly: true` — for read-only workers).
+
 ## Slash Commands
 
-### `/orchestrator [on|off|stop|config|status]`
+### Orchestrator Control
 
-Master control for the orchestrator.
+| Command | Description |
+|---------|-------------|
+| `/orchestrator on` | Enable coordinator mode |
+| `/orchestrator off` | Disable coordinator mode (agent returns to direct execution) |
+| `/orchestrator status` | Show provider, active preset, workers, tasks, agents overview |
+| `/orchestrator config` | Show current configuration (including active preset) |
+| `/orchestrator init` | Interactive configuration wizard (incl. dangerous-command list) |
+| `/orchestrator models` | Interactive model assignment wizard + named presets (see below) |
+| `/orchestrator mode <auto\|cloud\|local>` | Switch provider mode |
+| `/orchestrator retry` | Retry the last failed task |
+| `/orchestrator stop` | Stop all active workers |
 
-- `/orchestrator on` — Enable coordinator mode.
-- `/orchestrator off` — Disable coordinator mode (agent returns to direct execution).
-- `/orchestrator stop` — Cancel all running workers.
-- `/orchestrator config` — Show current configuration.
-- `/orchestrator status` — Show workers and tasks overview.
+### Planning & Task Board
 
-### `/plan [task description]`
+| Command | Description |
+|---------|-------------|
+| `/plan <task>` | Planning workflow with Approve/Revise/Reject review (docs in Russian) |
+| `/tasks [status]` | Task board (optional status filter) |
+| `/agents [scope]` | List available agents (`project`, `user`, or both) |
+| `/delegate <agent> <task>` | Quick single worker dispatch |
 
-Strategic planning workflow. Runs explore → plan and presents the plan to you before any implementation.
+### Pipeline Mode
+
+| Command | Description |
+|---------|-------------|
+| `/pipeline init [name]` | Initialize pipeline: create 3 working artifacts |
+| `/pipeline status` | Show pipeline progress (widget, 10s) |
+| `/pipeline log [N]` | Show last N log entries (default 10) |
+| `/pipeline finish` | Mark complete + Keep/Delete artifacts |
+| `/pipeline cancel` | Deactivate in-memory, artifacts preserved |
+
+**Shortcuts:** `Alt+O` (toggle coordinator), `Alt+T` (toggle task widget)
+
+## Model Assignment & Presets
+
+### `/orchestrator models`
+
+Interactive wizard for assigning models to workers (requires UI; in headless mode edit `config.json` manually). Flow:
+
+1. **Preset menu** (shown first if any presets exist) — Edit current config / Switch active preset / Save current config as preset / Delete preset.
+2. **Provider mode** — choose which mode to configure: `☁️ cloud`, `🏠 local`, or `⚙️ auto` (both).
+3. **Provider for suggestions** — pick the provider used for smart suggestions; the session's active provider is auto-detected and marked `⭐ active`. Models are filtered by brand (`BRAND_KEYWORDS`: e.g. provider `qwen` → only Qwen-branded models; aggregators like openrouter/ollama and local providers are unfiltered).
+4. **Smart assignment** — scoring profiles (`WORKER_PROFILES`) weight reasoning / context / cost / maxTokens per worker: heavy workers (implement, plan, bug-fix) get flagship reasoning models, light workers (verify, docs-impl) get cheap/fast ones. Assignment runs in priority order (`ASSIGNMENT_ORDER`), and models already assigned to another worker are heavily penalized for diversity.
+5. **Accept / Customize / Reset** — accept the suggested assignment, change individual workers, or clear all overrides (fall back to the session model).
+
+In the **Customize** step each picker lists models from **all providers**: the suggested model is pinned first (pre-selected), then the chosen provider's (brand-filtered) models, then all other providers alphabetically with a `· provider` suffix in the label.
+
+Selected models are stored in **`provider/id` format**, which removes ambiguity when the same model ID exists under multiple providers (both `id` and `provider/id` formats are read back correctly).
+
+### Named Presets
+
+A preset is a named snapshot of the model-related config: `{cloud, local, providerMode}`.
+
+- Stored in `config.json` as `presets` (`Record<name, {cloud, local, providerMode}>`) plus `activePreset` (name of the active preset, or `null`).
+- The preset menu appears at the start of `/orchestrator models` (when presets exist): **Edit** / **Switch** (active marked `✔`) / **Save-as** / **Delete** (with confirmation).
+- When changes are saved (Accept/Customize/Reset), the **active preset auto-resyncs** — its snapshot is updated together with the config.
+- If no presets exist yet, you're offered to create the first one after saving.
+- The active preset is displayed in `/orchestrator status` (`⭐ Active preset: ...`) and `/orchestrator config` (`⭐ Preset: name (N saved)`).
+- Reserved names (`__proto__`, `constructor`, `prototype`) are rejected; invalid presets are pruned when the config is loaded.
+
+Preset helpers are exported from `config.js`: `savePreset(config, name)`, `applyPreset(config, name)`, `deletePreset(config, name)`, `listPresets(config)`.
+
+### Model Resolution Chain
 
 ```
-/plan Add pagination to the sessions API endpoint
+config.{provider}.models[agentName]
+  → config.{provider}.model
+    → current session model
 ```
-
-This spawns an explore worker to gather context, then a plan worker to produce a structured implementation plan. You review the plan before deciding whether to proceed.
-
-### `TaskList`
-
-Use the `TaskList` tool to view tracked tasks. Optionally filter by status.
 
 ## Pipeline Mode (v3.1.0)
 
@@ -227,9 +271,9 @@ feat(phase-3): Session Management complete
 - `.fan/tracking/phase-status.json` — добавляется/обновляется запись `data.tasks[taskId]` со статусом, описанием, временем
 - `docs/development-log.md` — append записи `### <ISO date> — [Phase N] — <action>` с деталями
 
-Хук реализован в `fan.on("tool_result", ...)` и не требует явного вызова от координатора.
+Хук реализован в `fan.on("tool_result", ...)` (в `orchestrator-extension.js`) и не требует явного вызова от координатора.
 
-**Восстановление phaseId:** координатор должен называть задачи так, чтобы можно было извлечь фазу:
+**Восстановление phaseId:** координатор должен называть задачи так, чтобы можно было извлечь фазу (функция `inferPhaseId(subject)`):
 - ✅ `"F-3.1 [session]: fan-rust-session crate"` → инферится `phaseId = 3`
 - ✅ `"[Phase 3] Create session crate"` → инферится `phaseId = 3`
 - ❌ `"Create session crate"` → невозможно, phaseId = 0 (fallback)
@@ -284,18 +328,7 @@ Skill `feature-pipeline` v3.1.0 использует тот же pipeline mode:
 
 ### Конфигурация
 
-В `packages/orchestrator/src/config.json`:
-```json
-{
-  "pipeline": {
-    "autoSuggest": true,
-    "defaultStrategy": "per-phase",
-    "suggestThreshold": 8
-  }
-}
-```
-
-Default values: `autoSuggest=true`, `defaultStrategy="per-phase"`, `suggestThreshold=8`.
+У Pipeline Mode нет отдельной секции в `config.json` — стратегия коммитов и фазы задаются интерактивно при `/pipeline init` и хранятся в `.fan/tracking/phase-status.json`.
 
 ### Решение проблем
 
@@ -309,7 +342,7 @@ Default values: `autoSuggest=true`, `defaultStrategy="per-phase"`, `suggestThres
 
 ## Task Management
 
-Tasks are the coordinator's way of tracking progress. They're created with `TaskCreate`, updated with `TaskUpdate`, and viewed with `TaskList`.
+Tasks are the coordinator's way of tracking progress. They're created with `TaskCreate`, updated with `TaskUpdate`, cleared with `TaskClear`, cancelled with `cancel_task`, and viewed with `list_tasks` or the `/tasks` command.
 
 ### Task Lifecycle
 
@@ -319,6 +352,8 @@ pending → in_progress → completed
                      → blocked → in_progress
                               → failed
 ```
+
+Status transitions are not strictly enforced — the coordinator can move tasks between any statuses (e.g. `failed` → `pending` for a retry).
 
 ### Task Fields
 
@@ -341,6 +376,7 @@ A collapsible checklist displayed above the editor in the TUI.
 
 - **Alt+T** — Toggle the task widget visibility.
 - Status icons: ☐ pending, ◐ in_progress, ☑ completed, ⛔ blocked, ✗ failed.
+- Refreshes on every `tool_result` for `TaskCreate`/`TaskUpdate`/`TaskClear`/`cancel_task`.
 - Auto-hides when no active tasks remain.
 
 ## Workflows
@@ -355,10 +391,10 @@ User: /plan Refactor the database layer to use connection pooling
 
 Execution:
 
-1. **Explore** worker gathers context (current DB code, connection patterns, imports).
-2. **Plan** worker produces a structured implementation plan.
-3. Plan is presented to the user for review.
-4. No code changes are made.
+1. A **plan** worker investigates the codebase and produces a structured implementation plan (documentation in Russian; file names and technical terms in English).
+2. The plan is shown for review: **✅ Approve** / **✏️ Revise** (with feedback, re-runs the plan worker) / **❌ Reject**.
+3. On approval, coordinator mode is enabled and the plan is handed to the coordinator for step-by-step implementation via `TaskCreate` + `delegate_task`.
+4. Timeout: `planTimeout` seconds (default 600); ESC aborts.
 
 Triggered by: `/plan <task>`
 
@@ -377,7 +413,7 @@ Execution:
 3. Coordinator synthesizes findings into a spec.
 4. **Implement** worker makes the changes.
 5. **Verify** worker checks build, tests, and code quality.
-6. If verification fails, implement retries (up to 3 attempts).
+6. If verification fails, implement retries (up to 3 attempts per task).
 7. Coordinator reports results.
 
 Triggered by: describe the task with coordinator mode active (Alt+O).
@@ -398,31 +434,49 @@ Execution:
 
 ## Configuration
 
-Configuration lives in `packages/orchestrator/src/config.json`.
+Configuration lives in `~/.fan/agent/extensions/fan-orchestrator/config.json`. It is auto-created from `config.example.json` on first load (merged with defaults), or via `/orchestrator init`. All timeouts are in **seconds**.
 
 ```json
 {
-    "cloud": { "model": "zai/glm-4.5-air" },
-    "local": { "model": "ollama/qwen3:32b" },
-    "providerMode": "cloud",
-    "parallelWorkers": 3,
-    "workerTimeout": 300000,
-    "stallTimeout": 60000,
-    "maxRetries": 2,
-    "planTimeout": 300000,
-    "agentTimeouts": {
-        "explore": 120000,
-        "plan": 180000,
-        "implement": 300000,
-        "verify": 180000,
-        "bug-fix": 300000,
-        "code-research": 180000,
-        "tests-impl": 300000,
-        "docs-impl": 240000
+    "cloud": {
+        "model": "",
+        "models": {
+            "explore": "", "plan": "", "implement": "", "verify": "",
+            "bug-fix": "", "code-research": "", "tests-impl": "", "docs-impl": ""
+        }
     },
-    "agentModels": {
-        "explore": { "provider": "local", "model": "ollama/qwen3:32b" },
-        "verify": { "provider": "cloud", "model": "zai/glm-4.5-air" }
+    "local": {
+        "model": "",
+        "models": {
+            "explore": "", "plan": "", "implement": "", "verify": "",
+            "bug-fix": "", "code-research": "", "tests-impl": "", "docs-impl": ""
+        }
+    },
+    "providerMode": "auto",
+    "presets": {},
+    "activePreset": null,
+    "coordinatorDefault": true,
+    "parallelWorkers": 3,
+    "workerTimeout": 600,
+    "stallTimeout": 600,
+    "planTimeout": 600,
+    "maxRetries": 2,
+    "agentTimeouts": {
+        "explore": 600,
+        "plan": 600,
+        "implement": 600,
+        "verify": 600
+    },
+    "temperature": 0.1,
+    "agentTemperature": {
+        "explore": 0.3,
+        "plan": 0.1,
+        "implement": 0.1,
+        "verify": 0.3,
+        "bug-fix": 0.1,
+        "code-research": 0.2,
+        "tests-impl": 0.1,
+        "docs-impl": 0.3
     },
     "dangerousCommands": [
         "rm -rf", "git push --force", "npm publish",
@@ -436,29 +490,50 @@ Configuration lives in `packages/orchestrator/src/config.json`.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `providerMode` | `"cloud"` | `cloud` or `local` — which model config to use |
-| `parallelWorkers` | `3` | Max concurrent non-implement workers |
-| `workerTimeout` | `300000` (5 min) | Default timeout for worker RPC processes |
-| `stallTimeout` | `60000` (1 min) | Timeout for stalled workers (no output) |
+| `providerMode` | `"cloud"` (example: `"auto"`) | `auto`, `cloud`, or `local` — which model config to use; `auto` = cloud with fallback to local |
+| `presets` | `{}` | Named snapshots of model config `{cloud, local, providerMode}` |
+| `activePreset` | `null` | Name of the active preset |
+| `coordinatorDefault` | `true` | Coordinator mode active at session start |
+| `parallelWorkers` | `3` | Max concurrent read-only workers per slot pool |
+| `workerTimeout` | `600` (s) | Max worker runtime in seconds (backstop limit) |
+| `stallTimeout` | `600` (s) | Stall timer — no stdout → kill |
+| `planTimeout` | `600` (s) | Timeout for the `/plan` workflow |
 | `maxRetries` | `2` | Retry count on worker failure |
-| `planTimeout` | `300000` (5 min) | Timeout for plan-only workflows |
-| `agentTimeouts.<type>` | varies | Per-agent-type timeout override |
-| `agentModels.<type>` | — | Per-agent-type model override (provider + model) |
+| `agentTimeouts.<type>` | `600` (s) | Per-agent-type stall timeout override |
+| `temperature` | `0.1` | Default worker temperature |
+| `agentTemperature.<type>` | per-agent map | Per-agent temperature (0.0–1.0, clamped) |
+| `cloud.model` / `local.model` | `""` | Default model per provider (empty = session model) |
+| `cloud.models` / `local.models` | `{}` | Per-agent model overrides (empty = provider default → session model) |
+| `dangerousCommands` | `[...]` | Command patterns that trigger the approval prompt |
+
+Legacy keys are migrated automatically on load (`cloud.defaultModel` → `cloud.model`, `cloud.defaultProvider` → `cloud.provider`, `stallTimeout` → `workerTimeout` when `workerTimeout` is absent).
 
 ## Permissions
 
 ### Tool Access by Worker Type
 
-Workers are restricted by their declared tools. The orchestrator enforces this at spawn time:
+Workers are restricted by their declared tools, enforced at spawn time:
 
-- **explore:** `read`, `grep`, `find`, `ls`, `bash` (read-only)
-- **plan:** `read`, `grep`, `find`, `ls` (no bash)
-- **implement:** full access (all tools)
-- **verify:** `read`, `grep`, `find`, `ls`, `bash` (read-only; tests only)
+- **Read-only workers** (explore, plan, verify, code-research): `read`, `bash`, `grep`, `find`, `ls` — no write/edit.
+- **Write workers** (implement, bug-fix, tests-impl, docs-impl): full access (all tools).
+
+### Interactive Permission Approval
+
+When a dangerous command is detected in any `bash` tool call (coordinator or worker), the orchestrator's `tool_call` hook shows an **Allow/Block** prompt:
+
+- **Allow** — the input is marked `_fanDangerouslyApproved` and the core bash tool skips its security check.
+- **Block** (or dismissing the prompt) — the command is blocked.
+- **Headless mode** (no UI) — dangerous commands are blocked automatically.
+
+All decisions are written to the audit log (JSONL at `~/.fan/agent/audit/orchestrator.log`).
+
+**Bypass switch:** setting `FAN_DANGEROUSLY_SKIP_PERMISSIONS=true` disables all checks in the hook. The core CLI flag `--dangerously-skip-permissions` sets this variable and propagates it to worker subprocesses. Use only in trusted environments.
+
+The core bash tool in `@seaagents/fan-coding-agent` also blocks dangerous patterns for **all** FAN processes (not just the orchestrator): heredocs, pipes into shells (`curl | sh`), interpreter one-liners (`node -e`, `python -c`), subshells, fork-bombs, `dd` to disk devices, and recursive chmod/chown of critical paths.
 
 ### Dangerous Commands
 
-The following commands are blocked and require explicit approval when detected in any worker's bash calls:
+The following patterns (configurable via `dangerousCommands`, editable in `/orchestrator init`) trigger the approval flow:
 
 | Category | Patterns |
 |----------|----------|
@@ -473,18 +548,20 @@ The following commands are blocked and require explicit approval when detected i
 
 ## Best Practices
 
-### 1. One Implement Worker at a Time
+### 1. One Write Worker at a Time
 
-The orchestrator enforces this (exclusive write slot), but it's good to plan for it. Structure your task decomposition so implementation steps are sequential, while exploration and verification can be parallel.
+The orchestrator enforces this (exclusive write slot shared by implement, bug-fix, tests-impl, docs-impl), but it's good to plan for it. Structure your task decomposition so implementation steps are sequential, while exploration and verification can be parallel.
 
-### 2. Parallel Explore/Verify Workers
+### 2. Parallel Read-Only Workers
 
-Don't wait for one explore worker to finish before starting another. If you need to investigate three independent subsystems, spawn three explore workers at once:
+Don't wait for one explore worker to finish before starting another. Read-only workers run in parallel slot pools, so if you need to investigate three independent subsystems, spawn three explore workers at once via `delegate_task` with a `tasks` array:
 
 ```
-Agent(agentType=explore, task="Investigate the API gateway auth middleware")
-Agent(agentType=explore, task="Investigate the WebSocket handler")
-Agent(agentType=explore, task="Investigate the database schema")
+delegate_task(tasks=[
+  {agent: "explore", task: "Investigate the API gateway auth middleware"},
+  {agent: "explore", task: "Investigate the WebSocket handler"},
+  {agent: "explore", task: "Investigate the database schema"}
+])
 ```
 
 ### 3. Max 3 Implementation Attempts
@@ -502,7 +579,7 @@ Workers can't see the conversation. When delegating, include:
 
 ### 5. Use `/plan` Before Complex Tasks
 
-For anything involving multiple files or architectural changes, run `/plan` first. The explore → plan workflow gives you a structured plan to review before any code is touched.
+For anything involving multiple files or architectural changes, run `/plan` first. The plan-worker workflow with Approve/Revise/Reject gives you a structured plan to review before any code is touched.
 
 ### 6. Use Dependencies for Ordering
 
