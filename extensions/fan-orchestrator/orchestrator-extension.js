@@ -21,6 +21,7 @@ import { brokerHandler } from "./broker-handler.js";
 import { COORDINATOR_PROMPT, buildCoordinatorPrompt, discoverAgents } from "./agents.js";
 import { DEFAULTS, applyPreset, configExists, deletePreset, listPresets, loadConfig, resolveWorkerModel, resolveWorkerTemperature, saveConfig, savePreset } from "./config.js";
 import { isCustomUIAvailable, showPresetSelector } from "./preset-selector.js";
+import { showModelEditor } from "./model-editor.js";
 import { registerOrchestratorTools } from "./orchestrator-tools.js";
 import { isDangerousCommand } from "./permissions.js";
 import { logAuditDecision } from "./audit.js";
@@ -588,7 +589,34 @@ export const orchestratorExtension = (fan) => {
                                 }
 
                                 if (action.startsWith("✏️")) {
-                                    // Edit: apply preset to config, then enter edit flow
+                                    if (customUIAvailable) {
+                                        // Edit (TUI mode): inline model editor — the wizard is never launched.
+                                        const result = await showModelEditor({
+                                            presetData: config.presets[selectedPreset],
+                                            presetName: selectedPreset,
+                                            allModels: allAvailable,
+                                            ctx,
+                                        });
+                                        if (result?.action === "save") {
+                                            // Update the preset snapshot
+                                            config.presets[selectedPreset] = {
+                                                cloud: result.data.cloud,
+                                                local: result.data.local,
+                                                providerMode: result.data.providerMode,
+                                            };
+                                            // If this is the active preset, apply to live config
+                                            if (config.activePreset === selectedPreset) {
+                                                applyPreset(config, selectedPreset);
+                                            }
+                                            saveConfig(config);
+                                            Object.assign(config, loadConfig());
+                                            ctx.ui.notify(`✅ Preset "${selectedPreset}" updated.`);
+                                        }
+                                        // Return to preset list
+                                        actionDone = true;
+                                        break;
+                                    }
+                                    // Edit (RPC/headless fallback): apply preset to config, then enter edit flow
                                     applyPreset(config, selectedPreset);
                                     saveConfig(config);
                                     Object.assign(config, loadConfig());
