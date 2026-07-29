@@ -20,6 +20,7 @@
 import { brokerHandler } from "./broker-handler.js";
 import { COORDINATOR_PROMPT, buildCoordinatorPrompt, discoverAgents } from "./agents.js";
 import { DEFAULTS, applyPreset, configExists, deletePreset, listPresets, loadConfig, resolveWorkerModel, resolveWorkerTemperature, saveConfig, savePreset } from "./config.js";
+import { isCustomUIAvailable, showPresetSelector } from "./preset-selector.js";
 import { registerOrchestratorTools } from "./orchestrator-tools.js";
 import { isDangerousCommand } from "./permissions.js";
 import { logAuditDecision } from "./audit.js";
@@ -477,7 +478,7 @@ export const orchestratorExtension = (fan) => {
                     // Step 1: Show preset list (if presets exist)
                     // Step 2: Show preset detail + action menu (Edit/Rename/Delete/Back)
                     // "Create new preset" and "Edit" enter the edit flow below.
-                    const RESERVED_PRESET_NAMES = new Set(["__proto__", "constructor", "prototype"]);
+                    const RESERVED_PRESET_NAMES = new Set(["__proto__", "constructor", "prototype", "➕ Create new preset"]);
                     let postEditAction = null; // null | "createPreset"
 
                     function buildPresetSummary(name, data) {
@@ -501,31 +502,67 @@ export const orchestratorExtension = (fan) => {
 
                     const presetNames = listPresets(config);
                     if (presetNames.length > 0) {
+                        // Custom preset selector requires TUI mode — ctx.ui.custom
+                        // returns undefined in RPC/headless mode, so fall back to select.
+                        const customUIAvailable = await isCustomUIAvailable(ctx);
                         let loopDone = false;
                         while (!loopDone) {
                             // Step 1: Preset list
-                            const presetOptions = presetNames.map(n => {
-                                return n === config.activePreset ? `⭐ ${n} (active)` : n;
-                            });
-                            presetOptions.push("➕ Create new preset");
-
-                            const presetChoice = await ctx.ui.select("Model presets:", presetOptions);
-                            if (presetChoice === undefined) {
-                                ctx.ui.notify("Models configuration cancelled.");
-                                return;
+                            let selectedPreset;
+                            if (customUIAvailable) {
+                                const result = await showPresetSelector({
+                                    presets: presetNames,
+                                    activePreset: config.activePreset,
+                                    ctx,
+                                });
+                                if (result !== undefined) {
+                                    if (result.action === "create") {
+                                        postEditAction = "createPreset";
+                                        loopDone = true;
+                                        break;
+                                    }
+                                    if (result.action === "activate") {
+                                        if (!config.presets?.[result.preset]) {
+                                            ctx.ui.notify(`Preset "${result.preset}" not found.`);
+                                            continue;
+                                        }
+                                        applyPreset(config, result.preset);
+                                        saveConfig(config);
+                                        Object.assign(config, loadConfig());
+                                        ctx.ui.notify(`⭐ Activated preset: ${result.preset}`);
+                                        return;
+                                    }
+                                    selectedPreset = result.preset;
+                                }
+                                // If the custom selector returned undefined (cancel or error),
+                                // fall through to the standard ctx.ui.select path below.
                             }
 
-                            if (presetChoice === "➕ Create new preset") {
-                                postEditAction = "createPreset";
-                                loopDone = true;
-                                break;
-                            }
+                            if (selectedPreset === undefined) {
+                                // Fallback: standard select (RPC/headless mode, or custom UI error)
+                                const presetOptions = presetNames.map(n => {
+                                    return n === config.activePreset ? `⭐ ${n} (active)` : n;
+                                });
+                                presetOptions.push("➕ Create new preset");
 
-                            // Extract preset name (strip "⭐ " prefix and " (active)" suffix)
-                            const selectedPreset = presetChoice
-                                .replace(/^⭐\s*/, "")
-                                .replace(/\s*\(active\)$/, "")
-                                .trim();
+                                const presetChoice = await ctx.ui.select("Model presets:", presetOptions);
+                                if (presetChoice === undefined) {
+                                    ctx.ui.notify("Models configuration cancelled.");
+                                    return;
+                                }
+
+                                if (presetChoice === "➕ Create new preset") {
+                                    postEditAction = "createPreset";
+                                    loopDone = true;
+                                    break;
+                                }
+
+                                // Extract preset name (strip "⭐ " prefix and " (active)" suffix)
+                                selectedPreset = presetChoice
+                                    .replace(/^⭐\s*/, "")
+                                    .replace(/\s*\(active\)$/, "")
+                                    .trim();
+                            }
 
                             // Step 2: Show models summary for selected preset
                             const presetData = config.presets[selectedPreset];

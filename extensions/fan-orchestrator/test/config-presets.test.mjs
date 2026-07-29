@@ -67,6 +67,7 @@ describe("savePreset", () => {
     expect(savePreset(config, "__proto__")).toBe(false);
     expect(savePreset(config, "constructor")).toBe(false);
     expect(savePreset(config, "prototype")).toBe(false);
+    expect(savePreset(config, "➕ Create new preset")).toBe(false);
     expect(listPresets(config)).toEqual([]);
     expect(config.activePreset).toBeNull();
   });

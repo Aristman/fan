@@ -136,7 +136,7 @@ function normalizeConfigKeys(config) {
         config.workerTimeout = config.stallTimeout;
     }
 }
-const RESERVED_PRESET_NAMES = new Set(["__proto__", "constructor", "prototype"]);
+const RESERVED_PRESET_NAMES = new Set(["__proto__", "constructor", "prototype", "➕ Create new preset"]);
 
 /**
  * Validate a preset value. A valid preset is an object with cloud and local
@@ -184,7 +184,7 @@ function normalizePresetConfig(config) {
 /**
  * Save the current model-related config (cloud, local, providerMode) as a named preset.
  * Sets the preset as active. Deep-copies the snapshot.
- * Returns false for reserved names (e.g. __proto__, constructor, prototype).
+ * Returns false for reserved names (e.g. __proto__, constructor, prototype, "➕ Create new preset").
  */
 export function savePreset(config, name) {
     if (RESERVED_PRESET_NAMES.has(name))
