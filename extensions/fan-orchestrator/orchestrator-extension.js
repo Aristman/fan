@@ -473,84 +473,162 @@ export const orchestratorExtension = (fan) => {
                         modelsByProvider.get(m.provider).push(m);
                     }
 
-                    // === Preset quick actions ===
-                    // If named presets exist, offer switch/save/delete before the edit flow.
+                    // === Preset selection flow ===
+                    // Step 1: Show preset list (if presets exist)
+                    // Step 2: Show preset detail + action menu (Edit/Rename/Delete/Back)
+                    // "Create new preset" and "Edit" enter the edit flow below.
+                    const RESERVED_PRESET_NAMES = new Set(["__proto__", "constructor", "prototype"]);
+                    let postEditAction = null; // null | "createPreset"
+
+                    function buildPresetSummary(name, data) {
+                        const lines = [
+                            `📦 Preset: ${name}`,
+                            `⚙️  Provider mode: ${data.providerMode || "cloud"}`,
+                            ``,
+                        ];
+                        const mode = data.providerMode === "local" ? "local" : "cloud";
+                        const defaultModel = data[mode]?.model || "(none)";
+                        lines.push(`Default model: ${defaultModel}`);
+                        lines.push(``);
+                        lines.push(`Worker models:`);
+                        for (const type of agentTypes) {
+                            const model = data[mode]?.models?.[type];
+                            const display = model || `(default)`;
+                            lines.push(`  ${agentIcons[type]} ${type}: ${display}`);
+                        }
+                        return lines.join("\n");
+                    }
+
                     const presetNames = listPresets(config);
                     if (presetNames.length > 0) {
-                        const presetAction = await ctx.ui.select("Model presets:", [
-                            `📝 Edit current config (active preset: ${config.activePreset || "none"})`,
-                            "🔀 Switch active preset",
-                            "💾 Save current config as preset",
-                            "🗑 Delete preset",
-                        ]);
-                        if (presetAction === undefined) {
-                            ctx.ui.notify("Models configuration cancelled.");
-                            return;
-                        }
-                        if (presetAction.startsWith("🔀")) {
-                            const options = presetNames.map(n => `${n}${n === config.activePreset ? " ✔" : ""}`);
-                            const choice = await ctx.ui.select("Switch to preset:", options);
-                            if (choice === undefined) {
+                        let loopDone = false;
+                        while (!loopDone) {
+                            // Step 1: Preset list
+                            const presetOptions = presetNames.map(n => {
+                                return n === config.activePreset ? `⭐ ${n} (active)` : n;
+                            });
+                            presetOptions.push("➕ Create new preset");
+
+                            const presetChoice = await ctx.ui.select("Model presets:", presetOptions);
+                            if (presetChoice === undefined) {
                                 ctx.ui.notify("Models configuration cancelled.");
                                 return;
                             }
-                            const name = choice.replace(/\s*✔\s*$/, "").trim();
-                            if (applyPreset(config, name)) {
-                                saveConfig(config);
-                                Object.assign(config, loadConfig());
-                                ctx.ui.notify(`✅ Switched to preset "${name}" (provider mode: ${config.providerMode})`);
-                            } else {
-                                ctx.ui.notify(`Preset "${name}" not found.`);
+
+                            if (presetChoice === "➕ Create new preset") {
+                                postEditAction = "createPreset";
+                                loopDone = true;
+                                break;
                             }
-                            return;
-                        }
-                        if (presetAction.startsWith("💾")) {
-                            const rawName = await ctx.ui.input("Preset name", "my-preset");
-                            if (rawName === undefined) {
-                                ctx.ui.notify("Models configuration cancelled.");
-                                return;
+
+                            // Extract preset name (strip "⭐ " prefix and " (active)" suffix)
+                            const selectedPreset = presetChoice
+                                .replace(/^⭐\s*/, "")
+                                .replace(/\s*\(active\)$/, "")
+                                .trim();
+
+                            // Step 2: Show models summary for selected preset
+                            const presetData = config.presets[selectedPreset];
+                            if (!presetData) {
+                                ctx.ui.notify(`Preset "${selectedPreset}" not found.`);
+                                continue;
                             }
-                            const name = (rawName || "").trim();
-                            if (!name) {
-                                ctx.ui.notify("Preset name cannot be empty.");
-                                return;
-                            }
-                            if (config.presets?.[name]) {
-                                const overwrite = await ctx.ui.confirm(`Overwrite preset "${name}"?`, "A preset with this name already exists. Replace it with the current model configuration.");
-                                if (!overwrite) {
-                                    ctx.ui.notify("Save preset cancelled.");
+
+                            // Inner loop: action menu for the selected preset
+                            let actionDone = false;
+                            while (!actionDone) {
+                                ctx.ui.notify(buildPresetSummary(selectedPreset, presetData));
+
+                                const action = await ctx.ui.select(`Preset "${selectedPreset}":`, [
+                                    "✏️ Edit — reconfigure models for this preset",
+                                    "📝 Rename — rename this preset",
+                                    "🗑 Delete — delete this preset",
+                                    "← Back — return to preset list",
+                                ]);
+                                if (action === undefined) {
+                                    ctx.ui.notify("Models configuration cancelled.");
                                     return;
                                 }
+
+                                if (action.startsWith("✏️")) {
+                                    // Edit: apply preset to config, then enter edit flow
+                                    applyPreset(config, selectedPreset);
+                                    saveConfig(config);
+                                    Object.assign(config, loadConfig());
+                                    loopDone = true;
+                                    actionDone = true;
+                                    break;
+                                }
+
+                                if (action.startsWith("📝")) {
+                                    // Rename
+                                    const rawNewName = await ctx.ui.input("New preset name", selectedPreset);
+                                    if (rawNewName === undefined) {
+                                        continue; // cancelled, back to action menu
+                                    }
+                                    const newName = (rawNewName || "").trim();
+                                    if (!newName) {
+                                        ctx.ui.notify("Preset name cannot be empty.");
+                                        continue;
+                                    }
+                                    if (newName === selectedPreset) {
+                                        continue; // no change, back to action menu
+                                    }
+                                    // Check reserved names FIRST (before duplicate check)
+                                    if (RESERVED_PRESET_NAMES.has(newName)) {
+                                        ctx.ui.notify("Preset name is reserved.");
+                                        continue;
+                                    }
+                                    // Use Object.hasOwn to avoid prototype chain false positives
+                                    if (Object.hasOwn(config.presets, newName)) {
+                                        ctx.ui.notify(`A preset named "${newName}" already exists.`);
+                                        continue;
+                                    }
+                                    config.presets[newName] = structuredClone(presetData);
+                                    delete config.presets[selectedPreset];
+                                    if (config.activePreset === selectedPreset) {
+                                        config.activePreset = newName;
+                                    }
+                                    saveConfig(config);
+                                    Object.assign(config, loadConfig());
+                                    ctx.ui.notify(`📝 Preset renamed: "${selectedPreset}" → "${newName}"`);
+                                    // Update local presetNames for the loop
+                                    const idx = presetNames.indexOf(selectedPreset);
+                                    if (idx >= 0) presetNames[idx] = newName;
+                                    actionDone = true;
+                                    break;
+                                }
+
+                                if (action.startsWith("🗑")) {
+                                    // Delete
+                                    const confirmed = await ctx.ui.confirm(
+                                        `Delete preset "${selectedPreset}"?`,
+                                        "This will permanently remove the preset.",
+                                    );
+                                    if (!confirmed) {
+                                        continue;
+                                    }
+                                    deletePreset(config, selectedPreset);
+                                    saveConfig(config);
+                                    Object.assign(config, loadConfig());
+                                    ctx.ui.notify(`🗑 Preset "${selectedPreset}" deleted.`);
+                                    // Update local presetNames for the loop
+                                    const idx = presetNames.indexOf(selectedPreset);
+                                    if (idx >= 0) presetNames.splice(idx, 1);
+                                    if (presetNames.length === 0) {
+                                        loopDone = true; // no more presets, fall through to edit flow
+                                    }
+                                    actionDone = true;
+                                    break;
+                                }
+
+                                if (action.startsWith("←")) {
+                                    // Back — return to preset list
+                                    actionDone = true;
+                                    break;
+                                }
                             }
-                            if (!savePreset(config, name)) {
-                                ctx.ui.notify("Preset name is reserved.");
-                                return;
-                            }
-                            saveConfig(config);
-                            Object.assign(config, loadConfig());
-                            ctx.ui.notify(`✅ Preset "${name}" saved.`);
-                            return;
                         }
-                        if (presetAction.startsWith("🗑")) {
-                            const options = presetNames.map(n => `${n}${n === config.activePreset ? " ✔" : ""}`);
-                            const choice = await ctx.ui.select("Delete which preset?", options);
-                            if (choice === undefined) {
-                                ctx.ui.notify("Models configuration cancelled.");
-                                return;
-                            }
-                            const name = choice.replace(/\s*✔\s*$/, "").trim();
-                            const confirmed = await ctx.ui.confirm(`Delete preset "${name}"?`, "This will permanently remove the preset.");
-                            if (!confirmed) {
-                                ctx.ui.notify("Delete preset cancelled.");
-                                return;
-                            }
-                            deletePreset(config, name);
-                            saveConfig(config);
-                            Object.assign(config, loadConfig());
-                            ctx.ui.notify(`🗑 Preset "${name}" deleted.`);
-                            return;
-                        }
-                        // else: "📝 Edit current config" — continue into the normal flow below
                     }
 
                     // === Smart assignment scoring ===
@@ -900,6 +978,36 @@ export const orchestratorExtension = (fan) => {
                     Object.assign(config, fresh);
                     ctx.ui.setWidget("orchestrator", undefined);
                     ctx.ui.notify("✅ Model configuration saved!");
+                    // Handle "Create new preset" post-edit action
+                    if (postEditAction === "createPreset") {
+                        let presetNameDone = false;
+                        while (!presetNameDone) {
+                            const rawName = await ctx.ui.input("Preset name", "my-preset");
+                            if (rawName === undefined) {
+                                break; // cancelled
+                            }
+                            const name = (rawName || "").trim();
+                            if (!name) continue;
+                            if (Object.hasOwn(config.presets, name)) {
+                                const overwrite = await ctx.ui.confirm(
+                                    "Overwrite preset?",
+                                    `A preset named "${name}" already exists. Overwrite?`,
+                                );
+                                if (!overwrite) {
+                                    continue; // ask for a new name
+                                }
+                            }
+                            if (!savePreset(config, name)) {
+                                ctx.ui.notify("Preset name is reserved.");
+                                continue;
+                            }
+                            saveConfig(config);
+                            Object.assign(config, loadConfig());
+                            ctx.ui.notify(`✅ Preset "${name}" saved.`);
+                            presetNameDone = true;
+                        }
+                        return;
+                    }
                     // Offer to save as a preset when none exist yet
                     if (listPresets(config).length === 0) {
                         const wantPreset = await ctx.ui.confirm("Save as preset?", "Store this model configuration as a named preset for quick switching.");

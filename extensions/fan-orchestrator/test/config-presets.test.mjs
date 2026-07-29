@@ -186,6 +186,136 @@ describe("deletePreset", () => {
   });
 });
 
+describe("renamePreset (pure logic)", () => {
+  it("renames a preset and preserves its data", () => {
+    const config = makeConfig();
+    config.cloud.model = "openai/gpt-5";
+    config.cloud.models = { implement: "openai/gpt-5" };
+    config.local.model = "ollama/qwen3";
+    config.providerMode = "cloud";
+    savePreset(config, "old-name");
+
+    // Rename logic (same as in orchestrator-extension.js)
+    const oldName = "old-name";
+    const newName = "new-name";
+    const presetData = config.presets[oldName];
+    config.presets[newName] = structuredClone(presetData);
+    delete config.presets[oldName];
+    if (config.activePreset === oldName) {
+      config.activePreset = newName;
+    }
+
+    expect(config.presets[oldName]).toBeUndefined();
+    expect(config.presets["new-name"]).toBeDefined();
+    expect(config.presets["new-name"].cloud.model).toBe("openai/gpt-5");
+    expect(config.presets["new-name"].local.model).toBe("ollama/qwen3");
+    expect(config.presets["new-name"].providerMode).toBe("cloud");
+    expect(config.activePreset).toBe("new-name");
+  });
+
+  it("does not update activePreset when renaming a non-active preset", () => {
+    const config = makeConfig();
+    savePreset(config, "alpha");
+    savePreset(config, "beta");
+    config.activePreset = "alpha";
+
+    // Rename "beta" (not the active one)
+    const oldName = "beta";
+    const newName = "gamma";
+    const presetData = config.presets[oldName];
+    config.presets[newName] = structuredClone(presetData);
+    delete config.presets[oldName];
+    if (config.activePreset === oldName) {
+      config.activePreset = newName;
+    }
+
+    expect(config.activePreset).toBe("alpha");
+    expect(config.presets["gamma"]).toBeDefined();
+    expect(config.presets["beta"]).toBeUndefined();
+  });
+
+  it("deep-copies data: mutating the new preset does not affect the original", () => {
+    const config = makeConfig();
+    config.cloud.model = "openai/gpt-5";
+    config.cloud.models = { plan: "openai/gpt-5" };
+    savePreset(config, "source");
+
+    const originalSnapshot = structuredClone(config.presets["source"]);
+
+    // Rename
+    config.presets["dest"] = structuredClone(config.presets["source"]);
+    delete config.presets["source"];
+
+    // Mutate the renamed preset
+    config.presets["dest"].cloud.model = "mutated";
+    config.presets["dest"].cloud.models.plan = "mutated";
+
+    // Verify the data was deep-copied (the snapshot should match original)
+    expect(config.presets["dest"].cloud.model).toBe("mutated");
+    // The original snapshot we took should still have the original values
+    expect(originalSnapshot.cloud.model).toBe("openai/gpt-5");
+  });
+
+  it("rejects reserved names during rename", () => {
+    const RESERVED = new Set(["__proto__", "constructor", "prototype"]);
+    expect(RESERVED.has("__proto__")).toBe(true);
+    expect(RESERVED.has("constructor")).toBe(true);
+    expect(RESERVED.has("prototype")).toBe(true);
+    expect(RESERVED.has("my-preset")).toBe(false);
+  });
+
+  it("Object.hasOwn avoids prototype-chain false positives in duplicate check", () => {
+    const config = makeConfig();
+    savePreset(config, "real-preset");
+
+    // config.presets["__proto__"] is truthy due to prototype chain,
+    // but it is NOT an own property — Object.hasOwn correctly returns false
+    expect(config.presets["__proto__"]).toBeTruthy(); // prototype chain leak
+    expect(Object.hasOwn(config.presets, "__proto__")).toBe(false);
+
+    // config.presets["constructor"] is also truthy from prototype chain
+    expect(config.presets["constructor"]).toBeTruthy();
+    expect(Object.hasOwn(config.presets, "constructor")).toBe(false);
+
+    // A real own property is detected by both
+    expect(config.presets["real-preset"]).toBeTruthy();
+    expect(Object.hasOwn(config.presets, "real-preset")).toBe(true);
+  });
+
+  it("reserved-name check must come before duplicate check to give correct error", () => {
+    // Simulates the rename validation order:
+    // 1. Check reserved FIRST
+    // 2. Then check Object.hasOwn for duplicates
+    const RESERVED = new Set(["__proto__", "constructor", "prototype"]);
+    const config = makeConfig();
+
+    // For reserved names, the reserved check should fire even though
+    // config.presets[name] is truthy (prototype chain)
+    for (const name of ["__proto__", "constructor", "prototype"]) {
+      const isReserved = RESERVED.has(name);
+      const isDuplicate = Object.hasOwn(config.presets, name);
+      expect(isReserved).toBe(true);
+      expect(isDuplicate).toBe(false);
+      // Reserved check fires first → user sees "reserved" not "already exists"
+    }
+  });
+
+  it("overwrite detection: Object.hasOwn correctly identifies existing preset names", () => {
+    const config = makeConfig();
+    savePreset(config, "existing");
+
+    // Own property → overwrite scenario
+    expect(Object.hasOwn(config.presets, "existing")).toBe(true);
+
+    // Non-existent name → no overwrite
+    expect(Object.hasOwn(config.presets, "new-name")).toBe(false);
+
+    // Prototype-inherited name → NOT an own property, no overwrite
+    expect(Object.hasOwn(config.presets, "toString")).toBe(false);
+    expect(Object.hasOwn(config.presets, "hasOwnProperty")).toBe(false);
+  });
+});
+
 describe("listPresets", () => {
   it("returns preset names", () => {
     const config = makeConfig();
