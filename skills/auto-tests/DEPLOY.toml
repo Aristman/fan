@@ -1,0 +1,20 @@
+# DEPLOY.toml — FAN Package Deployment Manifest
+# Schema version: 1
+
+[package]
+name = "auto-tests"
+type = "skill"
+
+include = [
+    "SKILL.md",
+    "package.json",
+    "README.md",
+    "references/**/*.md",
+    "scripts/**/*.sh",
+]
+
+# No generated files in skills
+exclude = []
+
+# Skills are read-only markdown — no client-side state
+preserve = []

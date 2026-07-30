@@ -1,0 +1,17 @@
+# DEPLOY.toml — FAN Package Deployment Manifest
+# Schema version: 1
+
+[package]
+name = "code-research"
+type = "skill"
+
+include = [
+    "SKILL.md",
+    "package.json",
+]
+
+# No generated files in skills
+exclude = []
+
+# Skills are read-only markdown — no client-side state
+preserve = []

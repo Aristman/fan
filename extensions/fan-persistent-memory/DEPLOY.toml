@@ -1,0 +1,30 @@
+# DEPLOY.toml — FAN Package Deployment Manifest
+# Schema version: 1
+
+[package]
+name = "fan-persistent-memory"
+type = "extension"
+
+include = [
+    "src/**/*.ts",
+    "tsconfig.json",
+    "package.json",
+    "README.md",
+]
+
+exclude = [
+    "node_modules/",
+    "*.test.ts",
+    "*.spec.ts",
+    "vitest.config.*",
+    ".env",
+    ".env.*",
+    "dist/",
+    "*.lock",
+    "package-lock.json",
+    "bun.lock",
+    ".git/",
+    ".DS_Store",
+]
+
+preserve = []

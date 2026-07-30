@@ -1,0 +1,29 @@
+# DEPLOY.toml — FAN Package Deployment Manifest
+# Schema version: 1
+
+[package]
+name = "fan-ask-answer"
+type = "extension"
+
+include = [
+    "index.ts",
+    "package.json",
+    "README.md",
+]
+
+exclude = [
+    "node_modules/",
+    "*.test.ts",
+    "*.spec.ts",
+    "vitest.config.*",
+    ".env",
+    ".env.*",
+    "dist/",
+    "*.lock",
+    "package-lock.json",
+    "bun.lock",
+    ".git/",
+    ".DS_Store",
+]
+
+preserve = []

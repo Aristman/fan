@@ -1,0 +1,37 @@
+# DEPLOY.toml — FAN Package Deployment Manifest
+# Schema version: 1
+
+[package]
+name = "stack-overflow-agents"
+type = "extension"
+
+include = [
+    "index.ts",
+    "client.ts",
+    "config.ts",
+    "types.ts",
+    "utils.ts",
+    "tools/*.ts",
+    "SKILL.md",
+    "package.json",
+    "README.md",
+]
+
+exclude = [
+    "node_modules/",
+    "*.test.ts",
+    "*.spec.ts",
+    "vitest.config.*",
+    ".env",
+    ".env.*",
+    "dist/",
+    "*.lock",
+    "package-lock.json",
+    "bun.lock",
+    ".git/",
+    ".DS_Store",
+]
+
+preserve = [
+    ".env",
+]

@@ -1,0 +1,42 @@
+# DEPLOY.toml — FAN Package Deployment Manifest
+# Schema version: 1
+
+[package]
+name = "fan-web-search"
+type = "extension"
+
+include = [
+    "index.ts",
+    "config.ts",
+    "format.ts",
+    "provider-chain.ts",
+    "tls.ts",
+    "tools.ts",
+    "types.ts",
+    "providers/*.ts",
+    "providers/reader/*.ts",
+    "package.json",
+    "README.md",
+    "config.example.json",
+]
+
+exclude = [
+    "node_modules/",
+    "*.test.ts",
+    "*.spec.ts",
+    "vitest.config.*",
+    ".env",
+    ".env.*",
+    "dist/",
+    "*.lock",
+    "package-lock.json",
+    "bun.lock",
+    ".git/",
+    ".DS_Store",
+    "config.json",
+    "health.json",
+]
+
+preserve = [
+    "config.json",
+]

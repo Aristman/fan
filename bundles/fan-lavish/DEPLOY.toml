@@ -1,0 +1,28 @@
+# DEPLOY.toml — FAN Package Deployment Manifest
+# Schema version: 1
+
+[package]
+name = "fan-lavish"
+type = "bundle"
+
+include = [
+    "package.json",
+    "README.md",
+    "extensions/**/*.ts",
+    "extensions/**/package.json",
+    "extensions/**/*.md",
+    "extensions/**/config.example.json",
+    "skills/**/SKILL.md",
+    "skills/**/package.json",
+]
+
+exclude = [
+    "**/node_modules/**",
+    "**/.env*",
+    "**/*.test.*",
+    "**/*.spec.*",
+    "**/dist/**",
+    "**/__tests__/**",
+]
+
+preserve = []
