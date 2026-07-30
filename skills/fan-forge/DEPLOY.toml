@@ -1,0 +1,21 @@
+# DEPLOY.toml — FAN Package Deployment Manifest
+# Schema version: 1
+
+[package]
+name = "fan-forge"
+type = "skill"
+
+include = [
+    "SKILL.md",
+    "package.json",
+    "README.md",
+    "references/**/*.md",
+    "scripts/**/*.sh",
+    "templates/**/*",
+]
+
+# No generated files in skills
+exclude = []
+
+# Skills are read-only markdown — no client-side state
+preserve = []

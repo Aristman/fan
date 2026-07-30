@@ -1,0 +1,43 @@
+# DEPLOY.toml — FAN Package Deployment Manifest
+# Schema version: 1
+
+[package]
+name = "voice-ollama-tui"
+type = "extension"
+
+include = [
+    "index.ts",
+    "audio-recorder.ts",
+    "bin-manager.ts",
+    "config.ts",
+    "dependencies.ts",
+    "editor-utils.ts",
+    "errors.ts",
+    "init-wizard.ts",
+    "model-downloader.ts",
+    "ollama-service.ts",
+    "pipeline.ts",
+    "ui-overlay.ts",
+    "whisper-service.ts",
+    "tsconfig.json",
+    "package.json",
+    "README.md",
+    ".env.example",
+]
+
+exclude = [
+    "node_modules/",
+    "*.test.ts",
+    "*.spec.ts",
+    "vitest.config.*",
+    ".env",
+    "dist/",
+    "*.lock",
+    "package-lock.json",
+    "bun.lock",
+    ".git/",
+    ".DS_Store",
+    "tar-stream-3.2.0.tgz",
+]
+
+preserve = []

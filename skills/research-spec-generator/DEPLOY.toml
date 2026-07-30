@@ -1,0 +1,19 @@
+# DEPLOY.toml — FAN Package Deployment Manifest
+# Schema version: 1
+
+[package]
+name = "research-spec-generator"
+type = "skill"
+
+include = [
+    "SKILL.md",
+    "package.json",
+    "README.md",
+    "references/**/*.md",
+]
+
+# No generated files in skills
+exclude = []
+
+# Skills are read-only markdown — no client-side state
+preserve = []
