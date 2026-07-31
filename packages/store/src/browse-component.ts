@@ -150,15 +150,34 @@ function computeVisibleItems(
 	let filtered = mergedPackages;
 
 	if (selectedRepoIndex === 0) {
-		// "All" tab: deduplicate by name — first seen wins (repos are priority-sorted
-		// by getAllPackages, so higher-priority repo packages appear first)
-		const seen = new Set<string>();
-		filtered = filtered.filter((m) => {
+		// "All" tab: deduplicate by name — pick the entry with the highest version
+		// across all repos AND the installed version. This ensures that when the
+		// installed version is newer than any repo version, it is still shown.
+		const byName = new Map<string, MergedPackage[]>();
+		for (const m of filtered) {
 			const name = m.repo?.name ?? m.installed?.name ?? "";
-			if (seen.has(name)) return false;
-			seen.add(name);
-			return true;
-		});
+			let group = byName.get(name);
+			if (!group) {
+				group = [];
+				byName.set(name, group);
+			}
+			group.push(m);
+		}
+		const deduped: MergedPackage[] = [];
+		for (const group of byName.values()) {
+			let best = group[0]!;
+			let bestVer = best.repo?.version ?? best.installed?.version ?? "0.0.0";
+			for (let i = 1; i < group.length; i++) {
+				const m = group[i]!;
+				const ver = m.repo?.version ?? m.installed?.version ?? "0.0.0";
+				if (semverCompare(ver, bestVer) > 0) {
+					best = m;
+					bestVer = ver;
+				}
+			}
+			deduped.push(best);
+		}
+		filtered = deduped;
 	} else if (selectedRepoIndex <= enabledRepos.length) {
 		// Specific repo tab: show ALL packages from this repo (no dedup)
 		const repoName = enabledRepos[selectedRepoIndex - 1]!.name;
