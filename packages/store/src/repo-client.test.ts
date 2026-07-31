@@ -108,3 +108,97 @@ describe("RepoClient.resolveDownloadUrl", () => {
 		expect(RC.resolveDownloadUrl(pkg)).toBe(pkg.downloadUrl);
 	});
 });
+
+describe("RepoClient.checkUpdates", () => {
+	it("picks max version across all repos", async () => {
+		const client = new RepoClient();
+		// Pre-populate cache to avoid real network calls
+		(client as any).indexCache.set("http://repo-a", {
+			data: {
+				repository: { name: "a", updatedAt: "", url: "" },
+				packages: [
+					{
+						name: "pkg-x",
+						version: "1.0.0",
+						description: "",
+						type: "extension",
+						downloadUrl: "http://repo-a/pkg-x-1.0.0.tar.gz",
+						hash: "",
+					},
+				],
+			},
+			fetchedAt: Date.now(),
+		});
+		(client as any).indexCache.set("http://repo-b", {
+			data: {
+				repository: { name: "b", updatedAt: "", url: "" },
+				packages: [
+					{
+						name: "pkg-x",
+						version: "2.0.0",
+						description: "",
+						type: "extension",
+						downloadUrl: "http://repo-b/pkg-x-2.0.0.tar.gz",
+						hash: "",
+					},
+				],
+			},
+			fetchedAt: Date.now(),
+		});
+
+		const repos = [
+			{ name: "repo-a", url: "http://repo-a", enabled: true, priority: 1 },
+			{ name: "repo-b", url: "http://repo-b", enabled: true, priority: 2 },
+		];
+		const installed = [
+			{
+				name: "pkg-x",
+				version: "1.0.0",
+				type: "extension" as const,
+				source: "repo" as const,
+				installedAt: 0,
+				installedPath: "/tmp/pkg-x",
+			},
+		];
+
+		const updates = await client.checkUpdates(installed, repos);
+		expect(updates.size).toBe(1);
+		expect(updates.get("pkg-x")?.latest).toBe("2.0.0");
+		expect(updates.get("pkg-x")?.repoName).toBe("repo-b");
+	});
+
+	it("no update when installed version is already the highest", async () => {
+		const client = new RepoClient();
+		(client as any).indexCache.set("http://repo-a", {
+			data: {
+				repository: { name: "a", updatedAt: "", url: "" },
+				packages: [
+					{
+						name: "pkg-x",
+						version: "1.0.0",
+						description: "",
+						type: "extension",
+						downloadUrl: "",
+						hash: "",
+					},
+				],
+			},
+			fetchedAt: Date.now(),
+		});
+
+		const repos = [{ name: "repo-a", url: "http://repo-a", enabled: true, priority: 1 }];
+		const installed = [
+			{
+				name: "pkg-x",
+				version: "1.0.0",
+				type: "extension" as const,
+				source: "repo" as const,
+				installedAt: 0,
+				installedPath: "/tmp/pkg-x",
+			},
+		];
+
+		const updates = await client.checkUpdates(installed, repos);
+		expect(updates.size).toBe(0);
+	});
+});
