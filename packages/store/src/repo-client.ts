@@ -310,28 +310,55 @@ export class RepoClient {
 
 	/**
 	 * Check for updates for all repo-installed packages.
-	 * Returns map of packageName -> { current, latest }.
+	 * Scans ALL enabled repos and picks the max version available.
+	 * Returns map of packageName -> { current, latest, downloadUrl, hash, repoName }.
 	 */
 	async checkUpdates(
 		installedPackages: InstalledPackage[],
 		repos: RepoEntry[],
-	): Promise<Map<string, { current: string; latest: string; downloadUrl: string; hash: string }>> {
-		const updates = new Map<string, { current: string; latest: string; downloadUrl: string; hash: string }>();
+	): Promise<Map<string, { current: string; latest: string; downloadUrl: string; hash: string; repoName: string }>> {
+		const updates = new Map<
+			string,
+			{ current: string; latest: string; downloadUrl: string; hash: string; repoName: string }
+		>();
 		const repoPackages = installedPackages.filter((p) => p.source === "repo");
+		const enabledRepos = repos.filter((r) => r.enabled);
+
+		// Pre-fetch all indexes (cached via indexCache)
+		const indexes = new Map<string, RepoIndex>();
+		for (const repo of enabledRepos) {
+			try {
+				indexes.set(repo.name, await this.fetchIndex(repo.url));
+			} catch {
+				// Skip unreachable repos
+			}
+		}
 
 		for (const installed of repoPackages) {
-			try {
-				const latest = await this.getPackage(installed.name, repos);
-				if (latest && semverCompare(latest.version, installed.version) > 0) {
-					updates.set(installed.name, {
-						current: installed.version,
-						latest: latest.version,
-						downloadUrl: latest.downloadUrl,
-						hash: latest.hash,
-					});
+			let bestVersion = installed.version;
+			let bestPkg: RepoPackage | null = null;
+			let bestRepoName = "";
+
+			for (const repo of enabledRepos) {
+				const index = indexes.get(repo.name);
+				if (!index) continue;
+				const pkg = index.packages.find((p) => p.name === installed.name);
+				if (!pkg) continue;
+				if (semverCompare(pkg.version, bestVersion) > 0) {
+					bestVersion = pkg.version;
+					bestPkg = pkg;
+					bestRepoName = repo.name;
 				}
-			} catch {
-				// Skip packages whose repos are unreachable
+			}
+
+			if (bestPkg && semverCompare(bestPkg.version, installed.version) > 0) {
+				updates.set(installed.name, {
+					current: installed.version,
+					latest: bestPkg.version,
+					downloadUrl: bestPkg.downloadUrl,
+					hash: bestPkg.hash,
+					repoName: bestRepoName,
+				});
 			}
 		}
 

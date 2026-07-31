@@ -12,7 +12,7 @@ import { fuzzyFilter, Input, Key, matchesKey, truncateToWidth } from "@seaagents
 import type { StoreConfig } from "./config.js";
 import type { ArchiveInstaller } from "./installer.js";
 import { ProgressOverlay } from "./progress-overlay.js";
-import type { RepoClient } from "./repo-client.js";
+import { type RepoClient, semverCompare } from "./repo-client.js";
 import type { StoreDatabase } from "./storage.js";
 import type { InstalledPackage, RepoPackage } from "./types.js";
 
@@ -262,15 +262,6 @@ export async function showExtensionBrowser(
 				const allPackages = await repoClient.getAllPackages(config.repositories);
 				allPackages.sort((a, b) => a.name.localeCompare(b.name));
 
-				// Enrich installed packages with update status
-				for (const installed of installedPackages) {
-					const update = updatesMap.get(installed.name);
-					if (installed.source === "repo" && update) {
-						installed.updateAvailable = true;
-						installed.updateVersion = update.latest;
-					}
-				}
-
 				// Build merged packages (remote + local-only)
 				const mergedPackages = buildMergedPackages(allPackages, installedPackages);
 
@@ -397,10 +388,12 @@ export async function showExtensionBrowser(
 					// Cursor
 					const cursor = isSelected ? theme.fg("accent", "❯ ") : "  ";
 
+					const isOutdated = !!(installed && repo && semverCompare(repo.version, installed.version) > 0);
+
 					// Status icon
 					let statusIcon = theme.fg("dim", "○");
 					if (installed) {
-						statusIcon = installed.updateAvailable ? theme.fg("warning", "↑") : theme.fg("success", "✓");
+						statusIcon = isOutdated ? theme.fg("warning", "↑") : theme.fg("success", "✓");
 					}
 
 					// Name
@@ -411,8 +404,8 @@ export async function showExtensionBrowser(
 
 					// Version
 					let versionStr: string;
-					if (installed?.updateAvailable && installed.updateVersion) {
-						versionStr = theme.fg("warning", `${installed.version} → ${installed.updateVersion}`);
+					if (isOutdated && repo) {
+						versionStr = theme.fg("warning", `${installed!.version} → ${repo.version}`);
 					} else if (installed) {
 						versionStr = theme.fg("success", `v${displayVersion}`);
 					} else {
@@ -491,7 +484,7 @@ export async function showExtensionBrowser(
 				// Actions footer
 				const actions: string[] = [];
 				if (!installed) actions.push("ENTER install");
-				if (installed?.updateAvailable) actions.push("ENTER update");
+				if (installed && repo && semverCompare(repo.version, installed.version) > 0) actions.push("ENTER update");
 				if (installed) actions.push("R remove");
 				actions.push("ESC back");
 				lines.push(truncateToWidth(theme.fg("dim", ` ${actions.join(" │ ")}`), w));
@@ -578,7 +571,7 @@ export async function showExtensionBrowser(
 							const { repo, installed } = detailPkg;
 							if (!installed && repo) {
 								done({ type: "install", pkg: repo });
-							} else if (installed?.updateAvailable && repo) {
+							} else if (repo && installed && semverCompare(repo.version, installed.version) > 0) {
 								done({ type: "update", pkg: repo, installed });
 							}
 							return;
@@ -696,7 +689,7 @@ export async function showExtensionBrowser(
 						const { repo, installed } = m;
 						if (!installed && repo) {
 							done({ type: "install", pkg: repo });
-						} else if (installed?.updateAvailable && repo) {
+						} else if (repo && installed && semverCompare(repo.version, installed.version) > 0) {
 							done({ type: "update", pkg: repo, installed });
 						} else {
 							// Installed & up to date → show details overlay
