@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, unlinkSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import type { InstalledPackage, RepoEntry, RepoIndex, RepoPackage } from "./types.js";
 
 const FETCH_TIMEOUT_MS = 10_000;
@@ -50,11 +50,30 @@ export class RepoClient {
 	}
 
 	private static isFileUrl(url: string): boolean {
+		if (url.startsWith("file://")) return true;
+		// Windows absolute path: C:\... or C:/...
+		if (/^[A-Za-z]:[\\/]/.test(url)) return true;
+		// POSIX absolute path: /... (but not //...)
+		if (url.startsWith("/") && !url.startsWith("//")) return true;
 		try {
 			return new URL(url).protocol === "file:";
 		} catch {
-			return url.startsWith("file://");
+			return false;
 		}
+	}
+
+	/**
+	 * Convert a raw filesystem path to a file:// URL.
+	 * Returns the URL unchanged if it already starts with file://.
+	 * Uses pathToFileURL() for proper encoding of special characters (#, ?, etc.).
+	 */
+	private static toFileUrl(url: string): string {
+		if (url.startsWith("file://")) return url;
+		// Windows or POSIX absolute path → use pathToFileURL for proper encoding
+		if (/^[A-Za-z]:[\\/]/.test(url) || url.startsWith("/")) {
+			return pathToFileURL(url).href;
+		}
+		return url;
 	}
 
 	/**
@@ -75,7 +94,11 @@ export class RepoClient {
 			return cached.data;
 		}
 
-		const indexUrl = repoUrl.endsWith("/") ? `${repoUrl}index.json` : `${repoUrl}/index.json`;
+		// Normalize raw filesystem paths to file:// URLs for consistent handling
+		const normalizedRepoUrl = isFile ? RepoClient.toFileUrl(repoUrl) : repoUrl;
+		const indexUrl = normalizedRepoUrl.endsWith("/")
+			? `${normalizedRepoUrl}index.json`
+			: `${normalizedRepoUrl}/index.json`;
 
 		let data: RepoIndex;
 
@@ -155,14 +178,15 @@ export class RepoClient {
 	}
 
 	/**
-	 * Get all packages across all configured repositories.
-	 * Priority: repos with lower priority number first (first seen wins).
+	 * Get all packages across all configured repositories (no deduplication).
+	 * Returns every package from every repo, enriched with repoName/repoUrl.
+	 * Packages are ordered by repo priority (lower number first), so the
+	 * caller can deduplicate if needed.
 	 */
 	async getAllPackages(repos: RepoEntry[], typeFilter?: string): Promise<RepoPackage[]> {
 		const enabledRepos = repos.filter((r) => r.enabled).sort((a, b) => a.priority - b.priority);
 
 		const allPackages: RepoPackage[] = [];
-		const seen = new Set<string>();
 
 		for (const repo of enabledRepos) {
 			try {
@@ -170,10 +194,7 @@ export class RepoClient {
 				const packages = typeFilter ? index.packages.filter((p) => p.type === typeFilter) : index.packages;
 
 				for (const pkg of packages) {
-					if (!seen.has(pkg.name)) {
-						seen.add(pkg.name);
-						allPackages.push({ ...pkg, repoName: repo.name, repoUrl: repo.url });
-					}
+					allPackages.push({ ...pkg, repoName: repo.name, repoUrl: repo.url });
 				}
 			} catch (_err) {
 				// Skip faulty repos silently
@@ -211,18 +232,38 @@ export class RepoClient {
 	}
 
 	/**
+	 * Resolve the effective download URL for a package.
+	 * When the repo itself is a local file:// repo, the index.json may still
+	 * contain a remote https:// downloadUrl. In that case we resolve the
+	 * archive filename relative to the local repo directory:
+	 *   {repoUrl}/packages/{filename}
+	 */
+	private static resolveDownloadUrl(pkg: RepoPackage): string {
+		if (pkg.repoUrl && RepoClient.isFileUrl(pkg.repoUrl) && !RepoClient.isFileUrl(pkg.downloadUrl)) {
+			// Local repo with remote downloadUrl — resolve locally
+			const filename = pkg.downloadUrl.split("/").pop() ?? pkg.downloadUrl;
+			const repoBase = RepoClient.toFileUrl(pkg.repoUrl);
+			const base = repoBase.endsWith("/") ? repoBase : `${repoBase}/`;
+			return `${base}packages/${filename}`;
+		}
+		return pkg.downloadUrl;
+	}
+
+	/**
 	 * Download a package archive to a destination path.
 	 * Verifies SHA-256 hash if provided.
 	 */
 	async downloadPackage(pkg: RepoPackage, destPath: string, signal?: AbortSignal): Promise<void> {
-		if (!RepoClient.isFileUrl(pkg.downloadUrl) && this.isOffline()) {
+		const effectiveUrl = RepoClient.resolveDownloadUrl(pkg);
+
+		if (!RepoClient.isFileUrl(effectiveUrl) && this.isOffline()) {
 			throw new Error(`Offline mode (FAN_OFFLINE). Cannot download ${pkg.name}`);
 		}
 
 		mkdirSync(dirname(destPath), { recursive: true });
 
-		if (RepoClient.isFileUrl(pkg.downloadUrl)) {
-			const filePath = fileURLToPath(pkg.downloadUrl);
+		if (RepoClient.isFileUrl(effectiveUrl)) {
+			const filePath = fileURLToPath(RepoClient.toFileUrl(effectiveUrl));
 			if (!existsSync(filePath)) {
 				throw new Error(`Local package archive not found: ${filePath}`);
 			}
@@ -240,13 +281,13 @@ export class RepoClient {
 			return;
 		}
 
-		const response = await fetch(pkg.downloadUrl, {
+		const response = await fetch(effectiveUrl, {
 			signal: signal ?? AbortSignal.timeout(30_000),
 		});
 
 		if (!response.ok) {
 			throw new Error(
-				`Failed to download ${pkg.name} from ${pkg.downloadUrl}: ${response.status} ${response.statusText}`,
+				`Failed to download ${pkg.name} from ${effectiveUrl}: ${response.status} ${response.statusText}`,
 			);
 		}
 

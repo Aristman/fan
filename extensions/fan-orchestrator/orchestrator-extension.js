@@ -481,6 +481,7 @@ export const orchestratorExtension = (fan) => {
                     // "Create new preset" and "Edit" enter the edit flow below.
                     const RESERVED_PRESET_NAMES = new Set(["__proto__", "constructor", "prototype", "➕ Create new preset"]);
                     let postEditAction = null; // null | "createPreset"
+                    let selectedPreset; // preset name chosen in Step 1, used in post-wizard save
 
                     function buildPresetSummary(name, data) {
                         const lines = [
@@ -509,7 +510,6 @@ export const orchestratorExtension = (fan) => {
                         let loopDone = false;
                         while (!loopDone) {
                             // Step 1: Preset list
-                            let selectedPreset;
                             if (customUIAvailable) {
                                 const result = await showPresetSelector({
                                     presets: presetNames,
@@ -592,7 +592,7 @@ export const orchestratorExtension = (fan) => {
                                     if (customUIAvailable) {
                                         // Edit (TUI mode): inline model editor — the wizard is never launched.
                                         const result = await showModelEditor({
-                                            presetData: config.presets[selectedPreset],
+                                            presetData: structuredClone(config.presets[selectedPreset]),
                                             presetName: selectedPreset,
                                             allModels: allAvailable,
                                             ctx,
@@ -616,10 +616,15 @@ export const orchestratorExtension = (fan) => {
                                         actionDone = true;
                                         break;
                                     }
-                                    // Edit (RPC/headless fallback): apply preset to config, then enter edit flow
-                                    applyPreset(config, selectedPreset);
-                                    saveConfig(config);
-                                    Object.assign(config, loadConfig());
+                                    // Edit (RPC/headless fallback): pre-fill wizard with selected
+                                    // preset's data so "current" values display correctly.
+                                    // We avoid applyPreset() — it would change activePreset.
+                                    const _preset = config.presets[selectedPreset];
+                                    if (_preset) {
+                                        config.cloud = structuredClone(_preset.cloud);
+                                        config.local = structuredClone(_preset.local);
+                                        config.providerMode = _preset.providerMode;
+                                    }
                                     loopDone = true;
                                     actionDone = true;
                                     break;
@@ -1034,8 +1039,17 @@ export const orchestratorExtension = (fan) => {
                         config[mode].models = newModels;
                     }
 
-                    // 5. Save (keep the active preset snapshot in sync with edits)
-                    if (config.activePreset && config.presets?.[config.activePreset]) {
+                    // 5. Save wizard changes to the correct preset
+                    if (selectedPreset && config.presets?.[selectedPreset]) {
+                        config.presets[selectedPreset] = structuredClone({
+                            cloud: config.cloud,
+                            local: config.local,
+                            providerMode: config.providerMode,
+                        });
+                        if (config.activePreset === selectedPreset) {
+                            applyPreset(config, selectedPreset);
+                        }
+                    } else if (config.activePreset && config.presets?.[config.activePreset]) {
                         savePreset(config, config.activePreset);
                     }
                     saveConfig(config);
