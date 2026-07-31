@@ -43,6 +43,40 @@ FAN Store — встроенный пакетный менеджер для ус
 - Поля: `repositories`, `autoUpdateCheck`, `installScope`, `archiveTempDir`
 - Дефолтный репозиторий: `https://fan.sea-agents.ru/fan-store` (priority: 1, enabled: true)
 
+#### Формат URL для локальных репозиториев
+
+Поле `url` в `store.json` — стандартная JSON-строка. Все обратные слэши должны быть **экранированы**:
+
+| Формат | Пример | Комментарий |
+|--------|--------|-------------|
+| Windows (escaped) | `"C:\\Users\\User\\fan-store"` | **Каждый `\` → `\\`** в JSON |
+| Windows (forward slashes) | `"C:/Users/User/fan-store"` | Работает, рекомендуется |
+| POSIX | `"/home/user/fan-store"` | Linux/macOS |
+| file:// URL | `"file:///C:/Users/User/fan-store"` | Явный формат |
+| HTTP | `"http://localhost:8889"` | Для `fan-store serve` |
+
+> ⚠️ **Частая ошибка:** `"C:\\Users\\User\fan-store"` — `\f` в JSON парсится как **form feed** (символ 0x0C), и путь ломается. Всегда экранируйте слэши: `\\f`, а не `\f`. Или используйте forward slashes (`C:/Users/...`).
+
+**Правильный пример `store.json`:**
+```json
+{
+  "repositories": [
+    {
+      "name": "fan-repo",
+      "url": "https://fan.sea-agents.ru/fan-store",
+      "enabled": true,
+      "priority": 1
+    },
+    {
+      "name": "fan-local-repo",
+      "url": "C:/Users/User/fan-store",
+      "enabled": true,
+      "priority": 2
+    }
+  ]
+}
+```
+
 ### 2. Типы — `packages/store/src/types.ts`
 - `ResourceType`: `extension` | `skill` | `theme`
 - `RepoEntry`, `RepoPackage`, `RepoIndex`, `InstalledPackage`
@@ -57,6 +91,7 @@ FAN Store — встроенный пакетный менеджер для ус
 - Поиск по пакетам (fuzzy match)
 - Скачивание архивов с SHA-256 верификацией
 - Проверка обновлений (semver сравнение)
+- **Авто-резолв downloadUrl**: для локальных (file://) репозиториев `downloadUrl` из `index.json` автоматически резолвится в локальный путь `{repoUrl}/packages/{filename}` — даже если в index.json указан remote URL. Это позволяет зеркалировать remote store без правки downloadUrl в манифесте.
 
 ### 5. Установщик — `packages/store/src/installer.ts`
 - `ArchiveInstaller` — распаковка `.tar.gz` / `.zip`

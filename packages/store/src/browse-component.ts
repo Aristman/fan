@@ -149,8 +149,18 @@ function computeVisibleItems(
 ): MergedPackage[] {
 	let filtered = mergedPackages;
 
-	// Repo filter (0 = all repos)
-	if (selectedRepoIndex > 0 && selectedRepoIndex <= enabledRepos.length) {
+	if (selectedRepoIndex === 0) {
+		// "All" tab: deduplicate by name — first seen wins (repos are priority-sorted
+		// by getAllPackages, so higher-priority repo packages appear first)
+		const seen = new Set<string>();
+		filtered = filtered.filter((m) => {
+			const name = m.repo?.name ?? m.installed?.name ?? "";
+			if (seen.has(name)) return false;
+			seen.add(name);
+			return true;
+		});
+	} else if (selectedRepoIndex <= enabledRepos.length) {
+		// Specific repo tab: show ALL packages from this repo (no dedup)
 		const repoName = enabledRepos[selectedRepoIndex - 1]!.name;
 		filtered = filtered.filter((m) => m.repo?.repoName === repoName);
 	}
@@ -312,6 +322,17 @@ export async function showExtensionBrowser(
 					typeFilter,
 					searchQuery,
 				);
+
+				// Recompute type counts for the current repo tab (without type filter)
+				const repoItems = computeVisibleItems(
+					data.mergedPackages,
+					enabledRepos,
+					selectedRepoIndex,
+					"all",
+					searchQuery,
+				);
+				data.typeCounts = computeTypeCounts(repoItems);
+
 				// Clamp selection
 				if (visibleItems.length === 0) {
 					selectedIndex = 0;
