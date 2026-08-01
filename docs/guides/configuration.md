@@ -1,28 +1,28 @@
-# Configuration Guide
+# Руководство по конфигурации
 
-Complete reference for all FAN configuration options.
+Полный справочник по всем параметрам конфигурации FAN.
 
-## Configuration Files Overview
+## Обзор конфигурационных файлов
 
-| File | Location | Purpose |
+| Файл | Расположение | Назначение |
 |------|----------|---------|
-| `.env` | Project root | API keys and environment variables |
-| `settings.json` | `~/.fan/agent/settings.json` | Global settings (all projects) |
-| `settings.json` | `<project>/.fan/settings.json` | Project-specific overrides |
-| `models.json` | `~/.fan/agent/models.json` | Custom model definitions |
-| `config.json` | `packages/orchestrator/src/config.json` | Multi-agent orchestrator config |
+| `.env` | Корень проекта | API-ключи и переменные окружения |
+| `settings.json` | `~/.fan/agent/settings.json` | Глобальные настройки (все проекты) |
+| `settings.json` | `<project>/.fan/settings.json` | Переопределения для конкретного проекта |
+| `models.json` | `~/.fan/agent/models.json` | Пользовательские определения моделей |
+| `config.json` | `packages/orchestrator/src/config.json` | Конфигурация мульти-агентного оркестратора |
 
-## Precedence Rules
+## Правила приоритета
 
-**CLI flags** > **Project settings** > **Global settings** > **Defaults**
+**Флаги CLI** > **Настройки проекта** > **Глобальные настройки** > **Значения по умолчанию**
 
-Nested objects merge recursively (partial overrides supported).
+Вложенные объекты объединяются рекурсивно (поддерживаются частичные переопределения).
 
-## Environment Variables
+## Переменные окружения
 
-### AI Provider API Keys
+### API-ключи провайдеров ИИ
 
-| Provider | FAN Variable | Standard Variable |
+| Провайдер | Переменная FAN | Стандартная переменная |
 |----------|-------------|-------------------|
 | OpenAI | `OPENAI_API_KEY` | `OPENAI_API_KEY` |
 | Anthropic | `ANTHROPIC_API_KEY` | `ANTHROPIC_API_KEY` |
@@ -42,165 +42,165 @@ Nested objects merge recursively (partial overrides supported).
 | Vercel AI Gateway | `AI_GATEWAY_API_KEY` | — |
 | GitHub Copilot | `COPILOT_GITHUB_TOKEN` | `GH_TOKEN`, `GITHUB_TOKEN` |
 
-Keys can also be set per-provider in `models.json` via `apiKey` (takes precedence over env vars) or via the `envVar` field to explicitly name the environment variable to use.
+Ключи также можно задавать для каждого провайдера в `models.json` через `apiKey` (имеет приоритет над переменными окружения) или через поле `envVar`, чтобы явно указать имя переменной окружения.
 
-### Runtime Flags
+### Флаги среды выполнения
 
-| Variable | Default | Description |
+| Переменная | По умолчанию | Описание |
 |----------|---------|-------------|
-| `FAN_CODING_AGENT_DIR` | `~/.fan/agent` | Custom agent directory |
-| `FAN_CACHE_RETENTION` | `"default"` | `"long"` for 24h Anthropic cache TTL |
-| `FAN_CLEAR_ON_SHRINK` | `"0"` | `"1"` to clear empty rows on shrink |
-| `FAN_HARDWARE_CURSOR` | `"0"` | `"1"` to show hardware cursor |
+| `FAN_CODING_AGENT_DIR` | `~/.fan/agent` | Пользовательский каталог агента |
+| `FAN_CACHE_RETENTION` | `"default"` | `"long"` для 24-часового TTL кэша Anthropic |
+| `FAN_CLEAR_ON_SHRINK` | `"0"` | `"1"` для очистки пустых строк при сжатии |
+| `FAN_HARDWARE_CURSOR` | `"0"` | `"1"` для отображения аппаратного курсора |
 
-### Server & Deployment
+### Сервер и развёртывание
 
-Server-mode variables (`fan server` / `fan --web` / Docker). Implementation: `packages/coding-agent/src/cli/server-config.ts`, `packages/api-gateway/src/cors-config.ts`, `packages/coding-agent/src/utils/file-logger.ts`. See [Deployment Guide](deployment.md).
+Переменные серверного режима (`fan server` / `fan --web` / Docker). Реализация: `packages/coding-agent/src/cli/server-config.ts`, `packages/api-gateway/src/cors-config.ts`, `packages/coding-agent/src/utils/file-logger.ts`. См. [Deployment Guide](deployment.md).
 
-| Variable | Default | Description |
+| Переменная | По умолчанию | Описание |
 |----------|---------|-------------|
-| `PORT` | `3456` | Server port. `--port` flag overrides; unset/invalid values fall back to the default |
-| `HOST` | `"localhost"` | Bind host. `--host` flag overrides; use `0.0.0.0` inside containers |
-| `FAN_WORKSPACE_ROOT` | `~/projects` | Workspace root for server mode (F-1.11). Default cwd for sessions created without an explicit `cwd` and the cwd whitelist for `POST /api/sessions` — a `cwd` outside it is rejected with 403 (F-1.13, symlink-aware). Unset/empty → `~/projects`. Container sets `/data/repos` |
-| `FAN_PUBLIC` | unset | Public mode: `"1"`/`"true"`/`"yes"`/`"on"` makes token auth mandatory and ignores `FAN_NO_AUTH`. Unrecognized values fail closed (treated as public, with a stderr warning) |
-| `ALLOWED_ORIGINS` | `"*"` | CORS whitelist — comma-separated origins (whitespace trimmed, empty entries dropped). `"*"` = fully open (local dev) |
-| `LOG_DIR` | unset | File logging directory (`app.log` + rotation). Unset/empty = file logging disabled (console only). Container sets it to `/data/logs` |
-| `LOG_LEVEL` | `"info"` | File log verbosity: `error` \| `warn` \| `info` \| `debug`. Console output always passes through unchanged |
-| `LOG_MAX_SIZE` | `10485760` (10 MB) | Rotate `app.log` when it reaches this size. Plain bytes or `k`/`m`/`g` suffix (e.g. `"5m"`) |
-| `LOG_MAX_FILES` | `5` | Rotated files to keep: `app.log.1` … `app.log.N` (oldest dropped) |
+| `PORT` | `3456` | Порт сервера. Флаг `--port` переопределяет; некорректные значения возвращают значение по умолчанию |
+| `HOST` | `"localhost"` | Хост привязки. Флаг `--host` переопределяет; используйте `0.0.0.0` внутри контейнеров |
+| `FAN_WORKSPACE_ROOT` | `~/projects` | Корень рабочей области для серверного режима (F-1.11). Рабочий каталог по умолчанию для сессий, созданных без явного `cwd`, и белый список каталогов для `POST /api/sessions` — `cwd` за его пределами отклоняется с кодом 403 (F-1.13, с учётом symlink). Не установлена/пустая → `~/projects`. В контейнере устанавливается `/data/repos` |
+| `FAN_PUBLIC` | не установлена | Публичный режим: `"1"`/`"true"`/`"yes"`/`"on"` делает обязательной аутентификацию по токену и игнорирует `FAN_NO_AUTH`. Нераспознанные значения трактуются как публичный режим (с предупреждением в stderr) |
+| `ALLOWED_ORIGINS` | `"*"` | Белый список CORS — origins через запятую (пробелы обрезаются, пустые записи отбрасываются). `"*"` = полностью открыто (локальная разработка) |
+| `LOG_DIR` | не установлена | Каталог для файлового логирования (`app.log` + ротация). Не установлена/пустая = файловое логирование отключено (только консоль). В контейнере устанавливается `/data/logs` |
+| `LOG_LEVEL` | `"info"` | Детализация файловых логов: `error` \| `warn` \| `info` \| `debug`. Консольный вывод всегда передаётся без изменений |
+| `LOG_MAX_SIZE` | `10485760` (10 MB) | Ротировать `app.log` при достижении этого размера. Число в байтах или суффикс `k`/`m`/`g` (например, `"5m"`) |
+| `LOG_MAX_FILES` | `5` | Количество ротируемых файлов для хранения: `app.log.1` … `app.log.N` (самые старые удаляются) |
 
-**Persistent message queue (F-5.5/F-5.6).** In server mode the WS dispatcher queue is **persistent by default** (`PersistentMessageQueue`): queued `sendMessage` payloads are stored as JSONL under `<agentDir>/queues` (`FAN_CODING_AGENT_DIR` / `FAN_AGENT_DIR`, default `~/.fan/agent`) and restored on startup (`queues_restored` WS frame). No env flag — opt out programmatically via `ServerOptions.persistentQueue: false` (legacy in-memory queue). Details: [API Reference — Message Queueing](api-reference.md#message-queueing-phases-2--5).
+**Постоянная очередь сообщений (F-5.5/F-5.6).** В серверном режиме очередь диспетчера WS **по умолчанию является постоянной** (`PersistentMessageQueue`): поставленные в очередь payloads `sendMessage` сохраняются как JSONL в `<agentDir>/queues` (`FAN_CODING_AGENT_DIR` / `FAN_AGENT_DIR`, по умолчанию `~/.fan/agent`) и восстанавливаются при запуске (WS-фрейм `queues_restored`). Без переменной окружения — opt-out программно через `ServerOptions.persistentQueue: false` (унаследованная очередь в памяти). Подробности: [API Reference — Message Queueing](api-reference.md#message-queueing-phases-2--5).
 
-**Per-project tokens (F-5.7).** Client tokens accept an optional `projectScope` at creation (`POST /api/tokens { "name", "projectScope" }`) restricting them to a single project (enforcement, lockdown policy and anti-escalation rules: [API Reference — Project Scope](api-reference.md#project-scope-f-57)). Existing tokens (`projectScope: null`) keep full access.
+**Токены по проектам (F-5.7).** Клиентские токены принимают необязательный `projectScope` при создании (`POST /api/tokens { "name", "projectScope" }`), ограничивая их одним проектом (принудительное применение, политика блокировки и правила анти-эскалации: [API Reference — Project Scope](api-reference.md#project-scope-f-57)). Существующие токены (`projectScope: null`) сохраняют полный доступ.
 
-## Settings Reference
+## Справочник настроек
 
-### Model Configuration
+### Конфигурация модели
 
-| Setting | Type | Default | Description |
+| Параметр | Тип | По умолчанию | Описание |
 |---------|------|---------|-------------|
-| `defaultProvider` | `string` | — | Default AI provider |
-| `defaultModel` | `string` | — | Default model ID |
-| `defaultThinkingLevel` | `"off"`\|`"minimal"`\|`"low"`\|`"medium"`\|`"high"`\|`"xhigh"` | — | Thinking budget |
+| `defaultProvider` | `string` | — | Провайдер ИИ по умолчанию |
+| `defaultModel` | `string` | — | ID модели по умолчанию |
+| `defaultThinkingLevel` | `"off"`\|`"minimal"`\|`"low"`\|`"medium"`\|`"high"`\|`"xhigh"` | — | Бюджет мышления |
 
 ```json
 { "defaultProvider": "anthropic", "defaultModel": "claude-sonnet-4-20250514", "defaultThinkingLevel": "medium" }
 ```
 
-### Model-Specific Settings
+### Настройки для конкретных моделей
 
-Per-model overrides keyed by `"provider/model-id"`. Stored in Prisma DB via Dashboard/API.
+Переопределения для отдельных моделей по ключу `"provider/model-id"`. Хранятся в Prisma DB через Dashboard/API.
 
-| Field | Type | Description |
+| Поле | Тип | Описание |
 |-------|------|-------------|
-| `temperature` | `number` | Sampling temperature (0–2) |
-| `maxTokens` | `number` | Max output tokens |
-| `thinking` | `"off"`\|`"minimal"`\|`"low"`\|`"medium"`\|`"high"`\|`"xhigh"` | Thinking budget |
+| `temperature` | `number` | Температура сэмплирования (0–2) |
+| `maxTokens` | `number` | Максимальное количество выходных токенов |
+| `thinking` | `"off"`\|`"minimal"`\|`"low"`\|`"medium"`\|`"high"`\|`"xhigh"` | Бюджет мышления |
 
 ```json
 { "modelSettings": { "anthropic/claude-sonnet-4-20250514": { "temperature": 0.3, "thinking": "medium" } } }
 ```
 
-### Routing Rules
+### Правила маршрутизации
 
-First-match routing to preferred providers.
+Маршрутизация по первому совпадению к предпочтительным провайдерам.
 
-| Field | Type | Description |
+| Поле | Тип | Описание |
 |-------|------|-------------|
-| `name` | `string` | Rule name |
-| `provider` | `string` | Target provider |
-| `model` | `string` | Target model |
-| `fallback` | `string?` | Fallback provider/model |
-| `enabled` | `boolean?` | Active (default: `true`) |
+| `name` | `string` | Имя правила |
+| `provider` | `string` | Целевой провайдер |
+| `model` | `string` | Целевая модель |
+| `fallback` | `string?` | Запасной провайдер/модель |
+| `enabled` | `boolean?` | Активно (по умолчанию: `true`) |
 
 ```json
 { "routingRules": [{ "name": "Cheap tasks", "provider": "groq", "model": "gpt-oss-20b", "fallback": "openai/gpt-5-mini" }] }
 ```
 
-### Budget
+### Бюджет
 
-| Field | Type | Description |
+| Поле | Тип | Описание |
 |-------|------|-------------|
-| `dailyTokenLimit` | `number?` | Max tokens/day |
-| `dailyCostLimit` | `number?` | Max spend/day (USD) |
-| `monthlyTokenLimit` | `number?` | Max tokens/month |
-| `monthlyCostLimit` | `number?` | Max spend/month (USD) |
+| `dailyTokenLimit` | `number?` | Максимум токенов в день |
+| `dailyCostLimit` | `number?` | Максимум расходов в день (USD) |
+| `monthlyTokenLimit` | `number?` | Максимум токенов в месяц |
+| `monthlyCostLimit` | `number?` | Максимум расходов в месяц (USD) |
 
-### Session & Behavior
+### Сессии и поведение
 
-| Setting | Type | Default | Description |
+| Параметр | Тип | По умолчанию | Описание |
 |---------|------|---------|-------------|
-| `sessionDir` | `string?` | — | Custom session directory |
-| `hideThinkingBlock` | `boolean` | `false` | Hide thinking blocks |
-| `steeringMode` | `"all"`\|`"one-at-a-time"` | `"one-at-a-time"` | Multiple tool call handling |
-| `followUpMode` | `"all"`\|`"one-at-a-time"` | `"one-at-a-time"` | Follow-up prompt handling |
-| `collapseChangelog` | `boolean` | `false` | Condensed changelog |
-| `quietStartup` | `boolean` | `false` | Suppress startup messages |
+| `sessionDir` | `string?` | — | Пользовательский каталог сессий |
+| `hideThinkingBlock` | `boolean` | `false` | Скрывать блоки мышления |
+| `steeringMode` | `"all"`\|`"one-at-a-time"` | `"one-at-a-time"` | Обработка множественных вызовов инструментов |
+| `followUpMode` | `"all"`\|`"one-at-a-time"` | `"one-at-a-time"` | Обработка follow-up запросов |
+| `collapseChangelog` | `boolean` | `false` | Сжатый changelog |
+| `quietStartup` | `boolean` | `false` | Подавить стартовые сообщения |
 
-### Terminal & Display
+### Терминал и отображение
 
-| Setting | Type | Default | Description |
+| Параметр | Тип | По умолчанию | Описание |
 |---------|------|---------|-------------|
-| `theme` | `string?` | — | UI theme name |
-| `terminal.showImages` | `boolean` | `true` | Show images in terminal |
-| `images.autoResize` | `boolean` | `true` | Resize images to 2000×2000 |
-| `images.blockImages` | `boolean` | `false` | Block images from providers |
-| `markdown.codeBlockIndent` | `string` | `"  "` | Code block indent |
-| `editorPaddingX` | `number` | `0` | Editor padding (0–3) |
-| `autocompleteMaxVisible` | `number` | `5` | Autocomplete items (3–20) |
-| `doubleEscapeAction` | `"fork"`\|`"tree"`\|`"none"` | `"tree"` | Double-escape action |
-| `treeFilterMode` | `"default"`\|`"no-tools"`\|`"user-only"`\|`"labeled-only"`\|`"all"` | `"default"` | `/tree` filter |
-| `showHardwareCursor` | `boolean` | `false` | Show hardware cursor |
+| `theme` | `string?` | — | Имя темы UI |
+| `terminal.showImages` | `boolean` | `true` | Показывать изображения в терминале |
+| `images.autoResize` | `boolean` | `true` | Масштабировать изображения до 2000×2000 |
+| `images.blockImages` | `boolean` | `false` | Блокировать изображения от провайдеров |
+| `markdown.codeBlockIndent` | `string` | `"  "` | Отступ блоков кода |
+| `editorPaddingX` | `number` | `0` | Отступ редактора (0–3) |
+| `autocompleteMaxVisible` | `number` | `5` | Видимые элементы автодополнения (3–20) |
+| `doubleEscapeAction` | `"fork"`\|`"tree"`\|`"none"` | `"tree"` | Действие по двойному Escape |
+| `treeFilterMode` | `"default"`\|`"no-tools"`\|`"user-only"`\|`"labeled-only"`\|`"all"` | `"default"` | Фильтр `/tree` |
+| `showHardwareCursor` | `boolean` | `false` | Показывать аппаратный курсор |
 
-### Compaction
+### Сжатие (Compaction)
 
-| Setting | Type | Default | Description |
+| Параметр | Тип | По умолчанию | Описание |
 |---------|------|---------|-------------|
-| `compaction.enabled` | `boolean` | `true` | Enable auto-compaction |
-| `compaction.reserveTokens` | `number` | `16384` | Tokens reserved for prompt |
-| `compaction.keepRecentTokens` | `number` | `20000` | Recent tokens to preserve |
+| `compaction.enabled` | `boolean` | `true` | Включить авто-сжатие |
+| `compaction.reserveTokens` | `number` | `16384` | Токены, зарезервированные для промпта |
+| `compaction.keepRecentTokens` | `number` | `20000` | Недавние токены для сохранения |
 
-### Retry
+### Повторные попытки (Retry)
 
-| Setting | Type | Default | Description |
+| Параметр | Тип | По умолчанию | Описание |
 |---------|------|---------|-------------|
-| `retry.enabled` | `boolean` | `true` | Enable auto-retry |
-| `retry.maxRetries` | `number` | `3` | Max attempts |
-| `retry.baseDelayMs` | `number` | `2000` | Backoff base delay (ms) |
-| `retry.maxDelayMs` | `number` | `60000` | Max backoff delay (ms) |
+| `retry.enabled` | `boolean` | `true` | Включить авто-повтор |
+| `retry.maxRetries` | `number` | `3` | Максимальное число попыток |
+| `retry.baseDelayMs` | `number` | `2000` | Базовая задержка backoff (мс) |
+| `retry.maxDelayMs` | `number` | `60000` | Максимальная задержка backoff (мс) |
 
-### Thinking Budgets
+### Бюджеты мышления
 
-Custom token counts: `thinkingBudgets.minimal`, `.low`, `.medium`, `.high` (all `number?`).
+Пользовательские значения токенов: `thinkingBudgets.minimal`, `.low`, `.medium`, `.high` (все `number?`).
 
-### Extensions & Skills
+### Расширения и навыки
 
-| Setting | Type | Description |
+| Параметр | Тип | Описание |
 |---------|------|-------------|
-| `extensions` | `string[]` | Extension paths or directories |
-| `skills` | `string[]` | Skill paths or directories |
-| `enableSkillCommands` | `boolean` | Register as `/skill:name` (default: `true`) |
-| `prompts` | `string[]` | Prompt template paths |
-| `themes` | `string[]` | Theme paths |
-| `packages` | `PackageSource[]` | npm/git packages (string or `{ source, extensions?, skills?, ... }`) |
+| `extensions` | `string[]` | Пути или каталоги расширений |
+| `skills` | `string[]` | Пути или каталоги навыков |
+| `enableSkillCommands` | `boolean` | Зарегистрировать как `/skill:name` (по умолчанию: `true`) |
+| `prompts` | `string[]` | Пути к шаблонам промптов |
+| `themes` | `string[]` | Пути к темам |
+| `packages` | `PackageSource[]` | npm/git пакеты (строка или `{ source, extensions?, skills?, ... }`) |
 
-> **Pre-installed skills:** FAN ships with 8 skills in `skills/` (auto-tests, bug-fix, code-research, deep-dive, fan-forge, idea-lab, repo-explorer, research-spec-generator). These are loaded automatically. Additional skills can be installed via FAN Store (`fan store install <name>`).
+> **Предустановленные навыки:** FAN поставляется с 8 навыками в `skills/` (auto-tests, bug-fix, code-research, deep-dive, fan-forge, idea-lab, repo-explorer, research-spec-generator). Они загружаются автоматически. Дополнительные навыки можно установить через FAN Store (`fan store install <name>`).
 
-### Advanced
+### Расширенные настройки
 
-| Setting | Type | Description |
+| Параметр | Тип | Описание |
 |---------|------|-------------|
-| `shellPath` | `string?` | Custom shell (e.g., `/bin/zsh`) |
-| `shellCommandPrefix` | `string?` | Prefix for shell commands |
-| `npmCommand` | `string[]?` | npm command argv (e.g., `["mise", "exec", "node@20", "--", "npm"]`) |
-| `transport` | `"sse"`\|`"websocket"` | Transport protocol (default: `"sse"`) |
-| `enabledModels` | `string[]?` | Model patterns for cycling |
+| `shellPath` | `string?` | Пользовательская оболочка (например, `/bin/zsh`) |
+| `shellCommandPrefix` | `string?` | Префикс для команд оболочки |
+| `npmCommand` | `string[]?` | argv команды npm (например, `["mise", "exec", "node@20", "--", "npm"]`) |
+| `transport` | `"sse"`\|`"websocket"` | Транспортный протокол (по умолчанию: `"sse"`) |
+| `enabledModels` | `string[]?` | Паттерны моделей для переключения |
 
-## Models Configuration (`models.json`)
+## Конфигурация моделей (`models.json`)
 
-`~/.fan/agent/models.json` — custom models and provider overrides.
+`~/.fan/agent/models.json` — пользовательские модели и переопределения провайдеров.
 
-For built-in providers (e.g. `zai`, `openai`, `anthropic`), you can add new models by ID only — `baseUrl` and `api` are inherited:
+Для встроенных провайдеров (например, `zai`, `openai`, `anthropic`) можно добавить новые модели только по ID — `baseUrl` и `api` наследуются:
 
 ```json
 {
@@ -215,7 +215,7 @@ For built-in providers (e.g. `zai`, `openai`, `anthropic`), you can add new mode
 }
 ```
 
-For custom providers, specify `baseUrl`, `api`, and optionally `apiKey` or `envVar`:
+Для пользовательских провайдеров укажите `baseUrl`, `api` и опционально `apiKey` или `envVar`:
 
 ```json
 {
@@ -245,74 +245,74 @@ For custom providers, specify `baseUrl`, `api`, and optionally `apiKey` or `envV
 }
 ```
 
-### Provider Config
+### Конфигурация провайдера
 
-| Field | Type | Description |
+| Поле | Тип | Описание |
 |-------|------|-------------|
-| `baseUrl` | `string?` | Override API base URL |
-| `apiKey` | `string?` | API key (overrides env) |
-| `api` | `string?` | API type: `"openai-completions"`, `"openai-responses"`, `"anthropic"`, etc. |
-| `headers` | `Record<string, string>?` | Extra HTTP headers |
-| `compat` | `object?` | Compatibility settings |
-| `authHeader` | `boolean?` | Use Authorization header |
-| `envVar` | `string?` | Environment variable name for this provider's API key |
-| `models` | `ModelDef[]?` | Custom model definitions |
-| `modelOverrides` | `Record<string, override>?` | Per-model tweaks by model ID |
+| `baseUrl` | `string?` | Переопределить базовый URL API |
+| `apiKey` | `string?` | API-ключ (переопределяет переменную окружения) |
+| `api` | `string?` | Тип API: `"openai-completions"`, `"openai-responses"`, `"anthropic"` и т.д. |
+| `headers` | `Record<string, string>?` | Дополнительные HTTP-заголовки |
+| `compat` | `object?` | Настройки совместимости |
+| `authHeader` | `boolean?` | Использовать заголовок Authorization |
+| `envVar` | `string?` | Имя переменной окружения для API-ключа данного провайдера |
+| `models` | `ModelDef[]?` | Пользовательские определения моделей |
+| `modelOverrides` | `Record<string, override>?` | Настройки для конкретных моделей по ID |
 
-Notes:
-- For **built-in providers** (e.g. `zai`, `openai`, `anthropic`), `models` entries only need an `id` — `baseUrl` and `api` are inherited from existing built-in models.
-- For **custom providers**, `baseUrl` and `api` are required unless the provider inherits from a built-in one.
+Примечания:
+- Для **встроенных провайдеров** (например, `zai`, `openai`, `anthropic`), записи в `models` нуждаются только в `id` — `baseUrl` и `api` наследуются от существующих встроенных моделей.
+- Для **пользовательских провайдеров** `baseUrl` и `api` обязательны, если провайдер не наследуется от встроенного.
 
-### Model Definition
+### Определение модели
 
-| Field | Type | Description |
+| Поле | Тип | Описание |
 |-------|------|-------------|
-| `id` | `string` **(required)** | Model identifier |
-| `name` | `string?` | Display name |
-| `api` | `string?` | API protocol |
-| `baseUrl` | `string?` | Per-model URL |
-| `reasoning` | `boolean?` | Supports thinking |
-| `input` | `("text"\|"image")[]?` | Input modalities |
-| `cost` | `object?` | Per-1M-tokens: `{ input, output, cacheRead, cacheWrite }` |
-| `contextWindow` | `number?` | Max context (tokens) |
-| `maxTokens` | `number?` | Max output tokens |
+| `id` | `string` **(обязательно)** | Идентификатор модели |
+| `name` | `string?` | Отображаемое имя |
+| `api` | `string?` | Протокол API |
+| `baseUrl` | `string?` | URL для конкретной модели |
+| `reasoning` | `boolean?` | Поддерживает мышление |
+| `input` | `("text"\|"image")[]?` | Модальности ввода |
+| `cost` | `object?` | За 1M токенов: `{ input, output, cacheRead, cacheWrite }` |
+| `contextWindow` | `number?` | Максимальный контекст (токены) |
+| `maxTokens` | `number?` | Максимальное количество выходных токенов |
 
-Overrides use the same fields (all optional) and merge deeply with built-ins.
+Переопределения используют те же поля (все необязательные) и глубоко объединяются со встроенными значениями.
 
-## Orchestrator Configuration
+## Конфигурация оркестратора
 
-`packages/orchestrator/src/config.json` — multi-agent system config.
+`packages/orchestrator/src/config.json` — конфигурация мульти-агентной системы.
 
-| Field | Type | Default | Description |
+| Поле | Тип | По умолчанию | Описание |
 |-------|------|---------|-------------|
-| `cloud.model` | `string` | — | Cloud model (e.g., `"anthropic/claude-sonnet-4-20250514"`) |
-| `cloud.provider` | `string?` | — | Cloud provider (inferred if omitted) |
-| `local.model` | `string` | — | Local model (e.g., `"ollama/qwen3:32b"`) |
-| `local.provider` | `string?` | — | Local provider (inferred if omitted) |
-| `providerMode` | `"cloud"`\|`"local"` | `"cloud"` | Active provider set |
-| `parallelWorkers` | `number` | `3` | Max concurrent workers |
-| `workerTimeout` | `number` | `300000` | Worker timeout (ms) |
-| `maxRetries` | `number` | `2` | Retry count |
-| `planTimeout` | `number` | `300000` | Planning timeout (ms) |
-| `agentTimeouts` | `Record<WorkerType, number>` | — | Per-type: `explore`, `plan`, `implement`, `verify` |
-| `dangerousCommands` | `string[]` | — | Commands requiring confirmation |
+| `cloud.model` | `string` | — | Облачная модель (например, `"anthropic/claude-sonnet-4-20250514"`) |
+| `cloud.provider` | `string?` | — | Облачный провайдер (определяется автоматически, если не указан) |
+| `local.model` | `string` | — | Локальная модель (например, `"ollama/qwen3:32b"`) |
+| `local.provider` | `string?` | — | Локальный провайдер (определяется автоматически, если не указан) |
+| `providerMode` | `"cloud"`\|`"local"` | `"cloud"` | Активный набор провайдеров |
+| `parallelWorkers` | `number` | `3` | Максимум параллельных воркеров |
+| `workerTimeout` | `number` | `300000` | Таймаут воркера (мс) |
+| `maxRetries` | `number` | `2` | Количество повторных попыток |
+| `planTimeout` | `number` | `300000` | Таймаут планирования (мс) |
+| `agentTimeouts` | `Record<WorkerType, number>` | — | По типам: `explore`, `plan`, `implement`, `verify` |
+| `dangerousCommands` | `string[]` | — | Команды, требующие подтверждения |
 
-## Common Patterns
+## Типовые конфигурации
 
-### Local-Only (Offline)
+### Только локальная работа (офлайн)
 
 ```jsonc
 { "defaultProvider": "ollama", "defaultModel": "qwen3:32b", "budget": { "dailyTokenLimit": 500000 } }
 ```
 
-### Cloud-Only
+### Только облако
 
 ```jsonc
 { "defaultProvider": "anthropic", "defaultModel": "claude-sonnet-4-20250514",
   "defaultThinkingLevel": "medium", "budget": { "dailyCostLimit": 10.0, "monthlyCostLimit": 100.0 } }
 ```
 
-### Hybrid (Cloud + Local Fallback)
+### Гибридный (облако + локальный fallback)
 
 ```jsonc
 // settings.json
@@ -323,7 +323,7 @@ Overrides use the same fields (all optional) and merge deeply with built-ins.
   "local": { "model": "ollama/qwen3:32b" }, "providerMode": "cloud" }
 ```
 
-### Budget-Conscious
+### Экономия бюджета
 
 ```jsonc
 { "defaultProvider": "groq", "defaultModel": "gpt-oss-20b", "defaultThinkingLevel": "low",
@@ -331,7 +331,7 @@ Overrides use the same fields (all optional) and merge deeply with built-ins.
   "routingRules": [{ "name": "Complex", "provider": "anthropic", "model": "claude-sonnet-4-20250514" }] }
 ```
 
-### Multi-Provider
+### Мульти-провайдер
 
 ```jsonc
 { "defaultProvider": "anthropic", "defaultModel": "claude-sonnet-4-20250514",
@@ -343,8 +343,8 @@ Overrides use the same fields (all optional) and merge deeply with built-ins.
   ] }
 ```
 
-## Quick Setup
+## Быстрая настройка
 
-Run **`fan init`** for an interactive setup wizard (provider, API keys, budget, thinking level).
+Запустите **`fan init`** для интерактивного мастера настройки (провайдер, API-ключи, бюджет, уровень мышления).
 
-Or use the **Dashboard** at `http://localhost:5174` (`cd packages/dashboard && npm run dev`) for a visual model settings, routing, and budget configuration UI.
+Или используйте **Dashboard** по адресу `http://localhost:5174` (`cd packages/dashboard && npm run dev`) для визуальной настройки моделей, маршрутизации и бюджета.

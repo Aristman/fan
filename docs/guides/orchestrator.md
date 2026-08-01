@@ -1,27 +1,27 @@
-# Orchestrator Guide
+# Руководство по оркестратору
 
-Multi-agent task decomposition and coordination for FAN.
+Декомпозиция и координация многоагентных задач для FAN.
 
-> Covers **fan-orchestrator v7.10.0** — `/orchestrator models` (smart model assignment, multi-provider lists), named model-config presets, interactive permission approval, parallel read-only slot pools, Pipeline Mode v3.1.0.
+> Охватывает **fan-orchestrator v7.10.0** — `/orchestrator models` (умное назначение моделей, списки мульти-провайдеров), именованные пресеты конфигурации моделей, интерактивное одобрение разрешений, пулы параллельных read-only слотов, Pipeline Mode v3.1.0.
 
-## Overview
+## Обзор
 
-The orchestrator is a FAN extension that turns a single LLM session into a team of specialized workers. Instead of one agent trying to explore, plan, implement, and verify all at once, the coordinator decomposes your request into tasks and delegates each to the right worker type.
+Оркестратор — это расширение FAN, которое превращает одну LLM-сессию в команду специализированных воркеров. Вместо того чтобы один агент пытался исследовать, спланировать, реализовать и проверить всё сразу, координатор разбивает ваш запрос на задачи и делегирует каждую подходящему типу воркера.
 
-**Why multi-agent?**
+**Зачем нужен мультиагентный подход?**
 
-- **Focused context.** Each worker gets a fresh context window with only what it needs — no conversation bloat.
-- **Parallelism.** Read-only workers (exploration, research, verification) run concurrently in their own slot pools while write workers execute changes one at a time.
-- **Safety.** Read-only workers can't accidentally modify files. Dangerous commands trigger an interactive Allow/Block approval prompt.
-- **Observability.** Tasks are tracked with statuses and dependencies so you always know what's happening.
+- **Изолированный контекст.** Каждый воркер получает свежее окно контекста только с тем, что ему нужно — без раздувания разговора.
+- **Параллелизм.** Read-only воркеры (исследование, анализ, верификация) выполняются параллельно в собственных пулах слотов, пока write-воркеры вносят изменения по одному.
+- **Безопасность.** Read-only воркеры не могут случайно изменить файлы. Опасные команды вызывают интерактивный запрос разрешения Allow/Block.
+- **Наблюдаемость.** Задачи отслеживаются по статусам и зависимостям, так что вы всегда знаете, что происходит.
 
-At a high level: you describe what you want → the coordinator breaks it down → workers execute → results are verified → you get a summary.
+На верхнем уровне: вы описываете, что нужно → координатор разбивает на части → воркеры выполняют → результаты проверяются → вы получаете сводку.
 
-## Installation
+## Установка
 
-The orchestrator ships bundled with FAN and is auto-discovered by the extension loader. No manual installation is needed for standard FAN installations.
+Оркестратор поставляется в комплекте с FAN и автоматически обнаруживается загрузчиком расширений. Ручная установка не требуется для стандартных инсталляций FAN.
 
-For manual installation or reinstallation:
+Для ручной установки или переустановки:
 
 ```bash
 # Install from FAN Store (if available)
@@ -31,174 +31,174 @@ fan store install fan-orchestrator
 cp -r ~/.fan/packages/fan-orchestrator ~/.fan/agent/extensions/
 ```
 
-To disable the orchestrator, remove or rename its folder in `~/.fan/agent/extensions/`.
+Чтобы отключить оркестратор, удалите или переименуйте его папку в `~/.fan/agent/extensions/`.
 
-> **Architecture note:** The orchestrator is a standalone extension — it is NOT hardcoded into the `@seaagents/fan-coding-agent` core. It's loaded at runtime through FAN's extension system.
+> **Примечание по архитектуре:** Орркестратор — это отдельное расширение, он НЕ встроен в ядро `@seaagents/fan-coding-agent`. Он загружается в рантайме через систему расширений FAN.
 
-### Configuration file
+### Файл конфигурации
 
-The config lives at `~/.fan/agent/extensions/fan-orchestrator/config.json` (next to the extension module). `config.json` is **excluded from the package** — on first load it is automatically created from the bundled `config.example.json` (merged with built-in defaults). If no config exists, a warning is shown at session start: run `/orchestrator init` (interactive wizard) or `/orchestrator models` (model settings only) to configure.
+Конфигурация находится в `~/.fan/agent/extensions/fan-orchestrator/config.json` (рядом с модулем расширения). `config.json` **исключён из пакета** — при первой загрузке он автоматически создаётся из встроенного `config.example.json` (объединённого с встроенными значениями по умолчанию). Если конфигурация отсутствует, при начале сессии отображается предупреждение: выполните `/orchestrator init` (интерактивный мастер) или `/orchestrator models` (только настройки моделей) для настройки.
 
-## Coordinator Mode
+## Режим координатора
 
-Coordinator mode changes the LLM's role from "doer" to "manager." When active, the agent does **not** use code tools directly — it only delegates via `delegate_task` and tracks progress with `TaskCreate`/`TaskUpdate`.
+Режим координатора меняет роль LLM с «исполнителя» на «менеджера». Когда он активен, агент **не** использует инструменты кода напрямую — он только делегирует через `delegate_task` и отслеживает прогресс с помощью `TaskCreate`/`TaskUpdate`.
 
-### Enabling Coordinator Mode
+### Включение режима координатора
 
-- **Alt+O** — Toggle coordinator mode on/off in the TUI.
-- **`/orchestrator on`** — Enable via slash command.
-- **`/orchestrator off`** — Disable via slash command.
+- **Alt+O** — Переключить режим координатора вкл/выкл в TUI.
+- **`/orchestrator on`** — Включить через slash-команду.
+- **`/orchestrator off`** — Выключить через slash-команду.
 
-By default the coordinator is **active at session start** (`coordinatorDefault: true` in config).
+По умолчанию координатор **активен при начале сессии** (`coordinatorDefault: true` в конфигурации).
 
-### What Changes
+### Что меняется
 
-| Aspect | Normal Mode | Coordinator Mode |
-|--------|------------|-----------------|
-| Agent role | Direct executor | Delegation manager |
-| Tool usage | Agent reads/writes/runs | Agent only calls `delegate_task`, `TaskCreate`, etc. |
-| Task tracking | None | Automatic task creation and status updates |
-| Verification | Manual | Automatic verify worker after implementation |
+| Аспект | Обычный режим | Режим координатора |
+|--------|--------------|-------------------|
+| Роль агента | Прямой исполнитель | Менеджер по делегированию |
+| Использование инструментов | Агент читает/пишет/запускает | Агент вызывает только `delegate_task`, `TaskCreate` и т.д. |
+| Отслеживание задач | Отсутствует | Автоматическое создание задач и обновление статусов |
+| Верификация | Ручная | Автоматический verify-воркер после реализации |
 
-### The Coordinator's Role
+### Роль координатора
 
-The coordinator receives your request and:
+Координатор получает ваш запрос и:
 
-1. Decomposes it into sub-tasks with `TaskCreate`.
-2. Spawns explore workers to understand the codebase.
-3. Synthesizes findings into an implementation spec.
-4. Delegates implementation to an implement worker.
-5. Runs a verify worker to check the result.
-6. Reports back with a summary.
+1. Декомпозирует его на подзадачи через `TaskCreate`.
+2. Запускает explore-воркеров для понимания кодовой базы.
+3. Синтезирует находки в спецификацию реализации.
+4. Делегирует реализацию implement-воркеру.
+5. Запускает verify-воркера для проверки результата.
+6. Возвращает сводку.
 
-**Workers are sandboxed** — they cannot see the main conversation. All context must be included in the delegation prompt.
+**Воркеры изолированы** — они не видят основной разговор. Весь контекст должен быть включён в промпт делегирования.
 
-## Worker Types
+## Типы воркеров
 
-| Type | Tools | Access | Use For |
-|------|-------|--------|---------|
-| **explore** | read, bash, grep, find, ls | Read-only | Fast codebase exploration, file search, structure mapping |
-| **plan** | read, bash, grep, find, ls | Read-only | Deep architectural analysis, implementation planning |
-| **implement** | read, write, edit, bash, grep, find, ls | Full | Making code changes, running tests, building |
-| **verify** | read, bash, grep, find, ls | Read-only | Build checks, test runs, lint, adversarial code review |
-| **bug-fix** | read, write, edit, bash, grep, find, ls | Full | Targeted bug fixes with minimal changes |
-| **code-research** | read, bash, grep, find, ls | Read-only | Deep code analysis, dependency tracing, pattern mining |
-| **tests-impl** | read, write, edit, bash, grep, find, ls | Full | Writing unit/integration tests for existing code |
-| **docs-impl** | read, write, edit, bash, grep, find, ls | Full | Writing and updating documentation |
+| Тип | Инструменты | Доступ | Назначение |
+|-----|------------|--------|------------|
+| **explore** | read, bash, grep, find, ls | Read-only | Быстрое исследование кодовой базы, поиск файлов, картирование структуры |
+| **plan** | read, bash, grep, find, ls | Read-only | Глубокий архитектурный анализ, планирование реализации |
+| **implement** | read, write, edit, bash, grep, find, ls | Полный | Внесение изменений в код, запуск тестов, сборка |
+| **verify** | read, bash, grep, find, ls | Read-only | Проверка сборки, прогон тестов, lint, критический обзор кода |
+| **bug-fix** | read, write, edit, bash, grep, find, ls | Полный | Точечное исправление багов с минимальными изменениями |
+| **code-research** | read, bash, grep, find, ls | Read-only | Глубокий анализ кода, трассировка зависимостей, поиск паттернов |
+| **tests-impl** | read, write, edit, bash, grep, find, ls | Полный | Написание unit/интеграционных тестов для существующего кода |
+| **docs-impl** | read, write, edit, bash, grep, find, ls | Полный | Написание и обновление документации |
 
-Read-only vs. write access is derived from each agent's `readOnly` flag (set from its declared tools), not from a hardcoded list — custom agents with read-only tools automatically get read-only treatment.
+Доступ read-only vs. write определяется по флагу `readOnly` каждого агента (устанавливается по его заявленным инструментам), а не по захардкоженному списку — кастомные агенты с read-only инструментами автоматически получают режим read-only.
 
-### Concurrency Rules (Slot Pools)
+### Правила параллелизма (пулы слотов)
 
-- **Read-only workers** (explore, plan, verify, code-research, and any custom agent with `readOnly: true`): each agent type gets its **own parallel slot pool**, up to `parallelWorkers` concurrently (default: 3).
-- **Write workers** (implement, bug-fix, tests-impl, docs-impl): **exclusive write slot** — parallel write workers are blocked until the slot is free.
-- Workers queue automatically (FIFO) when a pool is full.
+- **Read-only воркеры** (explore, plan, verify, code-research и любой кастомный агент с `readOnly: true`): каждый тип агента получает **собственный пул параллельных слотов**, до `parallelWorkers` одновременно (по умолчанию: 3).
+- **Write-воркеры** (implement, bug-fix, tests-impl, docs-impl): **эксклюзивный слот записи** — параллельные write-воркеры блокируются, пока слот не освободится.
+- Воркеры автоматически встают в очередь (FIFO), когда пул заполнен.
 
-## Orchestrator Tools
+## Инструменты оркестратора
 
-The orchestrator provides 9 tools for the coordinator (registered in `orchestrator-tools.js`):
+Оркестратор предоставляет 9 инструментов для координатора (регистрируются в `orchestrator-tools.js`):
 
-| Tool | Description |
-|------|-------------|
-| `delegate_task` | Spawn worker(s): single (`agent` + `task`), parallel (`tasks` array), or chain (sequential steps with `{previous}` placeholder) |
-| `TaskCreate` | Create a tracked task with subject, description, and optional `blocks[]` dependencies |
-| `TaskUpdate` | Update task status (`pending` → `in_progress` → `completed`/`failed`) |
-| `TaskClear` | Clear completed/failed tasks from the board |
-| `list_tasks` | List tasks with an optional status filter |
-| `cancel_task` | Cancel a running or pending task by ID |
-| `classify_task` | Classify a description to suggest the best agent type |
-| `assess_task` | Multi-level task complexity assessment (L1/L2/L3) |
-| `stop_worker` | Stop a running worker by ID |
+| Инструмент | Описание |
+|-----------|----------|
+| `delegate_task` | Запуск воркера(ов): одиночный (`agent` + `task`), параллельный (массив `tasks`) или цепочка (последовательные шаги с плейсхолдером `{previous}`) |
+| `TaskCreate` | Создать отслеживаемую задачу с темой, описанием и опциональными зависимостями `blocks[]` |
+| `TaskUpdate` | Обновить статус задачи (`pending` → `in_progress` → `completed`/`failed`) |
+| `TaskClear` | Очистить завершённые/проваленные задачи с доски |
+| `list_tasks` | Список задач с опциональным фильтром по статусу |
+| `cancel_task` | Отменить выполняющуюся или ожидающую задачу по ID |
+| `classify_task` | Классифицировать описание для предложения лучшего типа агента |
+| `assess_task` | Многоуровневая оценка сложности задачи (L1/L2/L3) |
+| `stop_worker` | Остановить выполняющегося воркера по ID |
 
-### Worker Isolation
+### Изоляция воркеров
 
-Workers run as separate `fan --mode rpc` processes communicating via JSONL-over-stdio (Pi-style protocol: `prompt`, `get_state`, `get_last_assistant_text`, with a single `stallTimer` reset on any stdout). They are spawned with `--no-extensions --no-skills --no-prompt-templates` and cannot see:
+Воркеры запускаются как отдельные процессы `fan --mode rpc`, общающиеся через JSONL-over-stdio (протокол в стиле Pi: `prompt`, `get_state`, `get_last_assistant_text`, с единственным `stallTimer`, сбрасываемым при любом stdout). Они запускаются с `--no-extensions --no-skills --no-prompt-templates` и не могут видеть:
 
-- The main conversation history
-- Other workers' outputs (unless passed via the task description or `{previous}` in chains)
-- The coordinator's reasoning
+- Историю основного разговора
+- Выводы других воркеров (если они не переданы через описание задачи или `{previous}` в цепочках)
+- Рассуждения координатора
 
-This means **worker prompts must be self-contained.** Include file paths, line numbers, exact change descriptions, and any relevant code snippets.
+Это означает, что **промпты воркеров должны быть самодостаточными.** Включайте пути к файлам, номера строк, точные описания изменений и любые релевантные фрагменты кода.
 
 ### MCP Tool Broker
 
-When the fan-mcp extension is active, workers can use remote MCP tools through the broker (`broker-handler.js`): it subscribes to the EventBus channel `mcp:catalog`, answers `remote_tool_request` messages from workers, and applies **per-worker profile filtering** (`all` for write workers, `read-only` — only tools with `annotations.readOnly: true` — for read-only workers).
+Когда расширение fan-mcp активно, воркеры могут использовать удалённые MCP-инструменты через брокер (`broker-handler.js`): он подписывается на канал EventBus `mcp:catalog`, отвечает на сообщения `remote_tool_request` от воркеров и применяет **фильтрацию по профилю воркера** (`all` для write-воркеров, `read-only` — только инструменты с `annotations.readOnly: true` — для read-only воркеров).
 
-## Slash Commands
+## Slash-команды
 
-### Orchestrator Control
+### Управление оркестратором
 
-| Command | Description |
-|---------|-------------|
-| `/orchestrator on` | Enable coordinator mode |
-| `/orchestrator off` | Disable coordinator mode (agent returns to direct execution) |
-| `/orchestrator status` | Show provider, active preset, workers, tasks, agents overview |
-| `/orchestrator config` | Show current configuration (including active preset) |
-| `/orchestrator init` | Interactive configuration wizard (incl. dangerous-command list) |
-| `/orchestrator models` | Interactive model assignment wizard + named presets (see below) |
-| `/orchestrator mode <auto\|cloud\|local>` | Switch provider mode |
-| `/orchestrator retry` | Retry the last failed task |
-| `/orchestrator stop` | Stop all active workers |
+| Команда | Описание |
+|---------|----------|
+| `/orchestrator on` | Включить режим координатора |
+| `/orchestrator off` | Выключить режим координатора (агент возвращается к прямому выполнению) |
+| `/orchestrator status` | Показать провайдер, активный пресет, воркеров, задачи, обзор агентов |
+| `/orchestrator config` | Показать текущую конфигурацию (включая активный пресет) |
+| `/orchestrator init` | Интерактивный мастер настройки (вкл. список опасных команд) |
+| `/orchestrator models` | Интерактивный мастер назначения моделей + именованные пресеты (см. ниже) |
+| `/orchestrator mode <auto\|cloud\|local>` | Переключить режим провайдера |
+| `/orchestrator retry` | Повторить последнюю проваленную задачу |
+| `/orchestrator stop` | Остановить всех активных воркеров |
 
-### Planning & Task Board
+### Планирование и доска задач
 
-| Command | Description |
-|---------|-------------|
-| `/plan <task>` | Planning workflow with Approve/Revise/Reject review (docs in Russian) |
-| `/tasks [status]` | Task board (optional status filter) |
-| `/agents [scope]` | List available agents (`project`, `user`, or both) |
-| `/delegate <agent> <task>` | Quick single worker dispatch |
+| Команда | Описание |
+|---------|----------|
+| `/plan <task>` | Воркфлоу планирования с ревью Approve/Revise/Reject (документация на русском) |
+| `/tasks [status]` | Доска задач (опциональный фильтр по статусу) |
+| `/agents [scope]` | Список доступных агентов (`project`, `user` или оба) |
+| `/delegate <agent> <task>` | Быстрый запуск одного воркера |
 
-### Pipeline Mode
+### Режим Pipeline
 
-| Command | Description |
-|---------|-------------|
-| `/pipeline init [name]` | Initialize pipeline: create 3 working artifacts |
-| `/pipeline status` | Show pipeline progress (widget, 10s) |
-| `/pipeline log [N]` | Show last N log entries (default 10) |
-| `/pipeline finish` | Mark complete + Keep/Delete artifacts |
-| `/pipeline cancel` | Deactivate in-memory, artifacts preserved |
+| Команда | Описание |
+|---------|----------|
+| `/pipeline init [name]` | Инициализировать pipeline: создать 3 рабочих артефакта |
+| `/pipeline status` | Показать прогресс pipeline (виджет, 10 сек) |
+| `/pipeline log [N]` | Показать последние N записей лога (по умолчанию 10) |
+| `/pipeline finish` | Пометить как завершённый + оставить/удалить артефакты |
+| `/pipeline cancel` | Деактивировать в памяти, артефакты сохранены |
 
-**Shortcuts:** `Alt+O` (toggle coordinator), `Alt+T` (toggle task widget)
+**Горячие клавиши:** `Alt+O` (переключить координатор), `Alt+T` (переключить виджет задач)
 
-## Model Assignment & Presets
+## Назначение моделей и пресеты
 
 ### `/orchestrator models`
 
-Interactive wizard for assigning models to workers (requires UI; in headless mode edit `config.json` manually). Flow:
+Интерактивный мастер для назначения моделей воркерам (требуется UI; в headless-режиме редактируйте `config.json` вручную). Поток:
 
-1. **Preset menu** (shown first if any presets exist) — Edit current config / Switch active preset / Save current config as preset / Delete preset.
-2. **Provider mode** — choose which mode to configure: `☁️ cloud`, `🏠 local`, or `⚙️ auto` (both).
-3. **Provider for suggestions** — pick the provider used for smart suggestions; the session's active provider is auto-detected and marked `⭐ active`. Models are filtered by brand (`BRAND_KEYWORDS`: e.g. provider `qwen` → only Qwen-branded models; aggregators like openrouter/ollama and local providers are unfiltered).
-4. **Smart assignment** — scoring profiles (`WORKER_PROFILES`) weight reasoning / context / cost / maxTokens per worker: heavy workers (implement, plan, bug-fix) get flagship reasoning models, light workers (verify, docs-impl) get cheap/fast ones. Assignment runs in priority order (`ASSIGNMENT_ORDER`), and models already assigned to another worker are heavily penalized for diversity.
-5. **Accept / Customize / Reset** — accept the suggested assignment, change individual workers, or clear all overrides (fall back to the session model).
+1. **Меню пресетов** (показывается первым, если пресеты существуют) — Редактировать текущую конфигурацию / Переключить активный пресет / Сохранить текущую конфигурацию как пресет / Удалить пресет.
+2. **Режим провайдера** — выберите режим для настройки: `☁️ cloud`, `🏠 local` или `⚙️ auto` (оба).
+3. **Провайдер для предложений** — выберите провайдера, используемого для умных предложений; активный провайдер сессии определяется автоматически и помечается `⭐ active`. Модели фильтруются по бренду (`BRAND_KEYWORDS`: например, провайдер `qwen` → только модели с брендом Qwen; агрегаторы вроде openrouter/ollama и локальные провайдеры не фильтруются).
+4. **Умное назначение** — профили скоринга (`WORKER_PROFILES`) взвешивают рассуждение / контекст / стоимость / maxTokens для каждого воркера: тяжёлые воркеры (implement, plan, bug-fix) получают флагманские модели для рассуждений, лёгкие воркеры (verify, docs-impl) получают дешёвые/быстрые. Назначение выполняется в порядке приоритета (`ASSIGNMENT_ORDER`), модели уже назначенные другому воркеру, получают высокий штраф для разнообразия.
+5. **Принять / Настроить / Сбросить** — принять предложенное назначение, изменить отдельных воркеров или сбросить все переопределения (вернуться к модели сессии).
 
-In the **Customize** step each picker lists models from **all providers**: the suggested model is pinned first (pre-selected), then the chosen provider's (brand-filtered) models, then all other providers alphabetically with a `· provider` suffix in the label.
+На шаге **Настроить** каждый пикер показывает модели из **всех провайдеров**: предложенная модель закреплена первой (предвыбрана), затем модели выбранного провайдера (отфильтрованные по бренду), затем все остальные провайдеры в алфавитном порядке с суффиксом `· provider` в метке.
 
-Selected models are stored in **`provider/id` format**, which removes ambiguity when the same model ID exists under multiple providers (both `id` and `provider/id` formats are read back correctly).
+Выбранные модели сохраняются в **формате `provider/id`**, что устраняет неоднозначность, когда один и тот же ID модели существует у нескольких провайдеров (оба формата — `id` и `provider/id` — корректно читаются обратно).
 
-### Named Presets
+### Именованные пресеты
 
-A preset is a named snapshot of the model-related config: `{cloud, local, providerMode}`.
+Пресет — это именованный снимок конфигурации, связанной с моделями: `{cloud, local, providerMode}`.
 
-- Stored in `config.json` as `presets` (`Record<name, {cloud, local, providerMode}>`) plus `activePreset` (name of the active preset, or `null`).
-- The preset menu appears at the start of `/orchestrator models` (when presets exist): **Edit** / **Switch** (active marked `✔`) / **Save-as** / **Delete** (with confirmation).
-- When changes are saved (Accept/Customize/Reset), the **active preset auto-resyncs** — its snapshot is updated together with the config.
-- If no presets exist yet, you're offered to create the first one after saving.
-- The active preset is displayed in `/orchestrator status` (`⭐ Active preset: ...`) and `/orchestrator config` (`⭐ Preset: name (N saved)`).
-- Reserved names (`__proto__`, `constructor`, `prototype`) are rejected; invalid presets are pruned when the config is loaded.
+- Хранится в `config.json` как `presets` (`Record<name, {cloud, local, providerMode}>`) плюс `activePreset` (имя активного пресета или `null`).
+- Меню пресетов появляется в начале `/orchestrator models` (когда пресеты существуют): **Редактировать** / **Переключить** (активный помечен `✔`) / **Сохранить как** / **Удалить** (с подтверждением).
+- При сохранении изменений (Принять/Настроить/Сбросить), **активный пресет автоматически синхронизируется** — его снимок обновляется вместе с конфигурацией.
+- Если пресетов ещё нет, вам предлагается создать первый после сохранения.
+- Активный пресет отображается в `/orchestrator status` (`⭐ Active preset: ...`) и `/orchestrator config` (`⭐ Preset: name (N saved)`).
+- Зарезервированные имена (`__proto__`, `constructor`, `prototype`) отклоняются; невалидные пресеты удаляются при загрузке конфигурации.
 
-Preset helpers are exported from `config.js`: `savePreset(config, name)`, `applyPreset(config, name)`, `deletePreset(config, name)`, `listPresets(config)`.
+Хелперы пресетов экспортируются из `config.js`: `savePreset(config, name)`, `applyPreset(config, name)`, `deletePreset(config, name)`, `listPresets(config)`.
 
-### Model Resolution Chain
+### Цепочка разрешения моделей
 
 ```
 config.{provider}.models[agentName]
   → config.{provider}.model
-    → current session model
+    → текущая модель сессии
 ```
 
-## Pipeline Mode (v3.1.0)
+## Режим Pipeline (v3.1.0)
 
 Pipeline Mode — это режим оркестратора для **многофазных работ по большой спеке** (например, реализация 16-фазного проекта из SPEC.md). Координатор создаёт 3 рабочих артефакта на диске и автоматически поддерживает их актуальность на каждом `TaskCreate`/`TaskUpdate`.
 
@@ -340,11 +340,11 @@ Skill `feature-pipeline` v3.1.0 использует тот же pipeline mode:
 | Конфликт при повторном init | Существующие артефакты сохраняются (`onConflict='append'` default) — pipeline работает с ними |
 | phaseId не инферится | Используй паттерн `F-N.M [...]` или `[Phase N]` в subject TaskCreate |
 
-## Task Management
+## Управление задачами
 
-Tasks are the coordinator's way of tracking progress. They're created with `TaskCreate`, updated with `TaskUpdate`, cleared with `TaskClear`, cancelled with `cancel_task`, and viewed with `list_tasks` or the `/tasks` command.
+Задачи — это способ координатора отслеживать прогресс. Они создаются через `TaskCreate`, обновляются через `TaskUpdate`, очищаются через `TaskClear`, отменяются через `cancel_task` и просматриваются через `list_tasks` или команду `/tasks`.
 
-### Task Lifecycle
+### Жизненный цикл задачи
 
 ```
 pending → in_progress → completed
@@ -353,88 +353,88 @@ pending → in_progress → completed
                               → failed
 ```
 
-Status transitions are not strictly enforced — the coordinator can move tasks between any statuses (e.g. `failed` → `pending` for a retry).
+Переходы статусов не строго контролируются — координатор может перемещать задачи между любыми статусами (например, `failed` → `pending` для повтора).
 
-### Task Fields
+### Поля задачи
 
-| Field | Description |
-|-------|-------------|
-| `id` | Auto-generated UUID |
-| `subject` | Short task title |
-| `description` | Detailed description |
+| Поле | Описание |
+|------|----------|
+| `id` | Автоматически сгенерированный UUID |
+| `subject` | Краткий заголовок задачи |
+| `description` | Подробное описание |
 | `status` | pending, in_progress, completed, blocked, failed |
-| `owner` | Worker ID or agent name responsible |
-| `blocks` | List of task IDs that this task depends on |
+| `owner` | ID воркера или имя агента, ответственного за задачу |
+| `blocks` | Список ID задач, от которых зависит эта задача |
 
-### Dependencies
+### Зависимости
 
-Use the `blocks[]` field to create ordering. A task with `blocks: ["task-1", "task-2"]` will wait until both tasks complete before starting.
+Используйте поле `blocks[]` для создания порядка. Задача с `blocks: ["task-1", "task-2"]` будет ждать завершения обеих задач перед началом.
 
-### Task Widget (Alt+T)
+### Виджет задач (Alt+T)
 
-A collapsible checklist displayed above the editor in the TUI.
+Сворачиваемый чеклист, отображаемый над редактором в TUI.
 
-- **Alt+T** — Toggle the task widget visibility.
-- Status icons: ☐ pending, ◐ in_progress, ☑ completed, ⛔ blocked, ✗ failed.
-- Refreshes on every `tool_result` for `TaskCreate`/`TaskUpdate`/`TaskClear`/`cancel_task`.
-- Auto-hides when no active tasks remain.
+- **Alt+T** — Переключить видимость виджета задач.
+- Иконки статусов: ☐ pending, ◐ in_progress, ☑ completed, ⛔ blocked, ✗ failed.
+- Обновляется при каждом `tool_result` для `TaskCreate`/`TaskUpdate`/`TaskClear`/`cancel_task`.
+- Автоматически скрывается, когда активных задач не остаётся.
 
-## Workflows
+## Рабочие процессы
 
-### Plan Workflow
+### Воркфлоу планирования
 
-Best for: understanding what needs to be done before writing code.
+Лучше всего подходит для: понимания того, что нужно сделать, перед написанием кода.
 
 ```
 User: /plan Refactor the database layer to use connection pooling
 ```
 
-Execution:
+Выполнение:
 
-1. A **plan** worker investigates the codebase and produces a structured implementation plan (documentation in Russian; file names and technical terms in English).
-2. The plan is shown for review: **✅ Approve** / **✏️ Revise** (with feedback, re-runs the plan worker) / **❌ Reject**.
-3. On approval, coordinator mode is enabled and the plan is handed to the coordinator for step-by-step implementation via `TaskCreate` + `delegate_task`.
-4. Timeout: `planTimeout` seconds (default 600); ESC aborts.
+1. Воркер **plan** исследует кодовую базу и создаёт структурированный план реализации (документация на русском; имена файлов и технические термины на английском).
+2. План показывается для ревью: **✅ Approve** / **✏️ Revise** (с обратной связью, перезапускает воркер plan) / **❌ Reject**.
+3. При одобрении включается режим координатора и план передаётся координатору для пошаговой реализации через `TaskCreate` + `delegate_task`.
+4. Таймаут: `planTimeout` секунд (по умолчанию 600); ESC прерывает.
 
-Triggered by: `/plan <task>`
+Запускается командой: `/plan <task>`
 
-### Implementation Workflow
+### Воркфлоу реализации
 
-Best for: making code changes with verification.
-
-```
-User: [with coordinator mode on] Add rate limiting to the API gateway
-```
-
-Execution:
-
-1. Coordinator decomposes into sub-tasks.
-2. **Explore** worker investigates the codebase.
-3. Coordinator synthesizes findings into a spec.
-4. **Implement** worker makes the changes.
-5. **Verify** worker checks build, tests, and code quality.
-6. If verification fails, implement retries (up to 3 attempts per task).
-7. Coordinator reports results.
-
-Triggered by: describe the task with coordinator mode active (Alt+O).
-
-### Verify Workflow
-
-Best for: checking existing changes without modification.
+Лучше всего подходит для: внесения изменений в код с верификацией.
 
 ```
-User: [with coordinator mode on] Run the full test suite and check for regressions
+User: [с включённым режимом координатора] Add rate limiting to the API gateway
 ```
 
-Execution:
+Выполнение:
 
-1. Coordinator delegates to a **verify** worker.
-2. Verify worker runs tests, linters, and reviews code.
-3. Reports `VERDICT: PASS`, `VERDICT: FAIL`, or `VERDICT: PARTIAL`.
+1. Координатор разбивает на подзадачи.
+2. Воркер **explore** исследует кодовую базу.
+3. Координатор синтезирует находки в спецификацию.
+4. Воркер **implement** вносит изменения.
+5. Воркер **verify** проверяет сборку, тесты и качество кода.
+6. Если верификация провалена, implement повторяет попытку (до 3 попыток на задачу).
+7. Координатор сообщает результаты.
 
-## Configuration
+Запускается: опишите задачу при активном режиме координатора (Alt+O).
 
-Configuration lives in `~/.fan/agent/extensions/fan-orchestrator/config.json`. It is auto-created from `config.example.json` on first load (merged with defaults), or via `/orchestrator init`. All timeouts are in **seconds**.
+### Воркфлоу верификации
+
+Лучше всего подходит для: проверки существующих изменений без модификации.
+
+```
+User: [с включённым режимом координатора] Run the full test suite and check for regressions
+```
+
+Выполнение:
+
+1. Координатор делегирует воркеру **verify**.
+2. Воркер verify запускает тесты, линтеры и просматривает код.
+3. Возвращает `VERDICT: PASS`, `VERDICT: FAIL` или `VERDICT: PARTIAL`.
+
+## Конфигурация
+
+Конфигурация находится в `~/.fan/agent/extensions/fan-orchestrator/config.json`. Она автоматически создаётся из `config.example.json` при первой загрузке (объединяется с значениями по умолчанию) или через `/orchestrator init`. Все таймауты указаны в **секундах**.
 
 ```json
 {
@@ -486,75 +486,75 @@ Configuration lives in `~/.fan/agent/extensions/fan-orchestrator/config.json`. I
 }
 ```
 
-### Settings Reference
+### Справочник настроек
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `providerMode` | `"cloud"` (example: `"auto"`) | `auto`, `cloud`, or `local` — which model config to use; `auto` = cloud with fallback to local |
-| `presets` | `{}` | Named snapshots of model config `{cloud, local, providerMode}` |
-| `activePreset` | `null` | Name of the active preset |
-| `coordinatorDefault` | `true` | Coordinator mode active at session start |
-| `parallelWorkers` | `3` | Max concurrent read-only workers per slot pool |
-| `workerTimeout` | `600` (s) | Max worker runtime in seconds (backstop limit) |
-| `stallTimeout` | `600` (s) | Stall timer — no stdout → kill |
-| `planTimeout` | `600` (s) | Timeout for the `/plan` workflow |
-| `maxRetries` | `2` | Retry count on worker failure |
-| `agentTimeouts.<type>` | `600` (s) | Per-agent-type stall timeout override |
-| `temperature` | `0.1` | Default worker temperature |
-| `agentTemperature.<type>` | per-agent map | Per-agent temperature (0.0–1.0, clamped) |
-| `cloud.model` / `local.model` | `""` | Default model per provider (empty = session model) |
-| `cloud.models` / `local.models` | `{}` | Per-agent model overrides (empty = provider default → session model) |
-| `dangerousCommands` | `[...]` | Command patterns that trigger the approval prompt |
+| Настройка | По умолчанию | Описание |
+|-----------|-------------|----------|
+| `providerMode` | `"cloud"` (пример: `"auto"`) | `auto`, `cloud` или `local` — какую конфигурацию моделей использовать; `auto` = cloud с fallback на local |
+| `presets` | `{}` | Именованные снимки конфигурации моделей `{cloud, local, providerMode}` |
+| `activePreset` | `null` | Имя активного пресета |
+| `coordinatorDefault` | `true` | Режим координатора активен при начале сессии |
+| `parallelWorkers` | `3` | Максимум одновременных read-only воркеров в одном пуле слотов |
+| `workerTimeout` | `600` (сек) | Максимальное время работы воркера в секундах (предельный лимит) |
+| `stallTimeout` | `600` (сек) | Таймер зависания — нет stdout → завершить |
+| `planTimeout` | `600` (сек) | Таймаут для воркфлоу `/plan` |
+| `maxRetries` | `2` | Количество повторов при сбое воркера |
+| `agentTimeouts.<type>` | `600` (сек) | Переопределение таймаута зависания по типу агента |
+| `temperature` | `0.1` | Температура воркера по умолчанию |
+| `agentTemperature.<type>` | карта по агентам | Температура по агенту (0.0–1.0, ограничивается диапазоном) |
+| `cloud.model` / `local.model` | `""` | Модель по умолчанию для провайдера (пусто = модель сессии) |
+| `cloud.models` / `local.models` | `{}` | Переопределения моделей по агенту (пусто = провайдер по умолчанию → модель сессии) |
+| `dangerousCommands` | `[...]` | Паттерны команд, вызывающие запрос одобрения |
 
-Legacy keys are migrated automatically on load (`cloud.defaultModel` → `cloud.model`, `cloud.defaultProvider` → `cloud.provider`, `stallTimeout` → `workerTimeout` when `workerTimeout` is absent).
+Устаревшие ключи автоматически мигрируются при загрузке (`cloud.defaultModel` → `cloud.model`, `cloud.defaultProvider` → `cloud.provider`, `stallTimeout` → `workerTimeout` когда `workerTimeout` отсутствует).
 
-## Permissions
+## Разрешения
 
-### Tool Access by Worker Type
+### Доступ к инструментам по типу воркера
 
-Workers are restricted by their declared tools, enforced at spawn time:
+Воркеры ограничены заявленными инструментами, что контролируется при запуске:
 
-- **Read-only workers** (explore, plan, verify, code-research): `read`, `bash`, `grep`, `find`, `ls` — no write/edit.
-- **Write workers** (implement, bug-fix, tests-impl, docs-impl): full access (all tools).
+- **Read-only воркеры** (explore, plan, verify, code-research): `read`, `bash`, `grep`, `find`, `ls` — без write/edit.
+- **Write-воркеры** (implement, bug-fix, tests-impl, docs-impl): полный доступ (все инструменты).
 
-### Interactive Permission Approval
+### Интерактивное одобрение разрешений
 
-When a dangerous command is detected in any `bash` tool call (coordinator or worker), the orchestrator's `tool_call` hook shows an **Allow/Block** prompt:
+Когда опасная команда обнаружена в любом вызове инструмента `bash` (координатор или воркер), хук `tool_call` оркестратора показывает запрос **Allow/Block**:
 
-- **Allow** — the input is marked `_fanDangerouslyApproved` and the core bash tool skips its security check.
-- **Block** (or dismissing the prompt) — the command is blocked.
-- **Headless mode** (no UI) — dangerous commands are blocked automatically.
+- **Allow** — ввод помечается `_fanDangerouslyApproved` и основной bash-инструмент пропускает проверку безопасности.
+- **Block** (или закрытие запроса) — команда блокируется.
+- **Headless-режим** (без UI) — опасные команды блокируются автоматически.
 
-All decisions are written to the audit log (JSONL at `~/.fan/agent/audit/orchestrator.log`).
+Все решения записываются в аудит-лог (JSONL в `~/.fan/agent/audit/orchestrator.log`).
 
-**Bypass switch:** setting `FAN_DANGEROUSLY_SKIP_PERMISSIONS=true` disables all checks in the hook. The core CLI flag `--dangerously-skip-permissions` sets this variable and propagates it to worker subprocesses. Use only in trusted environments.
+**Переключатель обхода:** установка `FAN_DANGEROUSLY_SKIP_PERMISSIONS=true` отключает все проверки в хуке. Флаг CLI `--dangerously-skip-permissions` устанавливает эту переменную и передаёт её дочерним процессам воркеров. Используйте только в доверенных средах.
 
-The core bash tool in `@seaagents/fan-coding-agent` also blocks dangerous patterns for **all** FAN processes (not just the orchestrator): heredocs, pipes into shells (`curl | sh`), interpreter one-liners (`node -e`, `python -c`), subshells, fork-bombs, `dd` to disk devices, and recursive chmod/chown of critical paths.
+Основной bash-инструмент в `@seaagents/fan-coding-agent` также блокирует опасные паттерны для **всех** процессов FAN (не только оркестратора): heredocs, пайпы в shell (`curl | sh`), однострочники интерпретаторов (`node -e`, `python -c`), подшеллы, fork-бомбы, `dd` на дисковые устройства и рекурсивные chmod/chown критических путей.
 
-### Dangerous Commands
+### Опасные команды
 
-The following patterns (configurable via `dangerousCommands`, editable in `/orchestrator init`) trigger the approval flow:
+Следующие паттерны (настраиваются через `dangerousCommands`, редактируются в `/orchestrator init`) запускают поток одобрения:
 
-| Category | Patterns |
-|----------|----------|
-| Recursive delete | `rm -rf`, `rm -fr`, any `rm` with `-r` and `-f` flags |
-| Force push | `git push --force`, `git push -f` |
-| Package publish | `npm publish`, `yarn publish`, `pnpm publish` |
-| SQL destruction | `DROP TABLE`, `TRUNCATE`, `DELETE FROM` |
-| Disk operations | `mkfs`, `fdisk`, `format` |
-| System power | `shutdown`, `reboot`, `halt`, `poweroff` |
-| Root permissions | `chmod -R /`, `chown -R /` |
-| Find + delete | `find ... -delete` |
+| Категория | Паттерны |
+|-----------|----------|
+| Рекурсивное удаление | `rm -rf`, `rm -fr`, любой `rm` с флагами `-r` и `-f` |
+| Принудительный push | `git push --force`, `git push -f` |
+| Публикация пакетов | `npm publish`, `yarn publish`, `pnpm publish` |
+| Деструктивный SQL | `DROP TABLE`, `TRUNCATE`, `DELETE FROM` |
+| Дисковые операции | `mkfs`, `fdisk`, `format` |
+| Системное питание | `shutdown`, `reboot`, `halt`, `poweroff` |
+| Root-разрешения | `chmod -R /`, `chown -R /` |
+| Find + удаление | `find ... -delete` |
 
-## Best Practices
+## Лучшие практики
 
-### 1. One Write Worker at a Time
+### 1. Один write-воркер за раз
 
-The orchestrator enforces this (exclusive write slot shared by implement, bug-fix, tests-impl, docs-impl), but it's good to plan for it. Structure your task decomposition so implementation steps are sequential, while exploration and verification can be parallel.
+Оркестратор обеспечивает это (эксклюзивный слот записи, общий для implement, bug-fix, tests-impl, docs-impl), но полезно планировать заранее. Структурируйте декомпозицию задач так, чтобы шаги реализации были последовательными, а исследование и верификация могли выполняться параллельно.
 
-### 2. Parallel Read-Only Workers
+### 2. Параллельные read-only воркеры
 
-Don't wait for one explore worker to finish before starting another. Read-only workers run in parallel slot pools, so if you need to investigate three independent subsystems, spawn three explore workers at once via `delegate_task` with a `tasks` array:
+Не ждите завершения одного explore-воркера перед запуском другого. Read-only воркеры работают в параллельных пулах слотов, поэтому если нужно исследовать три независимых подсистемы, запустите три explore-воркера одновременно через `delegate_task` с массивом `tasks`:
 
 ```
 delegate_task(tasks=[
@@ -564,35 +564,35 @@ delegate_task(tasks=[
 ])
 ```
 
-### 3. Max 3 Implementation Attempts
+### 3. Максимум 3 попытки реализации
 
-If a verify worker fails, the coordinator will retry implementation with fix instructions. After 3 failed attempts, it reports to you with details. Don't override this limit — if something fails 3 times, it likely needs human judgment.
+Если verify-воркер завершается с ошибкой, координатор повторяет реализацию с инструкциями по исправлению. После 3 неудачных попыток он сообщает вам подробности. Не переопределяйте этот лимит — если что-то падает 3 раза, скорее всего, требуется человеческое суждение.
 
-### 4. Self-Contained Worker Prompts
+### 4. Самодостаточные промпты воркеров
 
-Workers can't see the conversation. When delegating, include:
+Воркеры не видят разговор. При делегировании включайте:
 
-- **File paths** — exact paths, not "that file we discussed"
-- **Line numbers** — specific ranges for targeted changes
-- **Code snippets** — relevant types, interfaces, or function signatures
-- **Acceptance criteria** — what "done" looks like
+- **Пути к файлам** — точные пути, а не «тот файл, который мы обсуждали»
+- **Номера строк** — конкретные диапазоны для точечных изменений
+- **Фрагменты кода** — релевантные типы, интерфейсы или сигнатуры функций
+- **Критерии приёмки** — как выглядит «готово»
 
-### 5. Use `/plan` Before Complex Tasks
+### 5. Используйте `/plan` перед сложными задачами
 
-For anything involving multiple files or architectural changes, run `/plan` first. The plan-worker workflow with Approve/Revise/Reject gives you a structured plan to review before any code is touched.
+Для всего, что затрагивает несколько файлов или архитектурные изменения, сначала запустите `/plan`. Воркфлоу plan-воркера с Approve/Revise/Reject даёт вам структурированный план для ревью до того, как будет тронут код.
 
-### 6. Use Dependencies for Ordering
+### 6. Используйте зависимости для упорядочивания
 
-When creating tasks, use `blocks[]` to express ordering:
+При создании задач используйте `blocks[]` для выражения порядка:
 
 ```
-Task 1: "Create database migration" (no dependencies)
+Task 1: "Create database migration" (без зависимостей)
 Task 2: "Update API endpoints" (blocks: [task-1-id])
 Task 3: "Write integration tests" (blocks: [task-2-id])
 ```
 
-Blocked tasks automatically wait for their dependencies to complete.
+Заблокированные задачи автоматически ждут завершения своих зависимостей.
 
-### 7. Always Verify After Implement
+### 7. Всегда проверяйте после реализации
 
-The coordinator does this automatically. Look for `VERDICT: PASS`, `VERDICT: FAIL`, or `VERDICT: PARTIAL` in the verify worker output.
+Координатор делает это автоматически. Ищите `VERDICT: PASS`, `VERDICT: FAIL` или `VERDICT: PARTIAL` в выводе verify-воркера.

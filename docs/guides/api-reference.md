@@ -1,106 +1,106 @@
-# API Reference
+# Справочник API
 
-REST API and WebSocket protocol for FAN server mode.
+REST API и WebSocket-протокол для серверного режима FAN.
 
-## Getting Started
+## Начало работы
 
-Start the FAN server:
+Запустите сервер FAN:
 
 ```bash
 fan server
 ```
 
-Or with auto-open browser:
+Или с автоматическим открытием браузера:
 
 ```bash
 fan --web
 ```
 
-API-only (no browser auto-open):
+Только API (без автооткрытия браузера):
 
 ```bash
 fan --mode server
 ```
 
-The API is available at:
+API доступен по адресам:
 
-| Component    | URL                                    |
+| Компонент    | URL                                    |
 |-------------|----------------------------------------|
 | REST API    | `http://localhost:3456/api`            |
 | WebSocket   | `ws://localhost:3456/api/ws/{sessionId}` |
 | Health      | `http://localhost:3456/api/health`     |
 
-Change the port with the `--port` flag or `PORT` environment variable:
+Измените порт с помощью флага `--port` или переменной окружения `PORT`:
 
 ```bash
 fan server --port 8080
-# Or:
+# Или:
 PORT=8080 fan server
 ```
 
-## Authentication
+## Аутентификация
 
-All `/api/*` routes (except `/api/health`) require authentication via a **client token**.
+Все маршруты `/api/*` (кроме `/api/health`) требуют аутентификации через **клиентский токен**.
 
-### Methods
+### Методы
 
-**Header (recommended):**
+**Заголовок (рекомендуется):**
 
 ```bash
 Authorization: Bearer fan_tk_abc123...
 ```
 
-**Query parameter:**
+**Query-параметр:**
 
 ```bash
 curl http://localhost:3456/api/sessions?token=fan_tk_abc123...
 ```
 
-### Disable Authentication
+### Отключение аутентификации
 
-For local development or trusted networks, disable auth entirely:
+Для локальной разработки или доверенных сетей можно полностью отключить аутентификацию:
 
 ```bash
 FAN_NO_AUTH=1 fan server
 ```
 
-> ⚠️ Disabling auth exposes all endpoints without any access control. Use only in trusted environments.
+> ⚠️ Отключение аутентификации открывает все эндпоинты без какого-либо контроля доступа. Используйте только в доверенных средах.
 
-### Creating a Token
+### Создание токена
 
-See [Create Token](#create-token) below. The full token secret is returned **only once** at creation time. Store it securely.
+См. [Создание токена](#создание-токена) ниже. Полный секрет токена возвращается **только один раз** в момент создания. Сохраните его надёжно.
 
-### Project Scope (F-5.7)
+### Область действия проекта (F-5.7)
 
-A token can optionally be restricted to a **single project** via the `projectScope` field at creation time (`POST /api/tokens`). `projectScope: null` (the default, and all pre-phase-5 tokens) means **full access** — fully backward compatible.
+Токен может быть ограничен **одним проектом** через поле `projectScope` при создании (`POST /api/tokens`). `projectScope: null` (по умолчанию, а также для всех токенов до фазы 5) означает **полный доступ** — полностью обратно совместимо.
 
-For a **scoped token** (`projectScope = "/data/repos/my-project"`):
+Для **ограниченного токена** (`projectScope = "/data/repos/my-project"`):
 
-- **Project context enforcement.** Every project context found in the request must equal the scope (normalized path comparison — exact match, no prefix/subtree): query `?project=` / `?path=`, JSON body fields `cwd` / `project` / `rootPath`. A mismatch → `403 "token not scoped to this project"`.
-- **No project context → deny by default**, except a small whitelist of project-neutral endpoints (`GET /api/models`, `GET /api/models/settings`, `GET /api/mcp/servers`, token self-management, `GET`/`POST /api/projects`) and resource-level routes (`GET`/`POST .../messages`/`DELETE /api/sessions/:id`), where the check is done against the target session's `cwd` instead.
-- **WebSocket:** a scoped token may only subscribe to sessions whose `cwd` matches the scope (checked on connect and per session switch).
-- **Scope lockdown (anti-escalation):**
-  - `GET /api/tokens` returns only tokens of the caller's own scope.
-  - `POST /api/tokens` — a scoped caller can mint tokens only for its own scope; an omitted `projectScope` inherits the caller's scope (minting a full-access or foreign-scope token → `403`).
-  - `DELETE /api/tokens/:id` — only tokens belonging to the caller's scope can be revoked.
-  - **Global mutations → `403`:** `PUT /api/models/settings`, provider-scoped `PUT /api/budget` (without `project`), `DELETE /api/projects`, `PUT /api/projects` outside the scope.
-  - `GET /api/projects` is filtered to the scope project; `POST /api/projects` is allowed only for paths inside the scope.
+- **Принудительная проверка контекста проекта.** Каждый контекст проекта, обнаруженный в запросе, должен совпадать с областью действия (нормализованное сравнение путей — точное совпадение, без префикса/поддерева): query `?project=` / `?path=`, поля JSON-тела `cwd` / `project` / `rootPath`. Несоответствие → `403 "token not scoped to this project"`.
+- **Нет контекста проекта → отказ по умолчанию**, за исключением небольшого списка проектно-нейтральных эндпоинтов (`GET /api/models`, `GET /api/models/settings`, `GET /api/mcp/servers`, самоуправление токенами, `GET`/`POST /api/projects`) и ресурсных маршрутов (`GET`/`POST .../messages`/`DELETE /api/sessions/:id`), где проверка выполняется относительно `cwd` целевой сессии.
+- **WebSocket:** ограниченный токен может подписываться только на сессии, чей `cwd` совпадает с областью действия (проверяется при подключении и при каждом переключении сессии).
+- **Блокировка области действия (защита от эскалации):**
+  - `GET /api/tokens` возвращает только токены собственной области вызывающего.
+  - `POST /api/tokens` — ограниченный вызывающий может создавать токены только для своей области; пропущенный `projectScope` наследует область вызывающего (создание токена с полным доступом или чужой областью → `403`).
+  - `DELETE /api/tokens/:id` — можно отозвать только токены, принадлежащие области вызывающего.
+  - **Глобальные мутации → `403`:** `PUT /api/models/settings`, провайдерно-ориентированный `PUT /api/budget` (без `project`), `DELETE /api/projects`, `PUT /api/projects` вне области.
+  - `GET /api/projects` фильтруется по проекту области; `POST /api/projects` разрешён только для путей внутри области.
 
 ---
 
-## REST Endpoints
+## REST-эндпоинты
 
-### Health Check
+### Проверка здоровья
 
 ```
 GET /api/health
 ```
 
-No authentication required.
+Аутентификация не требуется.
 
-Readiness probe (F-0.9): returns HTTP `200` when all checks pass, HTTP `503` when the database is unreachable (used by the Docker healthcheck).
+Проба готовности (F-0.9): возвращает HTTP `200`, когда все проверки пройдены, HTTP `503`, когда база данных недоступна (используется healthcheck-ом Docker).
 
-**Response `200`:**
+**Ответ `200`:**
 
 ```json
 {
@@ -112,7 +112,7 @@ Readiness probe (F-0.9): returns HTTP `200` when all checks pass, HTTP `503` whe
 }
 ```
 
-**Response `503`** (DB probe failed or timed out after 1.5 s):
+**Ответ `503`** (проба БД не пройдена или истёк таймаут через 1,5 с):
 
 ```json
 {
@@ -124,25 +124,25 @@ Readiness probe (F-0.9): returns HTTP `200` when all checks pass, HTTP `503` whe
 }
 ```
 
-| Field          | Type      | Description                                             |
+| Поле           | Тип       | Описание                                                |
 |----------------|-----------|---------------------------------------------------------|
-| status         | `string`  | `"ok"` when all checks pass, `"degraded"` when any fails |
-| version        | `string`  | FAN version number                                      |
-| uptime         | `number`  | Server uptime in seconds                                |
-| db             | `string`  | Database (Prisma/SQLite) reachability: `"up"` / `"down"` |
-| session.active | `boolean` | Whether a session is currently active                   |
-| session.id     | `string?` | Active session ID (`null` when none)                    |
+| status         | `string`  | `"ok"` при успешных проверках, `"degraded"` при сбое    |
+| version        | `string`  | Номер версии FAN                                        |
+| uptime         | `number`  | Время работы сервера в секундах                         |
+| db             | `string`  | Доступность базы данных (Prisma/SQLite): `"up"` / `"down"` |
+| session.active | `boolean` | Активна ли сессия в данный момент                       |
+| session.id     | `string?` | ID активной сессии (`null`, если нет)                   |
 
-### Scheduler Health
+### Проверка здоровья планировщика
 
 ```
 GET /api/scheduler/health
 ```
-No authentication required (same decision as `/api/health` — the payload contains only operational metrics, no secrets, so Docker healthchecks and external monitoring can poll it without a token).
+Аутентификация не требуется (аналогичное решение, как для `/api/health` — ответ содержит только операционные метрики, без секретов, поэтому healthcheck Docker и внешний мониторинг могут опрашивать его без токена).
 
-Health & metrics proxy (F-4.14) for the `fan-scheduler` process. The gateway forwards the request to the scheduler's localhost control server (`GET {FAN_SCHEDULER_URL}/health`, env `FAN_SCHEDULER_URL`, default `http://127.0.0.1:3457`, 2 s timeout) and returns the payload unchanged.
+Прокси здоровья и метрик (F-4.14) для процесса `fan-scheduler`. Шлюз перенаправляет запрос на локальный управляющий сервер планировщика (`GET {FAN_SCHEDULER_URL}/health`, env `FAN_SCHEDULER_URL`, по умолчанию `http://127.0.0.1:3457`, таймаут 2 с) и возвращает ответ без изменений.
 
-**Response `200`** (scheduler reachable; `status` is `"degraded"` when the scheduler started with a corrupt pending-queue file):
+**Ответ `200`** (планировщик доступен; `status` равен `"degraded"`, если планировщик стартовал с повреждённым файлом очереди pending):
 
 ```json
 {
@@ -155,7 +155,7 @@ Health & metrics proxy (F-4.14) for the `fan-scheduler` process. The gateway for
 }
 ```
 
-**Response `503`** (scheduler process not running or timed out):
+**Ответ `503`** (процесс планировщика не запущен или истёк таймаут):
 
 ```json
 {
@@ -165,36 +165,36 @@ Health & metrics proxy (F-4.14) for the `fan-scheduler` process. The gateway for
 }
 ```
 
-| Field          | Type       | Description                                                            |
-|----------------|------------|------------------------------------------------------------------------|
-| status         | `string`   | `"ok"` when healthy, `"degraded"` on corrupt pending queue or scheduler down |
-| running        | `boolean`  | Whether a task is currently executing                                  |
-| pendingCount   | `number`   | Number of tasks waiting in the pending queue                           |
-| lastTaskStatus | `string?`  | `"completed"` / `"failed"` / `"timeout"` / `"budget_exceeded"` / `null`        |
-| uptimeSeconds  | `number`   | Scheduler control server uptime in seconds                             |
-| queueVersion   | `number`   | Pending-queue persistence schema version (`1`)                         |
+| Поле           | Тип        | Описание                                                                 |
+|----------------|------------|--------------------------------------------------------------------------|
+| status         | `string`   | `"ok"` при исправной работе, `"degraded"` при повреждённой очереди или недоступности планировщика |
+| running        | `boolean`  | Выполняется ли задача в данный момент                                    |
+| pendingCount   | `number`   | Количество задач, ожидающих в очереди                                    |
+| lastTaskStatus | `string?`  | `"completed"` / `"failed"` / `"timeout"` / `"budget_exceeded"` / `null`  |
+| uptimeSeconds  | `number`   | Время работы управляющего сервера планировщика в секундах                |
+| queueVersion   | `number`   | Версия схемы персистентности очереди pending (`1`)                       |
 
 ---
 
-### Sessions
+### Сессии
 
-#### Create Session
+#### Создание сессии
 
 ```
 POST /api/sessions
 ```
 
-Create a new conversation session.
+Создаёт новую сессию общения.
 
-**Request body:**
+**Тело запроса:**
 
-| Field            | Type     | Required | Description                    |
-|------------------|----------|----------|--------------------------------|
-| title            | `string` | No       | Session title (auto-generated if omitted) |
-| parentSessionId  | `string` | No       | ID of a parent session for branching |
-| cwd              | `string` | No       | Working directory (project workspace) for the new session. Normalized by the server; validated against the workspace whitelist (F-1.13) — see errors below. Default: the server workspace root (`FAN_WORKSPACE_ROOT` → `~/projects`) |
+| Поле             | Тип      | Обязательно | Описание                           |
+|------------------|----------|--------------|------------------------------------|
+| title            | `string` | Нет          | Заголовок сессии (генерируется автоматически, если не указан) |
+| parentSessionId  | `string` | Нет          | ID родительской сессии для ветвления |
+| cwd              | `string` | Нет          | Рабочий каталог (пространство проекта) для новой сессии. Нормализуется сервером; проверяется по белому списку рабочих пространств (F-1.13) — см. ошибки ниже. По умолчанию: корень рабочего пространства сервера (`FAN_WORKSPACE_ROOT` → `~/projects`) |
 
-**Example:**
+**Пример:**
 
 ```bash
 curl -X POST http://localhost:3456/api/sessions \
@@ -203,7 +203,7 @@ curl -X POST http://localhost:3456/api/sessions \
   -d '{"title": "Refactor auth module", "cwd": "/data/repos/my-project"}'
 ```
 
-**Response `201`:**
+**Ответ `201`:**
 
 ```json
 {
@@ -217,40 +217,40 @@ curl -X POST http://localhost:3456/api/sessions \
 }
 ```
 
-**Error `400`** (`BAD_REQUEST`) — the body is not a JSON object, or `cwd` is present but is not a non-empty string:
+**Ошибка `400`** (`BAD_REQUEST`) — тело не является JSON-объектом, или `cwd` присутствует, но не является непустой строкой:
 
 ```json
 { "error": "cwd must be a non-empty string", "code": "BAD_REQUEST" }
 ```
 
-**Error `403`** (`FORBIDDEN`) — `cwd` rejected by the workspace whitelist (active in server mode: `allowedRoots = [FAN_WORKSPACE_ROOT → ~/projects]`). Rejections are written to the audit log (`[api-gateway][audit] cwd rejected ...`). Possible `reason` values: `"empty path"`, `"invalid characters in path"`, `"path outside allowed roots"`, `"symlink traversal detected"`:
+**Ошибка `403`** (`FORBIDDEN`) — `cwd` отклонён белым списком рабочих пространств (активен в серверном режиме: `allowedRoots = [FAN_WORKSPACE_ROOT → ~/projects]`). Отказы записываются в журнал аудита (`[api-gateway][audit] cwd rejected ...`). Возможные значения `reason`: `"empty path"`, `"invalid characters in path"`, `"path outside allowed roots"`, `"symlink traversal detected"`:
 
 ```json
 { "error": "cwd rejected: path outside allowed roots", "code": "FORBIDDEN" }
 ```
 
-#### List Sessions
+#### Список сессий
 
 ```
 GET /api/sessions
 ```
 
-Returns all sessions with summary information.
+Возвращает все сессии с краткой информацией.
 
-**Query parameters:**
+**Query-параметры:**
 
-| Param    | Type     | Required | Description                              |
-|----------|----------|----------|------------------------------------------|
-| project  | `string` | No       | Project path filter (F-1.2) — only sessions whose `cwd` matches the path (normalized comparison: separators, `.`/`..`, trailing slash, Windows case-folding). Without the param all sessions are returned (backward compatible). Sessions without `cwd` (legacy) never match the filter |
+| Параметр | Тип      | Обязательно | Описание                             |
+|----------|----------|-------------|--------------------------------------|
+| project  | `string` | Нет         | Фильтр по пути проекта (F-1.2) — только сессии, чей `cwd` совпадает с путём (нормализованное сравнение: разделители, `.`/`..`, завершающий слэш, приведение регистра Windows). Без параметра возвращаются все сессии (обратно совместимо). Сессии без `cwd` (legacy) никогда не совпадают с фильтром |
 
-**Example:**
+**Пример:**
 
 ```bash
 curl "http://localhost:3456/api/sessions?project=/data/repos/my-project" \
   -H "Authorization: Bearer $FAN_TOKEN"
 ```
 
-**Response `200`:**
+**Ответ `200`:**
 
 ```json
 {
@@ -277,24 +277,24 @@ curl "http://localhost:3456/api/sessions?project=/data/repos/my-project" \
 }
 ```
 
-> **Note:** `cwd` is omitted for legacy sessions whose JSONL header has no working directory — it is never `null` or an empty string (F-1.12). A project path with no sessions yields `"sessions": []` with HTTP 200.
+> **Примечание:** `cwd` отсутствует для legacy-сессий, в чьём JSONL-заголовке нет рабочего каталога — он никогда не бывает `null` или пустой строкой (F-1.12). Путь проекта без сессий возвращает `"sessions": []` с HTTP 200.
 
-#### Get Session
+#### Получение сессии
 
 ```
 GET /api/sessions/:id
 ```
 
-Returns a session with its full message history.
+Возвращает сессию с полной историей сообщений.
 
-**Example:**
+**Пример:**
 
 ```bash
 curl http://localhost:3456/api/sessions/sess_a1b2c3d4 \
   -H "Authorization: Bearer $FAN_TOKEN"
 ```
 
-**Response `200`:**
+**Ответ `200`:**
 
 ```json
 {
@@ -320,55 +320,55 @@ curl http://localhost:3456/api/sessions/sess_a1b2c3d4 \
 }
 ```
 
-**Error `404`:** Session not found.
+**Ошибка `404`:** Сессия не найдена.
 
-#### Delete Session
+#### Удаление сессии
 
 ```
 DELETE /api/sessions/:id
 ```
 
-Permanently deletes a session and its messages.
+Безвозвратно удаляет сессию и её сообщения.
 
-**Query parameters:**
+**Query-параметры:**
 
-| Param    | Type     | Required | Description                              |
-|----------|----------|----------|------------------------------------------|
-| project  | `string` | No       | Project path verification (F-1.4) — the session must belong to this project (`cwd` match, normalized comparison) or the delete is rejected with `403`. Without the param the delete is global (backward compatible) |
+| Параметр | Тип      | Обязательно | Описание                             |
+|----------|----------|-------------|--------------------------------------|
+| project  | `string` | Нет         | Проверка принадлежности проекту (F-1.4) — сессия должна принадлежать указанному проекту (совпадение `cwd`, нормализованное сравнение), иначе удаление отклоняется с `403`. Без параметра удаление глобальное (обратно совместимо) |
 
-**Example:**
+**Пример:**
 
 ```bash
 curl -X DELETE "http://localhost:3456/api/sessions/sess_a1b2c3d4?project=/data/repos/my-project" \
   -H "Authorization: Bearer $FAN_TOKEN"
 ```
 
-**Response `204`:** No body (`No Content`).
+**Ответ `204`:** Без тела (`No Content`).
 
-**Error `404`:** Session not found.
+**Ошибка `404`:** Сессия не найдена.
 
-**Error `403`** — the session exists but belongs to a different project than `?project=` (also when the session has no `cwd` at all):
+**Ошибка `403`** — сессия существует, но принадлежит другому проекту, отличному от `?project=` (также когда у сессии вообще нет `cwd`):
 
 ```json
 { "error": "session does not belong to this project" }
 ```
 
-#### Send Message
+#### Отправка сообщения
 
 ```
 POST /api/sessions/:id/messages
 ```
 
-Send a message to the agent in the given session. The response acknowledges receipt; actual agent content is delivered in real-time via the [WebSocket stream](#websocket-protocol).
+Отправляет сообщение агенту в указанной сессии. Ответ подтверждает приём; фактическое содержимое агента доставляется в реальном времени через [поток WebSocket](#протокол-websocket).
 
-**Request body:**
+**Тело запроса:**
 
-| Field               | Type     | Required | Description                                      |
-|---------------------|----------|----------|--------------------------------------------------|
-| message             | `string` | Yes      | The user message to send                         |
-| streamingBehavior   | `string` | No       | Streaming preference (e.g., `"stream"`)          |
+| Поле                | Тип      | Обязательно | Описание                                   |
+|---------------------|----------|-------------|--------------------------------------------|
+| message             | `string` | Да           | Сообщение пользователя                     |
+| streamingBehavior   | `string` | Нет          | Предпочтение потоковой передачи (напр., `"stream"`) |
 
-**Example:**
+**Пример:**
 
 ```bash
 curl -X POST http://localhost:3456/api/sessions/sess_a1b2c3d4/messages \
@@ -377,7 +377,7 @@ curl -X POST http://localhost:3456/api/sessions/sess_a1b2c3d4/messages \
   -d '{"message": "List all files in the src directory"}'
 ```
 
-**Response `200`:**
+**Ответ `200`:**
 
 ```json
 {
@@ -385,28 +385,28 @@ curl -X POST http://localhost:3456/api/sessions/sess_a1b2c3d4/messages \
 }
 ```
 
-> **Note:** This endpoint only enqueues the message. To receive the agent's reply, connect to the WebSocket and listen for `agent_event` messages.
+> **Примечание:** Этот эндпоинт лишь ставит сообщение в очередь. Чтобы получить ответ агента, подключитесь к WebSocket и слушайте сообщения `agent_event`.
 
 ---
 
-### Projects
+### Проекты
 
-#### List Projects
+#### Список проектов
 
 ```
 GET /api/projects
 ```
 
-Returns the project registry (`~/.fan/agent/projects.json`, F-1.6) enriched with per-project session counts (F-1.5). Projects are registered manually via `fan project register` or automatically on first session creation in a workspace (F-1.7 — `.git` → `"code"`, `docs/` → `"research"`, otherwise `"unknown"`; system paths are excluded).
+Возвращает реестр проектов (`~/.fan/agent/projects.json`, F-1.6), дополненный количеством сессий по каждому проекту (F-1.5). Проекты регистрируются вручную через `fan project register` или автоматически при создании первой сессии в рабочем пространстве (F-1.7 — `.git` → `"code"`, `docs/` → `"research"`, иначе `"unknown"`; системные пути исключаются).
 
-**Example:**
+**Пример:**
 
 ```bash
 curl http://localhost:3456/api/projects \
   -H "Authorization: Bearer $FAN_TOKEN"
 ```
 
-**Response `200`:**
+**Ответ `200`:**
 
 ```json
 {
@@ -437,38 +437,28 @@ curl http://localhost:3456/api/projects \
 }
 ```
 
-| Field        | Type      | Description                                                                |
-|--------------|-----------|----------------------------------------------------------------------------|
-| path         | `string`  | Absolute path of the project workspace                                     |
-| name         | `string`  | Display name (from the registry; basename fallback)                        |
-| type         | `string`  | `"code"` \| `"research"` \| `"automation"` \| `"unknown"`                   |
-| sessionCount | `number`  | Sessions whose `cwd` matches the project path (normalized comparison)      |
-| available    | `boolean` | `false` when the project directory no longer exists on disk (F-2.13)       |
-| error        | `string`  | `"PROJECT_NOT_FOUND"` — present only when `available` is `false` (F-2.13)  |
+| Поле         | Тип       | Описание                                                                 |
+|--------------|-----------|--------------------------------------------------------------------------|
+| path         | `string`  | Абсолютный путь рабочего пространства проекта                            |
+| name         | `string`  | Отображаемое имя (из реестра; запасной вариант — basename)               |
+| type         | `string`  | `"code"` \| `"research"` \| `"automation"` \| `"unknown"`                 |
+| sessionCount | `number`  | Количество сессий, чей `cwd` совпадает с путём проекта (нормализованное сравнение) |
+| available    | `boolean` | `false`, если каталог проекта больше не существует на диске (F-2.13)     |
+| error        | `string`  | `"PROJECT_NOT_FOUND"` — присутствует только когда `available` равно `false` (F-2.13) |
 
-An empty or missing registry yields `{ "projects": [] }` with HTTP 200.
+Пустой или отсутствующий реестр возвращает `{ "projects": [] }` с HTTP 200.
 
-> **F-2.13 — unavailable projects:** projects whose directory was deleted from
-> disk are **not excluded** from the list. They are flagged with
-> `"available": false, "error": "PROJECT_NOT_FOUND"` so the user can see them
-> and remove them from the registry (see `DELETE /api/projects` below).
-> Similarly, `GET /api/sessions?project=<path>` with a non-existent path is
-> **not an error** — the whitelist allows not-yet-created directories inside a
-> workspace root, and orphaned sessions of a deleted project must remain
-> visible/manageable. The endpoint simply returns the cwd-filtered list
-> (empty when no session ever ran with that cwd).
+> **F-2.13 — недоступные проекты:** проекты, чей каталог был удалён с диска, **не исключаются** из списка. Они помечаются как `"available": false, "error": "PROJECT_NOT_FOUND"`, чтобы пользователь мог их увидеть и удалить из реестра (см. `DELETE /api/projects` ниже). Аналогично, `GET /api/sessions?project=<path>` с несуществующим путём **не является ошибкой** — белый список разрешает ещё не созданные каталоги внутри корня рабочего пространства, а осиротевшие сессии удалённого проекта должны оставаться видимыми/управляемыми. Эндпоинт просто возвращает отфильтрованный по cwd список (пустой, если ни одна сессия не запускалась с этим cwd).
 
-#### Create Project
+#### Создание проекта
 
 ```
 POST /api/projects
 ```
 
-Creates a new project workspace — optionally from a built-in template
-(F-3.3/F-3.4) — auto-detects its type (F-3.2) and registers it in
-`~/.fan/agent/projects.json` (F-3.5).
+Создаёт новое рабочее пространство проекта — опционально из встроенного шаблона (F-3.3/F-3.4) — автоматически определяет его тип (F-3.2) и регистрирует в `~/.fan/agent/projects.json` (F-3.5).
 
-**Request body:**
+**Тело запроса:**
 
 ```json
 {
@@ -478,29 +468,25 @@ Creates a new project workspace — optionally from a built-in template
 }
 ```
 
-| Field    | Type     | Required | Description                                                                                                    |
-|----------|----------|----------|----------------------------------------------------------------------------------------------------------------|
-| name     | `string` | yes      | Project name, used as the directory name under `rootPath`. Must be a single path segment: no `/`, `\`, `".."` or `"."`, and must not resolve to the workspace root itself |
-| template | `string` | no       | `"code"` \| `"research"` \| `"automation"`. Unknown names are rejected with `400` before any filesystem write          |
-| rootPath | `string` | no       | Parent directory for the new project. Defaults to the workspace root (`FAN_WORKSPACE_ROOT`, falling back to `~/projects` when no whitelist is configured) |
+| Поле     | Тип      | Обязательно | Описание                                                                                                    |
+|----------|----------|--------------|-------------------------------------------------------------------------------------------------------------|
+| name     | `string` | Да           | Имя проекта, используется как имя каталога внутри `rootPath`. Должно быть одним сегментом пути: без `/`, `\`, `".."` или `"."`, и не должно разрешаться в корень рабочего пространства |
+| template | `string` | Нет          | `"code"` \| `"research"` \| `"automation"`. Неизвестные имена отклоняются с `400` до любых записей на файловую систему |
+| rootPath | `string` | Нет          | Родительский каталог для нового проекта. По умолчанию — корень рабочего пространства (`FAN_WORKSPACE_ROOT`, с запасным вариантом `~/projects`, если белый список не настроен) |
 
-Without `template` the server performs `mkdir -p` + type detection on the
-resulting (empty) directory — type will be `"unknown"`.
+Без `template` сервер выполняет `mkdir -p` + определение типа для полученного (пустого) каталога — тип будет `"unknown"`.
 
-**Template structures** (`packages/coding-agent/src/workspace/templates/`):
+**Структуры шаблонов** (`packages/coding-agent/src/workspace/templates/`):
 
-| Template    | Directories                                              | Files                                        |
-|-------------|----------------------------------------------------------|----------------------------------------------|
-| `code`      | `.fan/`, `src/`, `tests/`, `docs/`                       | `.fan/settings.json`, `package.json`         |
-| `research`  | `.fan/`, `.fan/prompts/`, `docs/research/`, `data/`, `reports/` | `.fan/settings.json`                    |
-| `automation`| `.fan/`, `scripts/`, `config/`, `output/`, `logs/`       | `.fan/settings.json`, `scripts/example.sh`   |
+| Шаблон       | Каталоги                                                   | Файлы                                      |
+|--------------|------------------------------------------------------------|--------------------------------------------|
+| `code`       | `.fan/`, `src/`, `tests/`, `docs/`                         | `.fan/settings.json`, `package.json`       |
+| `research`   | `.fan/`, `.fan/prompts/`, `docs/research/`, `data/`, `reports/` | `.fan/settings.json`                  |
+| `automation` | `.fan/`, `scripts/`, `config/`, `output/`, `logs/`         | `.fan/settings.json`, `scripts/example.sh` |
 
-Templates never overwrite existing files. The `code` template deliberately
-does **not** create `.git` (the user runs `git init` when ready) — since
-detection would then yield `"unknown"`, the template name is used as the
-declared type fallback.
+Шаблоны никогда не перезаписывают существующие файлы. Шаблон `code` намеренно **не создаёт** `.git` (пользователь запускает `git init`, когда будет готов) — поскольку определение типа в этом случае дало бы `"unknown"`, имя шаблона используется как запасной вариант объявленного типа.
 
-**Example:**
+**Пример:**
 
 ```bash
 curl -X POST http://localhost:3456/api/projects \
@@ -509,7 +495,7 @@ curl -X POST http://localhost:3456/api/projects \
   -d '{"name":"market-analysis-q3","template":"research","rootPath":"/data/repos"}'
 ```
 
-**Response `201` (created):**
+**Ответ `201` (создано):**
 
 ```json
 {
@@ -520,68 +506,59 @@ curl -X POST http://localhost:3456/api/projects \
 }
 ```
 
-`template` is present only when a template was applied. `type` is
-auto-detected from the created structure (e.g. the `research` template
-creates `docs/research/` → detected as `"research"`).
+`template` присутствует только если был применён шаблон. `type` определяется автоматически по созданной структуре (напр., шаблон `research` создаёт `docs/research/` → определяется как `"research"`).
 
-**Responses:**
+**Ответы:**
 
-| Status | Meaning                                                                                              |
-|--------|------------------------------------------------------------------------------------------------------|
-| `201`  | Workspace created and newly registered                                                               |
-| `200`  | Idempotent: the path was already registered — the existing registry entry is returned (dedup by path) |
-| `400`  | Invalid body: missing/empty `name`, path-traversal name (`/`, `\`, `..`, `.`), name resolving to the workspace root, empty `template`/`rootPath`, or `Unknown template: <name>` |
-| `403`  | `rootPath + name` is outside the workspace whitelist (`FORBIDDEN`, logged to the audit log, F-1.13)  |
-| `501`  | The session adapter does not support project creation (`NOT_IMPLEMENTED`)                            |
+| Статус | Значение                                                                                         |
+|--------|--------------------------------------------------------------------------------------------------|
+| `201`  | Рабочее пространство создано и зарегистрировано                                                  |
+| `200`  | Идемпотентно: путь уже зарегистрирован — возвращается существующая запись реестра (дедупликация по пути) |
+| `400`  | Некорректное тело: отсутствует/пустой `name`, имя с обходом пути (`/`, `\`, `..`, `.`), имя, разрешающееся в корень рабочего пространства, пустой `template`/`rootPath`, или `Unknown template: <name>` |
+| `403`  | `rootPath + name` вне белого списка рабочего пространства (`FORBIDDEN`, записано в журнал аудита, F-1.13) |
+| `501`  | Адаптер сессий не поддерживает создание проектов (`NOT_IMPLEMENTED`)                             |
 
-#### Remove Project from Registry
+#### Удаление проекта из реестра
 
 ```
-DELETE /api/projects?path=<absolute path>
+DELETE /api/projects?path=<абсолютный путь>
 ```
 
-Removes a project entry from the registry (`~/.fan/agent/projects.json`).
-Registry-only: sessions and files on disk are **never** touched. The path is
-passed as a query parameter (not a body) for symmetry with the `?project=`
-convention of the session endpoints.
+Удаляет запись проекта из реестра (`~/.fan/agent/projects.json`). Только реестр: сессии и файлы на диске **никогда** не затрагиваются. Путь передаётся как query-параметр (не тело) для симметрии с соглашением `?project=` эндпоинтов сессий.
 
-**Example:**
+**Пример:**
 
 ```bash
 curl -X DELETE "http://localhost:3456/api/projects?path=%2Fdata%2Frepos%2Fdeleted-project" \
   -H "Authorization: Bearer $FAN_TOKEN"
 ```
 
-**Responses:**
+**Ответы:**
 
-| Status | Meaning                                                        |
-|--------|----------------------------------------------------------------|
-| `204`  | Entry removed (no body)                                        |
-| `400`  | `path` query parameter missing or empty                        |
-| `404`  | Path is not registered (`NOT_FOUND`)                           |
-| `501`  | The session adapter does not support project removal (`NOT_IMPLEMENTED`) |
+| Статус | Значение                                                   |
+|--------|------------------------------------------------------------|
+| `204`  | Запись удалена (без тела)                                  |
+| `400`  | Query-параметр `path` отсутствует или пустой               |
+| `404`  | Путь не зарегистрирован (`NOT_FOUND`)                      |
+| `501`  | Адаптер сессий не поддерживает удаление проектов (`NOT_IMPLEMENTED`) |
 
-#### Update Project Type
+#### Обновление типа проекта
 
 ```
-PUT /api/projects?path=<absolute path>
+PUT /api/projects?path=<абсолютный путь>
 ```
 
-Manually overrides a project's workspace type in the registry
-(`~/.fan/agent/projects.json`) — used when auto-detection (F-3.2)
-misclassified the project. The path travels as a query parameter (symmetry
-with `DELETE /api/projects`); the body carries only the new type.
-Registry-only: sessions and files on disk are **never** touched.
+Вручную переопределяет тип рабочего пространства проекта в реестре (`~/.fan/agent/projects.json`) — используется, когда автоопределение (F-3.2) неправильно классифицировало проект. Путь передаётся как query-параметр (симметрия с `DELETE /api/projects`); тело содержит только новый тип. Только реестр: сессии и файлы на диске **никогда** не затрагиваются.
 
-**Request body:**
+**Тело запроса:**
 
 ```json
 { "type": "research" }
 ```
 
-`type` must be one of `"code"`, `"research"`, `"automation"`, `"unknown"`.
+`type` должен быть одним из: `"code"`, `"research"`, `"automation"`, `"unknown"`.
 
-**Example:**
+**Пример:**
 
 ```bash
 curl -X PUT "http://localhost:3456/api/projects?path=%2Fdata%2Frepos%2Fmy-proj" \
@@ -590,47 +567,43 @@ curl -X PUT "http://localhost:3456/api/projects?path=%2Fdata%2Frepos%2Fmy-proj" 
   -d '{"type":"research"}'
 ```
 
-**Response `200`:** the updated registry entry.
+**Ответ `200`:** обновлённая запись реестра.
 
 ```json
 { "path": "/data/repos/my-proj", "name": "my-proj", "type": "research" }
 ```
 
-**Responses:**
+**Ответы:**
 
-| Status | Meaning                                                        |
-|--------|----------------------------------------------------------------|
-| `200`  | Type updated — returns the updated entry                       |
-| `400`  | `path` query parameter missing/empty, or `type` not in the enum |
-| `404`  | Path is not registered (`NOT_FOUND`)                           |
-| `501`  | The session adapter does not support project update (`NOT_IMPLEMENTED`) |
+| Статус | Значение                                                   |
+|--------|------------------------------------------------------------|
+| `200`  | Тип обновлён — возвращает обновлённую запись               |
+| `400`  | Query-параметр `path` отсутствует/пустой, или `type` не входит в перечисление |
+| `404`  | Путь не зарегистрирован (`NOT_FOUND`)                      |
+| `501`  | Адаптер сессий не поддерживает обновление проектов (`NOT_IMPLEMENTED`) |
 
-> **ServiceRegistry note (F-2.1):** the workspace `ServiceRegistry` is
-> currently standalone (not wired into the runtime), so no cache
-> invalidation is performed. When it gets integrated, a successful type
-> update must be followed by `serviceRegistry.invalidate(cwd)` so cached
-> per-workspace services are rebuilt for the new type.
+> **Примечание ServiceRegistry (F-2.1):** `ServiceRegistry` рабочего пространства в настоящее время является автономным (не подключён к runtime), поэтому инвалидация кэша не выполняется. При интеграции успешное обновление типа должно сопровождаться `serviceRegistry.invalidate(cwd)`, чтобы кэшированные сервисы рабочего пространства были перестроены для нового типа.
 
 ---
 
-### Models
+### Модели
 
-#### List Models
+#### Список моделей
 
 ```
 GET /api/models
 ```
 
-Returns all configured models and routing rules. Merges built-in model catalog with custom entries from `~/.fan/agent/models.json`. For built-in providers, models can be added by ID only — `baseUrl` and `api` are inherited from existing models.
+Возвращает все настроенные модели и правила маршрутизации. Объединяет встроенный каталог моделей с пользовательскими записями из `~/.fan/agent/models.json`. Для встроенных провайдеров модели можно добавлять только по ID — `baseUrl` и `api` наследуются от существующих моделей.
 
-**Example:**
+**Пример:**
 
 ```bash
 curl http://localhost:3456/api/models \
   -H "Authorization: Bearer $FAN_TOKEN"
 ```
 
-**Response `200`:**
+**Ответ `200`:**
 
 ```json
 {
@@ -659,22 +632,22 @@ curl http://localhost:3456/api/models \
 }
 ```
 
-#### Get Model Settings
+#### Получение настроек моделей
 
 ```
 GET /api/models/settings
 ```
 
-Returns per-model configuration overrides (temperature, max tokens, thinking) stored in the database.
+Возвращает переопределения настроек для каждой модели (температура, максимальное количество токенов, thinking), хранящиеся в базе данных.
 
-**Example:**
+**Пример:**
 
 ```bash
 curl http://localhost:3456/api/models/settings \
   -H "Authorization: Bearer $FAN_TOKEN"
 ```
 
-**Response `200`:**
+**Ответ `200`:**
 
 ```json
 {
@@ -690,25 +663,25 @@ curl http://localhost:3456/api/models/settings \
 }
 ```
 
-#### Update Model Settings
+#### Обновление настроек моделей
 
 ```
 PUT /api/models/settings
 ```
 
-Create or update settings for a specific model. Settings are stored in the database (not in `models.json`).
+Создаёт или обновляет настройки для конкретной модели. Настройки хранятся в базе данных (не в `models.json`).
 
-**Request body:**
+**Тело запроса:**
 
-| Field        | Type      | Required | Description                         |
-|--------------|-----------|----------|-------------------------------------|
-| provider     | `string`  | Yes      | Provider name (e.g., `"anthropic"`) |
-| model        | `string`  | Yes      | Model identifier                    |
-| temperature  | `number`  | No       | Sampling temperature (0.0–2.0)      |
-| maxTokens    | `number`  | No       | Max output tokens                   |
-| thinking     | `boolean` | No       | Enable extended thinking            |
+| Поле        | Тип       | Обязательно | Описание                          |
+|-------------|-----------|-------------|-----------------------------------|
+| provider    | `string`  | Да          | Имя провайдера (напр., `"anthropic"`) |
+| model       | `string`  | Да          | Идентификатор модели              |
+| temperature | `number`  | Нет         | Температура сэмплирования (0.0–2.0) |
+| maxTokens   | `number`  | Нет         | Максимальное количество выходных токенов |
+| thinking    | `boolean` | Нет         | Включить расширенное мышление     |
 
-**Example:**
+**Пример:**
 
 ```bash
 curl -X PUT http://localhost:3456/api/models/settings \
@@ -723,7 +696,7 @@ curl -X PUT http://localhost:3456/api/models/settings \
   }'
 ```
 
-**Response `200`:**
+**Ответ `200`:**
 
 ```json
 {
@@ -739,24 +712,24 @@ curl -X PUT http://localhost:3456/api/models/settings \
 
 ---
 
-### Budget
+### Бюджет
 
-#### Get Budget Status
+#### Получение статуса бюджета
 
 ```
 GET /api/budget
 ```
 
-Returns current budget status for all configured providers.
+Возвращает текущий статус бюджета для всех настроенных провайдеров.
 
-**Example:**
+**Пример:**
 
 ```bash
 curl http://localhost:3456/api/budget \
   -H "Authorization: Bearer $FAN_TOKEN"
 ```
 
-**Response `200`:**
+**Ответ `200`:**
 
 ```json
 {
@@ -781,24 +754,24 @@ curl http://localhost:3456/api/budget \
 }
 ```
 
-#### Update Budget
+#### Обновление бюджета
 
 ```
 PUT /api/budget
 ```
 
-Update budget configuration for a provider.
+Обновляет конфигурацию бюджета для провайдера.
 
-**Request body:**
+**Тело запроса:**
 
-| Field       | Type     | Required | Description                              |
-|-------------|----------|----------|------------------------------------------|
-| provider    | `string` | No       | Provider name (updates specific provider)|
-| period      | `string` | Yes      | Budget period (`"daily"`, `"weekly"`, `"monthly"`) |
-| tokenLimit  | `number` | No       | Token limit for the period               |
-| costLimit   | `number` | No       | Cost limit in USD for the period         |
+| Поле      | Тип      | Обязательно | Описание                                   |
+|-----------|----------|-------------|--------------------------------------------|
+| provider  | `string` | Нет         | Имя провайдера (обновляет конкретный провайдер) |
+| period    | `string` | Да          | Период бюджета (`"daily"`, `"weekly"`, `"monthly"`) |
+| tokenLimit| `number` | Нет         | Лимит токенов на период                    |
+| costLimit | `number` | Нет         | Лимит стоимости в USD на период            |
 
-**Example:**
+**Пример:**
 
 ```bash
 curl -X PUT http://localhost:3456/api/budget \
@@ -812,7 +785,7 @@ curl -X PUT http://localhost:3456/api/budget \
   }'
 ```
 
-**Response `200`:**
+**Ответ `200`:**
 
 ```json
 {
@@ -825,29 +798,25 @@ curl -X PUT http://localhost:3456/api/budget \
 }
 ```
 
-#### Get Project Budget (F-4.9)
+#### Получение бюджета проекта (F-4.9)
 
 ```
-GET /api/budget?project=<path>
+GET /api/budget?project=<путь>
 ```
 
-Project-scoped branch of the budget endpoint. Returns the aggregated token
-usage of a single project and its stored cap.
+Проектно-ориентированная ветвь эндпоинта бюджета. Возвращает агрегированное потребление токенов одного проекта и сохранённый лимит.
 
-- `used` — sum of `tokens` of all assistant messages across every session
-  whose cwd belongs to the project (aggregated from the JSONL session files —
-  disk is the single source of truth).
-- `limit` — per-project token cap stored via the project-scoped `PUT`
-  (below), or `null` when no cap was set.
+- `used` — сумма `tokens` всех assistant-сообщений во всех сессиях, чей cwd принадлежит проекту (агрегируется из JSONL-файлов сессий — диск является единственным источником истины).
+- `limit` — лимит токенов на проект, сохранённый через проектно-ориентированный `PUT` (ниже), или `null`, если лимит не установлен.
 
-**Example:**
+**Пример:**
 
 ```bash
 curl "http://localhost:3456/api/budget?project=/data/repos/my-project" \
   -H "Authorization: Bearer $FAN_TOKEN"
 ```
 
-**Response `200`:**
+**Ответ `200`:**
 
 ```json
 {
@@ -857,27 +826,22 @@ curl "http://localhost:3456/api/budget?project=/data/repos/my-project" \
 }
 ```
 
-#### Set Project Budget (F-4.9)
+#### Установка бюджета проекта (F-4.9)
 
 ```
 PUT /api/budget
 ```
 
-When the request body contains a non-empty `project` string, the endpoint
-switches to the project-scoped branch and stores a per-project token cap.
-Caps are persisted in `~/.fan/agent/project-budgets.json` (flat JSON file
-next to the `projects.json` registry — no DB migration, human-inspectable).
-Project paths are normalized with the same rules as the `?project=` session
-filter, so `C:\proj` and `c:/proj` resolve to one entry.
+Когда тело запроса содержит непустую строку `project`, эндпоинт переключается на проектно-ориентированную ветвь и сохраняет лимит токенов на проект. Лимиты сохраняются в `~/.fan/agent/project-budgets.json` (плоский JSON-файл рядом с реестром `projects.json` — без миграции БД, удобен для ручного просмотра). Пути проектов нормализуются по тем же правилам, что и фильтр `?project=` для сессий, поэтому `C:\proj` и `c:/proj` разрешаются в одну запись.
 
-**Request body:**
+**Тело запроса:**
 
-| Field      | Type     | Required | Description                    |
-|------------|----------|----------|--------------------------------|
-| project    | `string` | Yes      | Project path (normalized)      |
-| tokenLimit | `number` | Yes      | Non-negative token cap         |
+| Поле       | Тип      | Обязательно | Описание                     |
+|------------|----------|-------------|------------------------------|
+| project    | `string` | Да          | Путь проекта (нормализованный) |
+| tokenLimit | `number` | Да          | Неотрицательный лимит токенов |
 
-**Example:**
+**Пример:**
 
 ```bash
 curl -X PUT http://localhost:3456/api/budget \
@@ -886,7 +850,7 @@ curl -X PUT http://localhost:3456/api/budget \
   -d '{ "project": "/data/repos/my-project", "tokenLimit": 500 }'
 ```
 
-**Response `200`:**
+**Ответ `200`:**
 
 ```json
 {
@@ -896,42 +860,32 @@ curl -X PUT http://localhost:3456/api/budget \
 }
 ```
 
-> **Enforcement note:** the gateway only stores and serves per-project
-> budgets — it does NOT block `sendMessage` when a cap is exhausted (deep
-> integration with BudgetTracker/model-manager was deliberately deferred).
-> Enforcement is the scheduler's job (F-4.9 part B): `fan-scheduler` sets the
-> cap before each task and polls this endpoint during execution. The cap is
-> enforced against the **per-task delta**: the executor snapshots the lifetime
-> `used` as a baseline at task start and marks the task `budget_exceeded` when
-> `used - baseline >= tokenLimit` (a project with historical usage would
-> otherwise trip the cap immediately). If the baseline read fails, the
-> scheduler falls back to comparing lifetime usage directly (warning logged).
-> See [scheduler.md — Budget](scheduler.md) for the full semantics.
+> **Примечание по обеспечению:** шлюз только хранит и отдаёт бюджеты проектов — он **НЕ блокирует** `sendMessage` при исчерпании лимита (глубокая интеграция с BudgetTracker/model-manager была намеренно отложена). Обеспечение — задача планировщика (F-4.9 часть B): `fan-scheduler` устанавливает лимит перед каждой задачей и опрашивает этот эндпоинт во время выполнения. Лимит применяется к **дельте задачи**: исполнитель снимает пожизненное значение `used` как базовую линию при старте задачи и помечает задачу как `budget_exceeded`, когда `used - baseline >= tokenLimit` (проект с историческим потреблением иначе немедленно превысил бы лимит). Если чтение базовой линии не удалось, планировщик переключается на прямое сравнение пожизненного потребления (предупреждение записывается в лог). См. [scheduler.md — Budget](scheduler.md) для полной семантики.
 
 ---
 
-### Tokens
+### Токены
 
-#### Create Token
+#### Создание токена
 
 ```
 POST /api/tokens
 ```
 
-Create a new client token for API authentication.
+Создаёт новый клиентский токен для аутентификации API.
 
-> ⚠️ **The full token secret is returned only in this response.** It cannot be retrieved later. Store it immediately.
+> ⚠️ **Полный секрет токена возвращается только в этом ответе.** Его невозможно получить позже. Сохраните его немедленно.
 
-**Request body:**
+**Тело запроса:**
 
-| Field        | Type     | Required | Description                                                                 |
-|--------------|----------|----------|-----------------------------------------------------------------------------|
-| name         | `string` | Yes      | Human-readable label                                                        |
-| projectScope | `string` | No       | Restrict the token to a single project path (F-5.7, see [Project Scope](#project-scope-f-57)). Non-empty string, normalized before persisting. Omit for full access |
+| Поле         | Тип      | Обязательно | Описание                                                                    |
+|--------------|----------|-------------|-----------------------------------------------------------------------------|
+| name         | `string` | Да          | Человекочитаемая метка                                                      |
+| projectScope | `string` | Нет         | Ограничить токен одним путём проекта (F-5.7, см. [Область действия проекта](#область-действия-проекта-f-57)). Непустая строка, нормализуется перед сохранением. Пропустите для полного доступа |
 
-> A **scoped caller** can only create tokens for its own scope; an omitted `projectScope` inherits the caller's scope.
+> **Ограниченный вызывающий** может создавать токены только для своей области; пропущенный `projectScope` наследует область вызывающего.
 
-**Example:**
+**Пример:**
 
 ```bash
 curl -X POST http://localhost:3456/api/tokens \
@@ -940,7 +894,7 @@ curl -X POST http://localhost:3456/api/tokens \
   -d '{"name": "VS Code extension", "projectScope": "/data/repos/my-project"}'
 ```
 
-**Response `201`:**
+**Ответ `201`:**
 
 ```json
 {
@@ -955,22 +909,22 @@ curl -X POST http://localhost:3456/api/tokens \
 }
 ```
 
-#### List Tokens
+#### Список токенов
 
 ```
 GET /api/tokens
 ```
 
-Returns all tokens **without** their secrets. A **scoped caller** (F-5.7) sees only tokens of its own scope. Each entry includes `projectScope` (`null` = full access).
+Возвращает все токены **без** их секретов. **Ограниченный вызывающий** (F-5.7) видит только токены своей области. Каждая запись включает `projectScope` (`null` = полный доступ).
 
-**Example:**
+**Пример:**
 
 ```bash
 curl http://localhost:3456/api/tokens \
   -H "Authorization: Bearer $FAN_TOKEN"
 ```
 
-**Response `200`:**
+**Ответ `200`:**
 
 ```json
 {
@@ -993,22 +947,22 @@ curl http://localhost:3456/api/tokens \
 }
 ```
 
-#### Revoke Token
+#### Отзыв токена
 
 ```
 DELETE /api/tokens/:id
 ```
 
-Permanently revoke a token. The token can no longer be used for authentication. A **scoped caller** (F-5.7) can only revoke tokens belonging to its own scope (`404` otherwise).
+Безвозвратно отзывает токен. Токен больше не может использоваться для аутентификации. **Ограниченный вызывающий** (F-5.7) может отозвать только токены, принадлежащие его области (иначе `404`).
 
-**Example:**
+**Пример:**
 
 ```bash
 curl -X DELETE http://localhost:3456/api/tokens/tok_5t4r3s2q \
   -H "Authorization: Bearer $FAN_TOKEN"
 ```
 
-**Response `200`:**
+**Ответ `200`:**
 
 ```json
 {
@@ -1016,13 +970,13 @@ curl -X DELETE http://localhost:3456/api/tokens/tok_5t4r3s2q \
 }
 ```
 
-**Error `404`:** Token not found.
+**Ошибка `404`:** Токен не найден.
 
 ---
 
-## Error Handling
+## Обработка ошибок
 
-All errors return a JSON body with a consistent format:
+Все ошибки возвращают JSON-тело в едином формате:
 
 ```json
 {
@@ -1031,47 +985,47 @@ All errors return a JSON body with a consistent format:
 }
 ```
 
-### Error Codes
+### Коды ошибок
 
-| Code              | HTTP Status | Description                              |
-|-------------------|-------------|------------------------------------------|
-| `BAD_REQUEST`     | 400         | Malformed request body or parameters     |
-| `UNAUTHORIZED`    | 401         | Missing or invalid authentication token  |
-| `FORBIDDEN`       | 403         | Token does not have permission for this action; or `cwd` rejected by the workspace whitelist / cross-project delete (see [Sessions](#sessions)) |
-| `NOT_FOUND`       | 404         | Requested resource does not exist        |
-| `CONFLICT`        | 409         | Resource conflict (e.g., duplicate name) |
-| `VALIDATION_ERROR`| 422         | Request body failed validation           |
-| `INTERNAL_ERROR`  | 500         | Unexpected server error                  |
+| Код               | HTTP-статус | Описание                               |
+|-------------------|-------------|----------------------------------------|
+| `BAD_REQUEST`     | 400         | Некорректное тело запроса или параметры |
+| `UNAUTHORIZED`    | 401         | Отсутствует или недействителен токен аутентификации |
+| `FORBIDDEN`       | 403         | Токен не имеет прав для этого действия; или `cwd` отклонён белым списком рабочих пространств / кросс-проектное удаление (см. [Сессии](#сессии)) |
+| `NOT_FOUND`       | 404         | Запрошенный ресурс не существует       |
+| `CONFLICT`        | 409         | Конфликт ресурсов (напр., дубликат имени) |
+| `VALIDATION_ERROR`| 422         | Тело запроса не прошло валидацию       |
+| `INTERNAL_ERROR`  | 500         | Неожиданная ошибка сервера             |
 
 ---
 
-## WebSocket Protocol
+## Протокол WebSocket
 
-Connect to receive real-time agent events for a session.
+Подключитесь для получения событий агента в реальном времени для сессии.
 
-### Connection
+### Подключение
 
 ```
 ws://localhost:3456/api/ws/{sessionId}?token=<your_token>
 ```
 
-**Example:**
+**Пример:**
 
 ```bash
 wscat -c "ws://localhost:3456/api/ws/sess_a1b2c3d4?token=fan_tk_a1b2c3d4e5f6g7h8i9j0"
 ```
 
-### Authentication
+### Аутентификация
 
-Pass the token as a query parameter (`?token=...`). WebSocket connections without a valid token are closed immediately with code `4001`.
+Передайте токен как query-параметр (`?token=...`). WebSocket-соединения без действительного токена закрываются немедленно с кодом `4001`.
 
-### Server → Client Events
+### События Сервер → Клиент
 
-All events are JSON messages with a `type` field:
+Все события — это JSON-сообщения с полем `type`:
 
 #### `connected`
 
-Sent immediately after a successful connection.
+Отправляется сразу после успешного подключения.
 
 ```json
 {
@@ -1083,7 +1037,7 @@ Sent immediately after a successful connection.
 
 #### `queues_restored`
 
-Sent right after `connected` when the server restarted with **pending queued messages** on disk (F-5.6, persistent queue). Lets clients learn about tasks that survived a restart and keep waiting for their dispatch. **Not sent at all** on a fresh/empty start (`restoredCount = 0`).
+Отправляется сразу после `connected`, когда сервер перезапустился с **ожидающими очередными сообщениями** на диске (F-5.6, персистентная очередь). Позволяет клиентам узнать о задачах, переживших перезапуск, и продолжать ожидать их диспетчеризацию. **Не отправляется** при свежем/пустом старте (`restoredCount = 0`).
 
 ```json
 {
@@ -1094,14 +1048,14 @@ Sent right after `connected` when the server restarted with **pending queued mes
 }
 ```
 
-| Field         | Type       | Description                                                   |
-|---------------|------------|---------------------------------------------------------------|
-| restoredCount | `number`   | Number of sessions with pending messages (`=== sessions.length`) |
-| sessions      | `string[]` | Session IDs whose queues were restored from disk              |
+| Поле          | Тип        | Описание                                                   |
+|---------------|------------|------------------------------------------------------------|
+| restoredCount | `number`   | Количество сессий с ожидающими сообщениями (`=== sessions.length`) |
+| sessions      | `string[]` | ID сессий, чьи очереди были восстановлены с диска          |
 
 #### `agent_event`
 
-Agent activity for the session. Emitted when the agent starts processing, produces output, uses tools, or completes a turn.
+Активность агента для сессии. Генерируется, когда агент начинает обработку, выдаёт результат, использует инструменты или завершает ход.
 
 ```json
 {
@@ -1114,11 +1068,11 @@ Agent activity for the session. Emitted when the agent starts processing, produc
 }
 ```
 
-Common `event` values: `text_delta`, `tool_start`, `tool_result`, `turn_complete`, `error`.
+Распространённые значения `event`: `text_delta`, `tool_start`, `tool_result`, `turn_complete`, `error`.
 
 #### `budget_alert`
 
-Emitted when a budget threshold is approached or exceeded.
+Генерируется при приближении или превышении порога бюджета.
 
 ```json
 {
@@ -1137,7 +1091,7 @@ Emitted when a budget threshold is approached or exceeded.
 
 #### `model_switch`
 
-Emitted when the orchestrator switches to a different model (fallback or routing).
+Генерируется, когда оркестратор переключается на другую модель (fallback или маршрутизация).
 
 ```json
 {
@@ -1153,7 +1107,7 @@ Emitted when the orchestrator switches to a different model (fallback or routing
 
 #### `error`
 
-Emitted when an error occurs on the session's WebSocket stream.
+Генерируется при возникновении ошибки в потоке WebSocket сессии.
 
 ```json
 {
@@ -1168,7 +1122,7 @@ Emitted when an error occurs on the session's WebSocket stream.
 
 #### `queued`
 
-The `sendMessage` was **accepted into the queue** because the engine is busy executing another session (F-2.5). The message will be dispatched automatically once the engine becomes idle.
+`sendMessage` был **принят в очередь**, потому что движок занят выполнением другой сессии (F-2.5). Сообщение будет диспетчеризовано автоматически, как только движок освободится.
 
 ```json
 {
@@ -1179,14 +1133,14 @@ The `sendMessage` was **accepted into the queue** because the engine is busy exe
 }
 ```
 
-| Field     | Type     | Description                                          |
-|-----------|----------|------------------------------------------------------|
-| sessionId | `string` | Session the message was queued for                   |
-| position  | `number` | 1-based position in that session's queue             |
+| Поле      | Тип      | Описание                                         |
+|-----------|----------|--------------------------------------------------|
+| sessionId | `string` | Сессия, для которой сообщение поставлено в очередь |
+| position  | `number` | Позиция (от 1) в очереди данной сессии           |
 
 #### `queue_full`
 
-The `sendMessage` was **rejected** — the session's queue reached its capacity (F-2.15, default 50 messages). The message is dropped; nothing is dispatched.
+`sendMessage` был **отклонён** — очередь сессии достигла своей вместимости (F-2.15, по умолчанию 50 сообщений). Сообщение отбрасывается; ничего не диспетчеризуется.
 
 ```json
 {
@@ -1198,23 +1152,23 @@ The `sendMessage` was **rejected** — the session's queue reached its capacity 
 }
 ```
 
-| Field     | Type     | Description                                          |
-|-----------|----------|------------------------------------------------------|
-| sessionId | `string` | Session whose queue is full                          |
-| error     | `string` | Stable machine-readable code: `"QUEUE_OVERFLOW"`     |
-| limit     | `number` | Per-session queue capacity that was reached          |
+| Поле      | Тип      | Описание                                         |
+|-----------|----------|--------------------------------------------------|
+| sessionId | `string` | Сессия, чья очередь заполнена                    |
+| error     | `string` | Стабильный машиночитаемый код: `"QUEUE_OVERFLOW"` |
+| limit     | `number` | Достигнутая вместимость очереди сессии           |
 
-### Client → Server Messages
+### Сообщения Клиент → Сервер
 
 #### `ping`
 
-Send to verify the connection is alive. The server responds with `pong`.
+Отправляется для проверки, что соединение активно. Сервер отвечает `pong`.
 
 ```json
 { "type": "ping" }
 ```
 
-**Response:**
+**Ответ:**
 
 ```json
 { "type": "pong" }
@@ -1222,7 +1176,7 @@ Send to verify the connection is alive. The server responds with `pong`.
 
 #### `subscribe`
 
-Reserved for future use. Currently a no-op.
+Зарезервировано для будущего использования. В настоящее время не выполняет действий.
 
 ```json
 { "type": "subscribe" }
@@ -1230,74 +1184,74 @@ Reserved for future use. Currently a no-op.
 
 #### `sendMessage`
 
-Send a user message to the agent in this session over the WebSocket connection.
+Отправляет сообщение пользователя агенту в данной сессии через WebSocket-соединение.
 
 ```json
 { "type": "sendMessage", "content": "List all files in src", "streamingBehavior": "steer" }
 ```
 
-| Field             | Type     | Required | Description                                    |
-|-------------------|----------|----------|------------------------------------------------|
-| content           | `string` | Yes      | The user message text                          |
-| streamingBehavior | `string` | No       | `"steer"` or `"followUp"` (steering preference) |
+| Поле              | Тип      | Обязательно | Описание                                   |
+|-------------------|----------|-------------|--------------------------------------------|
+| content           | `string` | Да          | Текст сообщения пользователя               |
+| streamingBehavior | `string` | Нет         | `"steer"` или `"followUp"` (предпочтение управления) |
 
-The runtime executes **one session at a time** (single engine). How the message is handled depends on the engine state (see [Message Queueing](#message-queueing-phases-2--5) below):
+Runtime выполняет **одну сессию за раз** (единственный движок). Способ обработки сообщения зависит от состояния движка (см. [Очереди сообщений](#очереди-сообщений-фазы-2--5) ниже):
 
-- **Engine idle** (or busy with *this same* session) → dispatched immediately; the reply streams as `agent_event` messages.
-- **Engine busy with another session** → the message is queued; you receive a [`queued`](#queued) notification with the position.
-- **Queue full** → the message is rejected with a [`queue_full`](#queue_full) notification.
+- **Движок свободен** (или занят *этой же* сессией) → диспетчеризация немедленно; ответ передаётся потоком через сообщения `agent_event`.
+- **Движок занят другой сессией** → сообщение ставится в очередь; вы получаете уведомление [`queued`](#queued) с позицией.
+- **Очередь заполнена** → сообщение отклоняется с уведомлением [`queue_full`](#queue_full).
 
-### Message Queueing (Phases 2 + 5)
+### Очереди сообщений (Фазы 2 + 5)
 
-Because the runtime executes one session at a time, `WsMessageDispatcher` (`packages/api-gateway/src/ws-handler.ts`) serializes `sendMessage` requests:
+Поскольку runtime выполняет одну сессию за раз, `WsMessageDispatcher` (`packages/api-gateway/src/ws-handler.ts`) сериализует запросы `sendMessage`:
 
-- **Enqueue on busy:** when the engine is streaming a response for session A, a `sendMessage` for session B is appended to B's per-session FIFO queue and acknowledged with `{ type: "queued", position: N }`. A message for the *active* session is dispatched directly (the agent's internal steer/followUp queue handles it).
-- **Global FIFO drain:** after a turn completes (`agent_end` event or dispatch settlement), the **globally oldest** queued message across all sessions is dispatched first, regardless of which session it belongs to.
-- **Overflow protection (F-2.15):** each session's queue is capped at 50 messages (configurable server-side). New messages beyond the cap are rejected with `{ type: "queue_full", error: "QUEUE_OVERFLOW", limit: 50 }`.
-- **Persistent by default in server mode (F-5.5/F-5.6):** `startServer()` uses `PersistentMessageQueue` (`packages/api-gateway/src/message-queue.ts`) — queued messages are stored as JSONL files and **survive server restarts**:
-  - **Storage layout** (under `<agentDir>/queues`, where agentDir honors `FAN_CODING_AGENT_DIR` / `FAN_AGENT_DIR`, default `~/.fan/agent`): one append-only `<sessionId>.queue.jsonl` per session (one JSON entry per line — FIFO order *is* file order) plus `queue-index.json` (`{ <sessionId>: boolean }` map of active queues, written atomically via tmp+rename).
-  - **Restore on startup:** active queues are reloaded from disk before the server accepts connections; connecting WS clients are notified via [`queues_restored`](#queues_restored). Restoration errors are logged and non-fatal. A corrupted index is rebuilt by rescanning `*.queue.jsonl` (files are the source of truth).
-  - **Delivery semantics: at-least-once.** A crash between dispatch and the atomic file rewrite can redeliver a message after restart (duplicates possible, no losses).
-  - **Opt-out:** `ServerOptions.persistentQueue: false` selects the legacy `InMemoryMessageQueue` (tests, ephemeral runs); a custom queue can be injected via `ServerOptions.messageQueue`.
-- **REST bypass:** `POST /api/sessions/:id/messages` dispatches directly and is never queued.
+- **Постановка в очередь при занятости:** когда движок передаёт ответ для сессии A, `sendMessage` для сессии B добавляется в FIFO-очередь сессии B и подтверждается через `{ type: "queued", position: N }`. Сообщение для *активной* сессии диспетчеризуется напрямую (внутренняя очередь steer/followUp агента обрабатывает его).
+- **Глобальный FIFO-разбор:** после завершения хода (событие `agent_end` или завершение диспетчеризации), **глобально самое старое** сообщение в очереди среди всех сессий диспетчеризуется первым, независимо от того, какой сессии оно принадлежит.
+- **Защита от переполнения (F-2.15):** очередь каждой сессии ограничена 50 сообщениями (настраивается на стороне сервера). Новые сообщения сверх лимита отклоняются с `{ type: "queue_full", error: "QUEUE_OVERFLOW", limit: 50 }`.
+- **Персистентность по умолчанию в серверном режиме (F-5.5/F-5.6):** `startServer()` использует `PersistentMessageQueue` (`packages/api-gateway/src/message-queue.ts`) — сообщения в очереди хранятся как JSONL-файлы и **переживают перезапуск сервера**:
+  - **Схема хранения** (в `<agentDir>/queues`, где agentDir учитывает `FAN_CODING_AGENT_DIR` / `FAN_AGENT_DIR`, по умолчанию `~/.fan/agent`): один append-only файл `<sessionId>.queue.jsonl` на сессию (одна JSON-запись на строку — порядок FIFO *совпадает* с порядком в файле) плюс `queue-index.json` (карта `{ <sessionId>: boolean }` активных очередей, записывается атомарно через tmp+rename).
+  - **Восстановление при запуске:** активные очереди перезагружаются с диска до принятия соединений сервером; подключающиеся WS-клиенты уведомляются через [`queues_restored`](#queues_restored). Ошибки восстановления логируются и не являются фатальными. Повреждённый индекс перестраивается путём пересканирования `*.queue.jsonl` (файлы являются источником истины).
+  - **Семантика доставки: не менее одного раза (at-least-once).** Сбой между диспетчеризацией и атомарной перезаписью файла может привести к повторной доставке сообщения после перезапуска (возможны дубликаты, потерь нет).
+  - **Отключение:** `ServerOptions.persistentQueue: false` выбирает устаревшую `InMemoryMessageQueue` (тесты, эфемерные запуски); пользовательская очередь может быть внедрена через `ServerOptions.messageQueue`.
+- **Обход через REST:** `POST /api/sessions/:id/messages` диспетчеризуется напрямую и никогда не ставится в очередь.
 
 ---
 
-## Example Scripts
+## Примеры скриптов
 
-### cURL — Common Operations
+### cURL — типичные операции
 
 ```bash
-# Set your token
+# Установите токен
 export FAN_TOKEN="fan_tk_a1b2c3d4e5f6g7h8i9j0"
 
-# Health check (no auth)
+# Проверка здоровья (без аутентификации)
 curl -s http://localhost:3456/api/health | jq .
 
-# Create a session
+# Создание сессии
 SESSION=$(curl -s -X POST http://localhost:3456/api/sessions \
   -H "Authorization: Bearer $FAN_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"title": "Debug session"}' | jq -r '.id')
 echo "Session: $SESSION"
 
-# Send a message
+# Отправка сообщения
 curl -s -X POST "http://localhost:3456/api/sessions/$SESSION/messages" \
   -H "Authorization: Bearer $FAN_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"message": "What files are in the current directory?"}' | jq .
 
-# List all sessions
+# Список всех сессий
 curl -s http://localhost:3456/api/sessions \
   -H "Authorization: Bearer $FAN_TOKEN" | jq .
 
-# Update model temperature
+# Обновление температуры модели
 curl -s -X PUT http://localhost:3456/api/models/settings \
   -H "Authorization: Bearer $FAN_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"provider":"anthropic","model":"claude-sonnet-4-20250514","temperature":0.5}' | jq .
 
-# Check budget
+# Проверка бюджета
 curl -s http://localhost:3456/api/budget \
   -H "Authorization: Bearer $FAN_TOKEN" | jq .
 ```
@@ -1311,20 +1265,20 @@ BASE = "http://localhost:3456/api"
 TOKEN = "fan_tk_a1b2c3d4e5f6g7h8i9j0"
 HEADERS = {"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json"}
 
-# Create session
+# Создание сессии
 res = requests.post(f"{BASE}/sessions", headers=HEADERS, json={"title": "Python test"})
 session = res.json()
 session_id = session["id"]
 print(f"Created session: {session_id}")
 
-# Send message
+# Отправка сообщения
 requests.post(
     f"{BASE}/sessions/{session_id}/messages",
     headers=HEADERS,
     json={"message": "Explain the project structure in 3 sentences."},
 )
 
-# Retrieve session with messages
+# Получение сессии с сообщениями
 res = requests.get(f"{BASE}/sessions/{session_id}", headers=HEADERS)
 data = res.json()
 print(f"Title: {data['title']}")
@@ -1342,7 +1296,7 @@ const headers = {
   "Content-Type": "application/json",
 };
 
-// Create session
+// Создание сессии
 const { id: sessionId } = await (
   await fetch(`${BASE}/sessions`, {
     method: "POST",
@@ -1352,7 +1306,7 @@ const { id: sessionId } = await (
 ).json();
 console.log("Session:", sessionId);
 
-// Send message and listen via WebSocket
+// Отправка сообщения и прослушивание через WebSocket
 await fetch(`${BASE}/sessions/${sessionId}/messages`, {
   method: "POST",
   headers,
@@ -1373,9 +1327,9 @@ ws.onmessage = (event) => {
 };
 ```
 
-### Quick Start Script
+### Скрипт быстрого старта
 
-A complete end-to-end example: create a token, create a session, send a message, and listen for events.
+Полный пример от начала до конца: создание токена, создание сессии, отправка сообщения и прослушивание событий.
 
 ```bash
 #!/usr/bin/env bash
@@ -1383,7 +1337,7 @@ set -euo pipefail
 
 BASE="http://localhost:3456/api"
 
-# Step 1: Create a token (using existing admin token)
+# Шаг 1: Создание токена (с использованием существующего админ-токена)
 echo "=== Creating token ==="
 ADMIN_TOKEN="${ADMIN_TOKEN:-}"
 if [ -z "$ADMIN_TOKEN" ] && [ -z "${FAN_NO_AUTH:-}" ]; then
@@ -1400,7 +1354,7 @@ TOKEN=$(echo "$TOKEN_RESP" | jq -r '.token.token')
 echo "Token created: $(echo "$TOKEN" | head -c 16)..."
 echo "Save this token — it won't be shown again!"
 
-# Step 2: Create a session
+# Шаг 2: Создание сессии
 echo ""
 echo "=== Creating session ==="
 SESSION_RESP=$(curl -s -X POST "$BASE/sessions" \
@@ -1410,7 +1364,7 @@ SESSION_RESP=$(curl -s -X POST "$BASE/sessions" \
 SESSION_ID=$(echo "$SESSION_RESP" | jq -r '.id')
 echo "Session created: $SESSION_ID"
 
-# Step 3: Send a message
+# Шаг 3: Отправка сообщения
 echo ""
 echo "=== Sending message ==="
 curl -s -X POST "$BASE/sessions/$SESSION_ID/messages" \
@@ -1419,7 +1373,7 @@ curl -s -X POST "$BASE/sessions/$SESSION_ID/messages" \
   -d '{"message": "Say hello and describe what you can do in one sentence."}'
 echo "Message sent."
 
-# Step 4: Listen for events (requires wscat or websocat)
+# Шаг 4: Прослушивание событий (требуется wscat или websocat)
 echo ""
 echo "=== Listening for events ==="
 echo "Connect with: wscat -c \"ws://localhost:3456/api/ws/$SESSION_ID?token=$TOKEN\""
@@ -1435,7 +1389,7 @@ else
 fi
 ```
 
-Run with:
+Запуск:
 
 ```bash
 chmod +x quick-start.sh

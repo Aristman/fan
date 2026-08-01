@@ -1,178 +1,178 @@
-# Dashboard Guide
+# Руководство по Dashboard
 
-Web-based UI for interacting with the FAN runtime — chat, sessions, models, budget, and tokens.
+Веб-интерфейс для взаимодействия с runtime FAN — чат, сессии, модели, бюджет и токены.
 
-## Overview
+## Обзор
 
-The FAN dashboard is a Lit-based web UI that connects to the FAN server via HTTP REST API and WebSocket. It provides a visual interface for chatting with the AI, managing sessions, configuring models, tracking token usage, and administering API tokens.
+Dashboard FAN — это веб-интерфейс на базе Lit, подключающийся к серверу FAN через HTTP REST API и WebSocket. Он предоставляет визуальный интерфейс для общения с ИИ, управления сессиями, настройки моделей, отслеживания использования токенов и администрирования API-токенов.
 
-- **Disk is truth.** Sessions live as JSONL files — same source as the TUI and other clients.
-- **One active session.** The runtime executes one session at a time. Switching loads a different file.
-- **Real-time.** WebSocket provides streaming, status changes, and live tool output without polling.
+- **Диск — источник истины.** Сессии хранятся как JSONL-файлы — тот же источник, что и для TUI и других клиентов.
+- **Одна активная сессия.** Runtime выполняет одну сессию за раз. Переключение загружает другой файл.
+- **Реальное время.** WebSocket обеспечивает потоковую передачу, изменение статусов и live-вывод инструментов без опроса.
 
-## Starting the Dashboard
+## Запуск Dashboard
 
-### `fan --web` (Recommended)
+### `fan --web` (рекомендуется)
 
 ```bash
 fan --web
 ```
 
-Dashboard available at **http://localhost:3456**. This is the easiest way — starts both the API server and the dashboard frontend in one command, and auto-opens the browser.
+Dashboard доступен по адресу **http://localhost:3456**. Это самый простой способ — запускает и API-сервер, и фронтенд dashboard одной командой, автоматически открывая браузер.
 
-### `fan server` (Foreground)
+### `fan server` (передний план)
 
 ```bash
 fan server
 ```
 
-Starts the API server with the integrated dashboard in the foreground. Equivalent to `fan --web`.
+Запускает API-сервер с интегрированным dashboard на переднем плане. Эквивалентно `fan --web`.
 
-### `fan --mode server` (API-Only, No Browser)
+### `fan --mode server` (только API, без браузера)
 
 ```bash
 fan --mode server
 ```
 
-Starts the API server at **http://localhost:3456** without auto-opening the browser. Useful for headless or IDE-only usage.
+Запускает API-сервер по адресу **http://localhost:3456** без автоматического открытия браузера. Полезно для headless-режима или использования только из IDE.
 
-### `fan server start` (Background Daemon)
+### `fan server start` (фоновый демон)
 
 ```bash
 fan server start
 ```
 
-Starts the server as a background daemon for IDE plugins and long-running sessions. Use `fan server stop` to stop and `fan server status` to check.
+Запускает сервер как фоновый демон для плагинов IDE и длительных сессий. Используйте `fan server stop` для остановки и `fan server status` для проверки статуса.
 
-### Dev Mode (Separate)
+### Режим разработки (отдельно)
 
 ```bash
 cd packages/dashboard && npm run dev
 ```
 
-Dashboard available at **http://localhost:5174**. Requires a running FAN server (`fan --web` or `fan --mode server`) for the API backend. Use this during development to get HMR and Vite tooling.
+Dashboard доступен по адресу **http://localhost:5174`. Требуется работающий сервер FAN (`fan --web` или `fan --mode server`) для API-бэкенда. Используйте в процессе разработки для HMR и инструментов Vite.
 
-## First Launch
+## Первый запуск
 
-1. Open the dashboard URL in your browser.
-2. The dashboard auto-connects to the local server on startup.
-3. If authentication is required, an API token is created automatically for your session. See [API Token Management](#api-token-management) for details.
-4. Your most recent session is loaded automatically (same as the TUI's `continueRecent` behavior).
+1. Откройте URL dashboard в браузере.
+2. Dashboard автоматически подключается к локальному серверу при запуске.
+3. Если требуется аутентификация, API-токен создаётся автоматически для вашей сессии. Подробности см. в разделе [Управление API-токенами](#управление-api-токенами).
+4. Ваша последняя сессия загружается автоматически (аналогично поведению `continueRecent` в TUI).
 
-## Chat Interface
+## Интерфейс чата
 
-The main interaction area. Messages stream in real-time as the AI generates them.
+Основная область взаимодействия. Сообщения передаются в реальном времени по мере их генерации ИИ.
 
-### Sending Messages
+### Отправка сообщений
 
-Type in the input field at the bottom and press **Enter** to send. Use **Shift+Enter** for a newline.
+Введите текст в поле ввода внизу и нажмите **Enter** для отправки. Используйте **Shift+Enter** для новой строки.
 
-### Streaming Responses
+### Потоковые ответы
 
-Responses appear token-by-token as they're generated. A typing indicator shows while the AI is working.
+Ответы появляются токен за токеном по мере генерации. Индикатор набора текста отображается, пока ИИ работает.
 
-### Markdown Rendering
+### Рендеринг Markdown
 
-AI responses are rendered as formatted Markdown — headers, lists, code blocks, tables, links, and inline formatting all display correctly.
+Ответы ИИ отображаются как форматированный Markdown — заголовки, списки, блоки кода, таблицы, ссылки и инлайновое форматирование отображаются корректно.
 
-### Thinking Blocks
+### Блоки мышления
 
-When a model uses extended thinking, a collapsible block shows the reasoning. Click the block header to expand or collapse it.
+Когда модель использует расширенное мышление, сворачиваемый блок показывает ход рассуждений. Нажмите на заголовок блока, чтобы развернуть или свернуть его.
 
-### Tool Call Display
+### Отображение вызовов инструментов
 
-When the agent uses tools (read, write, edit, bash, etc.), each call is shown with:
+Когда агент использует инструменты (read, write, edit, bash и т.д.), каждый вызов отображается с:
 
-- **Tool name** and arguments
-- **Status** (running, completed, failed)
-- **Result preview** (truncated for large outputs)
+- **Имя инструмента** и аргументы
+- **Статус** (выполняется, завершён, ошибка)
+- **Предпросмотр результата** (сокращён для больших выводов)
 
-### Copy Message Content
+### Копирование содержимого сообщений
 
-Hover over any message to reveal a **copy** button. Click it to copy the raw message content to your clipboard.
+Наведите курсор на любое сообщение, чтобы появилась кнопка **копирования**. Нажмите её, чтобы скопировать исходный текст сообщения в буфер обмена.
 
-### Slash Command Autocomplete
+### Автодополнение slash-команд
 
-Typing `/` in the chat input opens an autocomplete dropdown (`chat-view.ts` + `lib/slash-commands.ts`, F-3.9):
+Ввод `/` в поле ввода чата открывает выпадающий список автодополнения (`chat-view.ts` + `lib/slash-commands.ts`, F-3.9):
 
-- **Commands** — the 8 pre-installed skills as `/skill:<name>` (`idea-lab`, `research-spec-generator`, `repo-explorer`, `deep-dive`, `code-research`, `bug-fix`, `auto-tests`, `fan-forge`). This is the only slash syntax that works through the server path: `/skill:<name> <args>` is expanded to the skill's `SKILL.md` content by the runtime. Built-in TUI commands (`/model`, `/compact`, …) are interactive-mode only and intentionally not listed.
-- **Type-aware ordering** — commands relevant to the active project's workspace type come first: `research` → idea-lab / research-spec-generator / deep-dive; `code` → bug-fix / auto-tests / code-research / repo-explorer; `automation` → repo-explorer / auto-tests.
-- **Navigation** — ↑/↓ to move, Enter/Tab to insert, Esc to dismiss. The list filters as you type.
+- **Команды** — 8 предустановленных навыков как `/skill:<name>` (`idea-lab`, `research-spec-generator`, `repo-explorer`, `deep-dive`, `code-research`, `bug-fix`, `auto-tests`, `fan-forge`). Это единственный синтаксис slash, работающий через серверный путь: `/skill:<name> <args>` разворачивается в содержимое `SKILL.md` навыка runtime. Встроенные команды TUI (`/model`, `/compact`, …) работают только в интерактивном режиме и намеренно не отображаются.
+- **Упорядочивание по типу** — команды, релевантные типу рабочей области активного проекта, идут первыми: `research` → idea-lab / research-spec-generator / deep-dive; `code` → bug-fix / auto-tests / code-research / repo-explorer; `automation` → repo-explorer / auto-tests.
+- **Навигация** — ↑/↓ для перемещения, Enter/Tab для вставки, Esc для закрытия. Список фильтруется по мере ввода.
 
-### Queue Indicator
+### Индикатор очереди
 
-The runtime executes one session at a time. If you send a message while the engine is busy with another session, your message is queued server-side (see [Message Queueing](api-reference.md#message-queueing-phase-2)):
+Runtime выполняет одну сессию за раз. Если вы отправляете сообщение, пока движок занят другой сессией, ваше сообщение ставится в очередь на стороне сервера (см. [Message Queueing](api-reference.md#message-queueing-phase-2)):
 
-- **"В очереди, позиция N"** — a yellow indicator above the input shows your 1-based queue position (server sent `queued`). It hides automatically when the engine picks up your message and streaming starts.
-- **Queue overflow warning** — if the session's queue is full (50 messages), the message is rejected (`queue_full` / `QUEUE_OVERFLOW`) and a warning is shown instead; dismiss it manually.
+- **"В очереди, позиция N"** — жёлтый индикатор над полем ввода показывает вашу позицию в очереди (нумерация с 1, сервер отправил `queued`). Он автоматически скрывается, когда движок берёт в работу ваше сообщение и начинается потоковая передача.
+- **Предупреждение о переполнении очереди** — если очередь сессии заполнена (50 сообщений), сообщение отклоняется (`queue_full` / `QUEUE_OVERFLOW`) и отображается предупреждение; закройте его вручную.
 
-## Project Switcher
+## Переключатель проектов
 
-The sidebar header contains the **project switcher** (`<fan-project-switcher>`) — a dropdown over the project registry (`GET /api/projects`):
+В заголовке боковой панели расположен **переключатель проектов** (`<fan-project-switcher>`) — выпадающий список над реестром проектов (`GET /api/projects`):
 
-- **Select project** — click a project to scope the session list to it. The active project is highlighted; its name is shown in the switcher button.
-- **Search** — the filter input matches project name or path (case-insensitive).
-- **Session counts** — each entry shows the number of sessions in that project.
-- **Add project** — the **+** button opens the [create project dialog](#create-project-dialog) (F-3.8) to create a workspace from a template via `POST /api/projects`.
-- **Unavailable projects** — projects whose directory was deleted from disk are marked with a "Not found on disk" indicator (`available: false` / `PROJECT_NOT_FOUND` from the API) and offer a **remove** button that calls `DELETE /api/projects?path=` to drop the entry from the registry. Sessions and files on disk are never touched.
+- **Выбор проекта** — нажмите на проект, чтобы ограничить список сессий им. Активный проект подсвечивается; его имя отображается на кнопке переключателя.
+- **Поиск** — поле фильтра совпадает по имени или пути проекта (без учёта регистра).
+- **Счётчики сессий** — каждая запись показывает количество сессий в данном проекте.
+- **Добавить проект** — кнопка **+** открывает [диалог создания проекта](#диалог-создания-проекта) (F-3.8) для создания рабочей области из шаблона через `POST /api/projects`.
+- **Недоступные проекты** — проекты, каталог которых был удалён с диска, помечены индикатором «Не найдено на диске» (`available: false` / `PROJECT_NOT_FOUND` от API) и предлагают кнопку **удалить**, вызывающую `DELETE /api/projects?path=` для удаления записи из реестра. Сессии и файлы на диске не затрагиваются.
 
-### Workspace Type Icons (Phase 3)
+### Иконки типа рабочей области (Phase 3)
 
-Every project entry is prefixed with an icon reflecting its workspace type (`project.type` from the API; `lib/workspace-type.ts`, F-3.7):
+Каждая запись проекта предваряется иконкой, отражающей тип рабочей области (`project.type` от API; `lib/workspace-type.ts`, F-3.7):
 
-| Type        | Icon (Lucide)    | CSS class         | Meaning                              |
+| Тип        | Иконка (Lucide)    | CSS-класс         | Значение                              |
 |-------------|------------------|-------------------|--------------------------------------|
-| `code`      | CodeXml (💻)     | `.type-code`      | Code repository (`.git` + `src/`/`package.json`) |
-| `research`  | FlaskConical (🔬)| `.type-research`  | Research workspace (`docs/research/` or `.fan/prompts/`) |
-| `automation`| Cog (⚙️)         | `.type-automation`| Scripts + config (`*.sh`/`*.py` + config files) |
-| `unknown`   | CircleQuestionMark (❓) | `.type-unknown` | No criterion matched            |
+| `code`      | CodeXml (💻)     | `.type-code`      | Репозиторий кода (`.git` + `src/`/`package.json`) |
+| `research`  | FlaskConical (🔬)| `.type-research`  | Исследовательская рабочая область (`docs/research/` или `.fan/prompts/`) |
+| `automation`| Cog (⚙️)         | `.type-automation`| Скрипты + конфигурация (`*.sh`/`*.py` + файлы конфигурации) |
+| `unknown`   | CircleQuestionMark (❓) | `.type-unknown` | Ни один критерий не совпал            |
 
-The same icons appear on the cwd group headers in the session tree.
+Те же иконки отображаются в заголовках групп cwd в дереве сессий.
 
-### Create Project Dialog
+### Диалог создания проекта
 
-The **+** button in the switcher opens `<fan-create-project-dialog>` (F-3.8) — a modal that creates a workspace via `POST /api/projects` (F-3.5):
+Кнопка **+** в переключателе открывает `<fan-create-project-dialog>` (F-3.8) — модальное окно, создающее рабочую область через `POST /api/projects` (F-3.5):
 
-- **Project name** — required; path-traversal symbols (`/`, `\`, `..`, `.`) are rejected client-side (the server validates too).
-- **Template radio group** — *Code Project* (`src/`, `tests/`, `docs/`, `package.json`), *Research Lab* (`docs/research/`, `data/`, `reports/`), *Automation Hub* (`scripts/`, `config/`, `output/`, `logs/`), or *Empty Folder* (no `template` field in the request).
-- **Location** (`rootPath`) — optional; when empty the server applies its default (workspace root → `~/projects`).
+- **Имя проекта** — обязательно; символы path-traversal (`/`, `\`, `..`, `.`) отклоняются на стороне клиента (сервер также проверяет).
+- **Группа радио-кнопок шаблона** — *Code Project* (`src/`, `tests/`, `docs/`, `package.json`), *Research Lab* (`docs/research/`, `data/`, `reports/`), *Automation Hub* (`scripts/`, `config/`, `output/`, `logs/`) или *Empty Folder* (поле `template` не передаётся в запросе).
+- **Расположение** (`rootPath`) — необязательно; если пусто, сервер применяет значение по умолчанию (корень рабочей области → `~/projects`).
 
-On success the dialog emits `project-created`, the project list is re-fetched and the new project becomes active. Server errors (400/403) are shown inline; the dialog stays open.
+При успешном создании диалог генерирует `project-created`, список проектов обновляется и новый проект становится активным. Ошибки сервера (400/403) отображаются inline; диалог остаётся открытым.
 
-### Manual Type Change
+### Ручное изменение типа
 
-Each project row has a **type edit** button (F-3.10) that opens an inline type picker under the item. Picking a type sends `PUT /api/projects?path= { type }` and reloads the list — the icon refreshes immediately. Use this when auto-detection classified the project wrong (e.g. a code project without `.git` shows as `unknown`).
+Каждая строка проекта имеет кнопку **изменения типа** (F-3.10), открывающую inline-переключатель типа под элементом. Выбор типа отправляет `PUT /api/projects?path= { type }` и перезагружает список — иконка обновляется мгновенно. Используйте, когда автоопределение классифицировало проект неверно (например, проект с кодом без `.git` отображается как `unknown`).
 
-## Session Management
+## Управление сессиями
 
-All sessions are stored as JSONL files on disk. The dashboard provides CRUD operations over them.
+Все сессии хранятся как JSONL-файлы на диске. Dashboard предоставляет CRUD-операции над ними.
 
-- **Create** — Click **New Session** in the sidebar. A fresh session is created and activated immediately.
-- **Switch** — Click any session in the sidebar. The runtime loads it and re-establishes WebSocket subscriptions.
-- **Search** — Use the search field to filter sessions by name (case-insensitive).
-- **Delete** — Right-click a session and select **Delete**. Removes the session file from disk permanently.
-- **History** — Each session shows its creation date and message count. Most recently active appears first.
+- **Создать** — нажмите **New Session** в боковой панели. Новая сессия создаётся и сразу активируется.
+- **Переключить** — нажмите на любую сессию в боковой панели. Runtime загружает её и восстанавливает WebSocket-подписки.
+- **Поиск** — используйте поле поиска для фильтрации сессий по имени (без учёта регистра).
+- **Удалить** — щёлкните правой кнопкой мыши по сессии и выберите **Delete**. Файл сессии удаляется с диска безвозвратно.
+- **История** — каждая сессия показывает дату создания и количество сообщений. Самые недавние отображаются первыми.
 
-### Grouping by Project (cwd)
+### Группировка по проекту (cwd)
 
-The session list is rendered as a **tree grouped by project** (`cwd` of each session):
+Список сессий отображается как **дерево, сгруппированное по проекту** (`cwd` каждой сессии):
 
-- Each unique `cwd` forms a collapsible group (toggle ▼/▶) labelled with the path basename and a session counter; the full path is available as a tooltip.
-- When a project is selected in the [project switcher](#project-switcher), the list is additionally scoped to that project server-side (`?project=` filter).
-- Legacy sessions without a `cwd` (created before workspace support) are collected into a **«Без проекта»** group, rendered last.
-- **Status dots** colour-code each session: 🟢 active (currently open), 🔵 completed (has messages), 🟡 error/empty.
+- Каждый уникальный `cwd` образует сворачиваемую группу (переключатель ▼/▶) с меткой из basename пути и счётчиком сессий; полный путь доступен как tooltip.
+- Когда проект выбран в [переключателе проектов](#переключатель-проектов), список дополнительно ограничивается этим проектом на стороне сервера (фильтр `?project=`).
+- Унаследованные сессии без `cwd` (созданные до поддержки рабочих областей) собираются в группу **«Без проекта»**, отображаемую последней.
+- **Цветные точки** маркируют каждую сессию: 🟢 активна (в данный момент открыта), 🔵 завершена (есть сообщения), 🟡 ошибка/пуста.
 
-## Budget Visualization
+## Визуализация бюджета
 
-Track token usage and spending across providers.
+Отслеживание использования токенов и расходов по провайдерам.
 
-### Usage & Costs
+### Использование и затраты
 
-A breakdown per provider shows input, output, and cache tokens. Estimated costs are calculated from pricing data in `models.json` or built-in defaults.
+Детализация по каждому провайдеру показывает входные, выходные и кэш-токены. Оценочная стоимость рассчитывается из данных о ценах в `models.json` или встроенных значений по умолчанию.
 
-### Limits
+### Лимиты
 
-Configure limits in `~/.fan/agent/settings.json`:
+Настройте лимиты в `~/.fan/agent/settings.json`:
 
 ```json
 {
@@ -184,40 +184,40 @@ Configure limits in `~/.fan/agent/settings.json`:
 }
 ```
 
-The dashboard shows your current usage relative to these limits with visual progress bars.
+Dashboard показывает текущее использование относительно этих лимитов с помощью визуальных индикаторов прогресса.
 
-Usage charts per provider show token consumption over time. Hover for exact values.
+Графики использования по каждому провайдеру показывают потребление токенов во времени. Наведите курсор для точных значений.
 
-## Model Settings
+## Настройки моделей
 
-Configure per-model parameters. Settings are stored in the Prisma database (not in `models.json`).
+Настройка параметров для каждой модели. Настройки хранятся в базе данных Prisma (не в `models.json`).
 
-### Temperature
+### Температура
 
-Controls randomness. Range: **0–2**. Lower values (0–0.3) for deterministic output, higher values (0.7–1.0) for creative tasks.
+Управляет случайностью. Диапазон: **0–2**. Меньшие значения (0–0.3) для детерминированного вывода, большие значения (0.7–1.0) для творческих задач.
 
-### Max Tokens
+### Максимум токенов
 
-Maximum output tokens the model can generate per response. Capped by the model's built-in limit.
+Максимальное количество выходных токенов, которые модель может сгенерировать за один ответ. Ограничено встроенным лимитом модели.
 
-### Thinking Budget
+### Бюджет мышления
 
-Sets the reasoning effort level. Options: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`. Higher values produce more thorough reasoning but consume more tokens. Only available for models that support extended thinking.
+Устанавливает уровень усилий на рассуждения. Варианты: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`. Более высокие значения дают более тщательные рассуждения, но потребляют больше токенов. Доступно только для моделей, поддерживающих расширенное мышление.
 
-### Setting Defaults
+### Значения по умолчанию
 
-The model settings page lets you configure any model listed in your `models.json` or built-in model catalog. Navigate to **Model Settings** in the sidebar to open the configuration panel.
+Страница настроек моделей позволяет настроить любую модель из списка в вашем `models.json` или встроенном каталоге моделей. Перейдите в **Model Settings** в боковой панели, чтобы открыть панель конфигурации.
 
-## API Token Management
+## Управление API-токенами
 
-API tokens allow external clients (IDE plugins, custom scripts, other UIs) to connect to the FAN server.
+API-токены позволяют внешним клиентам (плагины IDE, пользовательские скрипты, другие UI) подключаться к серверу FAN.
 
-- **Create** — Navigate to **API Tokens** → **Create Token**. Copy the token immediately — it's displayed once and stored as a hash (cannot be recovered).
-- **Revoke** — Click revoke next to any token. The token is invalidated and the client disconnected.
-- **Permissions** — All tokens have full API access. FAN is single-user and local, so granular permissions aren't needed.
+- **Создать** — перейдите в **API Tokens** → **Create Token**. Скопируйте токен немедленно — он отображается один раз и хранится в виде хэша (восстановить невозможно).
+- **Отозвать** — нажмите revoke рядом с любым токеном. Токен деактивируется, и клиент отключается.
+- **Разрешения** — все токены имеют полный доступ к API. FAN — однопользовательский и локальный, поэтому гранулярные разрешения не нужны.
 
-## Theme
+## Тема
 
-Toggle between light and dark themes using the switcher in the top-right corner. By default, the dashboard follows your OS preference — set it explicitly to override.
+Переключайтесь между светлой и тёмной темой с помощью переключателя в правом верхнем углу. По умолчанию dashboard использует предпочтение вашей ОС — задайте явно для переопределения.
 
-The custom FAN theme uses oklch colors at hue 260° (blue accent), defined in `packages/dashboard/src/app.css` with light/dark variants.
+Пользовательская тема FAN использует цвета oklch с оттенком 260° (синий акцент), определена в `packages/dashboard/src/app.css` со светлым и тёмным вариантами.
