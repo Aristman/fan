@@ -1,0 +1,23 @@
+{
+  "judge": {
+    "model": "glm-4.5-air",
+    "batchMaxSteps": 30,
+    "batchMaxChars": 60000,
+    "excerptLimit": 500
+  },
+  "autoAnalyze": { "enabled": true, "mode": "metrics" },
+  "weeklyBatch": { "enabled": true, "silent": false },
+  "filters": {
+    "excludePathPatterns": ["Temp", "\\.tmp"],
+    "minEntries": 5
+  },
+  "orchestration": {
+    "overheadRatioWarn": 0.4,
+    "heavySkills": ["feature-pipeline", "feature-roadmap", "dev-docs-pack", "research-spec-generator"],
+    "smallChangeLines": 100,
+    "smallChangeFiles": 3,
+    "retryPromptSimilarity": 0.9,
+    "patternMinSessions": 3
+  },
+  "reports": { "dir": ".fan/reports/session-analytics" }
+}

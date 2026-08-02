@@ -9,6 +9,8 @@ include = [
     "index.ts",
     "src/**/*.ts",
     "package.json",
+    "README.md",
+    "config.example.json",
 ]
 
 exclude = [
