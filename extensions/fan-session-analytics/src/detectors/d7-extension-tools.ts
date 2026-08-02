@@ -30,16 +30,16 @@ export const detectExtensionTools: DetectFn = (t, _cfg) => {
 
 	const summary = [...extensionToolCounts.entries()]
 		.sort((a, b) => b[1] - a[1])
-		.map(([name, count]) => `  - ${name}: ${count} call(s)`)
+		.map(([name, count]) => `  - ${name}: ${count} вызов(ов)`)
 		.join("\n");
 
 	findings.push({
 		detectorId: "D7",
 		severity: "low",
-		title: `Extension tools: ${totalExtension} call(s) across ${extensionToolCounts.size} tool(s) (${total > 0 ? ((totalExtension / total) * 100).toFixed(1) : 0}% of all calls)`,
+		title: `Инструменты расширений: ${totalExtension} вызов(ов) по ${extensionToolCounts.size} инструмент(ам) (${total > 0 ? ((totalExtension / total) * 100).toFixed(1) : 0}% от всех вызовов)`,
 		evidence: {
 			entryIds: [],
-			excerpt: `Extension tool breakdown:\n${summary}\n\nBuiltin tool calls: ${totalBuiltin}\nDynamic registry: ${dynamicExtTools.size > 0 ? [...dynamicExtTools].join(", ") : "none scanned"}`,
+			excerpt: `Распределение инструментов расширений:\n${summary}\n\nВстроенные инструменты: ${totalBuiltin}\nДинамический реестр: ${dynamicExtTools.size > 0 ? [...dynamicExtTools].join(", ") : "не сканировался"}`,
 		},
 	});
 

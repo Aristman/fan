@@ -111,18 +111,18 @@ export const detectEmptyRetries: DetectFn = (t, cfg) => {
 			findings.push({
 				detectorId: "D13",
 				severity: similarity >= 0.95 ? "high" : "medium",
-				title: `Near-identical retry after FAIL: "${curr.agentType}" delegated twice with ${(similarity * 100).toFixed(0)}% similar prompts`,
+				title: `Почти идентичная попытка после FAIL: "${curr.agentType}" делегирован дважды с ${(similarity * 100).toFixed(0)}% схожими промптами`,
 				evidence: {
 					entryIds: [prev.entryId, curr.entryId],
 					excerpt: [
-						`Agent type: ${curr.agentType}`,
-						`Previous result: FAIL`,
-						`Similarity: ${(similarity * 100).toFixed(1)}% (threshold: ${(threshold * 100).toFixed(0)}%)`,
-						`First prompt: "${prev.task.slice(0, 100)}..."`,
-						`Second prompt: "${curr.task.slice(0, 100)}..."`,
+						`Тип агента: ${curr.agentType}`,
+						`Предыдущий результат: FAIL`,
+						`Схожесть: ${(similarity * 100).toFixed(1)}% (порог: ${(threshold * 100).toFixed(0)}%)`,
+						`Первый промпт: "${prev.task.slice(0, 100)}..."`,
+						`Второй промпт: "${curr.task.slice(0, 100)}..."`,
 					].join("\n"),
 				},
-				recommendation: "Retrying with nearly identical prompts after failure is unlikely to succeed. Change the approach or provide different instructions.",
+				recommendation: "Повторная попытка с почти идентичным промптом после неудачи вряд ли приведёт к успеху. Измените подход или дайте другие инструкции.",
 			});
 		}
 	}

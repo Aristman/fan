@@ -37,14 +37,14 @@ export const detectPathEfficiency: DetectFn = (t, _cfg) => {
 		findings.push({
 			detectorId: "D4",
 			severity: totalWasted > 10 ? "high" : totalWasted > 5 ? "medium" : "low",
-			title: `${totalWasted} redundant file read(s): ${repeatedReads.length} file(s) read 3+ times`,
+			title: `${totalWasted} избыточных чтений файлов: ${repeatedReads.length} файл(ов) прочитаны 3+ раз`,
 			evidence: {
 				entryIds: repeatedReads.flatMap((r) => r.entryIds.slice(1)).slice(0, 10),
 				excerpt: repeatedReads
 					.map((r) => `  ${r.path}: ${r.count}×`)
 					.join("\n"),
 			},
-			recommendation: "Repeated reads of the same file suggest the agent is not retaining information between reads.",
+			recommendation: "Повторное чтение одного и того же файла указывает на то, что агент не сохраняет информацию между чтениями.",
 		});
 	}
 
@@ -56,12 +56,12 @@ export const detectPathEfficiency: DetectFn = (t, _cfg) => {
 		findings.push({
 			detectorId: "D4",
 			severity: "medium",
-			title: `High step-to-request ratio: ${toolCalls.length} tool calls for ${userMessages.length} user request(s) (${ratio}×)`,
+			title: `Высокое соотношение шагов к запросам: ${toolCalls.length} вызовов инструментов на ${userMessages.length} запрос(ов) пользователя (${ratio}×)`,
 			evidence: {
 				entryIds: [],
-				excerpt: `Total tool calls: ${toolCalls.length}\nTotal user messages: ${userMessages.length}\nRatio: ${ratio}×`,
+				excerpt: `Всего вызовов инструментов: ${toolCalls.length}\nВсего сообщений пользователя: ${userMessages.length}\nСоотношение: ${ratio}×`,
 			},
-			recommendation: "The session may be over-engineered relative to the number of user requests.",
+			recommendation: "Сессия может быть избыточной по сложности относительно количества запросов пользователя.",
 		});
 	}
 

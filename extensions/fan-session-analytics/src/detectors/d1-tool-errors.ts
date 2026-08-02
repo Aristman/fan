@@ -27,20 +27,20 @@ export const detectToolErrors: DetectFn = (t, _cfg) => {
 
 	if (totalErrors > 0) {
 		const byTool = Object.entries(errorResults)
-			.map(([name, ids]) => `  - ${name}: ${ids.length} error(s)`)
+			.map(([name, ids]) => `  - ${name}: ${ids.length} ошиб.`)
 			.join("\n");
 
 		findings.push({
 			detectorId: "D1",
 			severity: errorRate > 0.3 ? "high" : errorRate > 0.1 ? "medium" : "low",
-			title: `${totalErrors} tool error(s) out of ${totalCalls} calls (${(errorRate * 100).toFixed(1)}%)`,
+			title: `${totalErrors} ошиб. инструментов из ${totalCalls} вызовов (${(errorRate * 100).toFixed(1)}%)`,
 			evidence: {
 				entryIds: Object.values(errorResults).flat().slice(0, 10),
-				excerpt: `Error rate: ${(errorRate * 100).toFixed(1)}%\nBreakdown by tool:\n${byTool}`,
+				excerpt: `Уровень ошибок: ${(errorRate * 100).toFixed(1)}%\nПо инструментам:\n${byTool}`,
 			},
 			recommendation:
 				errorRate > 0.2
-					? "High tool error rate suggests issues with tool usage patterns. Review error contexts."
+					? "Высокий уровень ошибок инструментов указывает на проблемы в паттернах использования. Проверьте контексты ошибок."
 					: undefined,
 		});
 	}

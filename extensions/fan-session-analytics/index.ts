@@ -12,6 +12,13 @@ import {
 import { runPipeline } from "./src/pipeline.js";
 import type { AnalyzeOptions } from "./src/pipeline.js";
 import type { AnalyticsConfig } from "./src/types.js";
+import {
+	discoverInstalledSkills,
+	groupModelsByProvider,
+	type DiscoveredSkill,
+	type ModelChoice,
+	type ProviderChoice,
+} from "./src/discovery.js";
 
 export default function sessionAnalyticsExtension(fan: ExtensionAPI) {
 	// --- Tool: session_analyze ---
@@ -19,35 +26,35 @@ export default function sessionAnalyticsExtension(fan: ExtensionAPI) {
 		name: "session_analyze",
 		label: "Session Analyze",
 		description:
-			"Analyze completed session(s) and generate a quality report with metrics and findings. " +
-			"Reads JSONL session files (read-only), runs deterministic detectors, and produces a markdown report.",
+			"Анализирует завершённые сессии и формирует отчёт качества с метриками и находками. " +
+			"Читает JSONL-сессии (read-only), запускает детерминированные детекторы и генерирует markdown-отчёт.",
 		parameters: Type.Object({
 			target: Type.String({
 				description:
-					'Analysis target: "last" (most recent session for current cwd), ' +
-					'"dir" (all sessions in cwd directory, respecting since/batchSize), ' +
-					"or an explicit path to a .jsonl session file.",
+					'Цель анализа: "last" (последняя сессия для текущего cwd), ' +
+					'"dir" (все сессии в каталоге cwd, с учётом since/batchSize), ' +
+					"или явный путь к .jsonl файлу сессии.",
 			}),
 			mode: Type.Union([Type.Literal("metrics"), Type.Literal("full")], {
 				description:
-					'"metrics" = deterministic metrics only; "full" = metrics + note about Phase B LLM-judge.',
+					'"metrics" = только детерминированные метрики; "full" = метрики + примечание об LLM-судье (этап B).',
 				default: "metrics" as any,
 			}),
 			since: Type.Optional(
 				Type.String({
-					description: "ISO date — only analyze sessions modified after this date (dir mode).",
+					description: "ISO-дата — анализировать только сессии, изменённые после этой даты (режим dir).",
 				}),
 			),
 			batchSize: Type.Optional(
 				Type.Number({
-					description: "Max sessions to analyze in dir mode. Default: 20.",
+					description: "Макс. кол-во сессий для анализа в режиме dir. По умолчанию: 20.",
 				}),
 			),
 		}),
 
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			try {
-				const cwd = (ctx as any).cwd || process.cwd();
+				const cwd = ctx.cwd || process.cwd();
 				const cfg = await loadConfig(__dirname, cwd);
 
 				const opts: AnalyzeOptions = {
@@ -63,7 +70,7 @@ export default function sessionAnalyticsExtension(fan: ExtensionAPI) {
 
 				// Build chat-friendly summary
 				const chatLines: string[] = [];
-				chatLines.push("### Session Analytics");
+				chatLines.push("### Аналитика сессий");
 				chatLines.push("");
 
 				for (const result of results) {
@@ -77,9 +84,9 @@ export default function sessionAnalyticsExtension(fan: ExtensionAPI) {
 						`${emoji} **${result.slug}**: ${result.score.total}/100`,
 					);
 					chatLines.push(
-						`  Findings: ${result.score.metrics["findingsHigh"]}H / ${result.score.metrics["findingsMedium"]}M / ${result.score.metrics["findingsLow"]}L`,
+						`  Находки: ${result.score.metrics["findingsHigh"]} выс. / ${result.score.metrics["findingsMedium"]} ср. / ${result.score.metrics["findingsLow"]} низ.`,
 					);
-					chatLines.push(`  Report: \`${result.reportPath}\``);
+					chatLines.push(`  Отчёт: \`${result.reportPath}\``);
 
 					// Top findings
 					const top = result.score.findings
@@ -99,7 +106,7 @@ export default function sessionAnalyticsExtension(fan: ExtensionAPI) {
 				}
 
 				if (results.length === 0) {
-					chatLines.push("No sessions analyzed.");
+					chatLines.push("Сессии не найдены.");
 				}
 
 				// Hint when config.json doesn't exist
@@ -118,7 +125,7 @@ export default function sessionAnalyticsExtension(fan: ExtensionAPI) {
 					content: [
 						{
 							type: "text",
-							text: `Session analytics error: ${err instanceof Error ? err.message : String(err)}`,
+							text: `Ошибка аналитики сессий: ${err instanceof Error ? err.message : String(err)}`,
 						},
 					],
 					details: { error: true },
@@ -130,7 +137,7 @@ export default function sessionAnalyticsExtension(fan: ExtensionAPI) {
 	// --- Command: /session-analytics ---
 	fan.registerCommand("session-analytics", {
 		description:
-			"Session analytics — /session-analytics [last|dir|init|config|<path>]",
+			"Аналитика сессий — /session-analytics [last|dir|init|config|<путь>]",
 		getArgumentCompletions(prefix: string) {
 			const completions = ["last", "dir", "init", "config"];
 			const filtered = completions.filter((c) => c.startsWith(prefix));
@@ -140,7 +147,7 @@ export default function sessionAnalyticsExtension(fan: ExtensionAPI) {
 		},
 		async handler(args: string, ctx: ExtensionCommandContext) {
 			try {
-				const cwd = (ctx as any).cwd || process.cwd();
+				const cwd = ctx.cwd || process.cwd();
 				const parts = args.trim().split(/\s+/);
 				const sub = parts[0]?.toLowerCase() || "";
 
@@ -168,7 +175,7 @@ export default function sessionAnalyticsExtension(fan: ExtensionAPI) {
 					!target.endsWith(".jsonl")
 				) {
 					ctx.ui.notify(
-						"Usage: /session-analytics [last|dir|init|config|<path-to-jsonl>] [metrics|full]",
+						"Использование: /session-analytics [last|dir|init|config|<путь-к-jsonl>] [metrics|full]",
 						"warning",
 					);
 					return;
@@ -181,14 +188,14 @@ export default function sessionAnalyticsExtension(fan: ExtensionAPI) {
 					cfg,
 				};
 
-				ctx.ui.notify("Running session analytics...", "info");
+				ctx.ui.notify("Запуск аналитики сессий...", "info");
 
 				const { results, summary } = await runPipeline(opts);
 
 				// Print summary to UI
 				const lines: string[] = [];
-				lines.push("--- Session Analytics ---");
-				lines.push(`Sessions analyzed: ${results.length}`);
+				lines.push("--- Аналитика сессий ---");
+				lines.push(`Проанализировано сессий: ${results.length}`);
 				lines.push("");
 
 				for (const result of results) {
@@ -200,9 +207,9 @@ export default function sessionAnalyticsExtension(fan: ExtensionAPI) {
 								: "❌";
 					lines.push(`${emoji} ${result.slug}: ${result.score.total}/100`);
 					lines.push(
-						`  Findings: ${result.score.metrics["findingsHigh"]}H / ${result.score.metrics["findingsMedium"]}M / ${result.score.metrics["findingsLow"]}L`,
+						`  Находки: ${result.score.metrics["findingsHigh"]} выс. / ${result.score.metrics["findingsMedium"]} ср. / ${result.score.metrics["findingsLow"]} низ.`,
 					);
-					lines.push(`  Report: ${result.reportPath}`);
+					lines.push(`  Отчёт: ${result.reportPath}`);
 
 					const top = result.score.findings
 						.filter((f) => f.severity === "high")
@@ -215,7 +222,7 @@ export default function sessionAnalyticsExtension(fan: ExtensionAPI) {
 				}
 
 				if (results.length === 0) {
-					lines.push("No sessions found or all sessions were filtered.");
+					lines.push("Сессии не найдены или все были отфильтрованы.");
 				}
 
 				lines.push("-------------------------");
@@ -231,12 +238,64 @@ export default function sessionAnalyticsExtension(fan: ExtensionAPI) {
 				ctx.ui.notify(lines.join("\n"), "info");
 			} catch (err) {
 				ctx.ui.notify(
-					`Session analytics error: ${err instanceof Error ? err.message : String(err)}`,
+					`Ошибка аналитики сессий: ${err instanceof Error ? err.message : String(err)}`,
 					"error",
 				);
 			}
 		},
 	});
+}
+
+// ============================================================================
+// Multiselect через select (нет встроенного checkbox-примитива)
+// ============================================================================
+
+/**
+ * Мультиселект на основе циклического select.
+ * Каждый пункт можно отметить/снять (✔/☐). Пункт «Готово» завершает выбор.
+ * Возвращает массив выбранных значений или undefined при отмене.
+ */
+async function multiSelect(
+	ctx: ExtensionCommandContext,
+	title: string,
+	items: string[],
+	preSelected: Set<string>,
+): Promise<string[] | undefined> {
+	const selected = new Set(preSelected);
+
+	while (true) {
+		const options: string[] = items.map((item) =>
+			selected.has(item) ? `✔ ${item}` : `☐ ${item}`,
+		);
+		options.push("---");
+		const doneLabel = `✔ Готово (${selected.size} выбрано)`;
+		options.push(doneLabel);
+		options.push("❌ Отмена");
+
+		const choice = await ctx.ui.select(
+			`${title}\n(Пробел/Enter — отметить/снять)`,
+			options,
+		);
+
+		if (choice === undefined) return undefined; // Esc
+
+		if (choice === "❌ Отмена") return undefined;
+
+		if (choice === doneLabel) {
+			return items.filter((item) => selected.has(item));
+		}
+
+		if (choice === "---") continue;
+
+		// Toggle item
+		const isMarked = choice.startsWith("✔ ");
+		const itemName = choice.slice(2);
+		if (isMarked) {
+			selected.delete(itemName);
+		} else {
+			selected.add(itemName);
+		}
+	}
 }
 
 // ============================================================================
@@ -249,7 +308,7 @@ async function handleInitWizard(
 ): Promise<void> {
 	if (!ctx.hasUI) {
 		ctx.ui.notify(
-			"UI not available. Edit config.json manually or copy config.example.json.",
+			"UI недоступен. Отредактируйте config.json вручную или скопируйте config.example.json.",
 		);
 		return;
 	}
@@ -258,25 +317,25 @@ async function handleInitWizard(
 	const hasExistingConfig = configExists(extensionDir);
 
 	const cancelled = () => {
-		ctx.ui.notify("⚙️ Init wizard cancelled.");
+		ctx.ui.notify("⚙️ Мастер настройки отменён.");
 		ctx.ui.setWidget("session-analytics", undefined);
 	};
 
 	ctx.ui.setWidget("session-analytics", [
-		"⚙️ SESSION ANALYTICS — Configuration Wizard",
+		"⚙️ АНАЛИТИКА СЕССИЙ — Мастер настройки",
 		"",
-		"Answer the questions below to configure session analytics.",
-		"Press Esc to cancel at any time.",
+		"Ответьте на вопросы для настройки расширения.",
+		"Нажмите Esc для отмены в любой момент.",
 	]);
 
 	// Check existing config
 	if (hasExistingConfig) {
 		const overwrite = await ctx.ui.confirm(
-			"Config exists",
-			"config.json already exists. Overwrite?",
+			"Конфигурация существует",
+			"config.json уже существует. Перезаписать?",
 		);
 		if (!overwrite) {
-			ctx.ui.notify("Keeping existing config.json.");
+			ctx.ui.notify("Сохранён существующий config.json.");
 			ctx.ui.setWidget("session-analytics", undefined);
 			return;
 		}
@@ -286,30 +345,30 @@ async function handleInitWizard(
 	const currentCfg = await loadConfig(extensionDir, cwd);
 
 	// 1. Auto-analyze on session end (reserved, phase C)
-	const autoAnalyzeChoice = await ctx.ui.select("Auto-analyze on session end (Phase C, reserved)", [
-		`Off (current: ${currentCfg.autoAnalyze.enabled ? "on" : "off"})`,
-		"On",
+	const autoAnalyzeChoice = await ctx.ui.select("Автоанализ при завершении сессии (этап C, зарезервировано)", [
+		`Выкл. (сейчас: ${currentCfg.autoAnalyze.enabled ? "вкл" : "выкл"})`,
+		"Вкл.",
 	]);
 	if (autoAnalyzeChoice === undefined) {
 		cancelled();
 		return;
 	}
-	const autoAnalyzeEnabled = autoAnalyzeChoice.startsWith("On");
+	const autoAnalyzeEnabled = autoAnalyzeChoice.startsWith("Вкл");
 
 	// 2. Weekly batch
-	const weeklyBatchChoice = await ctx.ui.select("Weekly batch analysis", [
-		`Off (current: ${currentCfg.weeklyBatch.enabled ? "on" : "off"})`,
-		"On",
+	const weeklyBatchChoice = await ctx.ui.select("Еженедельный пакетный анализ", [
+		`Выкл. (сейчас: ${currentCfg.weeklyBatch.enabled ? "вкл" : "выкл"})`,
+		"Вкл.",
 	]);
 	if (weeklyBatchChoice === undefined) {
 		cancelled();
 		return;
 	}
-	const weeklyBatchEnabled = weeklyBatchChoice.startsWith("On");
+	const weeklyBatchEnabled = weeklyBatchChoice.startsWith("Вкл");
 
 	// 3. Coordination overhead threshold
 	const overheadStr = await ctx.ui.input(
-		`Coordination overhead warn threshold (0.1-1.0, current: ${currentCfg.orchestration.overheadRatioWarn})`,
+		`Порог предупреждения о coordination overhead (0.1–1.0, сейчас: ${currentCfg.orchestration.overheadRatioWarn})`,
 		String(currentCfg.orchestration.overheadRatioWarn),
 	);
 	if (overheadStr === undefined) {
@@ -318,136 +377,43 @@ async function handleInitWizard(
 	}
 	let overheadRatioWarn = parseFloat(overheadStr);
 	if (Number.isNaN(overheadRatioWarn)) {
-		overheadRatioWarn = DEFAULT_CONFIG.orchestration.overheadRatioWarn;
+		overheadRatioWarn = currentCfg.orchestration.overheadRatioWarn;
 	}
 	overheadRatioWarn = Math.max(0.1, Math.min(1.0, overheadRatioWarn));
 
-	// 4. Heavy skills list
-	const defaultSkills = currentCfg.orchestration.heavySkills;
-	const editSkillsChoice = await ctx.ui.select(
-		`Heavy skills (${defaultSkills.length} configured: ${defaultSkills.slice(0, 3).join(", ")}${defaultSkills.length > 3 ? "..." : ""})`,
-		["Keep current list", "Edit list"],
-	);
-	if (editSkillsChoice === undefined) {
+	// 4. Heavy skills list — интерактивный выбор из установленных скилов
+	const heavySkills = await selectHeavySkills(ctx, cwd, currentCfg);
+	if (heavySkills === undefined) {
 		cancelled();
 		return;
 	}
 
-	let heavySkills = [...defaultSkills];
-	if (editSkillsChoice.startsWith("Edit")) {
-		ctx.ui.setWidget("session-analytics", [
-			"⚙️ Heavy Skills Editor",
-			"",
-			"For each skill: Keep or Remove. Then add new ones.",
-		]);
-
-		const editedSkills: string[] = [];
-		for (let i = 0; i < defaultSkills.length; i++) {
-			const skill = defaultSkills[i];
-			const action = await ctx.ui.select(
-				`[${i + 1}/${defaultSkills.length}] "${skill}"`,
-				["Keep", "Remove"],
-			);
-			if (action === undefined) {
-				cancelled();
-				return;
-			}
-			if (action === "Keep") {
-				editedSkills.push(skill);
-			}
-		}
-
-		// Add new skills
-		let addMore = true;
-		while (addMore) {
-			const addChoice = await ctx.ui.select("Add new heavy skill?", [
-				"Yes",
-				"No",
-			]);
-			if (addChoice === undefined) {
-				cancelled();
-				return;
-			}
-			if (addChoice === "No") {
-				addMore = false;
-			} else {
-				const newSkill = await ctx.ui.input("Enter skill name", "");
-				if (newSkill === undefined) {
-					cancelled();
-					return;
-				}
-				const trimmed = newSkill.trim();
-				if (trimmed && !editedSkills.includes(trimmed)) {
-					editedSkills.push(trimmed);
-				}
-			}
-		}
-
-		heavySkills = editedSkills;
-	}
-
 	// 5. Reports directory
 	const reportsDir = await ctx.ui.input(
-		`Reports directory (current: ${currentCfg.reports.dir})`,
+		`Каталог отчётов (сейчас: ${currentCfg.reports.dir})`,
 		currentCfg.reports.dir,
 	);
 	if (reportsDir === undefined) {
 		cancelled();
 		return;
 	}
-	const reportsDirFinal = reportsDir.trim() || DEFAULT_CONFIG.reports.dir;
+	const reportsDirFinal = reportsDir.trim() || currentCfg.reports.dir;
 
-	// 6. Judge model (reserved, phase B)
-	ctx.ui.setWidget("session-analytics", [
-		"⚙️ Judge Model (Phase B, reserved)",
-		"",
-		"Enter provider and model for the LLM judge.",
-		"Leave empty to skip (will use defaults when Phase B is implemented).",
-	]);
-
-	const judgeProvider = await ctx.ui.input(
-		"Judge provider (e.g. anthropic, openai)",
-		currentCfg.judge.provider || "",
-	);
-	if (judgeProvider === undefined) {
+	// 6. Judge model — интерактивный выбор из доступных моделей
+	const judgeResult = await selectJudgeModel(ctx, currentCfg);
+	if (judgeResult === undefined) {
 		cancelled();
 		return;
 	}
 
-	const judgeModel = await ctx.ui.input(
-		"Judge model ID (e.g. claude-sonnet-4-20250514)",
-		currentCfg.judge.model || "",
-	);
-	if (judgeModel === undefined) {
-		cancelled();
-		return;
-	}
+	// Build config object — preserve existing values on skip
+	const finalProvider = judgeResult.provider || currentCfg.judge.provider;
+	const finalModel = judgeResult.model || currentCfg.judge.model;
 
-	// Validate judge model against registry (if available)
-	let judgeModelWarning: string | undefined;
-	if (judgeProvider.trim() && judgeModel.trim()) {
-		try {
-			ctx.modelRegistry.refresh();
-			const found = ctx.modelRegistry.find(
-				judgeProvider.trim(),
-				judgeModel.trim(),
-			);
-			if (!found) {
-				judgeModelWarning = `⚠️ Model "${judgeProvider.trim()}/${judgeModel.trim()}" not found in registry. Saved anyway — will be validated when Phase B is implemented.`;
-			}
-		} catch {
-			judgeModelWarning =
-				"⚠️ Could not validate model against registry. Saved anyway.";
-		}
-	}
-
-	// Build config object
 	const newConfig: AnalyticsConfig = {
 		judge: {
-			...(judgeProvider.trim()
-				? { provider: judgeProvider.trim() }
-				: {}),
-			...(judgeModel.trim() ? { model: judgeModel.trim() } : {}),
+			...(finalProvider ? { provider: finalProvider } : {}),
+			...(finalModel ? { model: finalModel } : {}),
 			batchMaxSteps: currentCfg.judge.batchMaxSteps,
 			batchMaxChars: currentCfg.judge.batchMaxChars,
 			excerptLimit: currentCfg.judge.excerptLimit,
@@ -473,7 +439,7 @@ async function handleInitWizard(
 	const validation = validateConfig(newConfig);
 	if (!validation.valid) {
 		ctx.ui.notify(
-			`❌ Config validation failed:\n${validation.errors.join("\n")}`,
+			`❌ Ошибка валидации конфигурации:\n${validation.errors.join("\n")}`,
 			"error",
 		);
 		ctx.ui.setWidget("session-analytics", undefined);
@@ -483,37 +449,38 @@ async function handleInitWizard(
 	// Save (atomic)
 	const result = await saveConfig(extensionDir, newConfig);
 	if (!result.success) {
-		ctx.ui.notify(`❌ Failed to save config: ${result.error}`, "error");
+		ctx.ui.notify(`❌ Не удалось сохранить конфигурацию: ${result.error}`, "error");
 		ctx.ui.setWidget("session-analytics", undefined);
 		return;
 	}
 
 	// Show confirmation
 	const confirmLines: string[] = [
-		"✅ Configuration saved!",
+		"✅ Конфигурация сохранена!",
 		"",
 		`📄 ${getConfigPath(extensionDir)}`,
 		"",
-		"Summary:",
-		`  Auto-analyze: ${autoAnalyzeEnabled ? "ON" : "OFF"}`,
-		`  Weekly batch: ${weeklyBatchEnabled ? "ON" : "OFF"}`,
-		`  Overhead threshold: ${overheadRatioWarn}`,
-		`  Heavy skills: ${heavySkills.length} (${heavySkills.slice(0, 3).join(", ")}${heavySkills.length > 3 ? "..." : ""})`,
-		`  Reports dir: ${reportsDirFinal}`,
+		"Сводка:",
+		`  Автоанализ: ${autoAnalyzeEnabled ? "ВКЛ" : "ВЫКЛ"}`,
+		`  Еженедельный пакет: ${weeklyBatchEnabled ? "ВКЛ" : "ВЫКЛ"}`,
+		`  Порог overhead: ${overheadRatioWarn}`,
+		`  Тяжёлые скилы: ${heavySkills.length} (${heavySkills.slice(0, 3).join(", ")}${heavySkills.length > 3 ? "..." : ""})`,
+		`  Каталог отчётов: ${reportsDirFinal}`,
 	];
 
-	if (judgeProvider.trim() || judgeModel.trim()) {
+	if (finalProvider || finalModel) {
+		const preserved = (judgeResult.provider || judgeResult.model) ? "" : " (сохранено из конфига)";
 		confirmLines.push(
-			`  Judge model: ${judgeProvider.trim() || "?"}/${judgeModel.trim() || "?"} (Phase B)`,
+			`  Модель-судья: ${finalProvider || "?"}/${finalModel || "?"} (этап B)${preserved}`,
 		);
 	}
 
-	if (judgeModelWarning) {
-		confirmLines.push("", judgeModelWarning);
+	if (judgeResult.warning) {
+		confirmLines.push("", judgeResult.warning);
 	}
 
 	if (validation.warnings.length > 0) {
-		confirmLines.push("", "Warnings:");
+		confirmLines.push("", "Предупреждения:");
 		for (const w of validation.warnings) {
 			confirmLines.push(`  ⚠️ ${w}`);
 		}
@@ -521,6 +488,166 @@ async function handleInitWizard(
 
 	ctx.ui.notify(confirmLines.join("\n"));
 	ctx.ui.setWidget("session-analytics", undefined);
+}
+
+// ============================================================================
+// Выбор тяжёлых скилов (мультиселект)
+// ============================================================================
+
+async function selectHeavySkills(
+	ctx: ExtensionCommandContext,
+	cwd: string,
+	currentCfg: AnalyticsConfig,
+): Promise<string[] | undefined> {
+	const defaultSkills = currentCfg.orchestration.heavySkills;
+
+	// Обнаружить установленные скилы
+	const discovered = discoverInstalledSkills(cwd);
+
+	if (discovered.length === 0) {
+		// Fallback — текстовый ввод
+		ctx.ui.notify(
+			"Установленные скилы не найдены. Введите имена тяжёлых скилов через запятую.",
+			"warning",
+		);
+		const raw = await ctx.ui.input(
+			"Тяжёлые скилы (через запятую)",
+			defaultSkills.join(", "),
+		);
+		if (raw === undefined) return undefined;
+		return raw
+			.split(",")
+			.map((s) => s.trim())
+			.filter((s) => s.length > 0);
+	}
+
+	// Мультиселект из обнаруженных скилов
+	ctx.ui.setWidget("session-analytics", [
+		"⚙️ Выбор тяжёлых скилов",
+		"",
+		"Выберите скилы, которые считаются «тяжёлыми» (мультиселект).",
+		"Нажмите «Готово» для подтверждения выбора.",
+	]);
+
+	const allSkillNames = discovered.map((s) => s.name);
+	// Включить в список скилы из конфига, которых нет в обнаруженных
+	for (const s of defaultSkills) {
+		if (!allSkillNames.includes(s)) {
+			allSkillNames.push(s);
+		}
+	}
+	allSkillNames.sort();
+
+	const preSelected = new Set(
+		defaultSkills.filter((s) => allSkillNames.includes(s)),
+	);
+
+	return multiSelect(ctx, "Тяжёлые скилы (выбор из установленных)", allSkillNames, preSelected);
+}
+
+// ============================================================================
+// Выбор провайдера/модели судьи
+// ============================================================================
+
+interface JudgeModelResult {
+	provider: string;
+	model: string;
+	warning?: string;
+}
+
+async function selectJudgeModel(
+	ctx: ExtensionCommandContext,
+	currentCfg: AnalyticsConfig,
+): Promise<JudgeModelResult | undefined> {
+	ctx.ui.setWidget("session-analytics", [
+		"⚙️ Модель-судья (этап B, зарезервировано)",
+		"",
+		"Выберите провайдера и модель для LLM-судьи.",
+		"Можно пропустить — настройте позже через /session-analytics init.",
+	]);
+
+	// Получить доступные модели из registry
+	let availableModels: Array<{ provider: string; id: string; name: string; contextWindow?: number; cost?: { input: number } }> = [];
+	try {
+		ctx.modelRegistry.refresh();
+		availableModels = ctx.modelRegistry.getAvailable();
+	} catch {
+		// registry недоступен
+	}
+
+	if (availableModels.length === 0) {
+		ctx.ui.notify(
+			"Доступные модели не найдены в registry. Шаг настройки модели-судьи пропущен.",
+			"warning",
+		);
+		return { provider: "", model: "" };
+	}
+
+	const { providers, modelsByProvider } = groupModelsByProvider(availableModels);
+
+	// Шаг 1: выбрать провайдера
+	const skipOption = "Не настраивать (этап B)";
+	const providerOptions = [
+		skipOption,
+		...providers.map((p) => p.label),
+	];
+
+	const providerChoice = await ctx.ui.select("Провайдер модели-судьи", providerOptions);
+	if (providerChoice === undefined) return undefined; // Esc — отмена всего мастера
+	if (providerChoice === skipOption) {
+		return { provider: "", model: "" };
+	}
+
+	// Определить выбранный провайдер
+	const selectedProvider = providers.find((p) => p.label === providerChoice);
+	if (!selectedProvider) {
+		return { provider: "", model: "" };
+	}
+
+	// Шаг 2: выбрать модель
+	const models = modelsByProvider.get(selectedProvider.provider) || [];
+	const modelOptions = models.map((m) => formatModelLabel(m));
+
+	const modelChoice = await ctx.ui.select(
+		`Модель ${selectedProvider.provider}`,
+		modelOptions,
+	);
+	if (modelChoice === undefined) return undefined; // Esc
+
+	// Определить выбранную модель
+	const selectedModel = models.find((m) => formatModelLabel(m) === modelChoice);
+	if (!selectedModel) {
+		return { provider: selectedProvider.provider, model: "" };
+	}
+
+	// Валидация (find в registry)
+	let warning: string | undefined;
+	try {
+		const found = ctx.modelRegistry.find(selectedProvider.provider, selectedModel.id);
+		if (!found) {
+			warning = `⚠️ Модель "${selectedProvider.provider}/${selectedModel.id}" не найдена в registry. Сохранена — будет проверена при реализации этапа B.`;
+		}
+	} catch {
+		warning = "⚠️ Не удалось проверить модель в registry. Сохранена как есть.";
+	}
+
+	return {
+		provider: selectedProvider.provider,
+		model: selectedModel.id,
+		warning,
+	};
+}
+
+function formatModelLabel(m: ModelChoice): string {
+	const parts: string[] = [m.name || m.id];
+	if (m.contextWindow) {
+		const ctxK = Math.round(m.contextWindow / 1000);
+		parts.push(`${ctxK}k ctx`);
+	}
+	if (m.costInput !== undefined && m.costInput > 0) {
+		parts.push(`$${m.costInput}/M in`);
+	}
+	return parts.length > 1 ? `${parts[0]} [${parts.slice(1).join(", ")}]` : parts[0];
 }
 
 // ============================================================================
@@ -538,24 +665,24 @@ async function handleConfigView(
 	const sourceLabel = (src: string): string => {
 		switch (src) {
 			case "defaults":
-				return "📋 defaults";
+				return "📋 дефолты";
 			case "config.json":
 				return "📄 config.json";
 			case "project":
-				return "📁 project override";
+				return "📁 проектный override";
 			default:
 				return src;
 		}
 	};
 
 	const lines: string[] = [];
-	lines.push("--- Session Analytics Configuration ---");
+	lines.push("--- Конфигурация аналитики сессий ---");
 	lines.push("");
 
 	// File paths
-	lines.push(`Config: ${configJsonPath} ${hasConfigJson ? "✅" : "❌ not found"}`);
+	lines.push(`Конфиг: ${configJsonPath} ${hasConfigJson ? "✅" : "❌ не найден"}`);
 	if (projectConfigPath) {
-		lines.push(`Project: ${projectConfigPath} ${hasProjectConfig ? "✅" : "❌ not found"}`);
+		lines.push(`Проектный: ${projectConfigPath} ${hasProjectConfig ? "✅" : "❌ не найден"}`);
 	}
 	lines.push("");
 

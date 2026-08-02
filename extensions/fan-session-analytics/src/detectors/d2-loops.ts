@@ -49,12 +49,12 @@ export const detectLoops: DetectFn = (t, _cfg) => {
 				findings.push({
 					detectorId: "D2",
 					severity: runCount >= 5 ? "high" : "medium",
-					title: `Loop detected: ${runCount}× consecutive "${prev.toolName}" with identical arguments`,
+					title: `Обнаружен цикл: ${runCount}× подряд "${prev.toolName}" с идентичными аргументами`,
 					evidence: {
 						entryIds: ids,
-						excerpt: `Tool "${prev.toolName}" called ${runCount} times in a row with same args`,
+						excerpt: `Инструмент "${prev.toolName}" вызван ${runCount} раз подряд с одинаковыми аргументами`,
 					},
-					recommendation: "Repeated tool calls suggest the agent is stuck. Check if the operation is failing silently.",
+					recommendation: "Повторяющиеся вызовы инструментов указывают на застревание агента. Проверьте, не выполняется ли операция с ошибкой без уведомления.",
 				});
 			}
 			runStart = i;
@@ -69,12 +69,12 @@ export const detectLoops: DetectFn = (t, _cfg) => {
 		findings.push({
 			detectorId: "D2",
 			severity: runCount >= 5 ? "high" : "medium",
-			title: `Loop detected: ${runCount}× consecutive "${last.toolName}" with identical arguments`,
+			title: `Обнаружен цикл: ${runCount}× подряд "${last.toolName}" с идентичными аргументами`,
 			evidence: {
 				entryIds: ids,
-				excerpt: `Tool "${last.toolName}" called ${runCount} times in a row with same args`,
+				excerpt: `Инструмент "${last.toolName}" вызван ${runCount} раз подряд с одинаковыми аргументами`,
 			},
-			recommendation: "Repeated tool calls suggest the agent is stuck.",
+			recommendation: "Повторяющиеся вызовы инструментов указывают на застревание агента.",
 		});
 	}
 
@@ -109,10 +109,10 @@ export const detectLoops: DetectFn = (t, _cfg) => {
 					findings.push({
 						detectorId: "D2",
 						severity: "low",
-						title: `Near-loop: "${toolName}" called ${cluster.length}× within ${windowSize}-step window`,
+						title: `Почти цикл: "${toolName}" вызван ${cluster.length}× в окне ${windowSize} шагов`,
 						evidence: {
 							entryIds: ids,
-							excerpt: `Tool "${toolName}" called ${cluster.length} times with similar args in a window of ${windowSize} steps (pattern: ${toolCalls[indices[0]].toolName} interleaved with other calls)`,
+							excerpt: `Инструмент "${toolName}" вызван ${cluster.length} раз с похожими аргументами в окне ${windowSize} шагов (паттерн: ${toolCalls[indices[0]].toolName} чередуется с другими вызовами)`,
 						},
 					});
 				}

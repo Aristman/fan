@@ -36,24 +36,24 @@ function buildMarkdown(t: Trajectory, score: SessionScore, mode: "metrics" | "fu
 	const durationMin = durationMs > 0 ? (durationMs / 60000).toFixed(1) : "n/a";
 
 	// Header
-	lines.push(`# Session Analytics Report`);
+	lines.push(`# Отчёт аналитики сессий`);
 	lines.push("");
-	lines.push(`| Field | Value |`);
-	lines.push(`|-------|-------|`);
-	lines.push(`| **Session ID** | \`${t.sessionId}\` |`);
-	lines.push(`| **Date** | ${new Date(t.startedAt).toISOString().slice(0, 19)} |`);
-	lines.push(`| **Duration** | ${durationMin} min |`);
+	lines.push(`| Поле | Значение |`);
+	lines.push(`|------|----------|`);
+	lines.push(`| **ID сессии** | \`${t.sessionId}\` |`);
+	lines.push(`| **Дата** | ${new Date(t.startedAt).toISOString().slice(0, 19)} |`);
+	lines.push(`| **Длительность** | ${durationMin} мин |`);
 	lines.push(`| **CWD** | \`${t.cwd}\` |`);
-	lines.push(`| **Steps** | ${t.steps.length} |`);
-	lines.push(`| **Skills** | ${t.skillsActivated.length > 0 ? t.skillsActivated.join(", ") : "none"} |`);
-	lines.push(`| **Workers** | ${t.workersSpawned.length > 0 ? t.workersSpawned.map((w) => w.type).join(", ") : "none"} |`);
-	lines.push(`| **Compactions** | ${t.compactions} |`);
-	lines.push(`| **Truncated** | ${t.truncated ? "yes" : "no"} |`);
-	lines.push(`| **Mode** | ${mode} |`);
+	lines.push(`| **Шагов** | ${t.steps.length} |`);
+	lines.push(`| **Скилы** | ${t.skillsActivated.length > 0 ? t.skillsActivated.join(", ") : "нет"} |`);
+	lines.push(`| **Воркеры** | ${t.workersSpawned.length > 0 ? t.workersSpawned.map((w) => w.type).join(", ") : "нет"} |`);
+	lines.push(`| **Уплотнения** | ${t.compactions} |`);
+	lines.push(`| **Усечено** | ${t.truncated ? "да" : "нет"} |`);
+	lines.push(`| **Режим** | ${mode} |`);
 	lines.push("");
 
 	// Score
-	lines.push(`## Overall Score: ${score.total}/100`);
+	lines.push(`## Общий балл: ${score.total}/100`);
 	lines.push("");
 
 	const severityEmoji: Record<string, string> = {
@@ -62,18 +62,18 @@ function buildMarkdown(t: Trajectory, score: SessionScore, mode: "metrics" | "fu
 		low: "🔵",
 	};
 
-	lines.push(`| Severity | Count |`);
-	lines.push(`|----------|-------|`);
-	lines.push(`| 🔴 High | ${score.metrics["findingsHigh"] || 0} |`);
-	lines.push(`| 🟡 Medium | ${score.metrics["findingsMedium"] || 0} |`);
-	lines.push(`| 🔵 Low | ${score.metrics["findingsLow"] || 0} |`);
+	lines.push(`| Серьёзность | Кол-во |`);
+	lines.push(`|-------------|--------|`);
+	lines.push(`| 🔴 Высокая | ${score.metrics["findingsHigh"] || 0} |`);
+	lines.push(`| 🟡 Средняя | ${score.metrics["findingsMedium"] || 0} |`);
+	lines.push(`| 🔵 Низкая | ${score.metrics["findingsLow"] || 0} |`);
 	lines.push("");
 
 	// Metrics table
-	lines.push(`## Metrics`);
+	lines.push(`## Метрики`);
 	lines.push("");
-	lines.push(`| Metric | Value |`);
-	lines.push(`|--------|-------|`);
+	lines.push(`| Метрика | Значение |`);
+	lines.push(`|---------|----------|`);
 	for (const [key, value] of Object.entries(score.metrics)) {
 		if (key.startsWith("findings")) continue;
 		lines.push(`| ${key} | ${value} |`);
@@ -85,11 +85,11 @@ function buildMarkdown(t: Trajectory, score: SessionScore, mode: "metrics" | "fu
 	const mediumFindings = score.findings.filter((f) => f.severity === "medium");
 	const lowFindings = score.findings.filter((f) => f.severity === "low");
 
-	lines.push(`## Findings`);
+	lines.push(`## Находки`);
 	lines.push("");
 
 	if (highFindings.length > 0) {
-		lines.push(`### 🔴 High Severity`);
+		lines.push(`### 🔴 Высокая серьёзность`);
 		lines.push("");
 		for (const f of highFindings) {
 			lines.push(formatFinding(f, severityEmoji));
@@ -97,7 +97,7 @@ function buildMarkdown(t: Trajectory, score: SessionScore, mode: "metrics" | "fu
 	}
 
 	if (mediumFindings.length > 0) {
-		lines.push(`### 🟡 Medium Severity`);
+		lines.push(`### 🟡 Средняя серьёзность`);
 		lines.push("");
 		for (const f of mediumFindings) {
 			lines.push(formatFinding(f, severityEmoji));
@@ -105,7 +105,7 @@ function buildMarkdown(t: Trajectory, score: SessionScore, mode: "metrics" | "fu
 	}
 
 	if (lowFindings.length > 0) {
-		lines.push(`### 🔵 Low Severity`);
+		lines.push(`### 🔵 Низкая серьёзность`);
 		lines.push("");
 		for (const f of lowFindings) {
 			lines.push(formatFinding(f, severityEmoji));
@@ -113,7 +113,7 @@ function buildMarkdown(t: Trajectory, score: SessionScore, mode: "metrics" | "fu
 	}
 
 	if (score.findings.length === 0) {
-		lines.push(`No findings — clean session!`);
+		lines.push(`Находок нет — чистая сессия!`);
 		lines.push("");
 	}
 
@@ -121,15 +121,15 @@ function buildMarkdown(t: Trajectory, score: SessionScore, mode: "metrics" | "fu
 	if (mode === "full") {
 		lines.push(`---`);
 		lines.push("");
-		lines.push(`> **Note (Phase A):** LLM-judge semantic evaluation is not yet available.`);
-		lines.push(`> It will be added in Phase B, providing rubric-based scoring for:`);
-		lines.push(`> skill appropriateness, result completeness, decomposition quality,`);
-		lines.push(`> economy, compliance, and orchestration quality.`);
+		lines.push(`> **Примечание (этап A):** Семантическая оценка LLM-судьи пока недоступна.`);
+		lines.push(`> Будет добавлена в этапе B: оценка по рубрикам —`);
+		lines.push(`> уместность скила, полнота результата, качество декомпозиции,`);
+		lines.push(`> экономичность, compliance и качество оркестрации.`);
 		lines.push("");
 	}
 
 	// Tool call graph (text summary)
-	lines.push(`## Tool Call Summary`);
+	lines.push(`## Сводка вызовов инструментов`);
 	lines.push("");
 
 	const toolCounts = new Map<string, number>();
@@ -140,8 +140,8 @@ function buildMarkdown(t: Trajectory, score: SessionScore, mode: "metrics" | "fu
 	}
 
 	if (toolCounts.size > 0) {
-		lines.push(`| Tool | Calls |`);
-		lines.push(`|------|-------|`);
+		lines.push(`| Инструмент | Вызовов |`);
+		lines.push(`|------------|---------|`);
 		const sorted = [...toolCounts.entries()].sort((a, b) => b[1] - a[1]);
 		for (const [name, count] of sorted) {
 			lines.push(`| \`${name}\` | ${count} |`);
@@ -151,8 +151,8 @@ function buildMarkdown(t: Trajectory, score: SessionScore, mode: "metrics" | "fu
 
 	// Footer
 	lines.push(`---`);
-	lines.push(`*Generated by fan-session-analytics v1.0.0 (Phase A MVP)*`);
-	lines.push(`*Report date: ${new Date().toISOString().slice(0, 19)}*`);
+	lines.push(`*Сгенерировано fan-session-analytics v1.0.0 (этап A MVP)*`);
+	lines.push(`*Дата отчёта: ${new Date().toISOString().slice(0, 19)}*`);
 
 	return lines.join("\n");
 }
@@ -168,7 +168,7 @@ function formatFinding(f: Finding, emoji: Record<string, string>): string {
 		lines.push("");
 	}
 	if (f.recommendation) {
-		lines.push(`**Recommendation:** ${f.recommendation}`);
+		lines.push(`**Рекомендация:** ${f.recommendation}`);
 		lines.push("");
 	}
 	return lines.join("\n");

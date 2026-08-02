@@ -43,10 +43,10 @@ export const detectTokensCost: DetectFn = (t, _cfg) => {
 		findings.push({
 			detectorId: "D9",
 			severity: "low",
-			title: "Token/cost data: not available",
+			title: "Данные по токенам/стоимости: недоступны",
 			evidence: {
 				entryIds: [],
-				excerpt: `Source: none\nNo usage data found in trajectory steps or database.\nModels seen: ${[...models].join(", ") || "none"}`,
+				excerpt: `Источник: отсутствует\nДанные об использовании не найдены ни в шагах траектории, ни в базе данных.\nМодели: ${[...models].join(", ") || "не обнаружены"}`,
 			},
 			metrics: { totalTokens: 0, totalCost: 0, tokenSource: 0 },
 		});
@@ -69,31 +69,31 @@ export const detectTokensCost: DetectFn = (t, _cfg) => {
 		// Both sources — prefer SQLite for totals, JSONL for breakdown
 		totalTokens = dbInfo!.tokens || (totalInput + totalOutput + totalCacheRead + totalCacheWrite);
 		finalCost = dbInfo!.cost || totalCost;
-		source = "filin.db (totals) + JSONL (breakdown)";
+		source = "filin.db (итоги) + JSONL (детализация)";
 		tokenSourceFlag = 1;
 	} else {
 		// JSONL only
 		totalTokens = totalInput + totalOutput + totalCacheRead + totalCacheWrite;
 		finalCost = totalCost;
-		source = "JSONL usage fields";
+		source = "JSONL usage-поля";
 		tokenSourceFlag = 0;
 	}
 
 	findings.push({
 		detectorId: "D9",
 		severity: "low",
-		title: `Token usage: ${totalTokens.toLocaleString()} tokens, cost: $${finalCost.toFixed(4)}`,
+		title: `Использование токенов: ${totalTokens.toLocaleString()} токенов, стоимость: $${finalCost.toFixed(4)}`,
 		evidence: {
 			entryIds: [],
 			excerpt: [
-				`Source: ${source}`,
-				`Input tokens: ${totalInput.toLocaleString()}`,
-				`Output tokens: ${totalOutput.toLocaleString()}`,
-				`Cache read: ${totalCacheRead.toLocaleString()}`,
-				`Cache write: ${totalCacheWrite.toLocaleString()}`,
-				`Total tokens: ${totalTokens.toLocaleString()}`,
-				`Total cost: $${finalCost.toFixed(4)}`,
-				`Models: ${[...models].join(", ") || "none"}`,
+				`Источник: ${source}`,
+				`Входные токены: ${totalInput.toLocaleString()}`,
+				`Выходные токены: ${totalOutput.toLocaleString()}`,
+				`Cache чтение: ${totalCacheRead.toLocaleString()}`,
+				`Cache запись: ${totalCacheWrite.toLocaleString()}`,
+				`Всего токенов: ${totalTokens.toLocaleString()}`,
+				`Общая стоимость: $${finalCost.toFixed(4)}`,
+				`Модели: ${[...models].join(", ") || "не обнаружены"}`,
 			].join("\n"),
 		},
 		metrics: {

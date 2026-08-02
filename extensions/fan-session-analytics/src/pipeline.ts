@@ -52,7 +52,7 @@ export async function runPipeline(opts: AnalyzeOptions): Promise<{
 		if (!last) {
 			return {
 				results: [],
-				summary: "No sessions found for current working directory.",
+				summary: "Сессии для текущего каталога не найдены.",
 			};
 		}
 		sessionPaths = [last];
@@ -114,7 +114,7 @@ export async function runPipeline(opts: AnalyzeOptions): Promise<{
 				trajectory,
 				reportPath,
 				skipped: isSelfReferencing
-					? "WARNING: This session contains session_analyze calls (self-reference). Analysis may include noise."
+					? "ПРЕДУПРЕЖДЕНИЕ: Сессия содержит вызовы session_analyze (самоссылание). Анализ может включать шум."
 					: undefined,
 			});
 		} catch (err) {
@@ -141,7 +141,7 @@ async function runDetectors(trajectory: Trajectory, cfg: AnalyticsConfig) {
 			allFindings.push({
 				detectorId: detector.id,
 				severity: "low" as const,
-				title: `Detector ${detector.id} failed: ${err instanceof Error ? err.message : String(err)}`,
+				title: `Детектор ${detector.id} ошибка: ${err instanceof Error ? err.message : String(err)}`,
 				evidence: { entryIds: [], excerpt: "" },
 			});
 		}
@@ -154,22 +154,22 @@ function buildSummary(results: AnalyzeResult[], errors: Array<{ path: string; er
 	const lines: string[] = [];
 
 	if (results.length === 0 && errors.length === 0) {
-		return "No sessions analyzed.";
+		return "Сессии не проанализированы.";
 	}
 
-	lines.push(`## Session Analytics Summary`);
+	lines.push(`## Сводка аналитики сессий`);
 	lines.push("");
-	lines.push(`Sessions analyzed: ${results.length}`);
+	lines.push(`Проанализировано сессий: ${results.length}`);
 	if (errors.length > 0) {
-		lines.push(`Errors: ${errors.length}`);
+		lines.push(`Ошибок: ${errors.length}`);
 	}
 	lines.push("");
 
 	for (const result of results) {
 		const emoji = result.score.total >= 80 ? "✅" : result.score.total >= 50 ? "⚠️" : "❌";
 		lines.push(`${emoji} **${result.slug}**: ${result.score.total}/100`);
-		lines.push(`   Findings: ${result.score.metrics["findingsHigh"]}H / ${result.score.metrics["findingsMedium"]}M / ${result.score.metrics["findingsLow"]}L`);
-		lines.push(`   Report: ${result.reportPath}`);
+		lines.push(`   Находки: ${result.score.metrics["findingsHigh"]} выс. / ${result.score.metrics["findingsMedium"]} ср. / ${result.score.metrics["findingsLow"]} низ.`);
+		lines.push(`   Отчёт: ${result.reportPath}`);
 
 		if (result.skipped) {
 			lines.push(`   ⚠️ ${result.skipped}`);
@@ -182,7 +182,7 @@ function buildSummary(results: AnalyzeResult[], errors: Array<{ path: string; er
 			.slice(0, 5);
 
 		if (topFindings.length > 0) {
-			lines.push(`   Top findings:`);
+			lines.push(`   Главные находки:`);
 			for (const f of topFindings) {
 				const icon = f.severity === "high" ? "🔴" : "🟡";
 				lines.push(`     ${icon} [${f.detectorId}] ${f.title}`);
@@ -193,7 +193,7 @@ function buildSummary(results: AnalyzeResult[], errors: Array<{ path: string; er
 	}
 
 	if (errors.length > 0) {
-		lines.push(`### Errors`);
+		lines.push(`### Ошибки`);
 		for (const e of errors) {
 			lines.push(`- ${e.path}: ${e.error}`);
 		}

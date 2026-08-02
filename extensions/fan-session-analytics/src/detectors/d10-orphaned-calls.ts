@@ -43,14 +43,14 @@ export const detectOrphanedCalls: DetectFn = (t, _cfg) => {
 	findings.push({
 		detectorId: "D10",
 		severity: orphans.length > 5 ? "high" : orphans.length > 2 ? "medium" : "low",
-		title: `${orphans.length} orphaned tool call(s) — no matching toolResult`,
+		title: `${orphans.length} «осиротевших» вызовов инструментов — нет соответствующего toolResult`,
 		evidence: {
 			entryIds: orphans.map((o) => o.entryId).slice(0, 10),
-			excerpt: `Orphaned calls by tool:\n${summary}`,
+			excerpt: `«Осиротевшие» вызовы по инструментам:\n${summary}`,
 		},
 		recommendation:
 			orphans.length > 2
-				? "Multiple orphaned calls may indicate interrupted execution or session truncation."
+				? "Множественные «осиротевшие» вызовы могут указывать на прерванное выполнение или усечение сессии."
 				: undefined,
 	});
 

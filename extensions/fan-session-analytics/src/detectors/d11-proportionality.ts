@@ -19,17 +19,17 @@ export const detectProportionality: DetectFn = (t, cfg) => {
 		findings.push({
 			detectorId: "D11",
 			severity: coordRatio > 0.6 ? "high" : "medium",
-			title: `High coordination overhead: ${(coordRatio * 100).toFixed(0)}% of tool calls are orchestrator calls (${coordCalls.length}/${toolCalls.length})`,
+			title: `Высокие накладные расходы координации: ${(coordRatio * 100).toFixed(0)}% вызовов инструментов — оркестратор (${coordCalls.length}/${toolCalls.length})`,
 			evidence: {
 				entryIds: coordCalls.slice(0, 10).map((s) => s.entryId),
 				excerpt: [
-					`Total tool calls: ${toolCalls.length}`,
-					`Orchestrator calls: ${coordCalls.length} (${(coordRatio * 100).toFixed(0)}%)`,
-					`Threshold: ${(cfg.orchestration.overheadRatioWarn * 100).toFixed(0)}%`,
-					`Coordination tools used: ${[...new Set(coordCalls.map((s) => s.toolName!))].join(", ")}`,
+					`Всего вызовов инструментов: ${toolCalls.length}`,
+					`Вызовы оркестратора: ${coordCalls.length} (${(coordRatio * 100).toFixed(0)}%)`,
+					`Порог: ${(cfg.orchestration.overheadRatioWarn * 100).toFixed(0)}%`,
+					`Инструменты координации: ${[...new Set(coordCalls.map((s) => s.toolName!))].join(", ")}`,
 				].join("\n"),
 			},
-			recommendation: "High coordination overhead suggests the task may have been over-orchestrated. Consider whether a simpler approach would suffice.",
+			recommendation: "Высокие накладные расходы координации указывают на возможное переусложнение задачи. Рассмотрите более простой подход.",
 		});
 	}
 
@@ -83,19 +83,19 @@ export const detectProportionality: DetectFn = (t, cfg) => {
 				findings.push({
 					detectorId: "D11",
 					severity: "high",
-					title: `Heavy skill "${skill}" used for small change: ~${totalLinesWritten} lines across ${filesWritten.size} file(s)`,
+					title: `Тяжёлый скилл "${skill}" использован для мелкого изменения: ~${totalLinesWritten} строк в ${filesWritten.size} файл(ах)`,
 					evidence: {
 						entryIds: [],
 						excerpt: [
-							`Skill: ${skill}`,
-							`Files modified: ${[...filesWritten].join(", ")}`,
-							`Estimated lines written: ${totalLinesWritten}`,
-							`Threshold: < ${cfg.orchestration.smallChangeLines} lines in < ${cfg.orchestration.smallChangeFiles} files`,
-							`Total tool calls: ${toolCalls.length}`,
-							`Coordination calls: ${coordCalls.length}`,
+							`Скилл: ${skill}`,
+							`Файлы изменены: ${[...filesWritten].join(", ")}`,
+							`Оценочно строк записано: ${totalLinesWritten}`,
+							`Порог: < ${cfg.orchestration.smallChangeLines} строк в < ${cfg.orchestration.smallChangeFiles} файлах`,
+							`Всего вызовов инструментов: ${toolCalls.length}`,
+							`Вызовы координации: ${coordCalls.length}`,
 						].join("\n"),
 					},
-					recommendation: `Heavy pipeline skill "${skill}" appears disproportionate for the size of the change. Consider using a lighter approach for small tasks.`,
+					recommendation: `Тяжёлый пайплайн-скилл "${skill}" несоразмерен объёму изменения. Рассмотрите более лёгкий подход для мелких задач.`,
 				});
 			}
 		}

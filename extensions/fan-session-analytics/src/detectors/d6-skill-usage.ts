@@ -19,10 +19,10 @@ export const detectSkillUsage: DetectFn = (t, _cfg) => {
 		findings.push({
 			detectorId: "D6",
 			severity: "low",
-			title: `Skill activated: "${skill}" (${totalToolCalls} total tool calls in session)`,
+			title: `Скилл активирован: "${skill}" (${totalToolCalls} всего вызовов инструментов в сессии)`,
 			evidence: {
 				entryIds: [],
-				excerpt: `Skills activated in session: ${t.skillsActivated.join(", ")}\nTotal tool calls: ${totalToolCalls}`,
+				excerpt: `Скиллы активированные в сессии: ${t.skillsActivated.join(", ")}\nВсего вызовов инструментов: ${totalToolCalls}`,
 			},
 		});
 	}
@@ -43,12 +43,12 @@ export const detectSkillUsage: DetectFn = (t, _cfg) => {
 			findings.push({
 				detectorId: "D6",
 				severity: "medium",
-				title: `Heavy skill "${skill}" activated but session has only ${totalToolCalls} tool calls`,
+				title: `Тяжёлый скилл "${skill}" активирован, но сессия содержит лишь ${totalToolCalls} вызовов инструментов`,
 				evidence: {
 					entryIds: [],
-					excerpt: `Skill: ${skill}\nTool calls: ${totalToolCalls}`,
+					excerpt: `Скилл: ${skill}\nВызовов инструментов: ${totalToolCalls}`,
 				},
-				recommendation: `Heavy skill "${skill}" may not have been fully executed. Check if the skill's instructions were followed.`,
+				recommendation: `Тяжёлый скилл "${skill}" мог не выполниться полностью. Проверьте, были ли выполнены инструкции скилла.`,
 			});
 		}
 	}

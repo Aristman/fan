@@ -10,10 +10,10 @@ export const detectCompactions: DetectFn = (t, _cfg) => {
 		findings.push({
 			detectorId: "D8",
 			severity: "low",
-			title: "No compactions in session",
+			title: "Нет компакций в сессии",
 			evidence: {
 				entryIds: [],
-				excerpt: `Session steps: ${t.steps.length}\nCompactions: 0`,
+				excerpt: `Шагов сессии: ${t.steps.length}\nКомпакции: 0`,
 			},
 		});
 		return findings;
@@ -34,14 +34,14 @@ export const detectCompactions: DetectFn = (t, _cfg) => {
 	findings.push({
 		detectorId: "D8",
 		severity: t.compactions > 5 ? "medium" : "low",
-		title: `${t.compactions} compaction(s) at step positions: ${positionPct}`,
+		title: `${t.compactions} компакци(й/и) на позициях шагов: ${positionPct}`,
 		evidence: {
 			entryIds: compactionPositions.map((p) => t.steps[p].entryId),
-			excerpt: `Total compactions: ${t.compactions}\nPositions: ${positionPct}\nTotal steps: ${t.steps.length}`,
+			excerpt: `Всего компакций: ${t.compactions}\nПозиции: ${positionPct}\nВсего шагов: ${t.steps.length}`,
 		},
 		recommendation:
 			t.compactions > 5
-				? "Frequent compactions suggest the session is hitting context limits. Consider breaking into smaller sessions."
+				? "Частые компакции указывают на приближение к лимитам контекста. Рассмотрите разбивку на более мелкие сессии."
 				: undefined,
 	});
 

@@ -71,12 +71,12 @@ export const detectOrchestratorFlow: DetectFn = (t, _cfg) => {
 			findings.push({
 				detectorId: "D5",
 				severity: "medium",
-				title: `"${call.agentType}" worker spawned without subsequent verify worker`,
+				title: `Воркер "${call.agentType}" запущен без последующего воркера verify`,
 				evidence: {
 					entryIds: [call.entryId],
-					excerpt: `Agent: ${call.agentType}\nTask: ${call.task.slice(0, 150)}`,
+					excerpt: `Агент: ${call.agentType}\nЗадача: ${call.task.slice(0, 150)}`,
 				},
-				recommendation: "Best practice: always follow implement/bug-fix with a verify worker.",
+				recommendation: "Всегда сопровождайте implement/bug-fix воркером verify.",
 			});
 			break; // Report once
 		}
@@ -88,10 +88,10 @@ export const detectOrchestratorFlow: DetectFn = (t, _cfg) => {
 		findings.push({
 			detectorId: "D5",
 			severity: "low",
-			title: `${statusless.length} TaskUpdate call(s) without status field`,
+			title: `${statusless.length} вызов(ов) TaskUpdate без поля status`,
 			evidence: {
 				entryIds: statusless.map((u) => u.entryId).slice(0, 5),
-				excerpt: `TaskUpdate called ${statusless.length} time(s) without specifying status`,
+				excerpt: `TaskUpdate вызван ${statusless.length} раз без указания status`,
 			},
 		});
 	}
@@ -114,10 +114,10 @@ export const detectOrchestratorFlow: DetectFn = (t, _cfg) => {
 			findings.push({
 				detectorId: "D5",
 				severity: "low",
-				title: `TaskUpdate repeated: task "${taskId}" updated to "${status}" ${data.count}×`,
+				title: `Повтор TaskUpdate: задача "${taskId}" обновлена до "${status}" ${data.count}×`,
 				evidence: {
 					entryIds: data.entryIds,
-					excerpt: `Task "${taskId}" received status "${status}" ${data.count} times`,
+					excerpt: `Задача "${taskId}" получила статус "${status}" ${data.count} раз`,
 				},
 			});
 		}
@@ -141,12 +141,12 @@ export const detectOrchestratorFlow: DetectFn = (t, _cfg) => {
 			findings.push({
 				detectorId: "D5",
 				severity: "high",
-				title: `Excessive re-implementation: ${data.count} attempts at similar task`,
+				title: `Избыточная реимплементация: ${data.count} попыток схожей задачи`,
 				evidence: {
 					entryIds: data.entryIds,
-					excerpt: `Task: "${taskDesc}..."\nAttempts: ${data.count}`,
+					excerpt: `Задача: "${taskDesc}..."\nПопыток: ${data.count}`,
 				},
-				recommendation: "Multiple implementation attempts suggest unclear requirements or approach. Consider re-planning.",
+				recommendation: "Множественные попытки имплементации указывают на неясные требования или подход. Рассмотрите перепланирование.",
 			});
 		}
 	}

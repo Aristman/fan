@@ -29,12 +29,12 @@ export const detectDuration: DetectFn = (t, _cfg) => {
 		findings.push({
 			detectorId: "D3",
 			severity: p95 > 10 * 60 * 1000 ? "high" : "medium",
-			title: `Slow steps: p95 = ${formatDuration(p95)}, ${slowSteps.length} step(s) over 5 minutes`,
+			title: `Медленные шаги: p95 = ${formatDuration(p95)}, ${slowSteps.length} шаг(ов) дольше 5 минут`,
 			evidence: {
 				entryIds: slowSteps.slice(0, 5).map((s) => s.entryId),
-				excerpt: `p50: ${formatDuration(p50)}, p95: ${formatDuration(p95)}, max: ${formatDuration(maxDuration)}\nSession total: ${totalMin} min`,
+				excerpt: `p50: ${formatDuration(p50)}, p95: ${formatDuration(p95)}, макс: ${formatDuration(maxDuration)}\nСессия всего: ${totalMin} мин`,
 			},
-			recommendation: "Consider breaking long operations into smaller steps.",
+			recommendation: "Рассмотрите возможность разбиения длительных операций на более мелкие шаги.",
 		});
 	}
 
@@ -43,10 +43,10 @@ export const detectDuration: DetectFn = (t, _cfg) => {
 	findings.push({
 		detectorId: "D3",
 		severity: "low",
-		title: `Duration metrics: p50=${formatDuration(p50)}, p95=${formatDuration(p95)}, total=${totalMin}min`,
+		title: `Метрики длительности: p50=${formatDuration(p50)}, p95=${formatDuration(p95)}, всего=${totalMin}мин`,
 		evidence: {
 			entryIds: [],
-			excerpt: `Steps with timing: ${durations.length}\np50: ${formatDuration(p50)}\np95: ${formatDuration(p95)}\nMax step: ${formatDuration(maxDuration)}\nSession total: ${totalMin} min (${totalSec}s)`,
+			excerpt: `Шагов с таймингом: ${durations.length}\np50: ${formatDuration(p50)}\np95: ${formatDuration(p95)}\nМакс. шаг: ${formatDuration(maxDuration)}\nСессия всего: ${totalMin} мин (${totalSec}с)`,
 		},
 	});
 
