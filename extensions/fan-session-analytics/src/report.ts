@@ -1,6 +1,7 @@
 import { writeFile, mkdir, rename } from "node:fs/promises";
 import { join, dirname } from "node:path";
-import type { AnalyticsConfig, Finding, SessionScore, Trajectory } from "./types.js";
+import type { AnalyticsConfig, Finding, JudgeResult, RubricEvaluation, SessionScore, Trajectory } from "./types.js";
+import { RUBRICS, type RubricKey } from "./judge/rubrics.js";
 
 /**
  * Generate markdown report for a session and save atomically (tmp + rename).
@@ -117,14 +118,14 @@ function buildMarkdown(t: Trajectory, score: SessionScore, mode: "metrics" | "fu
 		lines.push("");
 	}
 
-	// Full mode notice
-	if (mode === "full") {
+	// Full mode — Judge section
+	if (mode === "full" && score.judge) {
+		lines.push(formatJudgeSection(score.judge));
+	} else if (mode === "full") {
 		lines.push(`---`);
 		lines.push("");
-		lines.push(`> **Примечание (этап A):** Семантическая оценка LLM-судьи пока недоступна.`);
-		lines.push(`> Будет добавлена в этапе B: оценка по рубрикам —`);
-		lines.push(`> уместность скила, полнота результата, качество декомпозиции,`);
-		lines.push(`> экономичность, compliance и качество оркестрации.`);
+		lines.push(`> **Примечание:** LLM-судья недоступен (модель не найдена или не настроена).`);
+		lines.push(`> Балл основан только на детерминированных метриках.`);
 		lines.push("");
 	}
 
@@ -151,7 +152,7 @@ function buildMarkdown(t: Trajectory, score: SessionScore, mode: "metrics" | "fu
 
 	// Footer
 	lines.push(`---`);
-	lines.push(`*Сгенерировано fan-session-analytics v1.0.0 (этап A MVP)*`);
+	lines.push(`*Сгенерировано fan-session-analytics v1.1.1 (этап B)*`);
 	lines.push(`*Дата отчёта: ${new Date().toISOString().slice(0, 19)}*`);
 
 	return lines.join("\n");
@@ -176,4 +177,81 @@ function formatFinding(f: Finding, emoji: Record<string, string>): string {
 
 function sanitizeSlug(id: string): string {
 	return id.replace(/[^a-zA-Z0-9-]/g, "_").slice(0, 40);
+}
+
+// ============================================================================
+// Judge report sections
+// ============================================================================
+
+function formatJudgeSection(judge: JudgeResult): string {
+	const lines: string[] = [];
+
+	lines.push(`---`);
+	lines.push("");
+	lines.push(`## Оценки судьи`);
+	lines.push("");
+
+	if (judge.unavailable) {
+		lines.push(`> ⚠️ Судья недоступен. Балл основан только на детерминированных метриках.`);
+		lines.push("");
+		return lines.join("\n");
+	}
+
+	lines.push(`**Балл судьи:** ${judge.judgeScore}/100`);
+	lines.push(`**Модель:** ${judge.model}`);
+	lines.push(`**Батчей:** ${judge.batchCount}`);
+	lines.push("");
+
+	// Rubrics table
+	lines.push(`| Рубрика | Балл | Обоснование | Шаги |`);
+	lines.push(`|---------|------|-------------|------|`);
+
+	for (const key of Object.keys(judge.rubrics) as RubricKey[]) {
+		const rubricDef = RUBRICS[key];
+		const nameRu = rubricDef ? rubricDef.nameRu : key;
+		const val = judge.rubrics[key];
+
+		if (val === "n/a") {
+			lines.push(`| ${nameRu} | n/a | — | — |`);
+		} else {
+			const eval_ = val as RubricEvaluation;
+			const scoreEmoji = eval_.score === 3 ? "✅" : eval_.score === 2 ? "🟡" : eval_.score === 1 ? "🟠" : "❌";
+			const refs = eval_.stepRefs.length > 0 ? eval_.stepRefs.map((r) => `#${r}`).join(", ") : "—";
+			const justification = eval_.justification.length > 120
+				? eval_.justification.slice(0, 120) + "…"
+				: eval_.justification;
+			lines.push(`| ${scoreEmoji} ${nameRu} | ${eval_.score}/3 | ${justification} | ${refs} |`);
+		}
+	}
+	lines.push("");
+
+	// Recommendations
+	if (judge.recommendations.length > 0) {
+		lines.push(`## Рекомендации судьи`);
+		lines.push("");
+
+		for (const rec of judge.recommendations) {
+			const targetEmoji: Record<string, string> = {
+				skill: "🔧",
+				prompt: "📝",
+				config: "⚙️",
+				worker: "👷",
+			};
+			const emoji = targetEmoji[rec.target] || "💡";
+			lines.push(`- ${emoji} **[${rec.target}]** ${rec.suggestion}`);
+			lines.push(`  *Причина:* ${rec.reason}`);
+		}
+		lines.push("");
+	}
+
+	// Usage
+	lines.push(`### Расход на судью`);
+	lines.push("");
+	lines.push(`- Токенов: ${judge.usage.inputTokens + judge.usage.outputTokens} (вход: ${judge.usage.inputTokens}, выход: ${judge.usage.outputTokens})`);
+	lines.push(`- Стоимость: ~$${judge.usage.cost.toFixed(4)}`);
+	lines.push(`- Вызовов: ${judge.usage.calls}`);
+	lines.push(`- Модель: ${judge.model}`);
+	lines.push("");
+
+	return lines.join("\n");
 }

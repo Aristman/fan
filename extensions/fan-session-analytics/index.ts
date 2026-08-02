@@ -11,7 +11,7 @@ import {
 } from "./src/config.js";
 import { runPipeline } from "./src/pipeline.js";
 import type { AnalyzeOptions } from "./src/pipeline.js";
-import type { AnalyticsConfig } from "./src/types.js";
+import type { AnalyticsConfig, JudgeDeps } from "./src/types.js";
 import {
 	discoverInstalledSkills,
 	groupModelsByProvider,
@@ -37,7 +37,7 @@ export default function sessionAnalyticsExtension(fan: ExtensionAPI) {
 			}),
 			mode: Type.Union([Type.Literal("metrics"), Type.Literal("full")], {
 				description:
-					'"metrics" = только детерминированные метрики; "full" = метрики + примечание об LLM-судье (этап B).',
+					'"metrics" = только детерминированные метрики; "full" = метрики + LLM-судья (семантическая оценка по рубрикам).',
 				default: "metrics" as any,
 			}),
 			since: Type.Optional(
@@ -56,14 +56,31 @@ export default function sessionAnalyticsExtension(fan: ExtensionAPI) {
 			try {
 				const cwd = ctx.cwd || process.cwd();
 				const cfg = await loadConfig(__dirname, cwd);
+				const mode = (params.mode as "metrics" | "full") || "metrics";
+
+				// Build judge deps for full mode
+				let judgeDeps: JudgeDeps | undefined;
+				if (mode === "full") {
+					try {
+						const { complete } = await import("@seaagents/fan-ai");
+						judgeDeps = {
+							complete: complete as any,
+							modelRegistry: ctx.modelRegistry,
+							currentModel: ctx.model,
+						};
+					} catch {
+						// @seaagents/fan-ai not available — judge will report unavailable
+					}
+				}
 
 				const opts: AnalyzeOptions = {
 					target: params.target as "last" | "dir" | string,
-					mode: (params.mode as "metrics" | "full") || "metrics",
+					mode,
 					since: params.since,
 					batchSize: params.batchSize,
 					cwd,
 					cfg,
+					judgeDeps,
 				};
 
 				const { results, summary } = await runPipeline(opts);
@@ -86,6 +103,17 @@ export default function sessionAnalyticsExtension(fan: ExtensionAPI) {
 					chatLines.push(
 						`  Находки: ${result.score.metrics["findingsHigh"]} выс. / ${result.score.metrics["findingsMedium"]} ср. / ${result.score.metrics["findingsLow"]} низ.`,
 					);
+
+					// Judge score line
+					if (result.score.judge) {
+						const j = result.score.judge;
+						if (j.unavailable) {
+							chatLines.push(`  Судья: недоступен (модель не найдена)`);
+						} else {
+							chatLines.push(`  Судья: ${j.judgeScore}/100 (${j.batchCount} батчей, ${j.model})`);
+						}
+					}
+
 					chatLines.push(`  Отчёт: \`${result.reportPath}\``);
 
 					// Top findings
@@ -181,11 +209,27 @@ export default function sessionAnalyticsExtension(fan: ExtensionAPI) {
 					return;
 				}
 
+				// Build judge deps for full mode
+				let slashJudgeDeps: JudgeDeps | undefined;
+				if (mode === "full") {
+					try {
+						const { complete } = await import("@seaagents/fan-ai");
+						slashJudgeDeps = {
+							complete: complete as any,
+							modelRegistry: ctx.modelRegistry,
+							currentModel: ctx.model,
+						};
+					} catch {
+						// fan-ai not available
+					}
+				}
+
 				const opts: AnalyzeOptions = {
 					target,
 					mode: mode as "metrics" | "full",
 					cwd,
 					cfg,
+					judgeDeps: slashJudgeDeps,
 				};
 
 				ctx.ui.notify("Запуск аналитики сессий...", "info");

@@ -31,6 +31,7 @@ export const DEFAULT_CONFIG: AnalyticsConfig = {
 	reports: { dir: ".fan/reports/session-analytics" },
 	detectors: {
 		idleThresholdMin: 15,
+		d12Enabled: true,
 	},
 };
 
@@ -221,7 +222,7 @@ const KNOWN_ORCHESTRATION_KEYS = new Set<string>([
 	"patternMinSessions",
 ]);
 const KNOWN_REPORTS_KEYS = new Set<string>(["dir"]);
-const KNOWN_DETECTORS_KEYS = new Set<string>(["idleThresholdMin"]);
+const KNOWN_DETECTORS_KEYS = new Set<string>(["idleThresholdMin", "d12Enabled"]);
 
 /** Validate a config object. Unknown keys produce warnings, not errors. */
 export function validateConfig(obj: unknown): ConfigValidationResult {
@@ -399,6 +400,9 @@ export function validateConfig(obj: unknown): ConfigValidationResult {
 			}
 			if ("idleThresholdMin" in d && typeof d.idleThresholdMin !== "number") {
 				errors.push('"detectors.idleThresholdMin" must be a number');
+			}
+			if ("d12Enabled" in d && typeof d.d12Enabled !== "boolean") {
+				errors.push('"detectors.d12Enabled" must be a boolean');
 			}
 		}
 	}

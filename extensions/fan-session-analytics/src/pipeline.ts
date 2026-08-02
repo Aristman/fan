@@ -1,4 +1,4 @@
-import type { AnalyticsConfig, Trajectory, SessionScore } from "./types.js";
+import type { AnalyticsConfig, Trajectory, SessionScore, JudgeDeps } from "./types.js";
 import {
 	parseSessionFile,
 	isGarbagePath,
@@ -15,6 +15,7 @@ import { ALL_DETECTORS } from "./detectors/index.js";
 import { trySqliteTokens } from "./detectors/d9-tokens-cost.js";
 import { calculateScore } from "./score.js";
 import { generateReport } from "./report.js";
+import { compressTrajectory, runJudge } from "./judge/index.js";
 
 export interface AnalyzeOptions {
 	target: "last" | "dir" | string; // "last" | path to jsonl | "dir"
@@ -23,6 +24,8 @@ export interface AnalyzeOptions {
 	batchSize?: number;
 	cwd: string;
 	cfg: AnalyticsConfig;
+	/** Optional judge dependencies (injected for full mode). */
+	judgeDeps?: JudgeDeps;
 }
 
 export interface AnalyzeResult {
@@ -99,6 +102,16 @@ export async function runPipeline(opts: AnalyzeOptions): Promise<{
 
 			const findings = await runDetectors(trajectory, opts.cfg);
 			const score = calculateScore(findings, trajectory.truncated);
+
+			// Run LLM judge in full mode
+			if (opts.mode === "full" && opts.judgeDeps) {
+				const batches = compressTrajectory(trajectory, opts.cfg);
+				const judgeResult = await runJudge(batches, opts.judgeDeps, opts.cfg, trajectory);
+				score.judge = judgeResult;
+				score.combinedScore = calculateCombinedScore(score.total, judgeResult.judgeScore, judgeResult.unavailable);
+				score.total = score.combinedScore;
+			}
+
 			const reportPath = await generateReport(
 				trajectory,
 				score,
@@ -148,6 +161,21 @@ async function runDetectors(trajectory: Trajectory, cfg: AnalyticsConfig) {
 	}
 
 	return allFindings;
+}
+
+/**
+ * Calculate combined score: deterministic × 0.6 + judgeScore × 0.4.
+ * If judge unavailable, use deterministic score only.
+ */
+function calculateCombinedScore(
+	deterministicScore: number,
+	judgeScore: number,
+	judgeUnavailable?: boolean,
+): number {
+	if (judgeUnavailable || judgeScore === 0) {
+		return deterministicScore;
+	}
+	return Math.round(deterministicScore * 0.6 + judgeScore * 0.4);
 }
 
 function buildSummary(results: AnalyzeResult[], errors: Array<{ path: string; error: string }>): string {

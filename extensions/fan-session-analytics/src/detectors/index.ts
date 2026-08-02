@@ -11,6 +11,7 @@ import { detectTokensCost } from "./d9-tokens-cost.js";
 import { detectOrphanedCalls } from "./d10-orphaned-calls.js";
 import { detectProportionality } from "./d11-proportionality.js";
 import { detectEmptyRetries } from "./d13-empty-retries.js";
+import { detectWorkerRouting } from "./d12-worker-routing.js";
 
 export const ALL_DETECTORS: Array<{ id: string; fn: DetectFn }> = [
 	{ id: "D1", fn: detectToolErrors },
@@ -24,5 +25,6 @@ export const ALL_DETECTORS: Array<{ id: string; fn: DetectFn }> = [
 	{ id: "D9", fn: detectTokensCost },
 	{ id: "D10", fn: detectOrphanedCalls },
 	{ id: "D11", fn: detectProportionality },
+	{ id: "D12", fn: detectWorkerRouting },
 	{ id: "D13", fn: detectEmptyRetries },
 ];

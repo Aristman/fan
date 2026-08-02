@@ -22,6 +22,7 @@
   },
   "reports": { "dir": ".fan/reports/session-analytics" },
   "detectors": {
-    "idleThresholdMin": 15
+    "idleThresholdMin": 15,
+    "d12Enabled": true
   }
 }

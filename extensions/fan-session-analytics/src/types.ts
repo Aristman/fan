@@ -55,6 +55,9 @@ export interface SessionScore {
 	findings: Finding[];
 	metrics: Record<string, number | string>;
 	truncated: boolean;
+	judge?: JudgeResult;
+	/** Combined score: deterministic × 0.6 + judgeScore × 0.4 (when judge available) */
+	combinedScore?: number;
 }
 
 export interface AnalyticsConfig {
@@ -82,7 +85,64 @@ export interface AnalyticsConfig {
 	reports: { dir: string };
 	detectors: {
 		idleThresholdMin: number;
+		d12Enabled: boolean;
 	};
 }
 
 export type DetectFn = (t: Trajectory, cfg: AnalyticsConfig) => Finding[] | Promise<Finding[]>;
+
+// ============================================================================
+// Judge types (Stage B)
+// ============================================================================
+
+/** A single batch of compressed trajectory for the judge. */
+export interface JudgeBatch {
+	index: number;
+	totalBatches: number;
+	header: string;
+	steps: string[];
+	isLast: boolean;
+}
+
+/** Single rubric evaluation from the judge. */
+export interface RubricEvaluation {
+	score: number; // 0-3
+	justification: string;
+	stepRefs: number[];
+}
+
+/** A recommendation from the judge. */
+export interface JudgeRecommendation {
+	target: "skill" | "prompt" | "config" | "worker";
+	suggestion: string;
+	reason: string;
+}
+
+/** Result of the full judge run. */
+export interface JudgeResult {
+	rubrics: Record<string, RubricEvaluation | "n/a">;
+	judgeScore: number; // 0-100
+	recommendations: JudgeRecommendation[];
+	usage: JudgeUsage;
+	model: string;
+	unavailable?: boolean;
+	batchCount: number;
+}
+
+/** Token usage for judge calls. */
+export interface JudgeUsage {
+	inputTokens: number;
+	outputTokens: number;
+	cost: number;
+	calls: number;
+}
+
+/** Dependencies for the judge client (injected for testability). */
+export interface JudgeDeps {
+	complete: (model: any, context: { systemPrompt?: string; messages: any[] }, options?: any) => Promise<any>;
+	modelRegistry: {
+		find: (provider: string, modelId: string) => any | undefined;
+		getAvailable: () => any[];
+	};
+	currentModel: any | undefined;
+}
