@@ -54,6 +54,7 @@ export const detectLoops: DetectFn = (t, _cfg) => {
 						entryIds: ids,
 						excerpt: `Инструмент "${prev.toolName}" вызван ${runCount} раз подряд с одинаковыми аргументами`,
 					},
+					metrics: { loopCount: 1, loopLength: runCount },
 					recommendation: "Повторяющиеся вызовы инструментов указывают на застревание агента. Проверьте, не выполняется ли операция с ошибкой без уведомления.",
 				});
 			}
@@ -74,6 +75,7 @@ export const detectLoops: DetectFn = (t, _cfg) => {
 				entryIds: ids,
 				excerpt: `Инструмент "${last.toolName}" вызван ${runCount} раз подряд с одинаковыми аргументами`,
 			},
+			metrics: { loopCount: 1, loopLength: runCount },
 			recommendation: "Повторяющиеся вызовы инструментов указывают на застревание агента.",
 		});
 	}
@@ -114,6 +116,7 @@ export const detectLoops: DetectFn = (t, _cfg) => {
 							entryIds: ids,
 							excerpt: `Инструмент "${toolName}" вызван ${cluster.length} раз с похожими аргументами в окне ${windowSize} шагов (паттерн: ${toolCalls[indices[0]].toolName} чередуется с другими вызовами)`,
 						},
+						metrics: { loopCount: 1, loopLength: cluster.length },
 					});
 				}
 				break; // One finding per key

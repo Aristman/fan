@@ -38,6 +38,7 @@ export const detectToolErrors: DetectFn = (t, _cfg) => {
 				entryIds: Object.values(errorResults).flat().slice(0, 10),
 				excerpt: `Уровень ошибок: ${(errorRate * 100).toFixed(1)}%\nПо инструментам:\n${byTool}`,
 			},
+			metrics: { errorCount: totalErrors, totalResults: totalCalls, errorRate },
 			recommendation:
 				errorRate > 0.2
 					? "Высокий уровень ошибок инструментов указывает на проблемы в паттернах использования. Проверьте контексты ошибок."

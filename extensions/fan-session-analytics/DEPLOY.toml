@@ -29,9 +29,11 @@ exclude = [
     "scripts/",
     "tsconfig.json",
     "config.json",
+    "state.json",
     ".fan/",
 ]
 
 preserve = [
     "config.json",
+    "state.json",
 ]

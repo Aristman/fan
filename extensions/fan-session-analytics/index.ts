@@ -12,6 +12,8 @@ import {
 import { runPipeline } from "./src/pipeline.js";
 import type { AnalyzeOptions } from "./src/pipeline.js";
 import type { AnalyticsConfig, JudgeDeps } from "./src/types.js";
+import { handleSessionShutdown, handleSessionStartAuto } from "./src/auto.js";
+import { handleSessionStartWeekly } from "./src/weekly.js";
 import {
 	discoverInstalledSkills,
 	groupModelsByProvider,
@@ -160,6 +162,37 @@ export default function sessionAnalyticsExtension(fan: ExtensionAPI) {
 				};
 			}
 		},
+	});
+
+	// --- Event: session_shutdown (F9 — auto-analyze) ---
+	fan.on("session_shutdown", async (event, ctx) => {
+		try {
+			const cfg = await loadConfig(__dirname, ctx.cwd);
+			await handleSessionShutdown(event, ctx, __dirname, cfg);
+		} catch (err) {
+			// Never crash FAN on auto-analyze failure
+			// Silently ignore — auto-analysis is best-effort
+		}
+	});
+
+	// --- Event: session_start (F9 display + F10 weekly batch) ---
+	fan.on("session_start", async (event, ctx) => {
+		try {
+			// F9: show auto-analysis summary from previous session
+			await handleSessionStartAuto(event, ctx, __dirname);
+		} catch {
+			// Never crash on display failure
+		}
+
+		// F10: weekly batch analysis — фоном, чтобы не блокировать старт сессии
+		void (async () => {
+			try {
+				const cfg = await loadConfig(__dirname, ctx.cwd);
+				await handleSessionStartWeekly(event, ctx, __dirname, cfg);
+			} catch {
+				// Never crash on weekly batch failure
+			}
+		})();
 	});
 
 	// --- Command: /session-analytics ---
