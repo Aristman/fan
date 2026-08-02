@@ -100,6 +100,13 @@ export function listGolden(state: ExtensionState): GoldenEntry[] {
 }
 
 /**
+ * Normalize path separators for cross-platform comparison (Windows backslash vs forward slash).
+ */
+function normalizePath(p: string): string {
+	return p.replace(/\\/g, "/").replace(/\/+$/, "");
+}
+
+/**
  * Найти эталон для текущей траектории.
  * Совпадение = тот же каталог сессий (parent directory jsonl-файла).
  * Исключает текущую сессию (по sessionId и path).
@@ -110,11 +117,12 @@ export function findGoldenForTrajectory(
 	trajectory: Trajectory,
 ): GoldenEntry | undefined {
 	if (!state.golden || state.golden.length === 0) return undefined;
-	const currentDir = dirname(trajectory.path);
+	const currentDir = dirname(normalizePath(trajectory.path));
+	const currentPath = normalizePath(trajectory.path);
 	const candidates = state.golden.filter(
-		(g) => dirname(g.path) === currentDir
+		(g) => dirname(normalizePath(g.path)) === currentDir
 			&& g.sessionId !== trajectory.sessionId
-			&& g.path !== trajectory.path,
+			&& normalizePath(g.path) !== currentPath,
 	);
 	if (candidates.length === 0) return undefined;
 	if (candidates.length === 1) return candidates[0];
