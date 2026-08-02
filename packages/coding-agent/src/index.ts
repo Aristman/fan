@@ -317,6 +317,7 @@ export {
 	ExtensionInputComponent,
 	ExtensionSelectorComponent,
 	FooterComponent,
+	resolveInitialIndex,
 	keyHint,
 	keyText,
 	LoginDialogComponent,

@@ -1884,6 +1884,11 @@ Extensions can interact with users via `ctx.ui` methods and customize how messag
 // Select from options
 const choice = await ctx.ui.select("Pick one:", ["A", "B", "C"]);
 
+// Select with pre-positioned cursor (by value; ignored if not found)
+const choice2 = await ctx.ui.select("Pick one:", ["A", "B", "C"], {
+  initialValue: "B",
+});
+
 // Confirm dialog
 const ok = await ctx.ui.confirm("Delete?", "This cannot be undone");
 

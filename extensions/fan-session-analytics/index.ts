@@ -263,6 +263,9 @@ async function multiSelect(
 ): Promise<string[] | undefined> {
 	const selected = new Set(preSelected);
 
+	// Первый вызов — без начальной позиции (курсор на первом элементе).
+	let nextInitialValue: string | undefined;
+
 	while (true) {
 		const options: string[] = items.map((item) =>
 			selected.has(item) ? `✔ ${item}` : `☐ ${item}`,
@@ -275,6 +278,9 @@ async function multiSelect(
 		const choice = await ctx.ui.select(
 			`${title}\n(Пробел/Enter — отметить/снять)`,
 			options,
+			nextInitialValue !== undefined
+				? { initialValue: nextInitialValue }
+				: undefined,
 		);
 
 		if (choice === undefined) return undefined; // Esc
@@ -285,7 +291,11 @@ async function multiSelect(
 			return items.filter((item) => selected.has(item));
 		}
 
-		if (choice === "---") continue;
+		if (choice === "---") {
+			// Курсор на разделитель — при следующем открытии сохраняем позицию.
+			nextInitialValue = "---";
+			continue;
+		}
 
 		// Toggle item
 		const isMarked = choice.startsWith("✔ ");
@@ -295,6 +305,11 @@ async function multiSelect(
 		} else {
 			selected.add(itemName);
 		}
+
+		// Запоминаем НОВЫЙ label того же элемента (после toggle).
+		nextInitialValue = selected.has(itemName)
+			? `✔ ${itemName}`
+			: `☐ ${itemName}`;
 	}
 }
 

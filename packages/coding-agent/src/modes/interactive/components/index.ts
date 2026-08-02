@@ -12,7 +12,7 @@ export { type RenderDiffOptions, renderDiff } from "./diff.js";
 export { DynamicBorder } from "./dynamic-border.js";
 export { ExtensionEditorComponent } from "./extension-editor.js";
 export { ExtensionInputComponent } from "./extension-input.js";
-export { ExtensionSelectorComponent } from "./extension-selector.js";
+export { ExtensionSelectorComponent, resolveInitialIndex } from "./extension-selector.js";
 export { FooterComponent } from "./footer.js";
 export { keyHint, keyText, rawKeyHint } from "./keybinding-hints.js";
 export { LoginDialogComponent } from "./login-dialog.js";
