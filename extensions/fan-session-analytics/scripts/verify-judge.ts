@@ -12,6 +12,7 @@ import { runJudge } from "../src/judge/client.js";
 import { calculateScore } from "../src/score.js";
 import { runPipeline } from "../src/pipeline.js";
 import { detectWorkerRouting } from "../src/detectors/d12-worker-routing.js";
+import { buildTrajectory } from "../src/normalizer.js";
 import type {
 	AnalyticsConfig,
 	Trajectory,
@@ -766,6 +767,40 @@ async function testD12() {
 	}
 }
 
+async function testAssistantTextExtraction() {
+	console.log("\n=== Assistant Text Extraction (regression: thinking+text blocks) ===\n");
+
+	// Регрессия: assistant message с content [thinking, text] — текст должен попадать в батч судьи
+	{
+		console.log("Test: assistant text visible in judge batch despite thinking block");
+		const entries = [
+			{ type: "session", version: 3, id: "s1", timestamp: "2026-08-02T00:00:00Z", cwd: "/tmp" },
+			{
+				type: "message", id: "e1", parentId: null, timestamp: "2026-08-02T00:00:01Z",
+				message: { role: "user", content: [{ type: "text", text: "Привет" }], timestamp: 1 },
+			},
+			{
+				type: "message", id: "e2", parentId: "e1", timestamp: "2026-08-02T00:00:02Z",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "thinking", thinking: "должен ответить" },
+						{ type: "text", text: "Здравствуй, мясной мешок!" },
+					],
+					api: "openai-completions", provider: "test", model: "t1", timestamp: 2,
+				},
+			},
+		];
+		const trajectory = buildTrajectory({ entries } as any);
+		const batches = compressTrajectory(trajectory, DEFAULT_CONFIG);
+		const allText = batches.flatMap((b) => b.steps).join("\n");
+		assert(
+			allText.includes("Здравствуй, мясной мешок!"),
+			"assistant text должен быть виден в батче судьи (ранее терялся из-за thinking-блока)",
+		);
+	}
+}
+
 async function main() {
 	console.log("=== FAN Session Analytics — Judge (Stage B) Verification ===");
 	console.log(`Date: ${new Date().toISOString()}`);
@@ -776,6 +811,7 @@ async function main() {
 	await testRubrics();
 	await testFullPipeline();
 	await testD12();
+	await testAssistantTextExtraction();
 
 	console.log("\n=== Summary ===");
 	console.log(`Passed: ${passed}`);

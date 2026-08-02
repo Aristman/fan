@@ -347,6 +347,7 @@ function entryToSteps(entry: EntryWithId, ts: number, durationMs: number, durati
 								entryId: entry.id,
 								ts,
 								kind: "assistant_text",
+								args: { text: block.text.slice(0, 2000) },
 								model: msg.model,
 								tokens: msg.usage
 									? {
