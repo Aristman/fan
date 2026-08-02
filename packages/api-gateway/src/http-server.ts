@@ -5,12 +5,15 @@ import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { generateToken as createToken, listTokens, revokeToken, tokenAuth } from "./auth.js";
 import type {
+	AnalyticsReportMeta,
 	ApiError,
 	ApiMcpStatusResponse,
 	CreateSessionRequest,
 	CreateSessionResponse,
 	DeleteSessionResponse,
 	GenerateTokenResponse,
+	GetAnalyticsReportResponse,
+	GetAnalyticsReportsResponse,
 	GetBudgetResponse,
 	GetModelSettingsResponse,
 	GetModelsResponse,
@@ -57,6 +60,10 @@ export interface SessionAdapter {
 	getAvailableModels(): Promise<ModelInfo[]>;
 	/** Bind extensions to the current session (called after session switch/create) */
 	bindSessionExtensions(): Promise<void>;
+	/** List analytics report files */
+	listAnalyticsReports(): Promise<AnalyticsReportMeta[]>;
+	/** Read a single analytics report by name */
+	readAnalyticsReport(name: string): Promise<string | null>;
 }
 
 // ============================================================================
@@ -236,6 +243,28 @@ async function createApp(
 		const body = await c.req.json<UpdateBudgetRequest>();
 		await modelManager.configureBudget(body);
 		const resp: UpdateBudgetResponse = { config: body };
+		return c.json(resp);
+	});
+
+	// --- Analytics ---
+
+	app.get("/api/analytics/reports", async (c) => {
+		const reports = await sessionAdapter.listAnalyticsReports();
+		const resp: GetAnalyticsReportsResponse = { reports };
+		return c.json(resp);
+	});
+
+	app.get("/api/analytics/reports/:name", async (c) => {
+		const rawName = c.req.param("name");
+		// Security: only allow safe basenames
+		if (!/^[\w-][\w.-]*\.md$/.test(rawName)) {
+			return c.json({ error: "Invalid report name", code: "BAD_REQUEST" } satisfies ApiError, 400);
+		}
+		const content = await sessionAdapter.readAnalyticsReport(rawName);
+		if (content === null) {
+			return c.json({ error: "Report not found", code: "NOT_FOUND" } satisfies ApiError, 404);
+		}
+		const resp: GetAnalyticsReportResponse = { name: rawName, content };
 		return c.json(resp);
 	});
 

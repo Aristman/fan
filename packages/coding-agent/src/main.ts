@@ -441,6 +441,49 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 			}));
 		},
 
+		// --- Analytics ---
+		async listAnalyticsReports() {
+			const { join } = await import("node:path");
+			const { readdir, stat } = await import("node:fs/promises");
+			const reportsDir = join(runtime.services.cwd, ".fan", "reports", "session-analytics");
+			try {
+				const entries = await readdir(reportsDir);
+				const mdFiles = entries.filter((f) => f.endsWith(".md"));
+				const metas = await Promise.all(
+					mdFiles.map(async (name) => {
+						const st = await stat(join(reportsDir, name));
+						return {
+							name,
+							sizeBytes: st.size,
+							mtime: st.mtime.toISOString(),
+							kind: (name.startsWith("weekly_") ? "weekly" : "session") as "session" | "weekly",
+						};
+					}),
+				);
+				metas.sort((a, b) => new Date(b.mtime).getTime() - new Date(a.mtime).getTime());
+				return metas;
+			} catch {
+				return [];
+			}
+		},
+
+		async readAnalyticsReport(name: string) {
+			const { join, resolve: resolvePath } = await import("node:path");
+			const { readFile } = await import("node:fs/promises");
+			const reportsDir = join(runtime.services.cwd, ".fan", "reports", "session-analytics");
+			const resolved = resolvePath(reportsDir, name);
+			const resolvedDir = resolvePath(reportsDir);
+			// Path traversal protection
+			if (!resolved.startsWith(resolvedDir + "/") && !resolved.startsWith(resolvedDir + "\\")) {
+				return null;
+			}
+			try {
+				return await readFile(resolved, "utf-8");
+			} catch {
+				return null;
+			}
+		},
+
 		bindSessionExtensions,
 	};
 }
