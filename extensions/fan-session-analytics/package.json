@@ -1,6 +1,6 @@
 {
 	"name": "fan-session-analytics",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"description": "Session analytics extension for FAN — reads completed sessions, evaluates quality metrics, and generates reports with findings and recommendations.",
 	"type": "module",
 	"main": "index.ts",
