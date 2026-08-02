@@ -94,6 +94,7 @@ cp -r extensions/fan-session-analytics ~/.fan/agent/extensions/
 | `orchestration` | `retryPromptSimilarity` | number | Порог схожести промптов для D13 (0–1) |
 | `orchestration` | `patternMinSessions` | number | Мин. сессий с паттерном для рекомендации синтеза (F13) |
 | `reports` | `dir` | string | Каталог отчётов (относительно cwd) |
+| `detectors` | `idleThresholdMin` | number | Порог простоя (минуты): интервалы > этого значения исключаются из метрик D3 как user-idle (дефолт 15) |
 
 При обновлении через FAN Store `config.json` сохраняется (preserve в DEPLOY.toml).
 

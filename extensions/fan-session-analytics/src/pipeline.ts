@@ -92,7 +92,7 @@ export async function runPipeline(opts: AnalyzeOptions): Promise<{
 			// Warning for explicit path with self-reference
 			const isSelfReferencing = opts.target !== "dir" && containsSessionAnalyze(parsed.entries);
 
-			const trajectory = buildTrajectory(parsed);
+			const trajectory = buildTrajectory(parsed, opts.cfg.detectors?.idleThresholdMin);
 
 			// Pre-fetch token data from SQLite (async, best-effort) for D9
 			trajectory.dbTokensInfo = await trySqliteTokens(trajectory.sessionId);

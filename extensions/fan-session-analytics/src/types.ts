@@ -12,6 +12,7 @@ export interface TrajectoryStep {
 	tokens?: { input: number; output: number; total: number; cacheRead?: number; cacheWrite?: number };
 	cost?: number;
 	durationMs?: number;
+	durationKind?: "tool_exec" | "generation" | "user_idle";
 }
 
 export interface WorkerSpawn {
@@ -79,6 +80,9 @@ export interface AnalyticsConfig {
 		patternMinSessions: number;
 	};
 	reports: { dir: string };
+	detectors: {
+		idleThresholdMin: number;
+	};
 }
 
 export type DetectFn = (t: Trajectory, cfg: AnalyticsConfig) => Finding[] | Promise<Finding[]>;

@@ -448,6 +448,7 @@ async function handleInitWizard(
 			heavySkills,
 		},
 		reports: { dir: reportsDirFinal },
+		detectors: { ...currentCfg.detectors },
 	};
 
 	// Validate

@@ -29,6 +29,9 @@ export const DEFAULT_CONFIG: AnalyticsConfig = {
 		patternMinSessions: 3,
 	},
 	reports: { dir: ".fan/reports/session-analytics" },
+	detectors: {
+		idleThresholdMin: 15,
+	},
 };
 
 function deepMerge(base: Record<string, unknown>, override: Record<string, unknown>): Record<string, unknown> {
@@ -121,6 +124,7 @@ export async function loadConfigWithSources(
 		"filters",
 		"orchestration",
 		"reports",
+		"detectors",
 	];
 
 	// Start with defaults
@@ -194,6 +198,7 @@ const KNOWN_TOP_KEYS = new Set<string>([
 	"filters",
 	"orchestration",
 	"reports",
+	"detectors",
 ]);
 
 const KNOWN_JUDGE_KEYS = new Set<string>([
@@ -216,6 +221,7 @@ const KNOWN_ORCHESTRATION_KEYS = new Set<string>([
 	"patternMinSessions",
 ]);
 const KNOWN_REPORTS_KEYS = new Set<string>(["dir"]);
+const KNOWN_DETECTORS_KEYS = new Set<string>(["idleThresholdMin"]);
 
 /** Validate a config object. Unknown keys produce warnings, not errors. */
 export function validateConfig(obj: unknown): ConfigValidationResult {
@@ -377,6 +383,22 @@ export function validateConfig(obj: unknown): ConfigValidationResult {
 			}
 			if ("dir" in r && typeof r.dir !== "string") {
 				errors.push('"reports.dir" must be a string');
+			}
+		}
+	}
+
+	if ("detectors" in record) {
+		if (typeof record.detectors !== "object" || record.detectors === null || Array.isArray(record.detectors)) {
+			errors.push('"detectors" must be an object');
+		} else {
+			const d = record.detectors as Record<string, unknown>;
+			for (const k of Object.keys(d)) {
+				if (!KNOWN_DETECTORS_KEYS.has(k)) {
+					warnings.push(`Unknown key "detectors.${k}"`);
+				}
+			}
+			if ("idleThresholdMin" in d && typeof d.idleThresholdMin !== "number") {
+				errors.push('"detectors.idleThresholdMin" must be a number');
 			}
 		}
 	}

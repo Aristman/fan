@@ -36,6 +36,15 @@ export function calculateScore(findings: Finding[], truncated: boolean): Session
 				const match = finding.evidence.excerpt.match(/Session total:\s*([\d.]+)\s*min/);
 				if (match) metrics["durationMin"] = parseFloat(match[1]);
 			}
+			if (finding.metrics?.durationP50Ms !== undefined) {
+				metrics["durationP50Ms"] = finding.metrics.durationP50Ms;
+			}
+			if (finding.metrics?.durationP95Ms !== undefined) {
+				metrics["durationP95Ms"] = finding.metrics.durationP95Ms;
+			}
+			if (finding.metrics?.idleExcluded !== undefined) {
+				metrics["idleExcluded"] = finding.metrics.idleExcluded;
+			}
 		}
 		if (finding.detectorId === "D9") {
 			// Prefer structured metrics

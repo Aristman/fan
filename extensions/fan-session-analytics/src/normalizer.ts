@@ -10,11 +10,16 @@ interface EntryWithId {
 	[key: string]: unknown;
 }
 
+/** Default idle threshold in minutes. */
+const DEFAULT_IDLE_THRESHOLD_MIN = 15;
+
 /**
  * Build main branch trajectory from entries by following id/parentId chain
  * from root to the last leaf.
+ *
+ * @param idleThresholdMin  Minutes after which a gap is treated as user-idle (default 15).
  */
-export function buildTrajectory(session: ParsedSession): Trajectory {
+export function buildTrajectory(session: ParsedSession, idleThresholdMin?: number): Trajectory {
 	const entries = session.entries;
 	if (entries.length === 0) {
 		return emptyTrajectory(session);
@@ -77,6 +82,7 @@ export function buildTrajectory(session: ParsedSession): Trajectory {
 	const workersSpawned: WorkerSpawn[] = [];
 	const delegateTaskResults = new Map<string, { verdict: string; agentType: string }>();
 	let compactions = 0;
+	const idleThresholdMs = (idleThresholdMin ?? DEFAULT_IDLE_THRESHOLD_MIN) * 60 * 1000;
 	let prevTs = 0;
 
 	for (const id of branchIds) {
@@ -87,8 +93,11 @@ export function buildTrajectory(session: ParsedSession): Trajectory {
 		const durationMs = prevTs > 0 ? ts - prevTs : 0;
 		prevTs = ts;
 
+		// Classify interval: agent-controlled vs user-idle
+		const durationKind = classifyInterval(entry, durationMs, idleThresholdMs);
+
 		// FIX CRITICAL 2: entryToSteps returns TrajectoryStep[] (one step per toolCall)
-		const entrySteps = entryToSteps(entry, ts, durationMs);
+		const entrySteps = entryToSteps(entry, ts, durationMs, durationKind);
 		steps.push(...entrySteps);
 
 		// Extract side-effects from message entries
@@ -254,12 +263,33 @@ export function buildTrajectory(session: ParsedSession): Trajectory {
  * Convert a single entry to one or more trajectory steps.
  * Returns an array to handle assistant messages with multiple toolCalls (FIX CRITICAL 2).
  */
-function entryToSteps(entry: EntryWithId, ts: number, durationMs: number): TrajectoryStep[] {
+/**
+ * Classify a duration interval based on the current entry type and idle threshold.
+ * - tool_exec: interval before a toolResult (agent tool execution)
+ * - generation: interval before an assistant message (agent response generation)
+ * - user_idle: interval before a user message, idle gap, or non-agent entry
+ */
+function classifyInterval(entry: EntryWithId, durationMs: number, idleThresholdMs: number): "tool_exec" | "generation" | "user_idle" {
+	// Idle gap exceeds threshold
+	if (durationMs > idleThresholdMs) return "user_idle";
+
+	if (entry.type === "message") {
+		const msg = (entry as any).message;
+		if (msg?.role === "user") return "user_idle";
+		if (msg?.role === "assistant") return "generation";
+		if (msg?.role === "toolResult") return "tool_exec";
+	}
+
+	return "user_idle";
+}
+
+function entryToSteps(entry: EntryWithId, ts: number, durationMs: number, durationKind: "tool_exec" | "generation" | "user_idle"): TrajectoryStep[] {
 	const base: TrajectoryStep = {
 		entryId: entry.id,
 		ts,
 		kind: "other",
 		durationMs: durationMs > 0 ? durationMs : undefined,
+		durationKind,
 	};
 
 	switch (entry.type) {
@@ -299,6 +329,7 @@ function entryToSteps(entry: EntryWithId, ts: number, durationMs: number): Traje
 									: undefined,
 								cost: msg.usage?.cost?.total || 0,
 								durationMs: durationMs > 0 ? durationMs : undefined,
+								durationKind,
 							});
 						} else if (block?.type === "text" && block.text?.trim()) {
 							result.push({
@@ -317,6 +348,7 @@ function entryToSteps(entry: EntryWithId, ts: number, durationMs: number): Traje
 									: undefined,
 								cost: msg.usage?.cost?.total || 0,
 								durationMs: durationMs > 0 ? durationMs : undefined,
+								durationKind,
 							});
 						}
 					}
