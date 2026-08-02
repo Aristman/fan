@@ -15,6 +15,8 @@ import { ALL_DETECTORS } from "./detectors/index.js";
 import { trySqliteTokens } from "./detectors/d9-tokens-cost.js";
 import { calculateScore } from "./score.js";
 import { generateReport } from "./report.js";
+import { mkdir, rename, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { compressTrajectory, runJudge } from "./judge/index.js";
 import { findGoldenForTrajectory, compareWithGolden } from "./golden.js";
 import { loadState } from "./state.js";
@@ -47,6 +49,8 @@ export interface PipelineOutput {
 	results: AnalyzeResult[];
 	summary: string;
 	patterns?: PatternCandidate[]; // F13 — only in dir/weekly modes
+	/** Path to the persisted dir-summary report (dir mode only). */
+	summaryPath?: string;
 }
 
 /**
@@ -175,7 +179,30 @@ export async function runPipeline(opts: AnalyzeOptions): Promise<PipelineOutput>
 	}
 
 	const summary = buildSummary(results, errors, patterns, opts.cfg);
-	return { results, summary, patterns };
+
+	// Persist dir summary so the patterns section (F13) survives the chat
+	let summaryPath: string | undefined;
+	if (opts.target === "dir" && results.length > 0) {
+		summaryPath = await writeSummaryReport(summary, opts);
+	}
+
+	return { results, summary, patterns, summaryPath };
+}
+
+/**
+ * Write the dir-mode summary (incl. patterns section) atomically.
+ */
+async function writeSummaryReport(summary: string, opts: AnalyzeOptions): Promise<string> {
+	const reportDir = join(opts.cwd, opts.cfg.reports.dir);
+	await mkdir(reportDir, { recursive: true });
+	const now = new Date();
+	const dateStr = now.toISOString().slice(0, 10);
+	const timeStr = now.toISOString().slice(11, 19).replace(/:/g, "-");
+	const filePath = join(reportDir, `summary_${dateStr}_${timeStr}.md`);
+	const tmpPath = filePath + ".tmp";
+	await writeFile(tmpPath, summary, "utf-8");
+	await rename(tmpPath, filePath);
+	return filePath;
 }
 
 async function runDetectors(trajectory: Trajectory, cfg: AnalyticsConfig) {

@@ -88,7 +88,7 @@ export default function sessionAnalyticsExtension(fan: ExtensionAPI) {
 					extensionDir: __dirname,
 				};
 
-				const { results, summary, patterns } = await runPipeline(opts);
+				const { results, summary, patterns, summaryPath } = await runPipeline(opts);
 
 				// Build chat-friendly summary
 				const chatLines: string[] = [];
@@ -145,7 +145,7 @@ export default function sessionAnalyticsExtension(fan: ExtensionAPI) {
 				// F13: patterns summary
 				if (patterns !== undefined && patterns.length > 0) {
 					chatLines.push("");
-					chatLines.push(`📊 Паттернов найдено: ${patterns.length} — см. отчёт`);
+					chatLines.push(`📊 Паттернов найдено: ${patterns.length} — см. сводный отчёт: ${summaryPath ?? "—"}`);
 				}
 
 				// Hint when config.json doesn't exist
@@ -295,7 +295,7 @@ export default function sessionAnalyticsExtension(fan: ExtensionAPI) {
 
 				ctx.ui.notify("Запуск аналитики сессий...", "info");
 
-				const { results, summary, patterns: cmdPatterns } = await runPipeline(opts);
+				const { results, summary, patterns: cmdPatterns, summaryPath: cmdSummaryPath } = await runPipeline(opts);
 
 				// Print summary to UI
 				const lines: string[] = [];
@@ -333,7 +333,7 @@ export default function sessionAnalyticsExtension(fan: ExtensionAPI) {
 				// F13: patterns summary
 				if (cmdPatterns !== undefined && cmdPatterns.length > 0) {
 					lines.push("");
-					lines.push(`📊 Паттернов найдено: ${cmdPatterns.length} — см. отчёт`);
+					lines.push(`📊 Паттернов найдено: ${cmdPatterns.length} — см. сводный отчёт: ${cmdSummaryPath ?? "—"}`);
 				}
 
 				lines.push("-------------------------");
