@@ -2,8 +2,9 @@ import { writeFile, mkdir, rename } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { AnalyticsConfig, Finding, JudgeResult, RubricEvaluation, SessionScore, Trajectory } from "./types.js";
+import type { AnalyticsConfig, Finding, GoldenComparison, JudgeResult, RubricEvaluation, SessionScore, Trajectory } from "./types.js";
 import { RUBRICS, type RubricKey } from "./judge/rubrics.js";
+import { escapeMd } from "./patterns.js";
 
 /**
  * Read extension version from package.json (sync, best-effort).
@@ -26,7 +27,8 @@ export async function generateReport(
 	score: SessionScore,
 	cfg: AnalyticsConfig,
 	cwd: string,
-	mode: "metrics" | "full"
+	mode: "metrics" | "full",
+	goldenComparison?: GoldenComparison,
 ): Promise<string> {
 	const reportDir = join(cwd, cfg.reports.dir);
 	await mkdir(reportDir, { recursive: true });
@@ -36,7 +38,7 @@ export async function generateReport(
 	const fileName = `${slug}_${dateStr}.md`;
 	const filePath = join(reportDir, fileName);
 
-	const md = buildMarkdown(trajectory, score, mode);
+	const md = buildMarkdown(trajectory, score, mode, goldenComparison);
 
 	// Atomic write: tmp file then rename
 	const tmpPath = filePath + ".tmp";
@@ -46,7 +48,7 @@ export async function generateReport(
 	return filePath;
 }
 
-function buildMarkdown(t: Trajectory, score: SessionScore, mode: "metrics" | "full"): string {
+function buildMarkdown(t: Trajectory, score: SessionScore, mode: "metrics" | "full", goldenComparison?: GoldenComparison): string {
 	const lines: string[] = [];
 	const durationMs = t.endedAt - t.startedAt;
 	const durationMin = durationMs > 0 ? (durationMs / 60000).toFixed(1) : "n/a";
@@ -144,6 +146,13 @@ function buildMarkdown(t: Trajectory, score: SessionScore, mode: "metrics" | "fu
 		lines.push("");
 	}
 
+	// F12: Golden comparison section (only in full mode)
+	if (mode === "full" && goldenComparison) {
+		lines.push(formatGoldenSection(goldenComparison));
+	} else if (mode === "full" && goldenComparison === undefined && score.judge && !score.judge.unavailable) {
+		// No golden entry found — no section needed
+	}
+
 	// Tool call graph (text summary)
 	lines.push(`## Сводка вызовов инструментов`);
 	lines.push("");
@@ -187,6 +196,45 @@ function formatFinding(f: Finding, emoji: Record<string, string>): string {
 		lines.push(`**Рекомендация:** ${f.recommendation}`);
 		lines.push("");
 	}
+	return lines.join("\n");
+}
+
+// ============================================================================
+// Golden comparison report section (F12)
+// ============================================================================
+
+export function formatGoldenSection(comparison: GoldenComparison): string {
+	const lines: string[] = [];
+
+	lines.push(`---`);
+	lines.push("");
+	lines.push(`## Сравнение с эталоном (golden)`);
+	lines.push("");
+
+	if (comparison.unavailable) {
+		lines.push(`> ⚠️ Сравнение с эталоном недоступно: ${comparison.verdict}`);
+		lines.push("");
+		return lines.join("\n");
+	}
+
+	const alignmentEmoji = comparison.alignment >= 3 ? "✅" : comparison.alignment >= 2 ? "🟡" : comparison.alignment >= 1 ? "🟠" : "❌";
+	lines.push(`**Выравнивание:** ${alignmentEmoji} ${comparison.alignment}/3`);
+	lines.push("");
+
+	if (comparison.deviations.length > 0) {
+		lines.push(`### Отклонения`);
+		lines.push("");
+		lines.push(`| Аспект | Текущая сессия | Эталонная сессия | Оценка |`);
+		lines.push(`|--------|----------------|-------------------|--------|`);
+		for (const d of comparison.deviations) {
+			lines.push(`| ${escapeMd(d.aspect)} | ${escapeMd(d.current)} | ${escapeMd(d.golden)} | ${escapeMd(d.assessment)} |`);
+		}
+		lines.push("");
+	}
+
+	lines.push(`**Вердикт:** ${escapeMd(comparison.verdict)}`);
+	lines.push("");
+
 	return lines.join("\n");
 }
 

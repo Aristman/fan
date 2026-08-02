@@ -299,6 +299,17 @@ function entryToSteps(entry: EntryWithId, ts: number, durationMs: number, durati
 
 			if (msg.role === "user") {
 				base.kind = "user";
+				// Extract user message text for batcher/compression
+				const content = msg.content;
+				let userText = "";
+				if (typeof content === "string") {
+					userText = content;
+				} else if (Array.isArray(content)) {
+					userText = content.map((b: any) => b.text || (b.type === "text" ? b.text : "")).join("");
+				}
+				if (userText) {
+					base.args = { text: userText.slice(0, 500) };
+				}
 				return [base];
 			}
 

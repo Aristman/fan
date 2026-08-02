@@ -1,6 +1,7 @@
 import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join, dirname } from "node:path";
+import type { GoldenEntry } from "./types.js";
 
 // ============================================================================
 // State types
@@ -35,10 +36,12 @@ export interface ExtensionState {
 	previousBatchStats?: BatchStats;
 	analyzedMtimes: Record<string, number>;
 	weeklyDeferredUntil?: string; // ISO — отложено после отказа пользователя
+	golden?: GoldenEntry[]; // F12 — эталонные сессии
 }
 
 const EMPTY_STATE: ExtensionState = {
 	analyzedMtimes: {},
+	golden: [],
 };
 
 // ============================================================================
@@ -62,10 +65,14 @@ export async function loadState(extensionDir: string): Promise<ExtensionState> {
 		if (!parsed.analyzedMtimes || typeof parsed.analyzedMtimes !== "object") {
 			parsed.analyzedMtimes = {};
 		}
+		// Backward compat: absence of golden → []
+		if (!Array.isArray(parsed.golden)) {
+			parsed.golden = [];
+		}
 		return parsed;
 	} catch {
 		// Missing file, broken JSON, etc. → start fresh
-		return { ...EMPTY_STATE, analyzedMtimes: {} };
+		return { ...EMPTY_STATE, analyzedMtimes: {}, golden: [] };
 	}
 }
 

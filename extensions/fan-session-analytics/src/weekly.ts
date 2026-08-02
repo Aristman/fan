@@ -1,7 +1,8 @@
 import type { ExtensionContext, SessionStartEvent } from "@seaagents/fan-coding-agent";
 import { writeFile, mkdir, stat as fsStat } from "node:fs/promises";
 import { join, dirname } from "node:path";
-import type { AnalyticsConfig, SessionScore, Finding } from "./types.js";
+import type { AnalyticsConfig, SessionScore, Finding, PatternCandidate } from "./types.js";
+import { formatPatternsSection } from "./patterns.js";
 import type { ExtensionState, BatchStats } from "./state.js";
 import { loadState, saveState } from "./state.js";
 import { runPipeline } from "./pipeline.js";
@@ -86,7 +87,7 @@ async function runWeeklyBatch(
 	const since = new Date(now.getTime() - SEVEN_DAYS_MS).toISOString();
 
 	// Run pipeline in dir mode, metrics only
-	const { results } = await runPipeline({
+	const pipelineResult = await runPipeline({
 		target: "dir",
 		mode: "metrics",
 		since,
@@ -94,6 +95,8 @@ async function runWeeklyBatch(
 		cwd: ctx.cwd,
 		cfg,
 	});
+	const { results } = pipelineResult;
+	const patterns = pipelineResult.patterns;
 
 	// Calculate current batch stats
 	const currentStats = calculateBatchStats(results, since, now.toISOString());
@@ -104,7 +107,7 @@ async function runWeeklyBatch(
 		: null;
 
 	// Generate weekly report
-	const reportPath = await generateWeeklyReport(results, currentStats, trend, ctx.cwd, cfg);
+	const reportPath = await generateWeeklyReport(results, currentStats, trend, ctx.cwd, cfg, patterns);
 
 	// Update state
 	state.lastBatchRun = now.toISOString();
@@ -122,7 +125,12 @@ async function runWeeklyBatch(
 		}
 	}
 
-	await saveState(extensionDir, state);
+	const saved = await saveState(extensionDir, state);
+	if (!saved) {
+		if (ctx.hasUI) {
+			ctx.ui.notify("⚠️ Не удалось сохранить состояние еженедельного анализа (ошибка записи state.json).", "warning");
+		}
+	}
 
 	// Notify user
 	if (ctx.hasUI) {
@@ -236,6 +244,7 @@ async function generateWeeklyReport(
 	trend: TrendDelta | null,
 	cwd: string,
 	cfg: AnalyticsConfig,
+	patterns?: PatternCandidate[],
 ): Promise<string> {
 	const reportDir = join(cwd, cfg.reports.dir);
 	await mkdir(reportDir, { recursive: true });
@@ -244,7 +253,7 @@ async function generateWeeklyReport(
 	const fileName = `weekly_${dateStr}.md`;
 	const filePath = join(reportDir, fileName);
 
-	const md = buildWeeklyMarkdown(results, stats, trend);
+	const md = buildWeeklyMarkdown(results, stats, trend, patterns, cfg);
 
 	// Atomic write
 	const tmpPath = filePath + ".tmp";
@@ -259,6 +268,8 @@ function buildWeeklyMarkdown(
 	results: AnalyzeResult[],
 	stats: BatchStats,
 	trend: TrendDelta | null,
+	patterns?: PatternCandidate[],
+	cfg?: AnalyticsConfig,
 ): string {
 	const lines: string[] = [];
 
@@ -325,6 +336,13 @@ function buildWeeklyMarkdown(
 			lines.push(`1. \`${d.detectorId}\` — ${d.count} находок`);
 		}
 		lines.push("");
+	}
+
+	// F13: Pattern mining section
+	if (patterns !== undefined && patterns.length > 0) {
+		const minSessions = cfg?.orchestration.patternMinSessions ?? 3;
+		lines.push("");
+		lines.push(formatPatternsSection(patterns, minSessions));
 	}
 
 	lines.push("---");

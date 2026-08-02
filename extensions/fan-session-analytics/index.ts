@@ -21,6 +21,8 @@ import {
 	type ModelChoice,
 	type ProviderChoice,
 } from "./src/discovery.js";
+import { loadState, saveState } from "./src/state.js";
+import { markGolden, unmarkGolden, listGolden } from "./src/golden.js";
 
 export default function sessionAnalyticsExtension(fan: ExtensionAPI) {
 	// --- Tool: session_analyze ---
@@ -83,9 +85,10 @@ export default function sessionAnalyticsExtension(fan: ExtensionAPI) {
 					cwd,
 					cfg,
 					judgeDeps,
+					extensionDir: __dirname,
 				};
 
-				const { results, summary } = await runPipeline(opts);
+				const { results, summary, patterns } = await runPipeline(opts);
 
 				// Build chat-friendly summary
 				const chatLines: string[] = [];
@@ -137,6 +140,12 @@ export default function sessionAnalyticsExtension(fan: ExtensionAPI) {
 
 				if (results.length === 0) {
 					chatLines.push("Сессии не найдены.");
+				}
+
+				// F13: patterns summary
+				if (patterns !== undefined && patterns.length > 0) {
+					chatLines.push("");
+					chatLines.push(`📊 Паттернов найдено: ${patterns.length} — см. отчёт`);
 				}
 
 				// Hint when config.json doesn't exist
@@ -200,7 +209,7 @@ export default function sessionAnalyticsExtension(fan: ExtensionAPI) {
 		description:
 			"Аналитика сессий — /session-analytics [last|dir|init|config|<путь>]",
 		getArgumentCompletions(prefix: string) {
-			const completions = ["last", "dir", "init", "config"];
+			const completions = ["last", "dir", "init", "config", "mark-golden", "unmark-golden", "golden"];
 			const filtered = completions.filter((c) => c.startsWith(prefix));
 			return filtered.length > 0
 				? filtered.map((c) => ({ value: c, label: c }))
@@ -221,6 +230,24 @@ export default function sessionAnalyticsExtension(fan: ExtensionAPI) {
 				// --- Subcommand: config ---
 				if (sub === "config") {
 					await handleConfigView(ctx, cwd);
+					return;
+				}
+
+				// --- Subcommand: mark-golden ---
+				if (sub === "mark-golden") {
+					await handleMarkGolden(ctx, cwd, parts.slice(1));
+					return;
+				}
+
+				// --- Subcommand: unmark-golden ---
+				if (sub === "unmark-golden") {
+					await handleUnmarkGolden(ctx, parts.slice(1));
+					return;
+				}
+
+				// --- Subcommand: golden ---
+				if (sub === "golden") {
+					await handleListGolden(ctx);
 					return;
 				}
 
@@ -263,11 +290,12 @@ export default function sessionAnalyticsExtension(fan: ExtensionAPI) {
 					cwd,
 					cfg,
 					judgeDeps: slashJudgeDeps,
+					extensionDir: __dirname,
 				};
 
 				ctx.ui.notify("Запуск аналитики сессий...", "info");
 
-				const { results, summary } = await runPipeline(opts);
+				const { results, summary, patterns: cmdPatterns } = await runPipeline(opts);
 
 				// Print summary to UI
 				const lines: string[] = [];
@@ -302,6 +330,12 @@ export default function sessionAnalyticsExtension(fan: ExtensionAPI) {
 					lines.push("Сессии не найдены или все были отфильтрованы.");
 				}
 
+				// F13: patterns summary
+				if (cmdPatterns !== undefined && cmdPatterns.length > 0) {
+					lines.push("");
+					lines.push(`📊 Паттернов найдено: ${cmdPatterns.length} — см. отчёт`);
+				}
+
 				lines.push("-------------------------");
 
 				// Hint when config.json doesn't exist
@@ -321,6 +355,112 @@ export default function sessionAnalyticsExtension(fan: ExtensionAPI) {
 			}
 		},
 	});
+}
+
+// ============================================================================
+// Golden subcommand handlers (F12)
+// ============================================================================
+
+async function handleMarkGolden(
+	ctx: ExtensionCommandContext,
+	cwd: string,
+	args: string[],
+): Promise<void> {
+	const extensionDir = __dirname;
+	const state = await loadState(extensionDir);
+
+	// Determine session path
+	let sessionPath: string;
+	let labelParts: string[];
+
+	if (args.length === 0 || args[0] === "last") {
+		// Use last session for current cwd
+		const { findLastSession, getSessionsDir } = await import("./src/parser.js");
+		const dir = getSessionsDir(cwd);
+		const last = await findLastSession(dir);
+		if (!last) {
+			ctx.ui.notify("Сессии для текущего каталога не найдены.", "warning");
+			return;
+		}
+		sessionPath = last;
+		labelParts = args.slice(1);
+	} else {
+		// Explicit path
+		sessionPath = args[0];
+		labelParts = args.slice(1);
+	}
+
+	const label = labelParts.length > 0 ? labelParts.join(" ") : "эталон";
+
+	try {
+		const entry = await markGolden(state, sessionPath, label);
+		const saved = await saveState(extensionDir, state);
+		if (!saved) {
+			ctx.ui.notify("⚠️ Не удалось сохранить состояние (ошибка записи state.json).", "warning");
+		}
+		const lines = [
+			`✅ Сессия помечена как эталонная:`,
+			`  ID: ${entry.sessionId}`,
+			`  Метка: ${entry.label}`,
+			`  Первый запрос: ${entry.firstRequest.slice(0, 80)}${entry.firstRequest.length > 80 ? "…" : ""}`,
+		];
+		ctx.ui.notify(lines.join("\n"), "info");
+	} catch (err) {
+		ctx.ui.notify(
+			`Ошибка пометки сессии: ${err instanceof Error ? err.message : String(err)}`,
+			"error",
+		);
+	}
+}
+
+async function handleUnmarkGolden(
+	ctx: ExtensionCommandContext,
+	args: string[],
+): Promise<void> {
+	if (args.length === 0) {
+		ctx.ui.notify("Использование: /session-analytics unmark-golden <sessionId>", "warning");
+		return;
+	}
+
+	const extensionDir = __dirname;
+	const state = await loadState(extensionDir);
+	const sessionId = args[0];
+
+	const removed = unmarkGolden(state, sessionId);
+	if (removed) {
+		const saved = await saveState(extensionDir, state);
+		if (!saved) {
+			ctx.ui.notify("⚠️ Не удалось сохранить состояние (ошибка записи state.json).", "warning");
+		}
+		ctx.ui.notify(`✅ Эталонная сессия ${sessionId} удалена.`, "info");
+	} else {
+		ctx.ui.notify(`Эталонная сессия ${sessionId} не найдена.`, "warning");
+	}
+}
+
+async function handleListGolden(ctx: ExtensionCommandContext): Promise<void> {
+	const extensionDir = __dirname;
+	const state = await loadState(extensionDir);
+	const entries = listGolden(state);
+
+	if (entries.length === 0) {
+		ctx.ui.notify("Эталонных сессий нет. Используйте /session-analytics mark-golden [last|<путь>] [метка...]", "info");
+		return;
+	}
+
+	const lines: string[] = [];
+	lines.push("--- Эталонные сессии (golden) ---");
+	lines.push("");
+	for (const entry of entries) {
+		lines.push(`  📌 ${entry.sessionId}`);
+		lines.push(`     Метка: ${entry.label}`);
+		lines.push(`     Путь: ${entry.path}`);
+		lines.push(`     Первый запрос: ${entry.firstRequest.slice(0, 80)}${entry.firstRequest.length > 80 ? "…" : ""}`);
+		lines.push(`     Помечено: ${entry.markedAt}`);
+		lines.push("");
+	}
+	lines.push("---------------------------------");
+	ctx.ui.notify(lines.join("\n"), "info");
 }
 
 // ============================================================================

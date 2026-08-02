@@ -129,6 +129,38 @@ export interface JudgeResult {
 	batchCount: number;
 }
 
+/** A golden (reference) session entry. */
+export interface GoldenEntry {
+	sessionId: string;
+	path: string;
+	label: string;
+	markedAt: string; // ISO
+	firstRequest: string; // first 300 chars of first user message
+}
+
+/** Result of comparing a session against a golden reference. */
+export interface GoldenComparison {
+	alignment: number; // 0-3
+	deviations: Array<{
+		aspect: string;
+		current: string;
+		golden: string;
+		assessment: string;
+	}>;
+	verdict: string;
+	unavailable?: boolean;
+}
+
+/** A mined pattern candidate for synthesis recommendations (F13). */
+export interface PatternCandidate {
+	kind: "worker_chain" | "tool_sequence" | "prompt_template";
+	signature: string;
+	sessionsCount: number;
+	exampleSessionIds: string[]; // up to 3
+	suggestedArtifact: "worker" | "skill" | "rule";
+	draftProposal: string;
+}
+
 /** Token usage for judge calls. */
 export interface JudgeUsage {
 	inputTokens: number;

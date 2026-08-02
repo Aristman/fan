@@ -366,8 +366,12 @@ export function validateConfig(obj: unknown): ConfigValidationResult {
 					errors.push('"orchestration.retryPromptSimilarity" must be in range 0..1');
 				}
 			}
-			if ("patternMinSessions" in o && typeof o.patternMinSessions !== "number") {
-				errors.push('"orchestration.patternMinSessions" must be a number');
+			if ("patternMinSessions" in o) {
+				if (typeof o.patternMinSessions !== "number") {
+					errors.push('"orchestration.patternMinSessions" must be a number');
+				} else if (!Number.isInteger(o.patternMinSessions) || o.patternMinSessions < 1) {
+					errors.push('"orchestration.patternMinSessions" must be an integer ≥ 1');
+				}
 			}
 		}
 	}

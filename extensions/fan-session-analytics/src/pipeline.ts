@@ -1,4 +1,4 @@
-import type { AnalyticsConfig, Trajectory, SessionScore, JudgeDeps } from "./types.js";
+import type { AnalyticsConfig, Trajectory, SessionScore, JudgeDeps, GoldenComparison, PatternCandidate } from "./types.js";
 import {
 	parseSessionFile,
 	isGarbagePath,
@@ -16,6 +16,9 @@ import { trySqliteTokens } from "./detectors/d9-tokens-cost.js";
 import { calculateScore } from "./score.js";
 import { generateReport } from "./report.js";
 import { compressTrajectory, runJudge } from "./judge/index.js";
+import { findGoldenForTrajectory, compareWithGolden } from "./golden.js";
+import { loadState } from "./state.js";
+import { minePatterns, formatPatternsSection } from "./patterns.js";
 
 export interface AnalyzeOptions {
 	target: "last" | "dir" | string; // "last" | path to jsonl | "dir"
@@ -26,6 +29,8 @@ export interface AnalyzeOptions {
 	cfg: AnalyticsConfig;
 	/** Optional judge dependencies (injected for full mode). */
 	judgeDeps?: JudgeDeps;
+	/** Extension directory for loading state (golden entries). */
+	extensionDir?: string;
 }
 
 export interface AnalyzeResult {
@@ -35,17 +40,22 @@ export interface AnalyzeResult {
 	trajectory: Trajectory;
 	reportPath: string;
 	skipped?: string; // reason if skipped
+	goldenComparison?: GoldenComparison; // F12
+}
+
+export interface PipelineOutput {
+	results: AnalyzeResult[];
+	summary: string;
+	patterns?: PatternCandidate[]; // F13 — only in dir/weekly modes
 }
 
 /**
  * Run the analytics pipeline on one or more sessions.
  */
-export async function runPipeline(opts: AnalyzeOptions): Promise<{
-	results: AnalyzeResult[];
-	summary: string;
-}> {
+export async function runPipeline(opts: AnalyzeOptions): Promise<PipelineOutput> {
 	const results: AnalyzeResult[] = [];
 	const errors: Array<{ path: string; error: string }> = [];
+	const allTrajectories: Trajectory[] = []; // for F13 pattern mining
 
 	let sessionPaths: string[] = [];
 
@@ -112,13 +122,32 @@ export async function runPipeline(opts: AnalyzeOptions): Promise<{
 				score.total = score.combinedScore;
 			}
 
+			// F12: Golden comparison (only in full mode)
+			let goldenComparison: GoldenComparison | undefined;
+			if (opts.mode === "full" && opts.judgeDeps) {
+				const state = await loadState(opts.extensionDir || "");
+				const goldenEntry = findGoldenForTrajectory(state, trajectory);
+				if (goldenEntry) {
+					goldenComparison = await compareWithGolden(
+						trajectory,
+						goldenEntry,
+						opts.judgeDeps,
+						opts.cfg,
+					);
+				}
+			}
+
 			const reportPath = await generateReport(
 				trajectory,
 				score,
 				opts.cfg,
 				opts.cwd,
-				opts.mode
+				opts.mode,
+				goldenComparison
 			);
+
+			// Track trajectory for F13 pattern mining
+			allTrajectories.push(trajectory);
 
 			results.push({
 				sessionPath: path,
@@ -129,6 +158,7 @@ export async function runPipeline(opts: AnalyzeOptions): Promise<{
 				skipped: isSelfReferencing
 					? "ПРЕДУПРЕЖДЕНИЕ: Сессия содержит вызовы session_analyze (самоссылание). Анализ может включать шум."
 					: undefined,
+				goldenComparison,
 			});
 		} catch (err) {
 			errors.push({
@@ -138,8 +168,14 @@ export async function runPipeline(opts: AnalyzeOptions): Promise<{
 		}
 	}
 
-	const summary = buildSummary(results, errors);
-	return { results, summary };
+	// F13: Pattern mining (only in dir mode with multiple sessions)
+	let patterns: PatternCandidate[] | undefined;
+	if (opts.target === "dir" && allTrajectories.length >= (opts.cfg.orchestration.patternMinSessions || 3)) {
+		patterns = minePatterns(allTrajectories, opts.cfg);
+	}
+
+	const summary = buildSummary(results, errors, patterns, opts.cfg);
+	return { results, summary, patterns };
 }
 
 async function runDetectors(trajectory: Trajectory, cfg: AnalyticsConfig) {
@@ -178,7 +214,12 @@ function calculateCombinedScore(
 	return Math.round(deterministicScore * 0.6 + judgeScore * 0.4);
 }
 
-function buildSummary(results: AnalyzeResult[], errors: Array<{ path: string; error: string }>): string {
+function buildSummary(
+	results: AnalyzeResult[],
+	errors: Array<{ path: string; error: string }>,
+	patterns?: PatternCandidate[],
+	cfg?: AnalyticsConfig,
+): string {
 	const lines: string[] = [];
 
 	if (results.length === 0 && errors.length === 0) {
@@ -225,6 +266,13 @@ function buildSummary(results: AnalyzeResult[], errors: Array<{ path: string; er
 		for (const e of errors) {
 			lines.push(`- ${e.path}: ${e.error}`);
 		}
+	}
+
+	// F13: Pattern mining section in summary
+	if (patterns !== undefined) {
+		const minSessions = cfg?.orchestration.patternMinSessions ?? 3;
+		lines.push("");
+		lines.push(formatPatternsSection(patterns, minSessions));
 	}
 
 	return lines.join("\n");
