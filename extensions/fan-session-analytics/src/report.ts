@@ -1,7 +1,22 @@
 import { writeFile, mkdir, rename } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { AnalyticsConfig, Finding, JudgeResult, RubricEvaluation, SessionScore, Trajectory } from "./types.js";
 import { RUBRICS, type RubricKey } from "./judge/rubrics.js";
+
+/**
+ * Read extension version from package.json (sync, best-effort).
+ */
+function getExtensionVersion(): string {
+	try {
+		const pkgPath = join(dirname(fileURLToPath(import.meta.url)), "..", "package.json");
+		const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+		return typeof pkg.version === "string" ? pkg.version : "dev";
+	} catch {
+		return "dev";
+	}
+}
 
 /**
  * Generate markdown report for a session and save atomically (tmp + rename).
@@ -152,7 +167,7 @@ function buildMarkdown(t: Trajectory, score: SessionScore, mode: "metrics" | "fu
 
 	// Footer
 	lines.push(`---`);
-	lines.push(`*Сгенерировано fan-session-analytics v1.1.1 (этап B)*`);
+	lines.push(`*Сгенерировано fan-session-analytics v${getExtensionVersion()}*`);
 	lines.push(`*Дата отчёта: ${new Date().toISOString().slice(0, 19)}*`);
 
 	return lines.join("\n");

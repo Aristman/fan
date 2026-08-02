@@ -68,18 +68,19 @@ const CATEGORIES: MarkerCategory[] = [
 ];
 
 /**
- * Classify a task description by markers. Returns the first matching category
- * or undefined if no markers found.
+ * Classify a task description by markers. Returns ALL matching categories.
  */
-function classifyTask(task: string): string | undefined {
+function classifyTaskAll(task: string): string[] {
+	const matched: string[] = [];
 	for (const cat of CATEGORIES) {
 		for (const pat of cat.patterns) {
 			if (pat.test(task)) {
-				return cat.category;
+				matched.push(cat.category);
+				break;
 			}
 		}
 	}
-	return undefined;
+	return matched;
 }
 
 /**
@@ -150,17 +151,19 @@ export const detectWorkerRouting: DetectFn = (t, cfg) => {
 	}> = [];
 
 	for (const call of delegateCalls) {
-		const detected = classifyTask(call.task);
-		if (!detected) continue; // no markers → skip
+		const matched = classifyTaskAll(call.task);
+		if (matched.length === 0) continue; // no markers → skip
 
-		if (!isAgentAllowed(detected, call.agent)) {
-			mismatches.push({
-				entryId: call.entryId,
-				agent: call.agent,
-				task: call.task,
-				detectedCategory: detected,
-			});
-		}
+		// Разрешено, если ХОТЯ БЫ одна из совпавших категорий допускает агента
+		// (например, verify, проверяющий баг-фикс, — это норма, а не мисроутинг)
+		if (matched.some((cat) => isAgentAllowed(cat, call.agent))) continue;
+
+		mismatches.push({
+			entryId: call.entryId,
+			agent: call.agent,
+			task: call.task,
+			detectedCategory: matched[0],
+		});
 	}
 
 	if (mismatches.length === 0) return findings;
