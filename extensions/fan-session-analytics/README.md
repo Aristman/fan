@@ -36,6 +36,8 @@ cp -r extensions/fan-session-analytics ~/.fan/agent/extensions/
 
 | Вызов | Что делает |
 |-------|-----------|
+| `/session-analytics init` | Мастер первоначальной настройки (интерактивный) |
+| `/session-analytics config` | Просмотр эффективной конфигурации с источниками |
 | `/session-analytics last` | Анализ последней сессии текущего каталога |
 | `/session-analytics dir` | Пакетный анализ всех валидных сессий каталога |
 | `/session-analytics <путь>` | Анализ конкретного JSONL-файла |
@@ -43,9 +45,44 @@ cp -r extensions/fan-session-analytics ~/.fan/agent/extensions/
 
 `mode: "full"` в этапе A возвращает метрики с пометкой, что LLM-судья появится в этапе B.
 
+Если `config.json` не создан, расширение работает на встроенных дефолтах. Команды анализа и tool `session_analyze` выводят подсказку: `ℹ️ Расширение работает на дефолтах. Настройка: /session-analytics init`.
+
 ## Конфигурация
 
-Необязательна — работает на дефолтах. Для переопределения скопируйте `config.example.json` → `config.json` рядом с расширением. Проектный override: `<проект>/.fan/session-analytics.config.json` (приоритет выше).
+Необязательна — работает на дефолтах. Рекомендуемый способ настройки — команда `/session-analytics init`, которая проведёт через интерактивный мастер и сохранит `config.json` атомарно.
+
+Альтернативно: скопируйте `config.example.json` → `config.json` рядом с расширением и отредактируйте вручную.
+
+### Приоритет источников (от низкого к высокому)
+
+1. **defaults** — встроенные значения `DEFAULT_CONFIG` в `src/config.ts`
+2. **config.json** — файл в каталоге расширения (`extensions/fan-session-analytics/config.json`)
+3. **project override** — `<проект>/.fan/session-analytics.config.json` (наивысший приоритет)
+
+Команда `/session-analytics config` показывает эффективную конфигурацию с пометкой источника каждой секции.
+
+### Ключи конфигурации
+
+| Секция | Ключ | Тип | Описание |
+|--------|------|-----|----------|
+| `judge` | `provider` | string | Провайдер LLM-судьи (этап B) |
+| `judge` | `model` | string | Модель судьи (этап B) |
+| `judge` | `batchMaxSteps` | number | Макс. шагов в сессии для пакетного анализа |
+| `judge` | `batchMaxChars` | number | Макс. символов текста для анализа |
+| `judge` | `excerptLimit` | number | Лимит символов в excerpt находки |
+| `autoAnalyze` | `enabled` | boolean | Авто-анализ при завершении сессии (этап C) |
+| `autoAnalyze` | `mode` | `"metrics"` \| `"full"` | Режим анализа |
+| `weeklyBatch` | `enabled` | boolean | Еженедельный пакетный анализ |
+| `weeklyBatch` | `silent` | boolean | Тихий режим (без уведомлений) |
+| `filters` | `excludePathPatterns` | string[] | Паттерны исключения путей сессий |
+| `filters` | `minEntries` | number | Мин. записей для анализа сессии |
+| `orchestration` | `overheadRatioWarn` | number | Порог предупреждения о coordination overhead (0.1–1.0) |
+| `orchestration` | `heavySkills` | string[] | Список тяжёлых скилов |
+| `orchestration` | `smallChangeLines` | number | Порог «мелкого изменения» (строки) |
+| `orchestration` | `smallChangeFiles` | number | Порог «мелкого изменения» (файлы) |
+| `orchestration` | `retryPromptSimilarity` | number | Порог схожести промптов для D13 (0–1) |
+| `orchestration` | `patternMinSessions` | number | Мин. сессий с паттерном для рекомендации синтеза (F13) |
+| `reports` | `dir` | string | Каталог отчётов (относительно cwd) |
 
 При обновлении через FAN Store `config.json` сохраняется (preserve в DEPLOY.toml).
 

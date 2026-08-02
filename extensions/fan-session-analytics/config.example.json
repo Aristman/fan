@@ -1,5 +1,6 @@
 {
   "judge": {
+    "provider": "openai",
     "model": "glm-4.5-air",
     "batchMaxSteps": 30,
     "batchMaxChars": 60000,
