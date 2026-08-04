@@ -77,7 +77,7 @@ import { DynamicBorder } from "./components/dynamic-border.js";
 import { EarendilAnnouncementComponent } from "./components/earendil-announcement.js";
 import { ExtensionEditorComponent } from "./components/extension-editor.js";
 import { ExtensionInputComponent } from "./components/extension-input.js";
-import { ExtensionSelectorComponent } from "./components/extension-selector.js";
+import { ExtensionSelectorComponent, resolveInitialIndexFromValue } from "./components/extension-selector.js";
 import { FooterComponent } from "./components/footer.js";
 import { keyHint, keyText, rawKeyHint } from "./components/keybinding-hints.js";
 import { LoginDialogComponent } from "./components/login-dialog.js";
@@ -1687,6 +1687,8 @@ export class InteractiveMode {
 			};
 			opts?.signal?.addEventListener("abort", onAbort, { once: true });
 
+			const initialIndex = resolveInitialIndexFromValue(options, opts?.initialValue);
+
 			this.extensionSelector = new ExtensionSelectorComponent(
 				title,
 				options,
@@ -1700,7 +1702,11 @@ export class InteractiveMode {
 					this.hideExtensionSelector();
 					resolve(undefined);
 				},
-				{ tui: this.ui, timeout: opts?.timeout },
+				{
+					tui: this.ui,
+					timeout: opts?.timeout,
+					initialIndex: initialIndex >= 0 ? initialIndex : undefined,
+				},
 			);
 
 			this.editorContainer.clear();

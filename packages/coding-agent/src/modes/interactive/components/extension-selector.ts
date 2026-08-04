@@ -12,6 +12,35 @@ import { keyHint, rawKeyHint } from "./keybinding-hints.js";
 export interface ExtensionSelectorOptions {
 	tui?: TUI;
 	timeout?: number;
+	/** Index of the initially selected option. Ignored if out of range. */
+	initialIndex?: number;
+}
+
+/**
+ * Resolve an initialIndex option to a safe selected index.
+ * Returns the given initialIndex when it is a valid index into `options`;
+ * otherwise returns 0. Exported for unit testing.
+ */
+export function resolveInitialIndex(options: string[], initialIndex: number | undefined): number {
+	if (
+		initialIndex !== undefined &&
+		Number.isInteger(initialIndex) &&
+		initialIndex >= 0 &&
+		initialIndex < options.length
+	) {
+		return initialIndex;
+	}
+	return 0;
+}
+
+/**
+ * Resolve an initialValue option to an index into `options`.
+ * Returns the index of the value, or -1 when absent/not found (caller treats -1 as "no initial position").
+ * Exported for unit testing.
+ */
+export function resolveInitialIndexFromValue(options: string[], initialValue: string | undefined): number {
+	if (!initialValue) return -1;
+	return options.indexOf(initialValue);
 }
 
 export class ExtensionSelectorComponent extends Container {
@@ -56,6 +85,8 @@ export class ExtensionSelectorComponent extends Container {
 
 		this.listContainer = new Container();
 		this.addChild(this.listContainer);
+
+		this.selectedIndex = resolveInitialIndex(this.options, opts?.initialIndex);
 		this.addChild(new Spacer(1));
 		this.addChild(
 			new Text(

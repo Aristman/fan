@@ -376,6 +376,40 @@ describe("Editor component", () => {
 		});
 	});
 
+	describe("CSI fragment guard", () => {
+		it("does not insert multi-character CSI tail fragment [1G", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			editor.handleInput("[1G");
+			assert.strictEqual(editor.getText(), "");
+		});
+
+		it("does not insert multi-character CSI tail fragment [1;3A", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			editor.handleInput("[1;3A");
+			assert.strictEqual(editor.getText(), "");
+		});
+
+		it("inserts single characters [, 1, G individually", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			editor.handleInput("[");
+			editor.handleInput("1");
+			editor.handleInput("G");
+			assert.strictEqual(editor.getText(), "[1G");
+		});
+
+		it("inserts single A character normally", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			editor.handleInput("A");
+			assert.strictEqual(editor.getText(), "A");
+		});
+
+		it("inserts single [ character normally", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			editor.handleInput("[");
+			assert.strictEqual(editor.getText(), "[");
+		});
+	});
+
 	describe("Unicode text editing behavior", () => {
 		it("inserts mixed ASCII, umlauts, and emojis as literal text", () => {
 			const editor = new Editor(createTestTUI(), defaultEditorTheme);

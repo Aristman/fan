@@ -1,0 +1,39 @@
+# DEPLOY.toml — FAN Package Deployment Manifest
+# Schema version: 1
+
+[package]
+name = "fan-session-analytics"
+type = "extension"
+
+include = [
+    "index.ts",
+    "src/**/*.ts",
+    "package.json",
+    "README.md",
+    "config.example.json",
+]
+
+exclude = [
+    "node_modules/",
+    "*.test.ts",
+    "*.spec.ts",
+    "vitest.config.*",
+    ".env",
+    ".env.*",
+    "dist/",
+    "*.lock",
+    "package-lock.json",
+    "bun.lock",
+    ".git/",
+    ".DS_Store",
+    "scripts/",
+    "tsconfig.json",
+    "config.json",
+    "state.json",
+    ".fan/",
+]
+
+preserve = [
+    "config.json",
+    "state.json",
+]

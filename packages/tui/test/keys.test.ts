@@ -402,6 +402,27 @@ describe("matchesKey", () => {
 			assert.strictEqual(matchesKey("\x1bp", "up"), false);
 		});
 
+		it("should match alt+arrows via CSI modifier sequences", () => {
+			setKittyProtocolActive(false);
+			// Standard CSI modifier format: \x1b[1;<mod>A/B/C/D (mod=3 → alt)
+			assert.strictEqual(matchesKey("\x1b[1;3A", "alt+up"), true);
+			assert.strictEqual(matchesKey("\x1b[1;3B", "alt+down"), true);
+			assert.strictEqual(matchesKey("\x1b[1;3C", "alt+right"), true);
+			assert.strictEqual(matchesKey("\x1b[1;3D", "alt+left"), true);
+			// Should not match wrong direction
+			assert.strictEqual(matchesKey("\x1b[1;3A", "alt+down"), false);
+			assert.strictEqual(matchesKey("\x1b[1;3B", "alt+up"), false);
+			// With Kitty event-type suffix: \x1b[1;<mod>:<event>A/B/C/D
+			assert.strictEqual(matchesKey("\x1b[1;3:1A", "alt+up"), true);
+			assert.strictEqual(matchesKey("\x1b[1;3:1B", "alt+down"), true);
+			assert.strictEqual(matchesKey("\x1b[1;3:3A", "alt+up"), true); // release event
+			// parseKey should resolve these too
+			assert.strictEqual(parseKey("\x1b[1;3A"), "alt+up");
+			assert.strictEqual(parseKey("\x1b[1;3B"), "alt+down");
+			assert.strictEqual(parseKey("\x1b[1;3:1A"), "alt+up");
+			assert.strictEqual(parseKey("\x1b[1;3:1B"), "alt+down");
+		});
+
 		it("should match rxvt modifier sequences", () => {
 			assert.strictEqual(matchesKey("\x1b[a", "shift+up"), true);
 			assert.strictEqual(matchesKey("\x1bOa", "ctrl+up"), true);

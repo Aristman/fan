@@ -1,0 +1,22 @@
+{
+	"name": "fan-session-analytics",
+	"version": "1.4.0",
+	"description": "Session analytics extension for FAN — reads completed sessions, evaluates quality metrics, and generates reports with findings and recommendations.",
+	"type": "module",
+	"main": "index.ts",
+	"fan": {
+		"name": "fan-session-analytics",
+		"type": "extension",
+		"displayName": "Session Analytics",
+		"entry": "index.ts",
+		"extensions": ["./index.ts"],
+		"tags": ["analytics", "sessions", "quality"]
+	},
+	"peerDependencies": {
+		"@sinclair/typebox": "*"
+	},
+	"devDependencies": {
+		"@types/node": "^22.0.0",
+		"typescript": "^5.0.0"
+	}
+}

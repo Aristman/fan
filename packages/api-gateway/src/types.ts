@@ -165,6 +165,24 @@ export interface RevokeTokenResponse {
 	success: boolean;
 }
 
+// --- Analytics ---
+
+export interface AnalyticsReportMeta {
+	name: string;
+	sizeBytes: number;
+	mtime: string;
+	kind: "session" | "weekly";
+}
+
+export interface GetAnalyticsReportsResponse {
+	reports: AnalyticsReportMeta[];
+}
+
+export interface GetAnalyticsReportResponse {
+	name: string;
+	content: string;
+}
+
 // ============================================================================
 // MCP (Model Context Protocol) Types
 // ============================================================================

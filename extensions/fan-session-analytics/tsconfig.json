@@ -1,0 +1,25 @@
+{
+	"compilerOptions": {
+		"target": "ES2022",
+		"module": "ESNext",
+		"moduleResolution": "bundler",
+		"strict": true,
+		"noEmit": true,
+		"esModuleInterop": true,
+		"skipLibCheck": true,
+		"resolveJsonModule": true,
+		"isolatedModules": true,
+		"forceConsistentCasingInFileNames": true,
+		"paths": {
+			"@seaagents/fan-agent-core": ["../../packages/agent/src/index.ts"],
+			"@seaagents/fan-coding-agent": ["../../packages/coding-agent/src/index.ts"],
+			"@seaagents/fan-ai": ["../../packages/ai/src/index.ts"],
+			"@sinclair/typebox": ["../../node_modules/@sinclair/typebox"]
+		}
+	},
+	"include": [
+		"index.ts",
+		"src/**/*.ts"
+	],
+	"exclude": ["scripts/**/*"]
+}

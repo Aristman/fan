@@ -12,6 +12,7 @@ import "./chat-view.js";
 import "./budget-panel.js";
 import "./budget-alert-toast.js";
 import "./model-settings-panel.js";
+import "./analytics-view.js";
 
 @customElement("dashboard-app")
 export class DashboardApp extends LitElement {
@@ -26,7 +27,7 @@ export class DashboardApp extends LitElement {
 	// State
 	// -----------------------------------------------------------------------
 
-	@state() currentView: "chat" | "sessions" | "budget" | "models" | "settings" = "sessions";
+	@state() currentView: "chat" | "sessions" | "budget" | "models" | "settings" | "analytics" = "sessions";
 	@state() currentSessionId: string | null = null;
 	@state() sidebarOpen = true;
 	@state() connectionStatus: "connected" | "disconnected" | "error" = "connected";
@@ -128,7 +129,7 @@ export class DashboardApp extends LitElement {
 
 		this._boundHandleNavigate = ((ev: CustomEvent) => {
 			const view = ev.detail?.view;
-			if (view && ["chat", "sessions", "budget", "models", "settings"].includes(view)) {
+			if (view && ["chat", "sessions", "budget", "models", "settings", "analytics"].includes(view)) {
 				this.currentView = view as typeof this.currentView;
 			}
 		}) as EventListener;
@@ -249,6 +250,21 @@ export class DashboardApp extends LitElement {
           Model Settings
         </button>
       </div>
+
+      <!-- Analytics link -->
+      <div class="px-3 py-1">
+        <button
+          class="text-sm text-muted-foreground hover:text-foreground w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-secondary/50 transition-colors"
+          @click=${() => {
+					this.currentView = "analytics";
+				}}
+        >
+          <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 3v18h18M7 16l4-4 4 4 4-6" />
+          </svg>
+          Аналитика
+        </button>
+      </div>
     `;
 
 		return html`
@@ -362,8 +378,15 @@ export class DashboardApp extends LitElement {
                         <model-settings-panel .apiClient=${this.apiClient}></model-settings-panel>
                       </div>
                   `
-								: this.currentView === "settings"
+								: this.currentView === "analytics"
 									? html`
+                        <div class="flex-1 overflow-y-auto p-6">
+                          <h2 class="text-xl font-semibold mb-4">Аналитика</h2>
+                          <analytics-view .apiClient=${this.apiClient}></analytics-view>
+                        </div>
+                      `
+									: this.currentView === "settings"
+										? html`
                         <div class="flex-1 overflow-y-auto p-6">
                           <h2 class="text-xl font-semibold mb-4">Settings</h2>
                           <p class="text-sm text-muted-foreground">
@@ -371,7 +394,7 @@ export class DashboardApp extends LitElement {
                           </p>
                         </div>
                       `
-									: html`
+										: html`
                         <!-- Empty state / welcome -->
                         <div class="flex-1 flex items-center justify-center text-muted-foreground">
                           <div class="text-center">

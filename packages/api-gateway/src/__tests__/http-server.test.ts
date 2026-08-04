@@ -28,6 +28,8 @@ const mockSessionAdapter = {
 	subscribeToSession: vi.fn().mockReturnValue(() => {}),
 	getAvailableModels: vi.fn().mockResolvedValue([]),
 	bindSessionExtensions: vi.fn().mockResolvedValue(undefined),
+	listAnalyticsReports: vi.fn().mockResolvedValue([]),
+	readAnalyticsReport: vi.fn().mockResolvedValue(null),
 };
 
 vi.mock("@fan/model-manager", () => ({
@@ -77,6 +79,8 @@ describe("HTTP Server", () => {
 		mockSessionAdapter.deleteSession.mockResolvedValue(false);
 		mockSessionAdapter.sendMessage.mockResolvedValue(true);
 		mockSessionAdapter.getAvailableModels.mockResolvedValue([]);
+		mockSessionAdapter.listAnalyticsReports.mockResolvedValue([]);
+		mockSessionAdapter.readAnalyticsReport.mockResolvedValue(null);
 		mockRandomBytes.mockReturnValue({
 			toString: vi.fn().mockReturnValue("mocked-random-token-hex"),
 		});
@@ -326,6 +330,63 @@ describe("HTTP Server", () => {
 			expect(mockModelManager.configureBudget).toHaveBeenCalledWith({ period: "daily", costLimit: 10 });
 			const data = await json<{ config: Record<string, unknown> }>(res);
 			expect(data.config).toEqual({ period: "daily", costLimit: 10 });
+		});
+	});
+
+	describe("Analytics", () => {
+		it("GET /api/analytics/reports should return empty list when no reports", async () => {
+			mockSessionAdapter.listAnalyticsReports.mockResolvedValueOnce([]);
+			const app = await getApp();
+			const res = await app.request("/api/analytics/reports");
+			expect(res.status).toBe(200);
+			const data = await json<{ reports: unknown[] }>(res);
+			expect(data.reports).toHaveLength(0);
+		});
+
+		it("GET /api/analytics/reports should return reports with metadata", async () => {
+			mockSessionAdapter.listAnalyticsReports.mockResolvedValueOnce([
+				{ name: "weekly_2026-08-01.md", sizeBytes: 2048, mtime: "2026-08-01T12:00:00Z", kind: "weekly" },
+				{ name: "session_2026-07-30.md", sizeBytes: 1024, mtime: "2026-07-30T10:00:00Z", kind: "session" },
+			]);
+			const app = await getApp();
+			const res = await app.request("/api/analytics/reports");
+			expect(res.status).toBe(200);
+			const data = await json<{ reports: Array<{ name: string; kind: string; sizeBytes: number }> }>(res);
+			expect(data.reports).toHaveLength(2);
+			expect(data.reports[0].name).toBe("weekly_2026-08-01.md");
+			expect(data.reports[0].kind).toBe("weekly");
+			expect(data.reports[1].name).toBe("session_2026-07-30.md");
+			expect(data.reports[1].kind).toBe("session");
+			expect(data.reports[0].sizeBytes).toBe(2048);
+		});
+
+		it("GET /api/analytics/reports/:name should return report content", async () => {
+			mockSessionAdapter.readAnalyticsReport.mockResolvedValueOnce("# Weekly Report\n\nContent here");
+			const app = await getApp();
+			const res = await app.request("/api/analytics/reports/weekly_2026-08-01.md");
+			expect(res.status).toBe(200);
+			const data = await json<{ name: string; content: string }>(res);
+			expect(data.name).toBe("weekly_2026-08-01.md");
+			expect(data.content).toContain("Weekly Report");
+		});
+
+		it("GET /api/analytics/reports/:name should return 404 for missing report", async () => {
+			mockSessionAdapter.readAnalyticsReport.mockResolvedValueOnce(null);
+			const app = await getApp();
+			const res = await app.request("/api/analytics/reports/nonexistent.md");
+			expect(res.status).toBe(404);
+		});
+
+		it("GET /api/analytics/reports/:name should return 400 for path traversal", async () => {
+			const app = await getApp();
+			const res = await app.request("/api/analytics/reports/..%2F..%2Fetc%2Fpasswd");
+			expect(res.status).toBe(400);
+		});
+
+		it("GET /api/analytics/reports/:name should return 400 for invalid name", async () => {
+			const app = await getApp();
+			const res = await app.request("/api/analytics/reports/not-a-markdown-file");
+			expect(res.status).toBe(400);
 		});
 	});
 

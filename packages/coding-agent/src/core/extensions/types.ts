@@ -82,6 +82,11 @@ export interface ExtensionUIDialogOptions {
 	signal?: AbortSignal;
 	/** Timeout in milliseconds. Dialog auto-dismisses with live countdown display. */
 	timeout?: number;
+	/**
+	 * Initially selected option (by value).
+	 * Ignored when the value is not present in options.
+	 */
+	initialValue?: string;
 }
 
 /** Placement for extension widgets. */

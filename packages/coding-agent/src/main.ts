@@ -441,6 +441,90 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 			}));
 		},
 
+		// --- Analytics ---
+		async listAnalyticsReports() {
+			const { join } = await import("node:path");
+			const { readdir, stat } = await import("node:fs/promises");
+
+			// Global reports dir: ~/.fan/reports/session-analytics
+			const globalDir = join(getAgentDir(), "..", "reports", "session-analytics");
+			// Legacy per-project reports dir
+			const legacyDir = join(runtime.services.cwd, ".fan", "reports", "session-analytics");
+
+			type ReportMeta = {
+				name: string;
+				sizeBytes: number;
+				mtime: string;
+				kind: "session" | "weekly";
+				source: string;
+			};
+
+			async function listDir(dir: string, source: string): Promise<ReportMeta[]> {
+				try {
+					const entries = await readdir(dir);
+					const mdFiles = entries.filter((f) => f.endsWith(".md"));
+					return await Promise.all(
+						mdFiles.map(async (name) => {
+							const st = await stat(join(dir, name));
+							return {
+								name,
+								sizeBytes: st.size,
+								mtime: st.mtime.toISOString(),
+								kind: (name.startsWith("weekly_") ? "weekly" : "session") as "session" | "weekly",
+								source,
+							};
+						}),
+					);
+				} catch {
+					return [];
+				}
+			}
+
+			// Read both dirs
+			const [globalReports, legacyReports] = await Promise.all([
+				listDir(globalDir, "global"),
+				listDir(legacyDir, "legacy"),
+			]);
+
+			// Merge: global takes priority, dedup by name
+			const merged = new Map<string, ReportMeta>();
+			for (const r of globalReports) merged.set(r.name, r);
+			for (const r of legacyReports) {
+				if (!merged.has(r.name)) merged.set(r.name, r);
+			}
+
+			const metas = [...merged.values()];
+			metas.sort((a, b) => new Date(b.mtime).getTime() - new Date(a.mtime).getTime());
+			// Strip internal `source` field before returning
+			return metas.map(({ source: _s, ...rest }) => rest);
+		},
+
+		async readAnalyticsReport(name: string) {
+			const { join, resolve: resolvePath } = await import("node:path");
+			const { readFile } = await import("node:fs/promises");
+
+			// Global reports dir (priority)
+			const globalDir = join(getAgentDir(), "..", "reports", "session-analytics");
+			// Legacy per-project reports dir
+			const legacyDir = join(runtime.services.cwd, ".fan", "reports", "session-analytics");
+
+			// Try global first, then legacy
+			for (const reportsDir of [globalDir, legacyDir]) {
+				const resolved = resolvePath(reportsDir, name);
+				const resolvedDir = resolvePath(reportsDir);
+				// Path traversal protection
+				if (!resolved.startsWith(resolvedDir + "/") && !resolved.startsWith(resolvedDir + "\\")) {
+					continue;
+				}
+				try {
+					return await readFile(resolved, "utf-8");
+				} catch {
+					// Try next dir
+				}
+			}
+			return null;
+		},
+
 		bindSessionExtensions,
 	};
 }

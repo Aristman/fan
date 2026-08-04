@@ -5,6 +5,8 @@ import type {
 	CreateSessionResponse,
 	DeleteSessionResponse,
 	GenerateTokenResponse,
+	GetAnalyticsReportResponse,
+	GetAnalyticsReportsResponse,
 	GetBudgetResponse,
 	GetModelSettingsResponse,
 	GetModelsResponse,
@@ -203,5 +205,17 @@ export class FanApiClient {
 
 	revokeToken(id: string): Promise<RevokeTokenResponse> {
 		return this._request<RevokeTokenResponse>("DELETE", `/api/tokens/${id}`);
+	}
+
+	// -----------------------------------------------------------------------
+	// Analytics
+	// -----------------------------------------------------------------------
+
+	getAnalyticsReports(): Promise<GetAnalyticsReportsResponse> {
+		return this._request<GetAnalyticsReportsResponse>("GET", "/api/analytics/reports");
+	}
+
+	getAnalyticsReport(name: string): Promise<GetAnalyticsReportResponse> {
+		return this._request<GetAnalyticsReportResponse>("GET", `/api/analytics/reports/${encodeURIComponent(name)}`);
 	}
 }

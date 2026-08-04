@@ -124,15 +124,50 @@ describe("StdinBuffer", () => {
 			assert.deepStrictEqual(emittedSequences, ["\x1b[<35;20;5m"]);
 		});
 
-		it("should flush incomplete sequence after timeout", async () => {
-			processInput("\x1b[<35");
+		it("should discard incomplete escape fragment after retries", async () => {
+			// Use a buffer with 1ms timeout for faster, more deterministic test
+			const fastBuffer = new StdinBuffer({ timeout: 1 });
+			const fastSequences: string[] = [];
+			fastBuffer.on("data", (seq) => fastSequences.push(seq));
+
+			fastBuffer.process("\x1b[<35");
+			assert.deepStrictEqual(fastSequences, []);
+
+			// Wait for all retry timeouts to exhaust (4 cycles × 1ms + margin)
+			await wait(100);
+
+			// Incomplete escape fragment should be discarded silently
+			assert.deepStrictEqual(fastSequences, []);
+			assert.strictEqual(fastBuffer.getBuffer(), "");
+			fastBuffer.destroy();
+		});
+
+		it("should assemble CSI sequence from fragmented chunks without emitting fragments", async () => {
+			// Simulate \x1b[1;3A arriving as three separate chunks
+			processInput("\x1b");
 			assert.deepStrictEqual(emittedSequences, []);
 
-			// Wait for timeout
-			await wait(15);
+			processInput("[1");
+			assert.deepStrictEqual(emittedSequences, []);
 
-			assert.deepStrictEqual(emittedSequences, ["\x1b[<35"]);
+			processInput(";3A");
+			// Complete sequence assembled, no intermediate fragments emitted
+			assert.deepStrictEqual(emittedSequences, ["\x1b[1;3A"]);
+			assert.strictEqual(buffer.getBuffer(), "");
 		});
+
+		it("should discard CSI echo fragment even when split across chunks", async () => {
+			// Simulate a CHA echo fragment: \x1b arrives, then [1G (completing \x1b[1G)
+			// but the terminal never sends a follow-up sequence
+			processInput("\x1b");
+			assert.deepStrictEqual(emittedSequences, []);
+
+			processInput("[1G");
+			// \x1b[1G is a complete CSI sequence (CHA) — it IS emitted as a data event
+			// (the editor guard will discard it, not the buffer)
+			assert.deepStrictEqual(emittedSequences, ["\x1b[1G"]);
+		});
+
 	});
 
 	describe("Mixed Content", () => {
@@ -311,14 +346,22 @@ describe("StdinBuffer", () => {
 			assert.deepStrictEqual(flushed, []);
 		});
 
-		it("should emit flushed data via timeout", async () => {
-			processInput("\x1b[<35");
-			assert.deepStrictEqual(emittedSequences, []);
+		it("should discard incomplete escape prefix after retries", async () => {
+			// Use a buffer with 1ms timeout for faster, more deterministic test
+			const fastBuffer = new StdinBuffer({ timeout: 1 });
+			const fastSequences: string[] = [];
+			fastBuffer.on("data", (seq) => fastSequences.push(seq));
 
-			// Wait for timeout to flush
-			await wait(15);
+			fastBuffer.process("\x1b[");
+			assert.deepStrictEqual(fastSequences, []);
 
-			assert.deepStrictEqual(emittedSequences, ["\x1b[<35"]);
+			// Wait for all retry timeouts (4 cycles × 1ms + margin)
+			await wait(100);
+
+			// Incomplete CSI prefix discarded silently
+			assert.deepStrictEqual(fastSequences, []);
+			assert.strictEqual(fastBuffer.getBuffer(), "");
+			fastBuffer.destroy();
 		});
 	});
 
