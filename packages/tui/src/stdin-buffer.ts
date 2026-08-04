@@ -246,6 +246,10 @@ export class StdinBuffer extends EventEmitter<StdinBufferEventMap> {
 	private readonly timeoutMs: number;
 	private pasteMode: boolean = false;
 	private pasteBuffer: string = "";
+	/** Retry counter for incomplete escape sequences in flush */
+	private flushRetries = 0;
+	/** Maximum retries before discarding an incomplete escape fragment */
+	private static readonly MAX_FLUSH_RETRIES = 3;
 
 	constructor(options: StdinBufferOptions = {}) {
 		super();
@@ -341,14 +345,50 @@ export class StdinBuffer extends EventEmitter<StdinBufferEventMap> {
 		}
 
 		if (this.buffer.length > 0) {
-			this.timeout = setTimeout(() => {
-				const flushed = this.flush();
-
-				for (const sequence of flushed) {
-					this.emit("data", sequence);
-				}
-			}, this.timeoutMs);
+			this.flushRetries = 0;
+			this.scheduleFlush();
 		}
+	}
+
+	/**
+	 * Schedule a flush timeout. If the buffer still contains an incomplete
+	 * escape-sequence prefix when the timeout fires, retry up to MAX_FLUSH_RETRIES
+	 * times before discarding the fragment silently. A lone ESC (\x1b) is always
+	 * emitted as a legitimate Escape keypress for backward compatibility.
+	 */
+	private scheduleFlush(): void {
+		this.timeout = setTimeout(() => {
+			this.timeout = null;
+
+			if (this.buffer.length === 0) return;
+
+			// Lone ESC — legitimate Escape keypress, emit immediately
+			if (this.buffer === "\x1b") {
+				const sequences = this.flush();
+				for (const seq of sequences) {
+					this.emit("data", seq);
+				}
+				return;
+			}
+
+			// Incomplete escape-sequence prefix (e.g. \x1b[, \x1b[1, \x1bO)
+			if (this.buffer.startsWith("\x1b") && isCompleteSequence(this.buffer) === "incomplete") {
+				if (this.flushRetries < StdinBuffer.MAX_FLUSH_RETRIES) {
+					this.flushRetries++;
+					this.scheduleFlush();
+					return;
+				}
+				// Exhausted retries — discard the echo fragment silently
+				this.buffer = "";
+				return;
+			}
+
+			// Complete or non-escape content — flush normally
+			const sequences = this.flush();
+			for (const seq of sequences) {
+				this.emit("data", seq);
+			}
+		}, this.timeoutMs);
 	}
 
 	flush(): string[] {
@@ -356,6 +396,7 @@ export class StdinBuffer extends EventEmitter<StdinBufferEventMap> {
 			clearTimeout(this.timeout);
 			this.timeout = null;
 		}
+		this.flushRetries = 0;
 
 		if (this.buffer.length === 0) {
 			return [];

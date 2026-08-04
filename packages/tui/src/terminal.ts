@@ -213,10 +213,17 @@ export class ProcessTerminal implements Terminal {
 
 			const STD_INPUT_HANDLE = -10;
 			const ENABLE_VIRTUAL_TERMINAL_INPUT = 0x0200;
+				const ENABLE_ECHO_INPUT = 0x0004;
 			const handle = GetStdHandle(STD_INPUT_HANDLE);
 			const mode = new Uint32Array(1);
 			GetConsoleMode(handle, mode);
-			SetConsoleMode(handle, mode[0]! | ENABLE_VIRTUAL_TERMINAL_INPUT);
+			// Clear ENABLE_ECHO_INPUT to prevent ConPTY from echoing escape
+			// sequences (e.g. cursor-positioning CHA `\x1b[1G`) back into stdin.
+			// Set ENABLE_VIRTUAL_TERMINAL_INPUT so the console sends VT sequences
+			// for modified keys. Do NOT set ENABLE_PROCESSED_INPUT: it routes
+		// Ctrl+C to SIGINT and breaks TUI keybinding interception.
+			const newMode = (mode[0]! & ~ENABLE_ECHO_INPUT) | ENABLE_VIRTUAL_TERMINAL_INPUT;
+			SetConsoleMode(handle, newMode);
 		} catch {
 			// koffi not available — Shift+Tab won't be distinguishable from Tab
 		}

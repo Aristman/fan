@@ -1020,7 +1020,11 @@ export function matchesKey(data: string, keyId: KeyId): boolean {
 
 		case "up":
 			if (alt && !ctrl && !shift) {
-				return data === "\x1bp" || matchesKittySequence(data, ARROW_CODEPOINTS.up, MODIFIERS.alt);
+				return (
+					data === "\x1bp" ||
+					data === "\x1b[1;3A" ||
+					matchesKittySequence(data, ARROW_CODEPOINTS.up, MODIFIERS.alt)
+				);
 			}
 			if (modifier === 0) {
 				return (
@@ -1035,7 +1039,11 @@ export function matchesKey(data: string, keyId: KeyId): boolean {
 
 		case "down":
 			if (alt && !ctrl && !shift) {
-				return data === "\x1bn" || matchesKittySequence(data, ARROW_CODEPOINTS.down, MODIFIERS.alt);
+				return (
+					data === "\x1bn" ||
+					data === "\x1b[1;3B" ||
+					matchesKittySequence(data, ARROW_CODEPOINTS.down, MODIFIERS.alt)
+				);
 			}
 			if (modifier === 0) {
 				return (
@@ -1265,6 +1273,10 @@ export function parseKey(data: string): string | undefined {
 	if (data === "\x1b\x7f" || data === "\x1b\b") return "alt+backspace";
 	if (!_kittyProtocolActive && data === "\x1bB") return "alt+left";
 	if (!_kittyProtocolActive && data === "\x1bF") return "alt+right";
+	if (data === "\x1b[1;3A") return "alt+up";
+	if (data === "\x1b[1;3B") return "alt+down";
+	if (data === "\x1b[1;3C") return "alt+right";
+	if (data === "\x1b[1;3D") return "alt+left";
 	if (!_kittyProtocolActive && data.length === 2 && data[0] === "\x1b") {
 		const code = data.charCodeAt(1);
 		if (code >= 1 && code <= 26) {
@@ -1284,6 +1296,24 @@ export function parseKey(data: string): string | undefined {
 	if (data === "\x1b[3~") return "delete";
 	if (data === "\x1b[5~") return "pageUp";
 	if (data === "\x1b[6~") return "pageDown";
+
+	// CSI arrow with modifier and optional event type: \x1b[1;<mod>(:<event>)A/B/C/D
+	{
+		const arrowModMatch = data.match(/^\x1b\[1;(\d+)(?::\d+)?([ABCD])$/);
+		if (arrowModMatch) {
+			const modValue = parseInt(arrowModMatch[1]!, 10);
+			const modifier = modValue - 1;
+			const arrowNames: Record<string, string> = { A: "up", B: "down", C: "right", D: "left" };
+			const arrowName = arrowNames[arrowModMatch[2]!];
+			if (arrowName && modifier > 0 && modifier <= 7) {
+				const mods: string[] = [];
+				if (modifier & 1) mods.push("shift");
+				if (modifier & 2) mods.push("alt");
+				if (modifier & 4) mods.push("ctrl");
+				return `${mods.join("+")}+${arrowName}`;
+			}
+		}
+	}
 
 	// Raw Ctrl+letter
 	if (data.length === 1) {
