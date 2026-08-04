@@ -2,7 +2,7 @@ import { writeFile, mkdir, rename } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { AnalyticsConfig, Finding, GoldenComparison, JudgeResult, RubricEvaluation, SessionScore, Trajectory } from "./types.js";
+import type { Finding, GoldenComparison, JudgeResult, RubricEvaluation, SessionScore, Trajectory } from "./types.js";
 import { RUBRICS, type RubricKey } from "./judge/rubrics.js";
 import { escapeMd } from "./patterns.js";
 
@@ -21,16 +21,15 @@ function getExtensionVersion(): string {
 
 /**
  * Generate markdown report for a session and save atomically (tmp + rename).
+ * @param reportDir Resolved absolute directory for report output.
  */
 export async function generateReport(
 	trajectory: Trajectory,
 	score: SessionScore,
-	cfg: AnalyticsConfig,
-	cwd: string,
+	reportDir: string,
 	mode: "metrics" | "full",
 	goldenComparison?: GoldenComparison,
 ): Promise<string> {
-	const reportDir = join(cwd, cfg.reports.dir);
 	await mkdir(reportDir, { recursive: true });
 
 	const dateStr = new Date().toISOString().slice(0, 10);

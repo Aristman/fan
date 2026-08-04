@@ -100,6 +100,8 @@ function makeCfg(overrides?: Partial<AnalyticsConfig>): AnalyticsConfig {
 			silent: false,
 			...(overrides?.weeklyBatch || {}),
 		},
+		// Always override reports.dir in tests to avoid writing to the real global dir
+		reports: overrides?.reports ?? { dir: "test-reports" },
 	};
 }
 
@@ -221,7 +223,7 @@ async function testState() {
 	await mkdir(testDir, { recursive: true });
 
 	try {
-		// Test 1: Save and load round-trip
+		// Test 1: Save and load round-trip (with new `analyzed` field)
 		{
 			console.log("Test: state save/load round-trip");
 			const state: ExtensionState = {
@@ -238,7 +240,10 @@ async function testState() {
 					errorCount: 2,
 					overheadPercent: 30,
 				},
-				analyzedMtimes: { "/path/to/session.jsonl": 1234567890 },
+				analyzedMtimes: {},
+				analyzed: {
+					"/path/to/session.jsonl": { mtime: 1234567890, analyzedAt: "2026-08-01T10:00:00.000Z", reportPath: "/tmp/report.md" },
+				},
 			};
 
 			const saved = await saveState(testDir, state);
@@ -249,7 +254,21 @@ async function testState() {
 			assert(loaded.lastAutoSummary?.score === 85, "lastAutoSummary.score preserved");
 			assert(loaded.lastAutoSummary?.loopCount === 0, "loopCount preserved");
 			assert(loaded.lastAutoSummary?.errorCount === 2, "errorCount preserved");
-			assert(loaded.analyzedMtimes["/path/to/session.jsonl"] === 1234567890, "analyzedMtimes preserved");
+			assert(loaded.analyzed?.["/path/to/session.jsonl"]?.mtime === 1234567890, "analyzed entry preserved");
+			assert(loaded.analyzed?.["/path/to/session.jsonl"]?.analyzedAt === "2026-08-01T10:00:00.000Z", "analyzedAt preserved");
+		}
+
+		// Test 1b: Migration — old analyzedMtimes → new analyzed
+		{
+			console.log("Test: analyzedMtimes migration");
+			await writeFile(join(testDir, "state.json"), JSON.stringify({
+				analyzedMtimes: { "/old/path.jsonl": 9999999 },
+			}, null, 2), "utf-8");
+
+			const loaded = await loadState(testDir);
+			assert(loaded.analyzed !== undefined, "analyzed field created");
+			assert(loaded.analyzed?.["/old/path.jsonl"]?.mtime === 9999999, "mtime migrated from analyzedMtimes");
+			assert(loaded.analyzed?.["/old/path.jsonl"]?.analyzedAt === "", "analyzedAt is empty for migrated entries");
 		}
 
 		// Test 2: Broken JSON → empty state
@@ -257,8 +276,8 @@ async function testState() {
 			console.log("Test: broken JSON → empty state");
 			await writeFile(join(testDir, "state.json"), "{broken json!!", "utf-8");
 			const loaded = await loadState(testDir);
-			assert(loaded.analyzedMtimes !== undefined, "analyzedMtimes exists on empty state");
-			assert(Object.keys(loaded.analyzedMtimes).length === 0, "analyzedMtimes is empty");
+			assert(loaded.analyzed !== undefined, "analyzed exists on empty state");
+			assert(Object.keys(loaded.analyzed!).length === 0, "analyzed is empty");
 			assert(loaded.lastBatchRun === undefined, "lastBatchRun is undefined");
 		}
 
@@ -267,7 +286,7 @@ async function testState() {
 			console.log("Test: missing file → empty state");
 			const missingDir = join(tmpdir(), `fan-state-missing-${Date.now()}`);
 			const loaded = await loadState(missingDir);
-			assert(loaded.analyzedMtimes !== undefined, "analyzedMtimes exists");
+			assert(loaded.analyzed !== undefined, "analyzed exists");
 			assert(loaded.lastAutoSummary === undefined, "lastAutoSummary is undefined");
 		}
 	} finally {
@@ -585,6 +604,146 @@ async function testOneLinerFormat() {
 }
 
 // ============================================================================
+// PATHS / resolveReportsDir TESTS
+// ============================================================================
+
+import { resolveReportsDir, getReportsRoot, _resetCache } from "../src/paths.js";
+import { runPipeline } from "../src/pipeline.js";
+import { getSessionsDir } from "../src/parser.js";
+
+async function testResolveReportsDir() {
+	console.log("\n=== resolveReportsDir Tests ===\n");
+
+	// Test: "global" → ~/.fan/reports/session-analytics
+	{
+		console.log("Test: 'global' → global reports root");
+		_resetCache();
+		const cfg = { ...DEFAULT_CONFIG, reports: { dir: "global" } };
+		const result = resolveReportsDir(cfg, "/some/cwd");
+		const expected = getReportsRoot();
+		assert(result === expected, `resolveReportsDir('global') = ${result}, expected ${expected}`);
+		assert(result.includes("reports") && result.includes("session-analytics"), `Path contains reports/session-analytics: ${result}`);
+	}
+
+	// Test: relative path → cwd-based
+	{
+		console.log("Test: relative path → cwd-based");
+		const cfg = { ...DEFAULT_CONFIG, reports: { dir: ".fan/reports/session-analytics" } };
+		const result = resolveReportsDir(cfg, "/home/user/project");
+		const normalized = result.replace(/\\/g, "/");
+		assert(normalized.includes("/home/user/project"), `Relative path resolved relative to cwd: ${result}`);
+		assert(result.endsWith("session-analytics"), `Ends with session-analytics: ${result}`);
+	}
+
+	// Test: absolute path → used as-is
+	{
+		console.log("Test: absolute path → as-is");
+		const absPath = "/tmp/custom/reports";
+		const cfg = { ...DEFAULT_CONFIG, reports: { dir: absPath } };
+		const result = resolveReportsDir(cfg, "/some/cwd");
+		assert(result === absPath, `Absolute path preserved: ${result}`);
+	}
+}
+
+// ============================================================================
+// INCREMENTAL ANALYSIS TESTS
+// ============================================================================
+
+async function testIncrementalAnalysis() {
+	console.log("\n=== Incremental Analysis Tests ===\n");
+
+	const testBase = join(tmpdir(), `fan-incremental-${Date.now()}`);
+	const sessionsDir = join(testBase, "sessions");
+	const extDir = join(testBase, "ext");
+	const reportsDir = join(testBase, "reports");
+	await mkdir(sessionsDir, { recursive: true });
+	await mkdir(extDir, { recursive: true });
+
+	const cfg = makeCfg({ reports: { dir: reportsDir } });
+
+	// Create a session and track its path
+	const sessionPath = await createTestSession(sessionsDir);
+
+	try {
+		// Test: mark after analysis (explicit path target)
+		{
+			console.log("Test: mark after analysis → explicit path gets mark");
+
+			// First run — analyze via explicit path
+			const result1 = await runPipeline({
+				target: sessionPath,
+				mode: "metrics",
+				cwd: testBase,
+				cfg,
+				extensionDir: extDir,
+			});
+			assert(result1.results.length === 1, `First run: 1 result, got ${result1.results.length}`);
+
+			// Verify state has the analyzed entry
+			const state = await loadState(extDir);
+			assert(state.analyzed?.[sessionPath] !== undefined, "Session marked in state after analysis");
+			assert(state.analyzed?.[sessionPath]?.mtime !== undefined, "mtime is set");
+			assert(state.analyzed?.[sessionPath]?.analyzedAt !== undefined, "analyzedAt is set");
+		}
+
+		// Test: explicit target with existing mark → info note
+		{
+			console.log("Test: explicit target → info note for already analyzed");
+			const result = await runPipeline({
+				target: sessionPath,
+				mode: "metrics",
+				cwd: testBase,
+				cfg,
+				extensionDir: extDir,
+			});
+			assert(result.results.length === 1, `Explicit target: 1 result, got ${result.results.length}`);
+			const skipped = result.results[0].skipped || "";
+			assert(skipped.includes("уже анализировалась"), `Explicit target: info note present: "${skipped}"`);
+		}
+
+		// Test: changed mtime → re-analyze (with new mark)
+		{
+			console.log("Test: changed mtime → re-analyze with updated mark");
+			// Modify the session file to change its mtime
+			await (await import("node:fs/promises")).appendFile(sessionPath, "\n", "utf-8");
+			// Small delay to ensure mtime differs
+			await new Promise((r) => setTimeout(r, 50));
+
+			const result = await runPipeline({
+				target: sessionPath,
+				mode: "metrics",
+				cwd: testBase,
+				cfg,
+				extensionDir: extDir,
+			});
+			assert(result.results.length === 1, `After mtime change: 1 result, got ${result.results.length}`);
+
+			// Verify the mark was updated
+			const state = await loadState(extDir);
+			assert(state.analyzed?.[sessionPath] !== undefined, "Session re-marked after mtime change");
+		}
+
+		// Test: dir mode with force: true analyzes despite marks
+		// (We can't test dir scanning with tmpdir, but we can test force flag propagation)
+		{
+			console.log("Test: force: true flag propagates correctly");
+			// This tests that force flag is accepted and doesn't crash
+			const result = await runPipeline({
+				target: sessionPath,
+				mode: "metrics",
+				cwd: testBase,
+				cfg,
+				extensionDir: extDir,
+				force: true,
+			});
+			assert(result.results.length === 1, `Force: 1 result, got ${result.results.length}`);
+		}
+	} finally {
+		await rm(testBase, { recursive: true, force: true });
+	}
+}
+
+// ============================================================================
 // MAIN
 // ============================================================================
 
@@ -597,6 +756,8 @@ async function main() {
 	await testTrend();
 	await testAutoAnalyze();
 	await testOneLinerFormat();
+	await testResolveReportsDir();
+	await testIncrementalAnalysis();
 
 	console.log("\n=== Summary ===");
 	console.log(`Passed: ${passed}`);

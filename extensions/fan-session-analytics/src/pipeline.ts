@@ -15,11 +15,12 @@ import { ALL_DETECTORS } from "./detectors/index.js";
 import { trySqliteTokens } from "./detectors/d9-tokens-cost.js";
 import { calculateScore } from "./score.js";
 import { generateReport } from "./report.js";
-import { mkdir, rename, writeFile } from "node:fs/promises";
+import { resolveReportsDir } from "./paths.js";
+import { mkdir, rename, writeFile, stat as fsStat } from "node:fs/promises";
 import { join } from "node:path";
 import { compressTrajectory, runJudge } from "./judge/index.js";
 import { findGoldenForTrajectory, compareWithGolden } from "./golden.js";
-import { loadState } from "./state.js";
+import { loadState, saveState, getAnalyzedEntry, markAnalyzed } from "./state.js";
 import { minePatterns, formatPatternsSection } from "./patterns.js";
 
 export interface AnalyzeOptions {
@@ -31,8 +32,10 @@ export interface AnalyzeOptions {
 	cfg: AnalyticsConfig;
 	/** Optional judge dependencies (injected for full mode). */
 	judgeDeps?: JudgeDeps;
-	/** Extension directory for loading state (golden entries). */
+	/** Extension directory for loading state (golden entries, incremental). */
 	extensionDir?: string;
+	/** Force analysis even if session was already analyzed (dir mode). */
+	force?: boolean;
 }
 
 export interface AnalyzeResult {
@@ -51,6 +54,8 @@ export interface PipelineOutput {
 	patterns?: PatternCandidate[]; // F13 — only in dir/weekly modes
 	/** Path to the persisted dir-summary report (dir mode only). */
 	summaryPath?: string;
+	/** Number of sessions skipped (already analyzed, dir mode). */
+	skippedCount: number;
 }
 
 /**
@@ -61,6 +66,14 @@ export async function runPipeline(opts: AnalyzeOptions): Promise<PipelineOutput>
 	const errors: Array<{ path: string; error: string }> = [];
 	const allTrajectories: Trajectory[] = []; // for F13 pattern mining
 
+	// Resolve reports directory once
+	const reportDir = resolveReportsDir(opts.cfg, opts.cwd);
+
+	// Load state for incremental skip
+	const extensionDir = opts.extensionDir || "";
+	const state = extensionDir ? await loadState(extensionDir) : null;
+	let skippedCount = 0;
+
 	let sessionPaths: string[] = [];
 
 	if (opts.target === "last") {
@@ -70,6 +83,7 @@ export async function runPipeline(opts: AnalyzeOptions): Promise<PipelineOutput>
 			return {
 				results: [],
 				summary: "Сессии для текущего каталога не найдены.",
+				skippedCount: 0,
 			};
 		}
 		sessionPaths = [last];
@@ -94,6 +108,20 @@ export async function runPipeline(opts: AnalyzeOptions): Promise<PipelineOutput>
 				continue;
 			}
 
+			// Incremental skip: dir mode — skip if already analyzed with same mtime
+			if (opts.target === "dir" && state && !opts.force) {
+				try {
+					const fileStat = await fsStat(path);
+					const existing = getAnalyzedEntry(state, path, fileStat.mtimeMs);
+					if (existing) {
+						skippedCount++;
+						continue;
+					}
+				} catch {
+					// Can't stat — proceed with analysis
+				}
+			}
+
 			const parsed = await parseSessionFile(path);
 
 			// Garbage session filter (only in dir mode)
@@ -108,6 +136,20 @@ export async function runPipeline(opts: AnalyzeOptions): Promise<PipelineOutput>
 
 			// Warning for explicit path with self-reference
 			const isSelfReferencing = opts.target !== "dir" && containsSessionAnalyze(parsed.entries);
+
+			// Check if already analyzed (for explicit target — add info note)
+			let alreadyAnalyzedNote: string | undefined;
+			if (opts.target !== "dir" && state) {
+				try {
+					const fileStat = await fsStat(path);
+					const existing = state.analyzed?.[path];
+					if (existing && existing.analyzedAt) {
+						alreadyAnalyzedNote = `ℹ️ Эта сессия уже анализировалась ${existing.analyzedAt}`;
+					}
+				} catch {
+					// Can't stat — proceed
+				}
+			}
 
 			const trajectory = buildTrajectory(parsed, opts.cfg.detectors?.idleThresholdMin);
 
@@ -129,8 +171,8 @@ export async function runPipeline(opts: AnalyzeOptions): Promise<PipelineOutput>
 			// F12: Golden comparison (only in full mode)
 			let goldenComparison: GoldenComparison | undefined;
 			if (opts.mode === "full" && opts.judgeDeps) {
-				const state = await loadState(opts.extensionDir || "");
-				const goldenEntry = findGoldenForTrajectory(state, trajectory);
+				const goldenState = await loadState(extensionDir);
+				const goldenEntry = findGoldenForTrajectory(goldenState, trajectory);
 				if (goldenEntry) {
 					goldenComparison = await compareWithGolden(
 						trajectory,
@@ -144,14 +186,33 @@ export async function runPipeline(opts: AnalyzeOptions): Promise<PipelineOutput>
 			const reportPath = await generateReport(
 				trajectory,
 				score,
-				opts.cfg,
-				opts.cwd,
+				reportDir,
 				opts.mode,
 				goldenComparison
 			);
 
+			// Mark as analyzed in state
+			if (state) {
+				try {
+					const fileStat = await fsStat(path);
+					markAnalyzed(state, path, fileStat.mtimeMs, reportPath);
+				} catch {
+					// Can't stat — still mark with 0 mtime
+					markAnalyzed(state, path, 0, reportPath);
+				}
+			}
+
 			// Track trajectory for F13 pattern mining
 			allTrajectories.push(trajectory);
+
+			// Build skipped message
+			let skippedMsg: string | undefined;
+			if (isSelfReferencing) {
+				skippedMsg = "ПРЕДУПРЕЖДЕНИЕ: Сессия содержит вызовы session_analyze (самоссылание). Анализ может включать шум.";
+			}
+			if (alreadyAnalyzedNote) {
+				skippedMsg = skippedMsg ? `${skippedMsg}\n   ${alreadyAnalyzedNote}` : alreadyAnalyzedNote;
+			}
 
 			results.push({
 				sessionPath: path,
@@ -159,9 +220,7 @@ export async function runPipeline(opts: AnalyzeOptions): Promise<PipelineOutput>
 				score,
 				trajectory,
 				reportPath,
-				skipped: isSelfReferencing
-					? "ПРЕДУПРЕЖДЕНИЕ: Сессия содержит вызовы session_analyze (самоссылание). Анализ может включать шум."
-					: undefined,
+				skipped: skippedMsg,
 				goldenComparison,
 			});
 		} catch (err) {
@@ -172,28 +231,32 @@ export async function runPipeline(opts: AnalyzeOptions): Promise<PipelineOutput>
 		}
 	}
 
+	// Save state with updated analyzed entries
+	if (state && extensionDir) {
+		await saveState(extensionDir, state);
+	}
+
 	// F13: Pattern mining (only in dir mode with multiple sessions)
 	let patterns: PatternCandidate[] | undefined;
 	if (opts.target === "dir" && allTrajectories.length >= (opts.cfg.orchestration.patternMinSessions || 3)) {
 		patterns = minePatterns(allTrajectories, opts.cfg);
 	}
 
-	const summary = buildSummary(results, errors, patterns, opts.cfg);
+	const summary = buildSummary(results, errors, patterns, opts.cfg, skippedCount);
 
 	// Persist dir summary so the patterns section (F13) survives the chat
 	let summaryPath: string | undefined;
-	if (opts.target === "dir" && results.length > 0) {
-		summaryPath = await writeSummaryReport(summary, opts);
+	if (opts.target === "dir" && (results.length > 0 || skippedCount > 0)) {
+		summaryPath = await writeSummaryReport(summary, reportDir);
 	}
 
-	return { results, summary, patterns, summaryPath };
+	return { results, summary, patterns, summaryPath, skippedCount };
 }
 
 /**
  * Write the dir-mode summary (incl. patterns section) atomically.
  */
-async function writeSummaryReport(summary: string, opts: AnalyzeOptions): Promise<string> {
-	const reportDir = join(opts.cwd, opts.cfg.reports.dir);
+async function writeSummaryReport(summary: string, reportDir: string): Promise<string> {
 	await mkdir(reportDir, { recursive: true });
 	const now = new Date();
 	const dateStr = now.toISOString().slice(0, 10);
@@ -246,16 +309,20 @@ function buildSummary(
 	errors: Array<{ path: string; error: string }>,
 	patterns?: PatternCandidate[],
 	cfg?: AnalyticsConfig,
+	skippedCount: number = 0,
 ): string {
 	const lines: string[] = [];
 
-	if (results.length === 0 && errors.length === 0) {
+	if (results.length === 0 && errors.length === 0 && skippedCount === 0) {
 		return "Сессии не проанализированы.";
 	}
 
 	lines.push(`## Сводка аналитики сессий`);
 	lines.push("");
 	lines.push(`Проанализировано сессий: ${results.length}`);
+	if (skippedCount > 0) {
+		lines.push(`Пропущено (уже проанализированы): ${skippedCount}`);
+	}
 	if (errors.length > 0) {
 		lines.push(`Ошибок: ${errors.length}`);
 	}

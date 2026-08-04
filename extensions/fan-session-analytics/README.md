@@ -15,7 +15,7 @@
   - D11 пропорциональность флоу (тяжёлый пайплайн на мелкой задаче)
   - D12 маршрутизация воркеров (эвристика соответствия типа воркера задаче)
   - D13 пустые ретраи
-- **Отчёты** — markdown в `.fan/reports/session-analytics/`, балл 0–100, находки по severity с доказательствами
+- **Отчёты** — markdown в `~/.fan/reports/session-analytics/` (глобальный каталог по умолчанию), балл 0–100, находки по severity с доказательствами
 - **Интерфейсы** — инструмент `session_analyze` + slash-команда `/session-analytics`
 
 ## Установка
@@ -78,7 +78,7 @@ cp -r extensions/fan-session-analytics ~/.fan/agent/extensions/
 При старте следующей сессии (`session_start`) выводится однострочная сводка (один раз):
 
 ```
-Аналитика прошлой сессии: 87/100, петель: 0, ошибок: 2, overhead: 45% — отчёт: .fan/reports/session-analytics/…
+Аналитика прошлой сессии: 87/100, петель: 0, ошибок: 2, overhead: 45% — отчёт: ~/.fan/reports/session-analytics/…
 ```
 
 **Фильтры:**
@@ -97,12 +97,22 @@ cp -r extensions/fan-session-analytics ~/.fan/agent/extensions/
 - Режим: `metrics` (судья не вызывается — 0 токенов).
 - Лимит: `batchSize` из конфига (дефолт 20).
 
-**Сводный отчёт:** markdown в `.fan/reports/session-analytics/weekly_<дата>.md`:
+**Сводный отчёт:** markdown в `~/.fan/reports/session-analytics/weekly_<дата>.md` (глобальный каталог):
 - Таблица сессий (балл, находки по severity)
 - Тренд-блок (↑/↓ против прошлого периода): средний балл, находки по severity, топ-3 детектора
 - Уведомление о завершении через `notify` с путём к отчёту
 
 **Защита от параллельного запуска:** флаг `weeklyRunning` в памяти.
+
+### Инкрементальный анализ
+
+После каждого успешного анализа сессия помечается в `state.json` (`analyzed[path] = { mtime, analyzedAt, reportPath }`). При повторном запуске в режиме `dir` или weekly batch сессия **пропускается**, если `mtime` не изменился.
+
+- **Пропуск:** сводка содержит строку `Пропущено (уже проанализированы): N`.
+- **Изменение mtime:** если сессия дописалась (resume) — анализируется заново.
+- **Явный target (last/путь):** анализ всегда выполняется; если есть метка — выводится `ℹ️ Эта сессия уже анализировалась <дата>`.
+- **Принудительно:** `force: true` (tool) или `--force` / `-f` (slash) — игнорировать метки в dir-режиме.
+- **F9 (auto):** если текущая сессия уже помечена и не изменилась — пропуск.
 
 ## Золотые траектории (F12)
 
@@ -187,7 +197,8 @@ cp -r extensions/fan-session-analytics ~/.fan/agent/extensions/
 - `lastBatchRun` — ISO-дата последнего еженедельного прогона
 - `lastAutoSummary` — результат последнего авто-анализа (балл, метрики, путь к отчёту)
 - `previousBatchStats` — статистика прошлого еженедельного прогона (для тренда)
-- `analyzedMtimes` — mtime проанализированных файлов
+- `analyzedMtimes` — mtime проанализированных файлов (deprecated, авто-миграция в `analyzed`)
+- `analyzed` — карта `path → { mtime, analyzedAt, reportPath }` для инкрементального пропуска
 - `weeklyDeferredUntil` — до когда отложен еженедельный анализ после отказа
 - `golden` — массив эталонных сессий (F12, обратно-совместимо: отсутствие поля → `[]`)
 
@@ -205,7 +216,7 @@ cp -r extensions/fan-session-analytics ~/.fan/agent/extensions/
 2. **Еженедельный пакетный анализ** — вкл./выкл.
 3. **Порог coordination overhead** — число 0.1–1.0.
 4. **Тяжёлые скилы** — мультиселект из списка установленных скилов (обнаруживаются из `~/.fan/agent/skills/*/SKILL.md` и `<cwd>/.fan/skills/*/SKILL.md`). Текущие значения из конфига предвыбраны. Если скилы не найдены — fallback на текстовый ввод.
-5. **Каталог отчётов** — путь относительно cwd.
+5. **Каталог отчётов** — `"global"` (единый архив `~/.fan/reports/session-analytics/`, дефолт), абсолютный путь или относительный путь относительно cwd.
 6. **Модель-судья** (этап B) — двухшаговый выбор: сначала провайдер (из `modelRegistry.getAvailable()`), затем модель этого провайдера. Пункт «Не настраивать» пропускает шаг. Если registry пуст — шаг пропускается автоматически.
 
 Альтернативно: скопируйте `config.example.json` → `config.json` рядом с расширением и отредактируйте вручную.
@@ -239,7 +250,7 @@ cp -r extensions/fan-session-analytics ~/.fan/agent/extensions/
 | `orchestration` | `smallChangeFiles` | number | Порог «мелкого изменения» (файлы) |
 | `orchestration` | `retryPromptSimilarity` | number | Порог схожести промптов для D13 (0–1) |
 | `orchestration` | `patternMinSessions` | number | Мин. сессий с паттерном для рекомендации синтеза (F13) |
-| `reports` | `dir` | string | Каталог отчётов (относительно cwd) |
+| `reports` | `dir` | string | Каталог отчётов: `"global"` (дефолт, `~/.fan/reports/session-analytics`), абсолютный путь или относительный cwd |
 | `detectors` | `idleThresholdMin` | number | Порог простоя (минуты): интервалы > этого значения исключаются из метрик D3 как user-idle (дефолт 15) |
 | `detectors` | `d12Enabled` | boolean | Включить детектор D12 (маршрутизация воркеров). Дефолт `true` |
 

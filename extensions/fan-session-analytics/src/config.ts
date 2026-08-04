@@ -28,7 +28,7 @@ export const DEFAULT_CONFIG: AnalyticsConfig = {
 		retryPromptSimilarity: 0.9,
 		patternMinSessions: 3,
 	},
-	reports: { dir: ".fan/reports/session-analytics" },
+	reports: { dir: "global" },
 	detectors: {
 		idleThresholdMin: 15,
 		d12Enabled: true,

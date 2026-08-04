@@ -23,8 +23,11 @@ import {
 } from "./src/discovery.js";
 import { loadState, saveState } from "./src/state.js";
 import { markGolden, unmarkGolden, listGolden } from "./src/golden.js";
+import { initFanRoot } from "./src/paths.js";
 
 export default function sessionAnalyticsExtension(fan: ExtensionAPI) {
+	// Initialise global FAN root cache (async, fire-and-forget)
+	void initFanRoot();
 	// --- Tool: session_analyze ---
 	fan.registerTool({
 		name: "session_analyze",
@@ -52,6 +55,11 @@ export default function sessionAnalyticsExtension(fan: ExtensionAPI) {
 			batchSize: Type.Optional(
 				Type.Number({
 					description: "Макс. кол-во сессий для анализа в режиме dir. По умолчанию: 20.",
+				}),
+			),
+			force: Type.Optional(
+				Type.Boolean({
+					description: "Принудительный анализ: игнорировать метки уже проанализированных сессий (dir-режим).",
 				}),
 			),
 		}),
@@ -86,6 +94,7 @@ export default function sessionAnalyticsExtension(fan: ExtensionAPI) {
 					cfg,
 					judgeDeps,
 					extensionDir: __dirname,
+					force: params.force,
 				};
 
 				const { results, summary, patterns, summaryPath } = await runPipeline(opts);
@@ -209,7 +218,7 @@ export default function sessionAnalyticsExtension(fan: ExtensionAPI) {
 		description:
 			"Аналитика сессий — /session-analytics [last|dir|init|config|<путь>]",
 		getArgumentCompletions(prefix: string) {
-			const completions = ["last", "dir", "init", "config", "mark-golden", "unmark-golden", "golden"];
+			const completions = ["last", "dir", "init", "config", "mark-golden", "unmark-golden", "golden", "--force"];
 			const filtered = completions.filter((c) => c.startsWith(prefix));
 			return filtered.length > 0
 				? filtered.map((c) => ({ value: c, label: c }))
@@ -252,9 +261,14 @@ export default function sessionAnalyticsExtension(fan: ExtensionAPI) {
 				}
 
 				// --- Existing analysis subcommands: last, dir, <path> ---
+				// Strip --force / -f flags before parsing target/mode
+				const forceFlag = parts.includes("--force") || parts.includes("-f");
+				const cleanParts = parts.filter((p) => p !== "--force" && p !== "-f");
+				const cleanSub = cleanParts[0]?.toLowerCase() || "";
+
 				const cfg = await loadConfig(__dirname, cwd);
-				let target = sub || "last";
-				const mode = parts[1] === "full" ? "full" : "metrics";
+				let target = cleanSub || "last";
+				const mode = cleanParts[1] === "full" ? "full" : "metrics";
 
 				// Validate target
 				if (
@@ -291,6 +305,7 @@ export default function sessionAnalyticsExtension(fan: ExtensionAPI) {
 					cfg,
 					judgeDeps: slashJudgeDeps,
 					extensionDir: __dirname,
+					force: forceFlag,
 				};
 
 				ctx.ui.notify("Запуск аналитики сессий...", "info");
@@ -622,7 +637,7 @@ async function handleInitWizard(
 
 	// 5. Reports directory
 	const reportsDir = await ctx.ui.input(
-		`Каталог отчётов (сейчас: ${currentCfg.reports.dir})`,
+		`Каталог отчётов (сейчас: ${currentCfg.reports.dir}; "global" = единый архив ~/.fan/reports/)`,
 		currentCfg.reports.dir,
 	);
 	if (reportsDir === undefined) {

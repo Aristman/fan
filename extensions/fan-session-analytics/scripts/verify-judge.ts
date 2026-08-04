@@ -37,10 +37,11 @@ function assert(condition: boolean, message: string): void {
 	}
 }
 
-function makeCfg(overrides?: Partial<AnalyticsConfig["judge"]>): AnalyticsConfig {
+function makeCfg(overrides?: Partial<AnalyticsConfig["judge"]>, reportsDir?: string): AnalyticsConfig {
 	return {
 		...DEFAULT_CONFIG,
 		judge: { ...DEFAULT_CONFIG.judge, ...overrides },
+		reports: { dir: reportsDir ?? DEFAULT_CONFIG.reports.dir },
 	};
 }
 
@@ -584,7 +585,8 @@ async function testFullPipeline() {
 		const sessionPath = join(sessionsDir, `${new Date().toISOString().replace(/[:.]/g, "-")}_test.jsonl`);
 		await writeFile(sessionPath, sessionContent, "utf-8");
 
-		const cfg = makeCfg({ provider: "test", model: "judge-model" });
+		const reportsDir = join(testDir, "reports");
+		const cfg = makeCfg({ provider: "test", model: "judge-model" }, reportsDir);
 
 		try {
 			const { results } = await runPipeline({
@@ -593,6 +595,7 @@ async function testFullPipeline() {
 				cwd: testDir,
 				cfg,
 				judgeDeps,
+				extensionDir: testDir,
 			});
 
 			assert(results.length === 1, `Got 1 result: ${results.length}`);

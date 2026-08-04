@@ -30,17 +30,28 @@ export interface BatchStats {
 	periodEnd: string; // ISO
 }
 
+/** Record of an analyzed session with metadata for incremental skip. */
+export interface AnalyzedEntry {
+	mtime: number;
+	analyzedAt: string; // ISO
+	reportPath?: string;
+}
+
 export interface ExtensionState {
 	lastBatchRun?: string; // ISO
 	lastAutoSummary?: AutoSummary;
 	previousBatchStats?: BatchStats;
+	/** @deprecated — kept for backward-compat reads; new code writes to `analyzed`. */
 	analyzedMtimes: Record<string, number>;
+	/** New incremental state: maps absolute jsonl path → analysis metadata. */
+	analyzed?: Record<string, AnalyzedEntry>;
 	weeklyDeferredUntil?: string; // ISO — отложено после отказа пользователя
 	golden?: GoldenEntry[]; // F12 — эталонные сессии
 }
 
 const EMPTY_STATE: ExtensionState = {
 	analyzedMtimes: {},
+	analyzed: {},
 	golden: [],
 };
 
@@ -65,6 +76,22 @@ export async function loadState(extensionDir: string): Promise<ExtensionState> {
 		if (!parsed.analyzedMtimes || typeof parsed.analyzedMtimes !== "object") {
 			parsed.analyzedMtimes = {};
 		}
+		// Ensure analyzed exists
+		if (
+			!parsed.analyzed ||
+			typeof parsed.analyzed !== "object" ||
+			Array.isArray(parsed.analyzed)
+		) {
+			parsed.analyzed = {};
+		}
+		// Migration: old analyzedMtimes → new analyzed (analyzedAt unknown → "")
+		if (parsed.analyzedMtimes && Object.keys(parsed.analyzedMtimes).length > 0) {
+			for (const [path, mtime] of Object.entries(parsed.analyzedMtimes)) {
+				if (!parsed.analyzed[path]) {
+					parsed.analyzed[path] = { mtime, analyzedAt: "", reportPath: undefined };
+				}
+			}
+		}
 		// Backward compat: absence of golden → []
 		if (!Array.isArray(parsed.golden)) {
 			parsed.golden = [];
@@ -72,7 +99,7 @@ export async function loadState(extensionDir: string): Promise<ExtensionState> {
 		return parsed;
 	} catch {
 		// Missing file, broken JSON, etc. → start fresh
-		return { ...EMPTY_STATE, analyzedMtimes: {}, golden: [] };
+		return { ...EMPTY_STATE, analyzedMtimes: {}, analyzed: {}, golden: [] };
 	}
 }
 
@@ -88,7 +115,9 @@ export async function saveState(
 	const tmpPath = statePath + ".tmp";
 	try {
 		await mkdir(dirname(statePath), { recursive: true });
-		const json = JSON.stringify(state, null, 2) + "\n";
+		// Strip deprecated analyzedMtimes from persisted JSON
+		const { analyzedMtimes: _strip, ...toWrite } = state;
+		const json = JSON.stringify(toWrite, null, 2) + "\n";
 		await writeFile(tmpPath, json, "utf-8");
 		await rename(tmpPath, statePath);
 		return true;
@@ -109,4 +138,39 @@ export async function saveState(
  */
 export function stateExists(extensionDir: string): boolean {
 	return existsSync(getStatePath(extensionDir));
+}
+
+// ============================================================================
+// Incremental analysis helpers
+// ============================================================================
+
+/**
+ * Check whether a session was already analyzed with the same mtime.
+ * Returns the AnalyzedEntry if matched, undefined otherwise.
+ */
+export function getAnalyzedEntry(
+	state: ExtensionState,
+	sessionPath: string,
+	currentMtime: number,
+): AnalyzedEntry | undefined {
+	const entry = state.analyzed?.[sessionPath];
+	if (entry && entry.mtime === currentMtime) return entry;
+	return undefined;
+}
+
+/**
+ * Mark a session as analyzed (or re-analyzed) in state.
+ */
+export function markAnalyzed(
+	state: ExtensionState,
+	sessionPath: string,
+	mtime: number,
+	reportPath?: string,
+): void {
+	if (!state.analyzed) state.analyzed = {};
+	state.analyzed[sessionPath] = {
+		mtime,
+		analyzedAt: new Date().toISOString(),
+		reportPath,
+	};
 }

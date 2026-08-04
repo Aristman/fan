@@ -11,6 +11,7 @@
 		"isolatedModules": true,
 		"forceConsistentCasingInFileNames": true,
 		"paths": {
+			"@seaagents/fan-agent-core": ["../../packages/agent/src/index.ts"],
 			"@seaagents/fan-coding-agent": ["../../packages/coding-agent/src/index.ts"],
 			"@seaagents/fan-ai": ["../../packages/ai/src/index.ts"],
 			"@sinclair/typebox": ["../../node_modules/@sinclair/typebox"]

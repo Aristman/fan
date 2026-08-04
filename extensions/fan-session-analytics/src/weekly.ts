@@ -1,12 +1,13 @@
 import type { ExtensionContext, SessionStartEvent } from "@seaagents/fan-coding-agent";
-import { writeFile, mkdir, stat as fsStat } from "node:fs/promises";
-import { join, dirname } from "node:path";
-import type { AnalyticsConfig, SessionScore, Finding, PatternCandidate } from "./types.js";
+import { writeFile, mkdir, rename } from "node:fs/promises";
+import { join } from "node:path";
+import type { AnalyticsConfig, PatternCandidate } from "./types.js";
 import { formatPatternsSection } from "./patterns.js";
 import type { ExtensionState, BatchStats } from "./state.js";
 import { loadState, saveState } from "./state.js";
 import { runPipeline } from "./pipeline.js";
 import type { AnalyzeResult } from "./pipeline.js";
+import { resolveReportsDir } from "./paths.js";
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -86,7 +87,7 @@ async function runWeeklyBatch(
 	const now = new Date();
 	const since = new Date(now.getTime() - SEVEN_DAYS_MS).toISOString();
 
-	// Run pipeline in dir mode, metrics only
+	// Run pipeline in dir mode, metrics only — pass extensionDir for incremental skip
 	const pipelineResult = await runPipeline({
 		target: "dir",
 		mode: "metrics",
@@ -94,8 +95,9 @@ async function runWeeklyBatch(
 		batchSize: 20,
 		cwd: ctx.cwd,
 		cfg,
+		extensionDir,
 	});
-	const { results } = pipelineResult;
+	const { results, skippedCount } = pipelineResult;
 	const patterns = pipelineResult.patterns;
 
 	// Calculate current batch stats
@@ -106,8 +108,11 @@ async function runWeeklyBatch(
 		? compareTrends(state.previousBatchStats, currentStats)
 		: null;
 
+	// Resolve report directory
+	const reportDir = resolveReportsDir(cfg, ctx.cwd);
+
 	// Generate weekly report
-	const reportPath = await generateWeeklyReport(results, currentStats, trend, ctx.cwd, cfg, patterns);
+	const reportPath = await generateWeeklyReport(results, currentStats, trend, reportDir, patterns, skippedCount, cfg);
 
 	// Update state
 	state.lastBatchRun = now.toISOString();
@@ -115,15 +120,7 @@ async function runWeeklyBatch(
 	// Clear deferral since we just ran
 	delete state.weeklyDeferredUntil;
 
-	// Track mtimes
-	for (const result of results) {
-		try {
-			const s = await fsStat(result.sessionPath);
-			state.analyzedMtimes[result.sessionPath] = s.mtimeMs;
-		} catch {
-			// ignore
-		}
-	}
+	// Pipeline already marks sessions as analyzed via saveState
 
 	const saved = await saveState(extensionDir, state);
 	if (!saved) {
@@ -137,8 +134,9 @@ async function runWeeklyBatch(
 		const trendLine = trend
 			? ` (Δ: ${trend.avgScoreDelta >= 0 ? "+" : ""}${trend.avgScoreDelta} к среднему баллу)`
 			: "";
+		const skipLine = skippedCount > 0 ? ` (${skippedCount} пропущено — уже были)` : "";
 		ctx.ui.notify(
-			`✅ Еженедельный анализ завершён: ${results.length} сессий${trendLine}. Отчёт: ${reportPath}`,
+			`✅ Еженедельный анализ завершён: ${results.length} сессий${trendLine}${skipLine}. Отчёт: ${reportPath}`,
 			"info",
 		);
 	}
@@ -242,23 +240,22 @@ async function generateWeeklyReport(
 	results: AnalyzeResult[],
 	stats: BatchStats,
 	trend: TrendDelta | null,
-	cwd: string,
-	cfg: AnalyticsConfig,
+	reportDir: string,
 	patterns?: PatternCandidate[],
+	skippedCount: number = 0,
+	cfg?: AnalyticsConfig,
 ): Promise<string> {
-	const reportDir = join(cwd, cfg.reports.dir);
 	await mkdir(reportDir, { recursive: true });
 
 	const dateStr = new Date().toISOString().slice(0, 10);
 	const fileName = `weekly_${dateStr}.md`;
 	const filePath = join(reportDir, fileName);
 
-	const md = buildWeeklyMarkdown(results, stats, trend, patterns, cfg);
+	const md = buildWeeklyMarkdown(results, stats, trend, patterns, skippedCount, cfg);
 
 	// Atomic write
 	const tmpPath = filePath + ".tmp";
 	await writeFile(tmpPath, md, "utf-8");
-	const { rename } = await import("node:fs/promises");
 	await rename(tmpPath, filePath);
 
 	return filePath;
@@ -269,6 +266,7 @@ function buildWeeklyMarkdown(
 	stats: BatchStats,
 	trend: TrendDelta | null,
 	patterns?: PatternCandidate[],
+	skippedCount: number = 0,
 	cfg?: AnalyticsConfig,
 ): string {
 	const lines: string[] = [];
@@ -277,6 +275,9 @@ function buildWeeklyMarkdown(
 	lines.push("");
 	lines.push(`**Период:** ${stats.periodStart.slice(0, 10)} — ${stats.periodEnd.slice(0, 10)}`);
 	lines.push(`**Сессий проанализировано:** ${stats.sessionCount}`);
+	if (skippedCount > 0) {
+		lines.push(`**В архиве уже были: ${skippedCount} сессий (пропущены)**`);
+	}
 	lines.push(`**Средний балл:** ${stats.avgScore}/100`);
 	lines.push("");
 

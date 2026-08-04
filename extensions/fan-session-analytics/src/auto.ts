@@ -1,13 +1,15 @@
 import type { ExtensionContext, SessionShutdownEvent, SessionStartEvent } from "@seaagents/fan-coding-agent";
 import type { AnalyticsConfig } from "./types.js";
 import type { ExtensionState, AutoSummary } from "./state.js";
-import { loadState, saveState } from "./state.js";
+import { loadState, saveState, getAnalyzedEntry, markAnalyzed } from "./state.js";
 import { parseSessionFile, isGarbageSession, containsSessionAnalyze } from "./parser.js";
 import { buildTrajectory } from "./normalizer.js";
 import { ALL_DETECTORS } from "./detectors/index.js";
 import { trySqliteTokens } from "./detectors/d9-tokens-cost.js";
 import { calculateScore } from "./score.js";
 import { generateReport } from "./report.js";
+import { resolveReportsDir } from "./paths.js";
+import { stat as fsStat } from "node:fs/promises";
 
 /**
  * Format the F9 one-liner notification from an AutoSummary.
@@ -32,6 +34,7 @@ export function formatAutoSummaryLine(summary: AutoSummary): string {
 /**
  * Auto-analyze the current session on shutdown.
  * Runs pipeline in metrics mode, saves result to state.lastAutoSummary.
+ * Skips if session was already analyzed with the same mtime (re-shutdown).
  * Never throws — all errors are silently caught.
  */
 export async function handleSessionShutdown(
@@ -45,6 +48,16 @@ export async function handleSessionShutdown(
 	// Get current session file
 	const sessionFile = ctx.sessionManager.getSessionFile();
 	if (!sessionFile) return; // in-memory session, nothing to analyze
+
+	// Incremental skip: check if already analyzed with same mtime
+	const state = await loadState(extensionDir);
+	try {
+		const fileStat = await fsStat(sessionFile);
+		const existing = getAnalyzedEntry(state, sessionFile, fileStat.mtimeMs);
+		if (existing) return; // already analyzed, session unchanged
+	} catch {
+		// Can't stat — proceed with analysis
+	}
 
 	// Self-reference check (BR3): skip sessions containing session_analyze calls
 	// Reuse parser logic. We need to parse first anyway for garbage check.
@@ -75,16 +88,24 @@ export async function handleSessionShutdown(
 
 	const score = calculateScore(allFindings, trajectory.truncated);
 
-	// Generate report
-	const reportPath = await generateReport(trajectory, score, cfg, ctx.cwd, "metrics");
+	// Generate report — use global reports dir
+	const reportDir = resolveReportsDir(cfg, ctx.cwd);
+	const reportPath = await generateReport(trajectory, score, reportDir, "metrics");
 
 	// Extract key metrics for one-liner
 	const loopCount = extractLoopCount(allFindings);
 	const errorCount = extractErrorCount(allFindings);
 	const overheadPercent = extractOverheadPercent(trajectory);
 
+	// Mark as analyzed
+	try {
+		const fileStat = await fsStat(sessionFile);
+		markAnalyzed(state, sessionFile, fileStat.mtimeMs, reportPath);
+	} catch {
+		markAnalyzed(state, sessionFile, 0, reportPath);
+	}
+
 	// Save to state
-	const state = await loadState(extensionDir);
 	state.lastAutoSummary = {
 		sessionId: trajectory.sessionId,
 		score: score.total,
