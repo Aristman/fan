@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-08-07
+
+### Fixed
+- Biome lint-фиксы: character class в regex стража редактора
+  (`editor.ts`), отступы в `terminal.ts` (Windows VT-режим),
+  лишняя пустая строка в `stdin-buffer.test.ts`. Поведение не изменено.
+
 ## [1.0.0] - 2026-06-14
 
 FAN 1.0.0 — стабилизация TUI-библиотеки.

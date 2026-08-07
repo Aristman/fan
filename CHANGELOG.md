@@ -1,5 +1,63 @@
 # Changelog
 
+## [2.4.0] — 2026-08-07
+
+### Новое
+
+**Таймер сессии в футере TUI** (`@seaagents/fan-coding-agent` 2.3.5):
+
+- В строке футера с токенами и моделью в конце добавлен живой таймер общего
+  времени запуска (формат `MM:SS`, после часа — `H:MM:SS`), обновление раз в
+  секунду через батчированный `requestRender()`
+- Таймер сбрасывается при new/resume/fork/import/clear сессии и сохраняется
+  при reload; extension-футеры без `setSessionStartTime()` работают как раньше
+  (таймер опционален, публичный API `FooterComponent` не изменён)
+- При завершении сессии (`shutdown`) в терминал выводится финальная сводка:
+  `Session ended — duration: 12:34 • tokens: 45.2k • cost: $0.123`
+
+**Модель в хедере воркеров** (`fan-orchestrator` 7.10.5):
+
+- Модель воркера показывается перед таймером во всех местах рендера:
+  single running (`🤖 model | ⏱ elapsed | 💬 | 🔧`), parallel running,
+  chain/parallel expanded/collapsed хедеры, plan-воркер, task widget
+
+### Исправлено
+
+**Проброс ошибок из воркеров в оркестратор** (`fan-orchestrator` 7.10.5):
+
+- `runSingleAgent` проставляет `stopReason: "error" | "aborted"` на всех путях
+  падения (exit code, stall-таймер, abort) — ранее ошибка терялась и
+  оркестратор видел нормальное завершение
+- `onWorkerStop` получает полный `result` и сохраняет `error`/`stopReason`
+  в registry (новый хелпер `finalizeWorker()`)
+- `isError: true` теперь возвращается во всех режимах `delegate_task`,
+  включая parallel (раньше parallel глотал ошибки воркеров)
+- Иконки и `failCount` в renderResult учитывают `stopReason`, а не только
+  exit code; исправлен race с pre-aborted signal (`wasAborted` выставляется
+  до подписки на событие)
+
+**Прерывание воркеров без потери результатов** (`fan-orchestrator` 7.10.5):
+
+- `stop_worker` реально останавливает subprocess: per-worker
+  `AbortController`, `child.kill(SIGTERM)` через существующий обработчик
+- Статус `aborted` больше не перезаписывается естественным завершением
+  subprocess (guard в `finalizeWorker`)
+- Registry не очищается при stop/shutdown (`resetSlots()` вместо
+  `_resetRegistry()`): виджет показывает прерванных/упавших воркеров 5 минут
+  со статусом и фрагментом ошибки, inline collapsed-рендер выводит
+  `─── Partial work (N tools) ───`
+- `pruneOldWorkers()` (TTL 10 минут) предотвращает утечку registry
+  в длинных сессиях
+
+### Прочее
+
+- `@seaagents/fan-tui` 1.1.0 — biome lint-фиксы (character class в regex
+  стража редактора, отступы в `terminal.ts`)
+- 14 новых тестов `worker-lifecycle` (оркестратор, 158/158 зелёные),
+  тесты таймера футера (7/7)
+
+---
+
 ## [2.3.11] — 2026-08-03
 
 ### Исправлено

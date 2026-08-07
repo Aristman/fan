@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.3.5] - 2026-08-07
+
+### Новое
+
+- **Таймер сессии в футере** — живой elapsed-таймер (`MM:SS` / `H:MM:SS`)
+  в конце строки с токенами и моделью; обновление раз в секунду через
+  `requestRender()`, сброс при new/resume/fork/import/clear, сохранение
+  при reload. Новый метод `FooterComponent.setSessionStartTime()` —
+  опциональный, extension-футеры без него работают как раньше.
+- **Финальная сводка при shutdown** — в терминал выводится строка
+  `Session ended — duration: ... • tokens: ... • cost: $...` после выхода
+  из raw mode.
+- Экспорт `formatElapsed(ms)` из `components/footer.ts` с защитой от
+  NaN/отрицательных значений.
+- Тесты: 7/7 в `test/footer-width.test.ts` (5 новых кейсов).
+
 ## [2.2.3] - 2026-07-15
 
 ### Новое
