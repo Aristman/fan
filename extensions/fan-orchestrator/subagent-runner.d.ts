@@ -5,7 +5,7 @@
  * with FAN-specific enhancements (ModelManager integration, budget awareness).
  */
 import type { Message } from "@seaagents/fan-ai";
-import type { AgentConfig, OrchestratorConfig, SingleResult } from "./types.js";
+import type { AgentConfig, SingleResult } from "./types.js";
 export declare const MAX_PARALLEL_TASKS = 8;
 export declare const MAX_CONCURRENCY = 4;
 export declare function getFinalOutput(messages: Message[]): string;
@@ -54,18 +54,5 @@ type OnUpdateCallback = (partial: {
  * @returns SingleResult with messages, usage, and exit code
  */
 export declare function runSingleAgent(defaultCwd: string, agents: AgentConfig[], agentName: string, task: string, cwd: string | undefined, step: number | undefined, signal: AbortSignal | undefined, onUpdate: OnUpdateCallback | undefined): Promise<SingleResult>;
-/**
- * Run a single agent with retry logic.
- * Retries up to config.maxRetries times.
- * Does NOT retry on abort signals.
- */
-export declare function runSingleAgentWithRetry(defaultCwd: string, agents: AgentConfig[], agentName: string, task: string, config: OrchestratorConfig, cwd: string | undefined, step: number | undefined, signal: AbortSignal | undefined, onUpdate: OnUpdateCallback | undefined): Promise<SingleResult>;
-/**
- * Run a single agent with cloud/local fallback.
- * - "cloud": try cloud, retry cloud
- * - "local": try local, retry local
- * - "auto": try cloud first, fallback to local on failure
- */
-export declare function runSingleAgentWithFallback(defaultCwd: string, agents: AgentConfig[], agentName: string, task: string, config: OrchestratorConfig, cwd: string | undefined, step: number | undefined, signal: AbortSignal | undefined, onUpdate: OnUpdateCallback | undefined): Promise<SingleResult>;
 export {};
 //# sourceMappingURL=subagent-runner.d.ts.map

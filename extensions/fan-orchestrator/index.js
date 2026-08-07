@@ -7,7 +7,7 @@ export { default, orchestratorExtension } from "./orchestrator-extension.js";
 // Permissions
 export { isDangerousCommand } from "./permissions.js";
 // Subprocess runner utilities
-export { formatTokens, formatUsageStats, getDisplayItems, getFinalOutput, getFnaInvocation, MAX_CONCURRENCY, MAX_PARALLEL_TASKS, mapWithConcurrencyLimit, runSingleAgent, runSingleAgentWithFallback, runSingleAgentWithRetry, } from "./subagent-runner.js";
+export { formatTokens, formatUsageStats, getDisplayItems, getFinalOutput, getFnaInvocation, MAX_CONCURRENCY, MAX_PARALLEL_TASKS, mapWithConcurrencyLimit, runSingleAgent, } from "./subagent-runner.js";
 // Public classes
 // Task management utilities
 export { formatTaskList, TaskManager } from "./task-manager.js";
