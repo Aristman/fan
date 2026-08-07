@@ -254,6 +254,12 @@ export class InteractiveMode {
 	// Session elapsed timer
 	private sessionStartedAt = Date.now();
 	private footerTimer: ReturnType<typeof setInterval> | undefined = undefined;
+	private accumulatedActiveMs = 0;
+	private activeSince: number | undefined = undefined;
+
+	private getActiveDurationMs(): number {
+		return this.accumulatedActiveMs + (this.activeSince !== undefined ? Date.now() - this.activeSince : 0);
+	}
 
 	// Convenience accessors
 	private get session(): AgentSession {
@@ -570,7 +576,10 @@ export class InteractiveMode {
 
 		// Set up footer elapsed timer (1 fps, requestRender batches)
 		this.sessionStartedAt = Date.now();
+		this.accumulatedActiveMs = 0;
+		this.activeSince = undefined;
 		this.footer.setSessionStartTime(this.sessionStartedAt);
+		this.footer.setElapsedProvider(() => this.getActiveDurationMs());
 		this.footerTimer = setInterval(() => this.ui.requestRender(), 1000);
 
 		// Initialize available provider count for footer display
@@ -1303,7 +1312,10 @@ export class InteractiveMode {
 		this.applyRuntimeSettings();
 		// Reset session elapsed timer on actual session change
 		this.sessionStartedAt = Date.now();
+		this.accumulatedActiveMs = 0;
+		this.activeSince = undefined;
 		this.footer.setSessionStartTime(this.sessionStartedAt);
+		this.footer.setElapsedProvider(() => this.getActiveDurationMs());
 		await this.bindCurrentSessionExtensions();
 		this.subscribeToAgent();
 		await this.updateAvailableProviderCount();
@@ -2354,6 +2366,8 @@ export class InteractiveMode {
 
 		switch (event.type) {
 			case "agent_start":
+				// Track active time for footer timer
+				if (this.activeSince === undefined) this.activeSince = Date.now();
 				// Restore main escape handler if retry handler is still active
 				// (retry success event fires later, but we need main handler now)
 				if (this.retryEscapeHandler) {
@@ -2528,6 +2542,11 @@ export class InteractiveMode {
 			}
 
 			case "agent_end":
+				// Accumulate active time and pause the timer
+				if (this.activeSince !== undefined) {
+					this.accumulatedActiveMs += Date.now() - this.activeSince;
+					this.activeSince = undefined;
+				}
 				if (this.loadingAnimation) {
 					this.loadingAnimation.stop();
 					this.loadingAnimation = undefined;
@@ -2918,7 +2937,7 @@ export class InteractiveMode {
 		await this.ui.terminal.drainInput(1000);
 
 		// Compute session summary before stop (needs session entries)
-		const durationMs = Date.now() - this.sessionStartedAt;
+		const durationMs = this.getActiveDurationMs();
 		const summary = this.buildSessionSummary(durationMs);
 
 		this.stop();

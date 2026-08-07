@@ -268,6 +268,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                                 ? partial.details[0]
                                 : partial.details?.results?.[0];
                             if (currentResult) {
+                                currentResult.model = currentResult.model || chainWorkerModel;
                                 onUpdate({
                                     content: partial.content,
                                     details: makeDetails("chain")([...results, currentResult]),
@@ -292,6 +293,26 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                     let result;
                     try {
                         result = await runSingleAgent(ctx.cwd, agents, step.agent, taskWithContext, chainWorkerTemperature, step.cwd, i + 1, chainAbort.signal, chainUpdate);
+                    } catch (workerErr) {
+                        const msg = workerErr instanceof Error ? workerErr.message : String(workerErr);
+                        const now = Date.now();
+                        result = {
+                            agent: step.agent,
+                            agentSource: "unknown",
+                            task: taskWithContext,
+                            exitCode: 1,
+                            stopReason: "error",
+                            messages: [],
+                            stderr: msg,
+                            errorMessage: msg,
+                            usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
+                            model: chainWorkerModel,
+                            text: "",
+                            step: i + 1,
+                            startTime: now,
+                            endTime: now,
+                            progress: { status: "Failed", messageCount: 0, toolCalls: [], model: chainWorkerModel },
+                        };
                     }
                     finally {
                         workerLifecycle?.onWorkerStop?.(chainWorkerId, result?.exitCode === 0, result);
@@ -418,6 +439,23 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                                 emitParallelUpdate();
                             }
                         });
+                    } catch (workerErr) {
+                        const msg = workerErr instanceof Error ? workerErr.message : String(workerErr);
+                        const now = Date.now();
+                        result = {
+                            ...allResults[index],
+                            exitCode: 1,
+                            stopReason: "error",
+                            messages: [],
+                            stderr: msg,
+                            errorMessage: msg,
+                            usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
+                            text: "",
+                            endTime: now,
+                            progress: { status: "Failed", messageCount: 0, toolCalls: [], model: allResults[index].model },
+                        };
+                        allResults[index] = result;
+                        emitParallelUpdate();
                     }
                     finally {
                         workerLifecycle?.onWorkerStop?.(parWorkerId, result?.exitCode === 0, result);
@@ -453,6 +491,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                             ? partial.details[0]
                             : partial.details?.results?.[0];
                         if (currentResult) {
+                            currentResult.model = currentResult.model || workerModel;
                             onUpdate({
                                 content: partial.content,
                                 details: makeDetails("single")([currentResult]),
@@ -478,6 +517,26 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                 let result;
                 try {
                     result = await runSingleAgent(ctx.cwd, agents, params.agent, params.task, workerTemperature, params.cwd, undefined, singleAbort.signal, singleUpdate);
+                } catch (workerErr) {
+                    const msg = workerErr instanceof Error ? workerErr.message : String(workerErr);
+                    const now = Date.now();
+                    result = {
+                        agent: params.agent,
+                        agentSource: "unknown",
+                        task: params.task,
+                        exitCode: 1,
+                        stopReason: "error",
+                        messages: [],
+                        stderr: msg,
+                        errorMessage: msg,
+                        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
+                        model: workerModel,
+                        text: "",
+                        step: undefined,
+                        startTime: now,
+                        endTime: now,
+                        progress: { status: "Failed", messageCount: 0, toolCalls: [], model: workerModel },
+                    };
                 }
                 finally {
                     workerLifecycle?.onWorkerStop?.(workerId, result?.exitCode === 0, result);

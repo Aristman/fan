@@ -167,6 +167,34 @@ describe("FooterComponent width handling", () => {
 		// Should not contain any time pattern like MM:SS
 		expect(lines[1]).not.toMatch(/\d{2}:\d{2}/);
 	});
+
+	it("setElapsedProvider takes priority over setSessionStartTime", () => {
+		const width = 120;
+		const session = createSession({
+			sessionName: "test",
+			modelId: "test-model",
+		});
+		const footer = new FooterComponent(session, createFooterData(1));
+		footer.setSessionStartTime(Date.now() - 60_000); // 01:00 via fallback
+		footer.setElapsedProvider(() => 4 * 60 * 1000 + 21 * 1000); // 04:21 via provider
+
+		const lines = footer.render(width);
+		expect(lines[1]).toContain("04:21");
+		expect(lines[1]).not.toContain("01:00");
+	});
+
+	it("setElapsedProvider renders 00:00 for zero duration", () => {
+		const width = 120;
+		const session = createSession({
+			sessionName: "test",
+			modelId: "test-model",
+		});
+		const footer = new FooterComponent(session, createFooterData(1));
+		footer.setElapsedProvider(() => 0);
+
+		const lines = footer.render(width);
+		expect(lines[1]).toContain("00:00");
+	});
 });
 
 describe("formatElapsed", () => {

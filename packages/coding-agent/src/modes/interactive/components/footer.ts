@@ -50,6 +50,7 @@ function formatTokens(count: number): string {
 export class FooterComponent implements Component {
 	private autoCompactEnabled = true;
 	private sessionStartMs: number | undefined;
+	private elapsedMsProvider: (() => number) | undefined;
 
 	constructor(
 		private session: AgentSession,
@@ -66,6 +67,10 @@ export class FooterComponent implements Component {
 
 	setAutoCompactEnabled(enabled: boolean): void {
 		this.autoCompactEnabled = enabled;
+	}
+
+	setElapsedProvider(provider: () => number): void {
+		this.elapsedMsProvider = provider;
 	}
 
 	/**
@@ -202,8 +207,11 @@ export class FooterComponent implements Component {
 				thinkingLevel === "off" ? `${modelName} • thinking off` : `${modelName} • ${thinkingLevel}`;
 		}
 
-		// Add elapsed session timer
-		if (this.sessionStartMs !== undefined) {
+		// Add elapsed session timer (provider takes priority over sessionStartMs fallback)
+		if (this.elapsedMsProvider) {
+			const elapsed = formatElapsed(this.elapsedMsProvider());
+			rightSideWithoutProvider = `${rightSideWithoutProvider} • ${elapsed}`;
+		} else if (this.sessionStartMs !== undefined) {
 			const elapsed = formatElapsed(Date.now() - this.sessionStartMs);
 			rightSideWithoutProvider = `${rightSideWithoutProvider} • ${elapsed}`;
 		}

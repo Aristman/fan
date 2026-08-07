@@ -641,6 +641,7 @@ export async function runSingleAgent(defaultCwd, agents, agentName, task, temper
                         task,
                         step,
                         startTime,
+                        model: detectedModel,
                         progress: p,
                     }],
                 });
@@ -732,18 +733,22 @@ export async function runSingleAgent(defaultCwd, agents, agentName, task, temper
         };
         // Send final update with partial progress so UI shows what was done
         if (onUpdate) {
-            onUpdate({
-                content: [{ type: "text", text: wasAborted ? "Aborted" : (err.message || "Failed") }],
-                details: [{
-                    agent: agentName,
-                    agentSource: agent.source,
-                    task,
-                    step,
-                    startTime,
-                    endTime,
-                    progress: errorResult.progress,
-                }],
-            });
+            try {
+                onUpdate({
+                    content: [{ type: "text", text: wasAborted ? "Aborted" : (err.message || "Failed") }],
+                    details: [{
+                        agent: agentName,
+                        agentSource: agent.source,
+                        task,
+                        step,
+                        startTime,
+                        endTime,
+                        progress: errorResult.progress,
+                    }],
+                });
+            } catch {
+                // onUpdate may throw on abort — ensure errorResult is always returned
+            }
         }
         return errorResult;
     }
