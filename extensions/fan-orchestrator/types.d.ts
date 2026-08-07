@@ -96,6 +96,7 @@ export interface SingleResult {
   agentSource: string;
   task: string;
   exitCode: number;
+  stopReason?: "error" | "aborted";
   messages: Array<{ role: string; content: Array<{ type: string; text?: string }> }>;
   stderr: string;
   errorMessage?: string;
@@ -167,6 +168,9 @@ export interface WorkerHandle {
   status: WorkerState;
   startTime?: number;
   endTime?: number;
+  error?: string;
+  stopReason?: string;
+  abortController?: AbortController;
 }
 
 /** Worker runtime state */

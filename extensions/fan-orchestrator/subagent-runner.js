@@ -586,7 +586,7 @@ function buildWorkerContent(agentName, task, model, progress, startTime) {
         ? `${Math.floor(mins / 60)}:${String(mins % 60).padStart(2, "0")}:${String(secs).padStart(2, "0")}`
         : `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
     const lines = [
-        `${statusText} · ${toolCallCount} tools · ${msgCount} msgs · ${elapsedStr}`,
+        `${statusText} · ${toolCallCount} tools · ${msgCount} msgs${model ? ` · 🤖 ${model}` : ""} · ${elapsedStr}`,
     ];
     const toolLines = formatToolCallsBody(progress?.toolCalls);
     if (toolLines.length > 0) {
@@ -641,6 +641,7 @@ export async function runSingleAgent(defaultCwd, agents, agentName, task, temper
                         task,
                         step,
                         startTime,
+                        model: detectedModel,
                         progress: p,
                     }],
                 });
@@ -652,7 +653,12 @@ export async function runSingleAgent(defaultCwd, agents, agentName, task, temper
 
     // Hook signal to track wasAborted for the outer caller
     if (signal) {
-        signal.addEventListener("abort", () => { wasAborted = true; }, { once: true });
+        if (signal.aborted) {
+            wasAborted = true;
+        }
+        else {
+            signal.addEventListener("abort", () => { wasAborted = true; }, { once: true });
+        }
     }
 
     try {
@@ -699,20 +705,19 @@ export async function runSingleAgent(defaultCwd, agents, agentName, task, temper
             },
         };
     } catch (err) {
-        if (wasAborted) {
-            throw new Error("Subagent was aborted");
-        }
         const endTime = Date.now();
-        return {
+        const abortReason = wasAborted ? "aborted" : "error";
+        const errorResult = {
             agent: agentName,
             agentSource: agent.source,
             task,
             exitCode: 1,
+            stopReason: abortReason,
             messages: lastText
                 ? [{ role: "assistant", content: [{ type: "text", text: lastText }] }]
                 : [],
-            stderr: err.message,
-            errorMessage: err.message,
+            stderr: wasAborted ? "" : err.message,
+            errorMessage: wasAborted ? "Aborted by user" : err.message,
             usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
             model: detectedModel,
             text: lastText,
@@ -720,102 +725,31 @@ export async function runSingleAgent(defaultCwd, agents, agentName, task, temper
             startTime,
             endTime,
             progress: {
-                status: "Failed",
+                status: wasAborted ? "Aborted" : "Failed",
                 messageCount,
                 toolCalls: [...allToolCalls],
                 model: detectedModel,
             },
         };
-    }
-}
-
-/**
- * Run a single agent with retry logic.
- * Retries up to config.maxRetries times.
- * Does NOT retry on abort signals.
- */
-export async function runSingleAgentWithRetry(defaultCwd, agents, agentName, task, config, cwd, step, signal, onUpdate, stallTimeout = 300_000) {
-    let lastError;
-    const maxAttempts = 1 + (config.maxRetries ?? 0);
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        try {
-            const result = await runSingleAgent(defaultCwd, agents, agentName, task, temperature, cwd, step, signal, onUpdate, stallTimeout);
-            if (result.exitCode === 0) {
-                return result;
-            }
-            // Check if it was aborted — don't retry
-            if (signal?.aborted) {
-                return result;
-            }
-            lastError = result;
-            if (attempt < maxAttempts) {
-                // Add retry info to the task for the next attempt
-                task += `\n\n[Retry ${attempt}/${config.maxRetries} — previous attempt failed: ${result.errorMessage || result.stderr || "exit code " + result.exitCode}]`;
+        // Send final update with partial progress so UI shows what was done
+        if (onUpdate) {
+            try {
+                onUpdate({
+                    content: [{ type: "text", text: wasAborted ? "Aborted" : (err.message || "Failed") }],
+                    details: [{
+                        agent: agentName,
+                        agentSource: agent.source,
+                        task,
+                        step,
+                        startTime,
+                        endTime,
+                        progress: errorResult.progress,
+                    }],
+                });
+            } catch {
+                // onUpdate may throw on abort — ensure errorResult is always returned
             }
         }
-        catch (e) {
-            // Don't retry on abort
-            if (signal?.aborted) {
-                throw e;
-            }
-            if (attempt < maxAttempts) {
-                lastError = undefined; // Will retry
-                task += `\n\n[Retry ${attempt}/${config.maxRetries} — previous attempt threw: ${e.message}]`;
-            }
-            else {
-                // Final attempt failed
-                return {
-                    agent: agentName,
-                    agentSource: "unknown",
-                    task,
-                    exitCode: 1,
-                    messages: [],
-                    stderr: e.message,
-                    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
-                    errorMessage: e.message,
-                    step,
-                    endTime: Date.now(),
-                };
-            }
-        }
-    }
-    return (lastError ?? {
-        agent: agentName,
-        agentSource: "unknown",
-        task,
-        exitCode: 1,
-        messages: [],
-        stderr: "All retry attempts exhausted",
-        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
-        errorMessage: "All retry attempts exhausted",
-        step,
-        endTime: Date.now(),
-    });
-}
-
-/**
- * Run a single agent with cloud/local fallback.
- * - "cloud": try cloud, retry cloud
- * - "local": try local, retry local
- * - "auto": try cloud first, fallback to local on failure
- *
- * NO hard execution limit — only stallTimer protects against frozen workers.
- */
-export async function runSingleAgentWithFallback(defaultCwd, agents, agentName, task, config, cwd, step, signal, onUpdate) {
-    const mode = config.providerMode;
-    const stallTimeout = (config.stallTimeout ?? 300) * 1000;
-
-    try {
-        return await runSingleAgentWithRetry(defaultCwd, agents, agentName, task, config, cwd, step, signal, onUpdate, stallTimeout);
-    }
-    catch (e) {
-        // In auto mode, try fallback
-        if (mode === "auto") {
-            const fallbackConfig = { ...config, providerMode: "local" };
-            const fallbackStallTimeout = (fallbackConfig.stallTimeout ?? 300) * 1000;
-            return runSingleAgentWithRetry(defaultCwd, agents, agentName, task, fallbackConfig, cwd, step, signal, onUpdate, fallbackStallTimeout);
-        }
-        // Re-throw for cloud/local mode
-        throw e;
+        return errorResult;
     }
 }

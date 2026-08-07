@@ -437,5 +437,12 @@ if (Test-Path $installPs1) {
     Write-Host "  Copied install.ps1"
 }
 
+# Copy root CHANGELOG.md to dist repo (for update notification link)
+$changelogPath = Join-Path $RootDir "CHANGELOG.md"
+if (Test-Path $changelogPath) {
+    Copy-Item -Path $changelogPath -Destination "$DIST_REPO\" -Force
+    Write-Host "  Copied CHANGELOG.md"
+}
+
 Write-Info "Dist repo ready. Run: fan-store publish"
 Pop-Location  # back to repo root (from coding-agent)

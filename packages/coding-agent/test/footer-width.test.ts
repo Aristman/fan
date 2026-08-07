@@ -2,7 +2,7 @@ import { visibleWidth } from "@seaagents/fan-tui";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { AgentSession } from "../src/core/agent-session.js";
 import type { ReadonlyFooterDataProvider } from "../src/core/footer-data-provider.js";
-import { FooterComponent } from "../src/modes/interactive/components/footer.js";
+import { FooterComponent, formatElapsed } from "../src/modes/interactive/components/footer.js";
 import { initTheme } from "../src/modes/interactive/theme/theme.js";
 
 type AssistantUsage = {
@@ -111,5 +111,103 @@ describe("FooterComponent width handling", () => {
 		for (const line of lines) {
 			expect(visibleWidth(line)).toBeLessThanOrEqual(width);
 		}
+	});
+
+	it("renders elapsed timer when sessionStartTime is set", () => {
+		const width = 120;
+		const session = createSession({
+			sessionName: "test",
+			modelId: "test-model",
+			usage: {
+				input: 1000,
+				output: 500,
+				cacheRead: 0,
+				cacheWrite: 0,
+				cost: { total: 0.01 },
+			},
+		});
+		const footer = new FooterComponent(session, createFooterData(1));
+		footer.setSessionStartTime(Date.now() - 12 * 60 * 1000 - 34 * 1000); // 12:34 ago
+
+		const lines = footer.render(width);
+		// Stats line (index 1) should contain the elapsed time
+		expect(lines[1]).toContain("12:34");
+		// Should still fit within width
+		for (const line of lines) {
+			expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+		}
+	});
+
+	it("renders H:MM:SS format for long sessions", () => {
+		const width = 120;
+		const session = createSession({
+			sessionName: "test",
+			modelId: "test-model",
+		});
+		const footer = new FooterComponent(session, createFooterData(1));
+		footer.setSessionStartTime(Date.now() - 2 * 3600 * 1000 - 5 * 60 * 1000 - 9 * 1000); // 2:05:09 ago
+
+		const lines = footer.render(width);
+		expect(lines[1]).toContain("2:05:09");
+		for (const line of lines) {
+			expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+		}
+	});
+
+	it("does not render timer when sessionStartTime is not set", () => {
+		const width = 120;
+		const session = createSession({
+			sessionName: "test",
+			modelId: "test-model",
+		});
+		const footer = new FooterComponent(session, createFooterData(1));
+		// Do NOT call setSessionStartTime
+
+		const lines = footer.render(width);
+		// Should not contain any time pattern like MM:SS
+		expect(lines[1]).not.toMatch(/\d{2}:\d{2}/);
+	});
+
+	it("setElapsedProvider takes priority over setSessionStartTime", () => {
+		const width = 120;
+		const session = createSession({
+			sessionName: "test",
+			modelId: "test-model",
+		});
+		const footer = new FooterComponent(session, createFooterData(1));
+		footer.setSessionStartTime(Date.now() - 60_000); // 01:00 via fallback
+		footer.setElapsedProvider(() => 4 * 60 * 1000 + 21 * 1000); // 04:21 via provider
+
+		const lines = footer.render(width);
+		expect(lines[1]).toContain("04:21");
+		expect(lines[1]).not.toContain("01:00");
+	});
+
+	it("setElapsedProvider renders 00:00 for zero duration", () => {
+		const width = 120;
+		const session = createSession({
+			sessionName: "test",
+			modelId: "test-model",
+		});
+		const footer = new FooterComponent(session, createFooterData(1));
+		footer.setElapsedProvider(() => 0);
+
+		const lines = footer.render(width);
+		expect(lines[1]).toContain("00:00");
+	});
+});
+
+describe("formatElapsed", () => {
+	it("formats MM:SS for short durations", () => {
+		expect(formatElapsed(0)).toBe("00:00");
+		expect(formatElapsed(59_000)).toBe("00:59");
+		expect(formatElapsed(60_000)).toBe("01:00");
+		expect(formatElapsed(12 * 60_000 + 34_000)).toBe("12:34");
+	});
+
+	it("formats H:MM:SS for durations >= 1 hour", () => {
+		expect(formatElapsed(3600_000)).toBe("1:00:00");
+		expect(formatElapsed(2 * 3600_000 + 5 * 60_000 + 9_000)).toBe("2:05:09");
+		expect(formatElapsed(10 * 3600_000 + 30_000)).toBe("10:00:30");
 	});
 });

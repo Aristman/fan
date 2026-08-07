@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-08-07
+
+### Fixed
+- `reasoningEffortMap` для groq переключён на существующую модель
+  `qwen/qwen3.6-27b` (было `qwen/qwen3-32b`, которой никогда не было под
+  провайдером groq — условие было мёртвым кодом). Reasoning levels
+  qwen-серии корректно мапятся в `"default"` per Groq API.
+- Тесты `openai-completions-tool-choice.test.ts` синхронизированы с
+  регенерированным реестром моделей (заменены удалённые `qwen/qwen3-32b`
+  и `glm-4.5-air` на существующие эквиваленты).
+
 ### Added
 - Added Qwen (Aliyun Token Plan Team Edition) provider with 14 LLM models: qwen3.7-max/plus, qwen3.6-plus/flash, deepseek-v4-pro/flash, deepseek-v3.2, kimi-k2.7-code/k2.6/k2.5, glm-5.2/5.1/5, MiniMax-M2.5. Set `QWEN_API_KEY` in `.env` to use. Endpoint: `https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1` (OpenAI-compatible). Reasoning models use `compat.thinkingFormat: "qwen"` (top-level `enable_thinking`).
 

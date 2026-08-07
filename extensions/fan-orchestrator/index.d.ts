@@ -4,7 +4,7 @@ export { DEFAULTS, getCloudHealthCached, getCloudStatus, loadConfig, resolveMode
 export { default, orchestratorExtension } from "./orchestrator-extension.js";
 export { isDangerousCommand } from "./permissions.js";
 export type { DisplayItem } from "./subagent-runner.js";
-export { formatTokens, formatUsageStats, getDisplayItems, getFinalOutput, getFnaInvocation, MAX_CONCURRENCY, MAX_PARALLEL_TASKS, mapWithConcurrencyLimit, runSingleAgent, runSingleAgentWithFallback, runSingleAgentWithRetry, } from "./subagent-runner.js";
+export { formatTokens, formatUsageStats, getDisplayItems, getFinalOutput, getFnaInvocation, MAX_CONCURRENCY, MAX_PARALLEL_TASKS, mapWithConcurrencyLimit, runSingleAgent, } from "./subagent-runner.js";
 export type { CreateTaskConfig } from "./task-manager.js";
 export { formatTaskList, TaskManager } from "./task-manager.js";
 export type { AgentConfig, AgentDiscoveryResult, ExecutionMode, OrchestratorConfig, OrchestratorState, ProviderMode, SingleResult, SubagentDetails, SubagentTask, TaskClassification, TaskStatus, TaskType, ToolCallInfo, UsageStats, Waiter, WorkerHandle, WorkerProgress, WorkerState, WorkerType, } from "./types.js";

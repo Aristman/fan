@@ -126,6 +126,40 @@ export function statusColor(status, text, theme) {
     };
     return theme.fg(colors[status], text);
 }
+/** Reset only slot pool and queue, preserving worker registry */
+export function resetSlots() {
+    slotCount.clear();
+    queue.length = 0;
+}
+/**
+ * Remove workers that reached a terminal state (completed/failed/aborted)
+ * longer than maxAgeMs ago. Keeps active workers and recently terminated ones.
+ */
+export function pruneOldWorkers(maxAgeMs = 10 * 60 * 1000) {
+    const now = Date.now();
+    const terminalStates = ["completed", "failed", "aborted"];
+    for (const [id, w] of workers) {
+        if (terminalStates.includes(w.status) && w.endTime && (now - w.endTime) > maxAgeMs) {
+            workers.delete(id);
+        }
+    }
+}
+/**
+ * Finalize a worker: update status to completed/failed, set endTime.
+ * Guard: won't overwrite a worker already in "aborted" state (e.g. stopped by stop_worker).
+ */
+export function finalizeWorker(id, success, result) {
+    const existing = workers.get(id);
+    if (!existing || existing.status === "aborted") return;
+    const error = result?.errorMessage || result?.stderr || undefined;
+    const stopReason = result?.stopReason || undefined;
+    updateWorker(id, {
+        status: success ? "completed" : "failed",
+        endTime: Date.now(),
+        ...(error ? { error } : {}),
+        ...(stopReason ? { stopReason } : {}),
+    });
+}
 // For testing: reset state
 export function _resetRegistry() {
     workers.clear();

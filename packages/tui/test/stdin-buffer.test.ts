@@ -167,7 +167,6 @@ describe("StdinBuffer", () => {
 			// (the editor guard will discard it, not the buffer)
 			assert.deepStrictEqual(emittedSequences, ["\x1b[1G"]);
 		});
-
 	});
 
 	describe("Mixed Content", () => {

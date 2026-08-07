@@ -285,4 +285,5 @@ cp -v manifest.json "$DIST_REPO/"
 cp -v fan-$FAN_VERSION-*.{tar.gz,zip} "$DIST_REPO/" 2>/dev/null
 cp -v "$SCRIPT_DIR/install.sh" "$DIST_REPO/"
 cp -v "$SCRIPT_DIR/install.ps1" "$DIST_REPO/"
+cp -v "$SCRIPT_DIR/../CHANGELOG.md" "$DIST_REPO/"
 echo "==> Dist repo ready. Run: fan-store publish"

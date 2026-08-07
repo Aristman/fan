@@ -1582,7 +1582,7 @@ describe("ModelRegistry", () => {
 			expect(all.some((m) => m.provider === "zai" && m.id === "glm-5")).toBe(true);
 
 			// Built-in models should also still be present
-			expect(all.some((m) => m.provider === "zai" && m.id === "glm-4.5-air")).toBe(true);
+			expect(all.some((m) => m.provider === "zai" && m.id === "glm-4.7")).toBe(true);
 		});
 
 		test("unknown provider without baseUrl/api throws validation error", () => {

@@ -17,9 +17,25 @@ function sanitizeStatusText(text: string): string {
 }
 
 /**
+ * Format elapsed time as MM:SS or H:MM:SS
+ */
+export function formatElapsed(ms: number): string {
+	if (!Number.isFinite(ms) || ms < 0) ms = 0;
+	const totalSeconds = Math.floor(ms / 1000);
+	const seconds = totalSeconds % 60;
+	const minutes = Math.floor(totalSeconds / 60) % 60;
+	const hours = Math.floor(totalSeconds / 3600);
+	const pad = (n: number) => n.toString().padStart(2, "0");
+	if (hours > 0) {
+		return `${hours}:${pad(minutes)}:${pad(seconds)}`;
+	}
+	return `${pad(minutes)}:${pad(seconds)}`;
+}
+
+/**
  * Format token counts (similar to web-ui)
  */
-function formatTokens(count: number): string {
+export function formatTokens(count: number): string {
 	if (count < 1000) return count.toString();
 	if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
 	if (count < 1000000) return `${Math.round(count / 1000)}k`;
@@ -33,6 +49,8 @@ function formatTokens(count: number): string {
  */
 export class FooterComponent implements Component {
 	private autoCompactEnabled = true;
+	private sessionStartMs: number | undefined;
+	private elapsedMsProvider: (() => number) | undefined;
 
 	constructor(
 		private session: AgentSession,
@@ -43,8 +61,16 @@ export class FooterComponent implements Component {
 		this.session = session;
 	}
 
+	setSessionStartTime(ts: number): void {
+		this.sessionStartMs = ts;
+	}
+
 	setAutoCompactEnabled(enabled: boolean): void {
 		this.autoCompactEnabled = enabled;
+	}
+
+	setElapsedProvider(provider: () => number): void {
+		this.elapsedMsProvider = provider;
 	}
 
 	/**
@@ -179,6 +205,15 @@ export class FooterComponent implements Component {
 			const thinkingLevel = state.thinkingLevel || "off";
 			rightSideWithoutProvider =
 				thinkingLevel === "off" ? `${modelName} • thinking off` : `${modelName} • ${thinkingLevel}`;
+		}
+
+		// Add elapsed session timer (provider takes priority over sessionStartMs fallback)
+		if (this.elapsedMsProvider) {
+			const elapsed = formatElapsed(this.elapsedMsProvider());
+			rightSideWithoutProvider = `${rightSideWithoutProvider} • ${elapsed}`;
+		} else if (this.sessionStartMs !== undefined) {
+			const elapsed = formatElapsed(Date.now() - this.sessionStartMs);
+			rightSideWithoutProvider = `${rightSideWithoutProvider} • ${elapsed}`;
 		}
 
 		// Prepend the provider in parentheses if there are multiple providers and there's enough room

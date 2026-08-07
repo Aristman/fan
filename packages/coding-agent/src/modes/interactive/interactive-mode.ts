@@ -78,7 +78,7 @@ import { EarendilAnnouncementComponent } from "./components/earendil-announcemen
 import { ExtensionEditorComponent } from "./components/extension-editor.js";
 import { ExtensionInputComponent } from "./components/extension-input.js";
 import { ExtensionSelectorComponent, resolveInitialIndexFromValue } from "./components/extension-selector.js";
-import { FooterComponent } from "./components/footer.js";
+import { FooterComponent, formatElapsed, formatTokens } from "./components/footer.js";
 import { keyHint, keyText, rawKeyHint } from "./components/keybinding-hints.js";
 import { LoginDialogComponent } from "./components/login-dialog.js";
 import { ModelSelectorComponent } from "./components/model-selector.js";
@@ -250,6 +250,24 @@ export class InteractiveMode {
 
 	// Custom header from extension (undefined = use built-in header)
 	private customHeader: (Component & { dispose?(): void }) | undefined = undefined;
+
+	// Session elapsed timer
+	private sessionStartedAt = Date.now();
+	private footerTimer: ReturnType<typeof setInterval> | undefined = undefined;
+	private accumulatedActiveMs = 0;
+	private activeSince: number | undefined = undefined;
+	private totalActiveMs = 0;
+	private retryInFlight = false;
+	private compactionInFlight = false;
+	private pendingCycleSummary: number | undefined = undefined;
+
+	private getActiveDurationMs(): number {
+		return this.accumulatedActiveMs + (this.activeSince !== undefined ? Date.now() - this.activeSince : 0);
+	}
+
+	private getSessionActiveMs(): number {
+		return this.totalActiveMs + (this.activeSince !== undefined ? Date.now() - this.activeSince : 0);
+	}
 
 	// Convenience accessors
 	private get session(): AgentSession {
@@ -563,6 +581,18 @@ export class InteractiveMode {
 		this.footerDataProvider.onBranchChange(() => {
 			this.ui.requestRender();
 		});
+
+		// Set up footer elapsed timer (1 fps, requestRender batches)
+		this.sessionStartedAt = Date.now();
+		this.accumulatedActiveMs = 0;
+		this.activeSince = undefined;
+		this.totalActiveMs = 0;
+		this.pendingCycleSummary = undefined;
+		this.retryInFlight = false;
+		this.compactionInFlight = false;
+		this.footer.setSessionStartTime(this.sessionStartedAt);
+		this.footer.setElapsedProvider(() => this.getActiveDurationMs());
+		this.footerTimer = setInterval(() => this.ui.requestRender(), 1000);
 
 		// Initialize available provider count for footer display
 		await this.updateAvailableProviderCount();
@@ -1292,6 +1322,16 @@ export class InteractiveMode {
 		this.unsubscribe?.();
 		this.unsubscribe = undefined;
 		this.applyRuntimeSettings();
+		// Reset session elapsed timer on actual session change
+		this.sessionStartedAt = Date.now();
+		this.accumulatedActiveMs = 0;
+		this.activeSince = undefined;
+		this.totalActiveMs = 0;
+		this.pendingCycleSummary = undefined;
+		this.retryInFlight = false;
+		this.compactionInFlight = false;
+		this.footer.setSessionStartTime(this.sessionStartedAt);
+		this.footer.setElapsedProvider(() => this.getActiveDurationMs());
 		await this.bindCurrentSessionExtensions();
 		this.subscribeToAgent();
 		await this.updateAvailableProviderCount();
@@ -2342,6 +2382,8 @@ export class InteractiveMode {
 
 		switch (event.type) {
 			case "agent_start":
+				// Track active time for footer timer
+				if (this.activeSince === undefined) this.activeSince = Date.now();
 				// Restore main escape handler if retry handler is still active
 				// (retry success event fires later, but we need main handler now)
 				if (this.retryEscapeHandler) {
@@ -2515,7 +2557,19 @@ export class InteractiveMode {
 				break;
 			}
 
-			case "agent_end":
+			case "agent_end": {
+				// Accumulate active time and pause the timer
+				if (this.activeSince !== undefined) {
+					const delta = Date.now() - this.activeSince;
+					this.accumulatedActiveMs += delta;
+					this.totalActiveMs += delta;
+					this.activeSince = undefined;
+				}
+				// Capture cycle time, then reset cycle timer
+				const cycleMs = this.accumulatedActiveMs;
+				this.accumulatedActiveMs = 0;
+				this.pendingCycleSummary = cycleMs;
+
 				if (this.loadingAnimation) {
 					this.loadingAnimation.stop();
 					this.loadingAnimation = undefined;
@@ -2530,10 +2584,22 @@ export class InteractiveMode {
 
 				await this.checkShutdownRequested();
 
+				// Schedule cycle summary display after auto_retry_start/compaction_start
+				// have had a chance to fire (they emit synchronously in the same async chain)
+				setImmediate(() => {
+					const summaryMs = this.pendingCycleSummary;
+					if (!this.retryInFlight && !this.compactionInFlight && summaryMs !== undefined) {
+						this.pendingCycleSummary = undefined;
+						this.appendCycleSummary(summaryMs);
+					}
+				});
+
 				this.ui.requestRender();
 				break;
+			}
 
 			case "compaction_start": {
+				this.compactionInFlight = true;
 				// Keep editor active; submissions are queued during compaction.
 				this.autoCompactionEscapeHandler = this.defaultEditor.onEscape;
 				this.defaultEditor.onEscape = () => {
@@ -2591,12 +2657,19 @@ export class InteractiveMode {
 						this.chatContainer.addChild(new Text(theme.fg("error", event.errorMessage), 1, 0));
 					}
 				}
+				if (this.pendingCycleSummary !== undefined) {
+					this.appendCycleSummary(this.pendingCycleSummary);
+					this.pendingCycleSummary = undefined;
+				}
+				this.compactionInFlight = false;
 				void this.flushCompactionQueue({ willRetry: event.willRetry });
 				this.ui.requestRender();
 				break;
 			}
 
 			case "auto_retry_start": {
+				this.retryInFlight = true;
+				this.pendingCycleSummary = undefined;
 				// Set up escape to abort retry
 				this.retryEscapeHandler = this.defaultEditor.onEscape;
 				this.defaultEditor.onEscape = () => {
@@ -2617,6 +2690,7 @@ export class InteractiveMode {
 			}
 
 			case "auto_retry_end": {
+				this.retryInFlight = false;
 				// Restore escape handler
 				if (this.retryEscapeHandler) {
 					this.defaultEditor.onEscape = this.retryEscapeHandler;
@@ -2905,8 +2979,55 @@ export class InteractiveMode {
 		// This prevents escape sequences from leaking to the parent shell over slow SSH.
 		await this.ui.terminal.drainInput(1000);
 
+		// Compute session summary before stop (needs session entries)
+		const durationMs = this.getSessionActiveMs();
+		const summary = this.buildSessionSummary(durationMs);
+
 		this.stop();
+
+		// Print session summary to stdout (terminal is back in cooked mode after stop)
+		if (summary) {
+			process.stdout.write(`
+${summary}
+`);
+		}
+
 		process.exit(0);
+	}
+
+	/**
+	 * Build a one-line session summary for printing on shutdown.
+	 */
+	private buildSessionSummary(durationMs: number): string {
+		const duration = formatElapsed(durationMs);
+
+		let totalInput = 0;
+		let totalOutput = 0;
+		let totalCost = 0;
+		for (const entry of this.sessionManager.getEntries()) {
+			if (entry.type === "message" && entry.message.role === "assistant") {
+				totalInput += entry.message.usage.input;
+				totalOutput += entry.message.usage.output;
+				totalCost += entry.message.usage.cost.total;
+			}
+		}
+
+		const totalTokens = totalInput + totalOutput;
+		const parts = [`duration: ${duration}`];
+		if (totalTokens > 0) {
+			const tokenStr =
+				totalTokens < 1000
+					? totalTokens.toString()
+					: totalTokens < 1000000
+						? `${(totalTokens / 1000).toFixed(1)}k`
+						: `${(totalTokens / 1000000).toFixed(1)}M`;
+			parts.push(`tokens: ${tokenStr}`);
+		}
+		if (totalCost > 0) {
+			parts.push(`cost: $${totalCost.toFixed(3)}`);
+		}
+
+		return `Session ended — ${parts.join(" • ")}`;
 	}
 
 	/**
@@ -3130,6 +3251,26 @@ export class InteractiveMode {
 	showWarning(warningMessage: string): void {
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Text(theme.fg("warning", `Warning: ${warningMessage}`), 1, 0));
+		this.ui.requestRender();
+	}
+
+	private appendCycleSummary(cycleMs: number): void {
+		let input = 0;
+		let output = 0;
+		let cost = 0;
+		for (const entry of this.sessionManager.getEntries()) {
+			if (entry.type === "message" && entry.message.role === "assistant") {
+				input += entry.message.usage.input;
+				output += entry.message.usage.output;
+				cost += entry.message.usage.cost.total;
+			}
+		}
+		const parts = [`⏱ ${formatElapsed(cycleMs)}`];
+		if (input || output) parts.push(`↑ ${formatTokens(input)} ↓ ${formatTokens(output)} tokens`);
+		if (cost > 0) parts.push(`$${cost.toFixed(3)}`);
+		parts.push("(session)");
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(theme.fg("dim", parts.join(" · ")), 1, 0));
 		this.ui.requestRender();
 	}
 
@@ -4884,6 +5025,10 @@ export class InteractiveMode {
 		if (this.loadingAnimation) {
 			this.loadingAnimation.stop();
 			this.loadingAnimation = undefined;
+		}
+		if (this.footerTimer) {
+			clearInterval(this.footerTimer);
+			this.footerTimer = undefined;
 		}
 		this.clearExtensionTerminalInputListeners();
 		this.footer.dispose();
