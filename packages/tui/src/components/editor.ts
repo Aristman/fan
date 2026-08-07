@@ -812,7 +812,7 @@ export class Editor implements Component, Focusable {
 			// CSI/escape-sequence fragments (e.g. "[1G", "[1;3A").
 			// Single printable characters (including `[` or `A` alone) are unaffected.
 			// Bracketed paste is handled separately via handlePaste, not this path.
-			if (data.length > 1 && /^[\x1b]?[\[\]0-9;:?<>=!]*[A-Za-z~]$/.test(data)) {
+			if (data.length > 1 && /^[\x1b]?[[\]0-9;:?<>=!]*[A-Za-z~]$/.test(data)) {
 				return;
 			}
 			this.insertCharacter(data);
