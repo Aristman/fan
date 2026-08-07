@@ -78,7 +78,7 @@ import { EarendilAnnouncementComponent } from "./components/earendil-announcemen
 import { ExtensionEditorComponent } from "./components/extension-editor.js";
 import { ExtensionInputComponent } from "./components/extension-input.js";
 import { ExtensionSelectorComponent, resolveInitialIndexFromValue } from "./components/extension-selector.js";
-import { FooterComponent, formatElapsed } from "./components/footer.js";
+import { FooterComponent, formatElapsed, formatTokens } from "./components/footer.js";
 import { keyHint, keyText, rawKeyHint } from "./components/keybinding-hints.js";
 import { LoginDialogComponent } from "./components/login-dialog.js";
 import { ModelSelectorComponent } from "./components/model-selector.js";
@@ -256,9 +256,17 @@ export class InteractiveMode {
 	private footerTimer: ReturnType<typeof setInterval> | undefined = undefined;
 	private accumulatedActiveMs = 0;
 	private activeSince: number | undefined = undefined;
+	private totalActiveMs = 0;
+	private retryInFlight = false;
+	private compactionInFlight = false;
+	private pendingCycleSummary: number | undefined = undefined;
 
 	private getActiveDurationMs(): number {
 		return this.accumulatedActiveMs + (this.activeSince !== undefined ? Date.now() - this.activeSince : 0);
+	}
+
+	private getSessionActiveMs(): number {
+		return this.totalActiveMs + (this.activeSince !== undefined ? Date.now() - this.activeSince : 0);
 	}
 
 	// Convenience accessors
@@ -578,6 +586,10 @@ export class InteractiveMode {
 		this.sessionStartedAt = Date.now();
 		this.accumulatedActiveMs = 0;
 		this.activeSince = undefined;
+		this.totalActiveMs = 0;
+		this.pendingCycleSummary = undefined;
+		this.retryInFlight = false;
+		this.compactionInFlight = false;
 		this.footer.setSessionStartTime(this.sessionStartedAt);
 		this.footer.setElapsedProvider(() => this.getActiveDurationMs());
 		this.footerTimer = setInterval(() => this.ui.requestRender(), 1000);
@@ -1314,6 +1326,10 @@ export class InteractiveMode {
 		this.sessionStartedAt = Date.now();
 		this.accumulatedActiveMs = 0;
 		this.activeSince = undefined;
+		this.totalActiveMs = 0;
+		this.pendingCycleSummary = undefined;
+		this.retryInFlight = false;
+		this.compactionInFlight = false;
 		this.footer.setSessionStartTime(this.sessionStartedAt);
 		this.footer.setElapsedProvider(() => this.getActiveDurationMs());
 		await this.bindCurrentSessionExtensions();
@@ -2541,12 +2557,19 @@ export class InteractiveMode {
 				break;
 			}
 
-			case "agent_end":
+			case "agent_end": {
 				// Accumulate active time and pause the timer
 				if (this.activeSince !== undefined) {
-					this.accumulatedActiveMs += Date.now() - this.activeSince;
+					const delta = Date.now() - this.activeSince;
+					this.accumulatedActiveMs += delta;
+					this.totalActiveMs += delta;
 					this.activeSince = undefined;
 				}
+				// Capture cycle time, then reset cycle timer
+				const cycleMs = this.accumulatedActiveMs;
+				this.accumulatedActiveMs = 0;
+				this.pendingCycleSummary = cycleMs;
+
 				if (this.loadingAnimation) {
 					this.loadingAnimation.stop();
 					this.loadingAnimation = undefined;
@@ -2561,10 +2584,22 @@ export class InteractiveMode {
 
 				await this.checkShutdownRequested();
 
+				// Schedule cycle summary display after auto_retry_start/compaction_start
+				// have had a chance to fire (they emit synchronously in the same async chain)
+				setImmediate(() => {
+					const summaryMs = this.pendingCycleSummary;
+					if (!this.retryInFlight && !this.compactionInFlight && summaryMs !== undefined) {
+						this.pendingCycleSummary = undefined;
+						this.appendCycleSummary(summaryMs);
+					}
+				});
+
 				this.ui.requestRender();
 				break;
+			}
 
 			case "compaction_start": {
+				this.compactionInFlight = true;
 				// Keep editor active; submissions are queued during compaction.
 				this.autoCompactionEscapeHandler = this.defaultEditor.onEscape;
 				this.defaultEditor.onEscape = () => {
@@ -2622,12 +2657,19 @@ export class InteractiveMode {
 						this.chatContainer.addChild(new Text(theme.fg("error", event.errorMessage), 1, 0));
 					}
 				}
+				if (this.pendingCycleSummary !== undefined) {
+					this.appendCycleSummary(this.pendingCycleSummary);
+					this.pendingCycleSummary = undefined;
+				}
+				this.compactionInFlight = false;
 				void this.flushCompactionQueue({ willRetry: event.willRetry });
 				this.ui.requestRender();
 				break;
 			}
 
 			case "auto_retry_start": {
+				this.retryInFlight = true;
+				this.pendingCycleSummary = undefined;
 				// Set up escape to abort retry
 				this.retryEscapeHandler = this.defaultEditor.onEscape;
 				this.defaultEditor.onEscape = () => {
@@ -2648,6 +2690,7 @@ export class InteractiveMode {
 			}
 
 			case "auto_retry_end": {
+				this.retryInFlight = false;
 				// Restore escape handler
 				if (this.retryEscapeHandler) {
 					this.defaultEditor.onEscape = this.retryEscapeHandler;
@@ -2937,7 +2980,7 @@ export class InteractiveMode {
 		await this.ui.terminal.drainInput(1000);
 
 		// Compute session summary before stop (needs session entries)
-		const durationMs = this.getActiveDurationMs();
+		const durationMs = this.getSessionActiveMs();
 		const summary = this.buildSessionSummary(durationMs);
 
 		this.stop();
@@ -3208,6 +3251,26 @@ ${summary}
 	showWarning(warningMessage: string): void {
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Text(theme.fg("warning", `Warning: ${warningMessage}`), 1, 0));
+		this.ui.requestRender();
+	}
+
+	private appendCycleSummary(cycleMs: number): void {
+		let input = 0;
+		let output = 0;
+		let cost = 0;
+		for (const entry of this.sessionManager.getEntries()) {
+			if (entry.type === "message" && entry.message.role === "assistant") {
+				input += entry.message.usage.input;
+				output += entry.message.usage.output;
+				cost += entry.message.usage.cost.total;
+			}
+		}
+		const parts = [`⏱ ${formatElapsed(cycleMs)}`];
+		if (input || output) parts.push(`↑ ${formatTokens(input)} ↓ ${formatTokens(output)} tokens`);
+		if (cost > 0) parts.push(`$${cost.toFixed(3)}`);
+		parts.push("(session)");
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(theme.fg("dim", parts.join(" · ")), 1, 0));
 		this.ui.requestRender();
 	}
 

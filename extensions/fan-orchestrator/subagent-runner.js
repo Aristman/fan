@@ -586,7 +586,7 @@ function buildWorkerContent(agentName, task, model, progress, startTime) {
         ? `${Math.floor(mins / 60)}:${String(mins % 60).padStart(2, "0")}:${String(secs).padStart(2, "0")}`
         : `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
     const lines = [
-        `${statusText} · ${toolCallCount} tools · ${msgCount} msgs · ${elapsedStr}`,
+        `${statusText} · ${toolCallCount} tools · ${msgCount} msgs${model ? ` · 🤖 ${model}` : ""} · ${elapsedStr}`,
     ];
     const toolLines = formatToolCallsBody(progress?.toolCalls);
     if (toolLines.length > 0) {
