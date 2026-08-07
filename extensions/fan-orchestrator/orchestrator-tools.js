@@ -13,7 +13,7 @@ import { discoverAgents } from "./agents.js";
 import { classifyComplexity, formatComplexityResult, DIRECT_TASK_RULES, DELEGATE_TASK_RULES } from "./task-complexity.js";
 import { resolveWorkerModel, resolveWorkerTemperature } from "./config.js";
 import { formatUsageStats, formatToolPreview, getDisplayItems, getFinalOutput, MAX_CONCURRENCY, MAX_PARALLEL_TASKS, mapWithConcurrencyLimit, runSingleAgent, } from "./subagent-runner.js";
-import { acquireSlot, releaseSlot } from "./workers.js";
+import { acquireSlot, getWorker, releaseSlot, updateWorker } from "./workers.js";
 const COLLAPSED_ITEM_COUNT = 10;
 const MAX_LIVE_TOOLS = 9;
 const AGENT_ICONS = {
@@ -281,13 +281,20 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                     const chainWorkerId = workerLifecycle?.genWorkerId?.() ?? `w-${Date.now()}`;
                     const chainWorkerModel = workerAgent?.model || "";
                     const chainWorkerTemperature = resolveWorkerTemperature(step.agent, config);
+                    const chainAbort = new AbortController();
+                    // Forward external signal to per-worker abort
+                    if (signal) {
+                        if (signal.aborted) chainAbort.abort();
+                        else signal.addEventListener("abort", () => chainAbort.abort(), { once: true });
+                    }
                     workerLifecycle?.onWorkerStart?.(chainWorkerId, step.agent, chainWorkerModel);
+                    updateWorker(chainWorkerId, { abortController: chainAbort });
                     let result;
                     try {
-                        result = await runSingleAgent(ctx.cwd, agents, step.agent, taskWithContext, chainWorkerTemperature, step.cwd, i + 1, signal, chainUpdate);
+                        result = await runSingleAgent(ctx.cwd, agents, step.agent, taskWithContext, chainWorkerTemperature, step.cwd, i + 1, chainAbort.signal, chainUpdate);
                     }
                     finally {
-                        workerLifecycle?.onWorkerStop?.(chainWorkerId, result?.exitCode === 0);
+                        workerLifecycle?.onWorkerStop?.(chainWorkerId, result?.exitCode === 0, result);
                         releaseSlot(workerType, config.parallelWorkers);
                     }
                     results.push(result);
@@ -338,6 +345,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                 }
                 const allResults = new Array(params.tasks.length);
                 for (let i = 0; i < params.tasks.length; i++) {
+                    const initAgent = agents.find(a => a.name === params.tasks[i].agent);
                     allResults[i] = {
                         agent: params.tasks[i].agent,
                         agentSource: "unknown",
@@ -346,6 +354,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                         messages: [],
                         stderr: "",
                         usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
+                        model: initAgent?.model || "",
                     };
                 }
                 const emitParallelUpdate = () => {
@@ -363,7 +372,8 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                                 const toolCount = p?.toolCalls?.length ?? 0;
                                 const msgCount = p?.messageCount ?? 0;
                                 const elapsed = r.startTime ? Math.round((Date.now() - r.startTime) / 1000) : 0;
-                                lines.push(`  ${icon} ${r.agent} — ${status} · ${toolCount} tools · ${msgCount} msgs · ${elapsed}s`);
+                                const modelLabel = r.model || "";
+                                lines.push(`  ${icon} ${r.agent}${modelLabel ? ` 🤖 ${modelLabel}` : ""} — ${status} · ${toolCount} tools · ${msgCount} msgs · ${elapsed}s`);
                                 // Show last few tool calls
                                 const tools = (p?.toolCalls || []).filter(tc => tc.preview).slice(-3);
                                 for (const tc of tools) {
@@ -390,10 +400,17 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                     const parWorkerId = workerLifecycle?.genWorkerId?.() ?? `w-${Date.now()}-${index}`;
                     const parWorkerModel = parWorkerAgent?.model || "";
                     const parWorkerTemperature = resolveWorkerTemperature(t.agent, config);
+                    const parAbort = new AbortController();
+                    // Forward external signal to per-worker abort
+                    if (signal) {
+                        if (signal.aborted) parAbort.abort();
+                        else signal.addEventListener("abort", () => parAbort.abort(), { once: true });
+                    }
                     workerLifecycle?.onWorkerStart?.(parWorkerId, t.agent, parWorkerModel);
+                    updateWorker(parWorkerId, { abortController: parAbort });
                     let result;
                     try {
-                        result = await runSingleAgent(ctx.cwd, agents, t.agent, t.task, parWorkerTemperature, t.cwd, undefined, signal, (partial) => {
+                        result = await runSingleAgent(ctx.cwd, agents, t.agent, t.task, parWorkerTemperature, t.cwd, undefined, parAbort.signal, (partial) => {
                             const _cr = Array.isArray(partial.details) ? partial.details[0] : partial.details?.results?.[0];
                             if (_cr) {
                                 // MERGE: keep exitCode=-1 (running), add progress data
@@ -403,13 +420,14 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                         });
                     }
                     finally {
-                        workerLifecycle?.onWorkerStop?.(parWorkerId, result?.exitCode === 0);
+                        workerLifecycle?.onWorkerStop?.(parWorkerId, result?.exitCode === 0, result);
                         releaseSlot(workerType, config.parallelWorkers);
                     }
                     allResults[index] = result;
                     emitParallelUpdate();
                     return result;
                 });
+                const anyFailed = results.some(r => r.exitCode !== 0 || r.stopReason === "error" || r.stopReason === "aborted");
                 const successCount = results.filter((r) => r.exitCode === 0).length;
                 const summaries = results.map((r) => {
                     const output = getFinalOutput(r.messages);
@@ -424,6 +442,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                         },
                     ],
                     details: makeDetails("parallel")(results),
+                    ...(anyFailed ? { isError: true } : {}),
                 };
             }
             // === Single Mode ===
@@ -448,13 +467,20 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                 const workerId = workerLifecycle?.genWorkerId?.() ?? `w-${Date.now()}`;
                 const workerModel = workerAgent?.model || "";
                 const workerTemperature = resolveWorkerTemperature(params.agent, config);
+                const singleAbort = new AbortController();
+                // Forward external signal to per-worker abort
+                if (signal) {
+                    if (signal.aborted) singleAbort.abort();
+                    else signal.addEventListener("abort", () => singleAbort.abort(), { once: true });
+                }
                 workerLifecycle?.onWorkerStart?.(workerId, params.agent, workerModel);
+                updateWorker(workerId, { abortController: singleAbort });
                 let result;
                 try {
-                    result = await runSingleAgent(ctx.cwd, agents, params.agent, params.task, workerTemperature, params.cwd, undefined, signal, singleUpdate);
+                    result = await runSingleAgent(ctx.cwd, agents, params.agent, params.task, workerTemperature, params.cwd, undefined, singleAbort.signal, singleUpdate);
                 }
                 finally {
-                    workerLifecycle?.onWorkerStop?.(workerId, result?.exitCode === 0);
+                    workerLifecycle?.onWorkerStop?.(workerId, result?.exitCode === 0, result);
                     releaseSlot(workerType, config.parallelWorkers);
                 }
                 const isError = result.exitCode !== 0 || result.stopReason === "error" || result.stopReason === "aborted";
@@ -561,7 +587,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
             if (details.mode === "single" && details.results.length === 1) {
                 const r = details.results[0];
                 const isRunning = !r.endTime;
-                const isError = !isRunning && r.exitCode !== 0;
+                const isError = !isRunning && (r.exitCode !== 0 || r.stopReason === "error" || r.stopReason === "aborted");
                 const toolCount = countToolCalls(r.messages);
                 const modelLabel = r.model || "initializing...";
                 // ── Running (collapsed) ──
@@ -574,6 +600,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                     const toolCount = progressTools.length;
                     const elapsed = r.startTime ? formatElapsedTime(r.startTime) : "";
                     const statusParts = [];
+                    statusParts.push(`🤖 ${modelLabel}`);
                     if (elapsed) statusParts.push(`⏱ ${elapsed}`);
                     statusParts.push(`💬 ${msgCount} message${msgCount !== 1 ? "s" : ""}`);
                     statusParts.push(`🔧 ${toolCount} tool${toolCount !== 1 ? "s" : ""}`);
@@ -639,7 +666,22 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                 else if (isError && r.stderr) {
                     text += `\n${theme.fg("error", `Stderr: ${r.stderr.slice(0, 500)}`)}`;
                 }
-                else if (finalOutput) {
+                // Show partial tool calls for aborted/failed workers (even without final output)
+                if (isError && allToolCalls.length > 0 && !finalOutput) {
+                    const partialTools = allToolCalls.slice(-5);
+                    text += `\n${theme.fg("muted", `─── Partial work (${allToolCalls.length} tools) ───`)}`;
+                    for (const tc of partialTools) {
+                        if (tc.preview) {
+                            text += `\n${theme.fg("muted", "→ ")}${theme.fg("toolOutput", tc.preview)}`;
+                        } else {
+                            text += `\n${theme.fg("muted", "→ ")}${theme.fg("toolOutput", tc.name)}`;
+                        }
+                    }
+                    if (allToolCalls.length > 5) {
+                        text += `\n${theme.fg("muted", `... ${allToolCalls.length - 5} more tools`)}`;
+                    }
+                }
+                if (finalOutput) {
                     const lines = finalOutput.trim().split("\n");
                     const MAX_COLLAPSED_LINES = 50;
                     if (lines.length > MAX_COLLAPSED_LINES) {
@@ -650,7 +692,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                         text += `\n${theme.fg("toolOutput", finalOutput.trim())}`;
                     }
                 }
-                else {
+                else if (!isError) {
                     text += `\n${theme.fg("muted", "(no output)")}`;
                 }
                 text += `\n${theme.fg("dim", formatFooter(r))}`;
@@ -676,13 +718,14 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                         const rRunning = !r.endTime;
                         const rIcon = rRunning
                             ? theme.fg("warning", "⏳")
-                            : r.exitCode === 0
+                            : (r.exitCode === 0 && !r.stopReason)
                                 ? theme.fg("success", "✓")
                                 : theme.fg("error", "✗");
                         const rDisplayItems = getDisplayItems(r.messages);
                         const rOutput = getFinalOutput(r.messages);
                         container.addChild(new Spacer(1));
-                        container.addChild(new Text(`${theme.fg("muted", `─── Step ${r.step}:`)} ${getAgentIcon(r.agent)} ${theme.fg("accent", r.agent)} ${rIcon}`, 0, 0));
+                        const chainStepModel = r.model ? theme.fg("muted", ` 🤖 ${r.model}`) : "";
+                        container.addChild(new Text(`${theme.fg("muted", `─── Step ${r.step}:`)} ${getAgentIcon(r.agent)} ${theme.fg("accent", r.agent)}${chainStepModel} ${rIcon}`, 0, 0));
                         container.addChild(new Text(theme.fg("muted", "Task: ") + theme.fg("dim", r.task), 0, 0));
                         const rToolCalls = getResultToolCalls(r);
                         for (const item of rToolCalls) {
@@ -712,11 +755,12 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                     const rRunning = !r.endTime;
                     const rIcon = rRunning
                         ? theme.fg("warning", "⏳")
-                        : r.exitCode === 0
+                        : (r.exitCode === 0 && !r.stopReason)
                             ? theme.fg("success", "✓")
                             : theme.fg("error", "✗");
                     const rOutput = getFinalOutput(r.messages);
-                    text += `\n\n${theme.fg("muted", `─── Step ${r.step}:`)} ${getAgentIcon(r.agent)} ${theme.fg("accent", r.agent)} ${rIcon}`;
+                    const chainCollapsedModel = r.model ? theme.fg("muted", ` 🤖 ${r.model}`) : "";
+                    text += `\n\n${theme.fg("muted", `─── Step ${r.step}:`)} ${getAgentIcon(r.agent)} ${theme.fg("accent", r.agent)}${chainCollapsedModel} ${rIcon}`;
                     if (rRunning) {
                         const progressTools = r.progress?.toolCalls || [];
                         const lastTools = progressTools.slice(-5);
@@ -752,7 +796,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
             if (details.mode === "parallel") {
                 const running = details.results.filter((r) => !r.endTime).length;
                 const successCount = details.results.filter((r) => r.exitCode === 0).length;
-                const failCount = details.results.filter((r) => r.exitCode > 0).length;
+                const failCount = details.results.filter((r) => r.exitCode !== 0 || r.stopReason === "error" || r.stopReason === "aborted").length;
                 const doneCount = successCount + failCount;
                 const isRunning = running > 0;
                 const icon = isRunning
@@ -767,10 +811,12 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                     const container = new Container();
                     container.addChild(new Text(`${icon} ${theme.fg("toolTitle", theme.bold("PARALLEL worker"))} ${theme.fg("accent", `(${status})`)}`, 0, 0));
                     for (const r of details.results) {
-                        const rIcon = r.exitCode === 0 ? theme.fg("success", "✓") : theme.fg("error", "✗");
+                        const rFailed = r.exitCode !== 0 || r.stopReason === "error" || r.stopReason === "aborted";
+                        const rIcon = !rFailed ? theme.fg("success", "✓") : theme.fg("error", "✗");
                         const rOutput = getFinalOutput(r.messages);
                         container.addChild(new Spacer(1));
-                        container.addChild(new Text(`${theme.fg("muted", "─── ")}${getAgentIcon(r.agent)} ${theme.fg("accent", r.agent)} ${rIcon}`, 0, 0));
+                        const parExpModel = r.model ? theme.fg("muted", ` 🤖 ${r.model}`) : "";
+                        container.addChild(new Text(`${theme.fg("muted", "─── ")}${getAgentIcon(r.agent)} ${theme.fg("accent", r.agent)}${parExpModel} ${rIcon}`, 0, 0));
                         container.addChild(new Text(theme.fg("muted", "Task: ") + theme.fg("dim", r.task), 0, 0));
                         const rToolCalls = getResultToolCalls(r);
                         for (const item of rToolCalls) {
@@ -796,11 +842,12 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                     const rRunning = !r.endTime;
                     const rIcon = rRunning
                         ? theme.fg("warning", "⏳")
-                        : r.exitCode === 0
+                        : (r.exitCode === 0 && !r.stopReason)
                             ? theme.fg("success", "✓")
                             : theme.fg("error", "✗");
                     const rOutput = getFinalOutput(r.messages);
-                    text += `\n\n${theme.fg("muted", "─── ")}${getAgentIcon(r.agent)} ${theme.fg("accent", r.agent)} ${rIcon}`;
+                    const parCollapsedModel = r.model ? theme.fg("muted", ` 🤖 ${r.model}`) : "";
+                    text += `\n\n${theme.fg("muted", "─── ")}${getAgentIcon(r.agent)} ${theme.fg("accent", r.agent)}${parCollapsedModel} ${rIcon}`;
                     if (rRunning) {
                         const progressTools = r.progress?.toolCalls || [];
                         const lastTools = progressTools.slice(-5);
@@ -1139,7 +1186,6 @@ Each subagent runs in an isolated context window — it cannot see the main conv
             reason: Type.Optional(Type.String({ description: "Reason for stopping" })),
         }),
         async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
-            const { getWorker, updateWorker } = await import("./workers.js");
             const worker = getWorker(params.workerId);
             if (!worker) {
                 return {
@@ -1154,6 +1200,8 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                     details: undefined,
                 };
             }
+            // Signal the subprocess to abort via AbortController
+            try { worker.abortController?.abort(); } catch {}
             updateWorker(worker.id, { status: "aborted", endTime: Date.now(), error: params.reason ?? "Stopped by coordinator" });
             return {
                 content: [{ type: "text", text: `Worker ${worker.id} (${worker.agentType}) stopped.${params.reason ? ` Reason: ${params.reason}` : ""}` }],

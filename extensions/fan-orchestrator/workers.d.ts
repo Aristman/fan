@@ -41,4 +41,20 @@ export declare function statusColor(status: WorkerState, text: string, theme?: {
     fg: (color: string, t: string) => string;
 }): string;
 export declare function _resetRegistry(): void;
+/** Reset only the slot pool and FIFO queue, preserving the workers registry */
+export declare function resetSlots(): void;
+/**
+ * Remove workers that reached a terminal state (completed/failed/aborted)
+ * longer than maxAgeMs ago. Keeps active workers and recently terminated ones.
+ */
+export declare function pruneOldWorkers(maxAgeMs?: number): void;
+/**
+ * Finalize a worker after its run ends. No-op if the worker is unknown
+ * or already in the terminal "aborted" state (never overwrites aborted).
+ */
+export declare function finalizeWorker(id: string, success: boolean, result?: {
+    errorMessage?: string;
+    stderr?: string;
+    stopReason?: string;
+}): void;
 //# sourceMappingURL=workers.d.ts.map

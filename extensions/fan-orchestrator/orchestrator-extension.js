@@ -27,7 +27,7 @@ import { isDangerousCommand } from "./permissions.js";
 import { logAuditDecision } from "./audit.js";
 import { getFinalOutput, runSingleAgent } from "./subagent-runner.js";
 import { TaskManager } from "./task-manager.js";
-import { _resetRegistry, activeWorkers, genWorkerId, registerWorker, updateWorker } from "./workers.js";
+import { activeWorkers, finalizeWorker, genWorkerId, getWorker, listWorkers, pruneOldWorkers, registerWorker, resetSlots, updateWorker } from "./workers.js";
 import { PipelineState } from "./pipeline-state.js";
 import * as path from "node:path";
 export const orchestratorExtension = (fan) => {
@@ -64,8 +64,8 @@ export const orchestratorExtension = (fan) => {
             updateWorker(id, { status: "running" });
             startWidgetTimer(lastCtx);
         },
-        onWorkerStop: (id, success = true) => {
-            updateWorker(id, { status: success ? "completed" : "failed", endTime: Date.now() });
+        onWorkerStop: (id, success = true, result = null) => {
+            finalizeWorker(id, success, result);
         },
     });
     // ---- State ----
@@ -103,9 +103,19 @@ export const orchestratorExtension = (fan) => {
         if (!ctx?.ui?.setWidget)
             return;
         const tasks = taskManager.getTasks();
-        // Auto-hide + auto-clear: if no active/pending tasks, hide widget and clean up
+        // Check for recently terminated workers (aborted/failed within last 5 min)
+        const RECENT_WINDOW_MS = 5 * 60 * 1000;
+        const now = Date.now();
+        // Prune old terminated workers to prevent unbounded Map growth
+        pruneOldWorkers(10 * 60 * 1000);
+        const allWorkers = (typeof listWorkers === "function" ? listWorkers() : []);
+        const recentTerminated = allWorkers.filter((w) =>
+            (w.status === "aborted" || w.status === "failed") &&
+            w.endTime && (now - w.endTime) < RECENT_WINDOW_MS
+        );
+        // Auto-hide: hide only when no active/pending tasks AND no recently terminated workers
         const activeOrPending = tasks.filter((t) => t.status !== "completed" && t.status !== "failed");
-        if (tasks.length === 0 || activeOrPending.length === 0) {
+        if (activeOrPending.length === 0 && recentTerminated.length === 0) {
             if (tasks.length > 0)
                 taskManager.clearCompleted();
             ctx.ui.setWidget("orchestrator-tasks", undefined);
@@ -123,13 +133,15 @@ export const orchestratorExtension = (fan) => {
         const totalCount = activeOrPending.length + doneCount;
         // Collapsed: compact format
         if (taskWidgetCollapsed) {
-            const lines = [`📋 ${doneCount}/${totalCount} tasks  [Alt+T to expand]`];
+            const termHint = recentTerminated.length > 0 ? ` · ⊘ ${recentTerminated.length} stopped` : "";
+            const lines = [`📋 ${doneCount}/${totalCount} tasks${termHint}  [Alt+T to expand]`];
             ctx.ui.setWidget("orchestrator-tasks", lines);
             return;
         }
         // Expanded: themed task list
+        const taskHeader = tasks.length > 0 ? `📋 ${doneCount}/${totalCount} tasks:` : "📋 Workers:";
         const lines = [
-            `📋 ${doneCount}/${totalCount} tasks:`,
+            taskHeader,
             ...sorted
                 .filter((t) => t.status !== "completed" && t.status !== "failed")
                 .map((t) => {
@@ -160,6 +172,16 @@ export const orchestratorExtension = (fan) => {
         }
         else if (doneTasks.length > 3) {
             lines.push("", fg("muted", `  ── ${doneTasks.length} completed/failed ──`));
+        }
+        // Show recently terminated workers (aborted/failed within 5 min)
+        if (recentTerminated.length > 0) {
+            lines.push("", fg("dim", "── workers ──"));
+            for (const w of recentTerminated) {
+                const wIcon = w.status === "aborted" ? "⊘" : "✗";
+                const modelStr = w.model ? ` (${w.model})` : "";
+                const errStr = w.error ? ` — ${w.error.slice(0, 40)}` : "";
+                lines.push(`  ${fg("muted", `${wIcon} ${w.agentType || "?"}${modelStr} [${w.status}]${errStr}`)}`);
+            }
         }
         ctx.ui.setWidget("orchestrator-tasks", lines);
     }
@@ -265,14 +287,15 @@ export const orchestratorExtension = (fan) => {
     });
     fan.on("session_shutdown", async (_event, ctx) => {
         lastCtx = ctx;
-        // Abort all active workers
+        // Abort all active workers (signal subprocess + mark aborted)
         const active = activeWorkers();
         for (const w of active) {
-            updateWorker(w.id, { status: "aborted", endTime: Date.now() });
+            try { w.abortController?.abort(); } catch {}
+            updateWorker(w.id, { status: "aborted", endTime: Date.now(), error: "Session shutdown" });
         }
-        _resetRegistry();
-        // Clear widgets and status
-        ctx.ui.setWidget("orchestrator-tasks", undefined);
+        // Reset only slot pool/queue, preserve worker registry for post-mortem display
+        resetSlots();
+        // Keep widget showing aborted workers; clear status bar only
         ctx.ui.setStatus("2-orchestrator", undefined);
         const counts = taskManager.getStatusCounts();
         // ---- Pipeline: flush on shutdown ----
@@ -407,13 +430,18 @@ export const orchestratorExtension = (fan) => {
                         return;
                     }
                     for (const w of active) {
+                        try { w.abortController?.abort(); } catch {}
                         updateWorker(w.id, {
                             status: "aborted",
                             endTime: Date.now(),
+                            error: "Stopped by user",
                         });
                     }
-                    _resetRegistry();
+                    // Reset only slot pool/queue, preserve worker registry for display
+                    resetSlots();
                     ctx.ui.notify(`Stopped ${active.length} worker(s).`);
+                    // Update widget to show aborted workers
+                    updateTaskWidget(ctx);
                     return;
                 }
                 case "config": {
@@ -1389,9 +1417,10 @@ export const orchestratorExtension = (fan) => {
                 const PLAN_TIMEOUT_MS = (config.planTimeout ?? 300) * 1000;
                 let timedOut = false;
                 
+                const planModelLabel = agentCfg?.model || "?";
                 const statusTimer = setInterval(() => {
                     const elapsed = Math.round((Date.now() - planStartTime) / 1000);
-                    ctx.ui.setStatus("2-orchestrator", `⏳ ${headerPrefix}... ${elapsed}s`);
+                    ctx.ui.setStatus("2-orchestrator", `⏳ ${headerPrefix} 🤖 ${planModelLabel}... ${elapsed}s`);
                 }, 3000);
                 
                 // Combined abort signal (ESC + timeout)
@@ -1427,7 +1456,7 @@ export const orchestratorExtension = (fan) => {
                                 ? `Working · ${liveTools.length} tools`
                                 : "Thinking";
                             const widgetLines = [
-                                `📋 ${headerPrefix} · ⏳ ${status} · ${elapsed}s`,
+                                `📋 ${headerPrefix} · 🤖 ${planModelLabel} · ⏳ ${status} · ${elapsed}s`,
                             ];
                             // Show tool calls with previews (like regular workers)
                             if (liveTools.length > 0) {

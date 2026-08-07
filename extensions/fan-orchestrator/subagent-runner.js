@@ -652,7 +652,12 @@ export async function runSingleAgent(defaultCwd, agents, agentName, task, temper
 
     // Hook signal to track wasAborted for the outer caller
     if (signal) {
-        signal.addEventListener("abort", () => { wasAborted = true; }, { once: true });
+        if (signal.aborted) {
+            wasAborted = true;
+        }
+        else {
+            signal.addEventListener("abort", () => { wasAborted = true; }, { once: true });
+        }
     }
 
     try {
@@ -699,20 +704,19 @@ export async function runSingleAgent(defaultCwd, agents, agentName, task, temper
             },
         };
     } catch (err) {
-        if (wasAborted) {
-            throw new Error("Subagent was aborted");
-        }
         const endTime = Date.now();
-        return {
+        const abortReason = wasAborted ? "aborted" : "error";
+        const errorResult = {
             agent: agentName,
             agentSource: agent.source,
             task,
             exitCode: 1,
+            stopReason: abortReason,
             messages: lastText
                 ? [{ role: "assistant", content: [{ type: "text", text: lastText }] }]
                 : [],
-            stderr: err.message,
-            errorMessage: err.message,
+            stderr: wasAborted ? "" : err.message,
+            errorMessage: wasAborted ? "Aborted by user" : err.message,
             usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
             model: detectedModel,
             text: lastText,
@@ -720,12 +724,28 @@ export async function runSingleAgent(defaultCwd, agents, agentName, task, temper
             startTime,
             endTime,
             progress: {
-                status: "Failed",
+                status: wasAborted ? "Aborted" : "Failed",
                 messageCount,
                 toolCalls: [...allToolCalls],
                 model: detectedModel,
             },
         };
+        // Send final update with partial progress so UI shows what was done
+        if (onUpdate) {
+            onUpdate({
+                content: [{ type: "text", text: wasAborted ? "Aborted" : (err.message || "Failed") }],
+                details: [{
+                    agent: agentName,
+                    agentSource: agent.source,
+                    task,
+                    step,
+                    startTime,
+                    endTime,
+                    progress: errorResult.progress,
+                }],
+            });
+        }
+        return errorResult;
     }
 }
 

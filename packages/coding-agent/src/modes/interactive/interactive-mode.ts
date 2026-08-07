@@ -78,7 +78,7 @@ import { EarendilAnnouncementComponent } from "./components/earendil-announcemen
 import { ExtensionEditorComponent } from "./components/extension-editor.js";
 import { ExtensionInputComponent } from "./components/extension-input.js";
 import { ExtensionSelectorComponent, resolveInitialIndexFromValue } from "./components/extension-selector.js";
-import { FooterComponent } from "./components/footer.js";
+import { FooterComponent, formatElapsed } from "./components/footer.js";
 import { keyHint, keyText, rawKeyHint } from "./components/keybinding-hints.js";
 import { LoginDialogComponent } from "./components/login-dialog.js";
 import { ModelSelectorComponent } from "./components/model-selector.js";
@@ -250,6 +250,10 @@ export class InteractiveMode {
 
 	// Custom header from extension (undefined = use built-in header)
 	private customHeader: (Component & { dispose?(): void }) | undefined = undefined;
+
+	// Session elapsed timer
+	private sessionStartedAt = Date.now();
+	private footerTimer: ReturnType<typeof setInterval> | undefined = undefined;
 
 	// Convenience accessors
 	private get session(): AgentSession {
@@ -563,6 +567,11 @@ export class InteractiveMode {
 		this.footerDataProvider.onBranchChange(() => {
 			this.ui.requestRender();
 		});
+
+		// Set up footer elapsed timer (1 fps, requestRender batches)
+		this.sessionStartedAt = Date.now();
+		this.footer.setSessionStartTime(this.sessionStartedAt);
+		this.footerTimer = setInterval(() => this.ui.requestRender(), 1000);
 
 		// Initialize available provider count for footer display
 		await this.updateAvailableProviderCount();
@@ -1292,6 +1301,9 @@ export class InteractiveMode {
 		this.unsubscribe?.();
 		this.unsubscribe = undefined;
 		this.applyRuntimeSettings();
+		// Reset session elapsed timer on actual session change
+		this.sessionStartedAt = Date.now();
+		this.footer.setSessionStartTime(this.sessionStartedAt);
 		await this.bindCurrentSessionExtensions();
 		this.subscribeToAgent();
 		await this.updateAvailableProviderCount();
@@ -2905,8 +2917,55 @@ export class InteractiveMode {
 		// This prevents escape sequences from leaking to the parent shell over slow SSH.
 		await this.ui.terminal.drainInput(1000);
 
+		// Compute session summary before stop (needs session entries)
+		const durationMs = Date.now() - this.sessionStartedAt;
+		const summary = this.buildSessionSummary(durationMs);
+
 		this.stop();
+
+		// Print session summary to stdout (terminal is back in cooked mode after stop)
+		if (summary) {
+			process.stdout.write(`
+${summary}
+`);
+		}
+
 		process.exit(0);
+	}
+
+	/**
+	 * Build a one-line session summary for printing on shutdown.
+	 */
+	private buildSessionSummary(durationMs: number): string {
+		const duration = formatElapsed(durationMs);
+
+		let totalInput = 0;
+		let totalOutput = 0;
+		let totalCost = 0;
+		for (const entry of this.sessionManager.getEntries()) {
+			if (entry.type === "message" && entry.message.role === "assistant") {
+				totalInput += entry.message.usage.input;
+				totalOutput += entry.message.usage.output;
+				totalCost += entry.message.usage.cost.total;
+			}
+		}
+
+		const totalTokens = totalInput + totalOutput;
+		const parts = [`duration: ${duration}`];
+		if (totalTokens > 0) {
+			const tokenStr =
+				totalTokens < 1000
+					? totalTokens.toString()
+					: totalTokens < 1000000
+						? `${(totalTokens / 1000).toFixed(1)}k`
+						: `${(totalTokens / 1000000).toFixed(1)}M`;
+			parts.push(`tokens: ${tokenStr}`);
+		}
+		if (totalCost > 0) {
+			parts.push(`cost: $${totalCost.toFixed(3)}`);
+		}
+
+		return `Session ended — ${parts.join(" • ")}`;
 	}
 
 	/**
@@ -4884,6 +4943,10 @@ export class InteractiveMode {
 		if (this.loadingAnimation) {
 			this.loadingAnimation.stop();
 			this.loadingAnimation = undefined;
+		}
+		if (this.footerTimer) {
+			clearInterval(this.footerTimer);
+			this.footerTimer = undefined;
 		}
 		this.clearExtensionTerminalInputListeners();
 		this.footer.dispose();
