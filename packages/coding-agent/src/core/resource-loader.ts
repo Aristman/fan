@@ -1,9 +1,10 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
+import { readdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import chalk from "chalk";
 import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
-import { loadThemeFromPath, type Theme } from "../modes/interactive/theme/theme.js";
+import { loadThemeFromPathAsync, type Theme } from "../modes/interactive/theme/theme.js";
 import type { ResourceDiagnostic } from "./diagnostics.js";
 
 export type { ResourceCollision, ResourceDiagnostic } from "./diagnostics.js";
@@ -19,7 +20,7 @@ import { SettingsManager } from "./settings-manager.js";
 import type { Skill } from "./skills.js";
 import { loadSkills } from "./skills.js";
 import { createSourceInfo, type SourceInfo } from "./source-info.js";
-import { time } from "./timings.js";
+import { time, timeWithDuration } from "./timings.js";
 
 export interface ResourceExtensionPaths {
 	skillPaths?: Array<{ path: string; metadata: PathMetadata }>;
@@ -35,18 +36,18 @@ export interface ResourceLoader {
 	getAgentsFiles(): { agentsFiles: Array<{ path: string; content: string }> };
 	getSystemPrompt(): string | undefined;
 	getAppendSystemPrompt(): string[];
-	extendResources(paths: ResourceExtensionPaths): void;
+	extendResources(paths: ResourceExtensionPaths): Promise<void>;
 	reload(): Promise<void>;
 }
 
-function resolvePromptInput(input: string | undefined, description: string): string | undefined {
+async function resolvePromptInputAsync(input: string | undefined, description: string): Promise<string | undefined> {
 	if (!input) {
 		return undefined;
 	}
 
 	if (existsSync(input)) {
 		try {
-			return readFileSync(input, "utf-8");
+			return await readFile(input, "utf-8");
 		} catch (error) {
 			console.error(chalk.yellow(`Warning: Could not read ${description} file ${input}: ${error}`));
 			return input;
@@ -56,7 +57,7 @@ function resolvePromptInput(input: string | undefined, description: string): str
 	return input;
 }
 
-function loadContextFileFromDir(dir: string): { path: string; content: string } | null {
+async function loadContextFileFromDirAsync(dir: string): Promise<{ path: string; content: string } | null> {
 	const candidates = ["AGENTS.md", "CLAUDE.md"];
 	for (const filename of candidates) {
 		const filePath = join(dir, filename);
@@ -64,7 +65,7 @@ function loadContextFileFromDir(dir: string): { path: string; content: string } 
 			try {
 				return {
 					path: filePath,
-					content: readFileSync(filePath, "utf-8"),
+					content: await readFile(filePath, "utf-8"),
 				};
 			} catch (error) {
 				console.error(chalk.yellow(`Warning: Could not read ${filePath}: ${error}`));
@@ -74,16 +75,16 @@ function loadContextFileFromDir(dir: string): { path: string; content: string } 
 	return null;
 }
 
-function loadProjectContextFiles(
+async function loadProjectContextFilesAsync(
 	options: { cwd?: string; agentDir?: string } = {},
-): Array<{ path: string; content: string }> {
+): Promise<Array<{ path: string; content: string }>> {
 	const resolvedCwd = options.cwd ?? process.cwd();
 	const resolvedAgentDir = options.agentDir ?? getAgentDir();
 
 	const contextFiles: Array<{ path: string; content: string }> = [];
 	const seenPaths = new Set<string>();
 
-	const globalContext = loadContextFileFromDir(resolvedAgentDir);
+	const globalContext = await loadContextFileFromDirAsync(resolvedAgentDir);
 	if (globalContext) {
 		contextFiles.push(globalContext);
 		seenPaths.add(globalContext.path);
@@ -95,7 +96,7 @@ function loadProjectContextFiles(
 	const root = resolve("/");
 
 	while (true) {
-		const contextFile = loadContextFileFromDir(currentDir);
+		const contextFile = await loadContextFileFromDirAsync(currentDir);
 		if (contextFile && !seenPaths.has(contextFile.path)) {
 			ancestorContextFiles.unshift(contextFile);
 			seenPaths.add(contextFile.path);
@@ -276,7 +277,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 		return this.appendSystemPrompt;
 	}
 
-	extendResources(paths: ResourceExtensionPaths): void {
+	async extendResources(paths: ResourceExtensionPaths): Promise<void> {
 		const skillPaths = this.normalizeExtensionPaths(paths.skillPaths ?? []);
 		const promptPaths = this.normalizeExtensionPaths(paths.promptPaths ?? []);
 		const themePaths = this.normalizeExtensionPaths(paths.themePaths ?? []);
@@ -296,7 +297,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 				this.lastSkillPaths,
 				skillPaths.map((entry) => entry.path),
 			);
-			this.updateSkillsFromPaths(this.lastSkillPaths);
+			await this.updateSkillsFromPathsAsync(this.lastSkillPaths);
 		}
 
 		if (promptPaths.length > 0) {
@@ -304,7 +305,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 				this.lastPromptPaths,
 				promptPaths.map((entry) => entry.path),
 			);
-			this.updatePromptsFromPaths(this.lastPromptPaths);
+			await this.updatePromptsFromPathsAsync(this.lastPromptPaths);
 		}
 
 		if (themePaths.length > 0) {
@@ -312,7 +313,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 				this.lastThemePaths,
 				themePaths.map((entry) => entry.path),
 			);
-			this.updateThemesFromPaths(this.lastThemePaths);
+			await this.updateThemesFromPathsAsync(this.lastThemePaths);
 		}
 	}
 
@@ -419,54 +420,77 @@ export class DefaultResourceLoader implements ResourceLoader {
 			? this.mergePaths(cliEnabledSkills, this.additionalSkillPaths)
 			: this.mergePaths([...cliEnabledSkills, ...enabledSkills], this.additionalSkillPaths);
 
-		this.lastSkillPaths = skillPaths;
-		this.updateSkillsFromPaths(skillPaths, metadataByPath);
-		time("loadSkills");
-		for (const p of this.additionalSkillPaths) {
-			if (isLocalPath(p) && !existsSync(p) && !this.skillDiagnostics.some((d) => d.path === p)) {
-				this.skillDiagnostics.push({ type: "error", message: "Skill path does not exist", path: p });
-			}
-		}
-
 		const promptPaths = this.noPromptTemplates
 			? this.mergePaths(cliEnabledPrompts, this.additionalPromptTemplatePaths)
 			: this.mergePaths([...cliEnabledPrompts, ...enabledPrompts], this.additionalPromptTemplatePaths);
-
-		this.lastPromptPaths = promptPaths;
-		this.updatePromptsFromPaths(promptPaths, metadataByPath);
-		time("loadPromptTemplates");
-		for (const p of this.additionalPromptTemplatePaths) {
-			if (isLocalPath(p) && !existsSync(p) && !this.promptDiagnostics.some((d) => d.path === p)) {
-				this.promptDiagnostics.push({ type: "error", message: "Prompt template path does not exist", path: p });
-			}
-		}
 
 		const themePaths = this.noThemes
 			? this.mergePaths(cliEnabledThemes, this.additionalThemePaths)
 			: this.mergePaths([...cliEnabledThemes, ...enabledThemes], this.additionalThemePaths);
 
+		this.lastSkillPaths = skillPaths;
+		this.lastPromptPaths = promptPaths;
 		this.lastThemePaths = themePaths;
-		this.updateThemesFromPaths(themePaths, metadataByPath);
-		time("loadThemes");
+
+		// Parallel loading of skills, prompts, themes, and context files
+		const parallelStart = Date.now();
+		const [skillsResult, promptsResult, themesResult, agentsFilesRaw] = await Promise.all([
+			(async () => {
+				const start = Date.now();
+				await this.updateSkillsFromPathsAsync(skillPaths, metadataByPath);
+				timeWithDuration("loadSkills", Date.now() - start);
+				return { skills: this.skills, diagnostics: this.skillDiagnostics };
+			})(),
+			(async () => {
+				const start = Date.now();
+				await this.updatePromptsFromPathsAsync(promptPaths, metadataByPath);
+				timeWithDuration("loadPromptTemplates", Date.now() - start);
+				return { prompts: this.prompts, diagnostics: this.promptDiagnostics };
+			})(),
+			(async () => {
+				const start = Date.now();
+				await this.updateThemesFromPathsAsync(themePaths, metadataByPath);
+				timeWithDuration("loadThemes", Date.now() - start);
+				return { themes: this.themes, diagnostics: this.themeDiagnostics };
+			})(),
+			(async () => {
+				const start = Date.now();
+				const result = await loadProjectContextFilesAsync({ cwd: this.cwd, agentDir: this.agentDir });
+				timeWithDuration("loadProjectContext", Date.now() - start);
+				return result;
+			})(),
+		]);
+		timeWithDuration("loadSkills+Prompts+Themes+Context(parallel)", Date.now() - parallelStart);
+
+		// Apply results (already set by update methods, but add path diagnostics)
+		for (const p of this.additionalSkillPaths) {
+			if (isLocalPath(p) && !existsSync(p) && !skillsResult.diagnostics.some((d) => d.path === p)) {
+				this.skillDiagnostics.push({ type: "error", message: "Skill path does not exist", path: p });
+			}
+		}
+		for (const p of this.additionalPromptTemplatePaths) {
+			if (isLocalPath(p) && !existsSync(p) && !promptsResult.diagnostics.some((d) => d.path === p)) {
+				this.promptDiagnostics.push({ type: "error", message: "Prompt template path does not exist", path: p });
+			}
+		}
 		for (const p of this.additionalThemePaths) {
-			if (!existsSync(p) && !this.themeDiagnostics.some((d) => d.path === p)) {
+			if (!existsSync(p) && !themesResult.diagnostics.some((d) => d.path === p)) {
 				this.themeDiagnostics.push({ type: "error", message: "Theme path does not exist", path: p });
 			}
 		}
 
-		const agentsFiles = { agentsFiles: loadProjectContextFiles({ cwd: this.cwd, agentDir: this.agentDir }) };
-		time("loadProjectContext");
+		const agentsFiles = { agentsFiles: agentsFilesRaw };
 		const resolvedAgentsFiles = this.agentsFilesOverride ? this.agentsFilesOverride(agentsFiles) : agentsFiles;
 		this.agentsFiles = resolvedAgentsFiles.agentsFiles;
 
-		const baseSystemPrompt = resolvePromptInput(
+		const baseSystemPrompt = await resolvePromptInputAsync(
 			this.systemPromptSource ?? this.discoverSystemPromptFile(),
 			"system prompt",
 		);
 		this.systemPrompt = this.systemPromptOverride ? this.systemPromptOverride(baseSystemPrompt) : baseSystemPrompt;
 
 		const appendSource = this.appendSystemPromptSource ?? this.discoverAppendSystemPromptFile();
-		const resolvedAppend = resolvePromptInput(appendSource, "append system prompt");
+		const resolvedAppend = await resolvePromptInputAsync(appendSource, "append system prompt");
 		const baseAppend = resolvedAppend ? [resolvedAppend] : [];
 		this.appendSystemPrompt = this.appendSystemPromptOverride
 			? this.appendSystemPromptOverride(baseAppend)
@@ -482,12 +506,15 @@ export class DefaultResourceLoader implements ResourceLoader {
 		}));
 	}
 
-	private updateSkillsFromPaths(skillPaths: string[], metadataByPath?: Map<string, PathMetadata>): void {
+	private async updateSkillsFromPathsAsync(
+		skillPaths: string[],
+		metadataByPath?: Map<string, PathMetadata>,
+	): Promise<void> {
 		let skillsResult: { skills: Skill[]; diagnostics: ResourceDiagnostic[] };
 		if (this.noSkills && skillPaths.length === 0) {
 			skillsResult = { skills: [], diagnostics: [] };
 		} else {
-			skillsResult = loadSkills({
+			skillsResult = await loadSkills({
 				cwd: this.cwd,
 				agentDir: this.agentDir,
 				skillPaths,
@@ -505,12 +532,15 @@ export class DefaultResourceLoader implements ResourceLoader {
 		this.skillDiagnostics = resolvedSkills.diagnostics;
 	}
 
-	private updatePromptsFromPaths(promptPaths: string[], metadataByPath?: Map<string, PathMetadata>): void {
+	private async updatePromptsFromPathsAsync(
+		promptPaths: string[],
+		metadataByPath?: Map<string, PathMetadata>,
+	): Promise<void> {
 		let promptsResult: { prompts: PromptTemplate[]; diagnostics: ResourceDiagnostic[] };
 		if (this.noPromptTemplates && promptPaths.length === 0) {
 			promptsResult = { prompts: [], diagnostics: [] };
 		} else {
-			const allPrompts = loadPromptTemplates({
+			const allPrompts = await loadPromptTemplates({
 				cwd: this.cwd,
 				agentDir: this.agentDir,
 				promptPaths,
@@ -529,12 +559,15 @@ export class DefaultResourceLoader implements ResourceLoader {
 		this.promptDiagnostics = resolvedPrompts.diagnostics;
 	}
 
-	private updateThemesFromPaths(themePaths: string[], metadataByPath?: Map<string, PathMetadata>): void {
+	private async updateThemesFromPathsAsync(
+		themePaths: string[],
+		metadataByPath?: Map<string, PathMetadata>,
+	): Promise<void> {
 		let themesResult: { themes: Theme[]; diagnostics: ResourceDiagnostic[] };
 		if (this.noThemes && themePaths.length === 0) {
 			themesResult = { themes: [], diagnostics: [] };
 		} else {
-			const loaded = this.loadThemes(themePaths, false);
+			const loaded = await this.loadThemesAsync(themePaths, false);
 			const deduped = this.dedupeThemes(loaded.themes);
 			themesResult = { themes: deduped.themes, diagnostics: [...loaded.diagnostics, ...deduped.diagnostics] };
 		}
@@ -683,20 +716,20 @@ export class DefaultResourceLoader implements ResourceLoader {
 		return resolve(this.cwd, expanded);
 	}
 
-	private loadThemes(
+	private async loadThemesAsync(
 		paths: string[],
 		includeDefaults: boolean = true,
-	): {
+	): Promise<{
 		themes: Theme[];
 		diagnostics: ResourceDiagnostic[];
-	} {
+	}> {
 		const themes: Theme[] = [];
 		const diagnostics: ResourceDiagnostic[] = [];
 		if (includeDefaults) {
 			const defaultDirs = [join(this.agentDir, "themes"), join(this.cwd, CONFIG_DIR_NAME, "themes")];
 
 			for (const dir of defaultDirs) {
-				this.loadThemesFromDir(dir, themes, diagnostics);
+				await this.loadThemesFromDirAsync(dir, themes, diagnostics);
 			}
 		}
 
@@ -710,9 +743,9 @@ export class DefaultResourceLoader implements ResourceLoader {
 			try {
 				const stats = statSync(resolved);
 				if (stats.isDirectory()) {
-					this.loadThemesFromDir(resolved, themes, diagnostics);
+					await this.loadThemesFromDirAsync(resolved, themes, diagnostics);
 				} else if (stats.isFile() && resolved.endsWith(".json")) {
-					this.loadThemeFromFile(resolved, themes, diagnostics);
+					await this.loadThemeFromFileAsync(resolved, themes, diagnostics);
 				} else {
 					diagnostics.push({ type: "warning", message: "theme path is not a json file", path: resolved });
 				}
@@ -725,13 +758,17 @@ export class DefaultResourceLoader implements ResourceLoader {
 		return { themes, diagnostics };
 	}
 
-	private loadThemesFromDir(dir: string, themes: Theme[], diagnostics: ResourceDiagnostic[]): void {
+	private async loadThemesFromDirAsync(
+		dir: string,
+		themes: Theme[],
+		diagnostics: ResourceDiagnostic[],
+	): Promise<void> {
 		if (!existsSync(dir)) {
 			return;
 		}
 
 		try {
-			const entries = readdirSync(dir, { withFileTypes: true });
+			const entries = await readdir(dir, { withFileTypes: true });
 			for (const entry of entries) {
 				let isFile = entry.isFile();
 				if (entry.isSymbolicLink()) {
@@ -747,7 +784,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 				if (!entry.name.endsWith(".json")) {
 					continue;
 				}
-				this.loadThemeFromFile(join(dir, entry.name), themes, diagnostics);
+				await this.loadThemeFromFileAsync(join(dir, entry.name), themes, diagnostics);
 			}
 		} catch (error) {
 			const message = error instanceof Error ? error.message : "failed to read theme directory";
@@ -755,9 +792,13 @@ export class DefaultResourceLoader implements ResourceLoader {
 		}
 	}
 
-	private loadThemeFromFile(filePath: string, themes: Theme[], diagnostics: ResourceDiagnostic[]): void {
+	private async loadThemeFromFileAsync(
+		filePath: string,
+		themes: Theme[],
+		diagnostics: ResourceDiagnostic[],
+	): Promise<void> {
 		try {
-			themes.push(loadThemeFromPath(filePath));
+			themes.push(await loadThemeFromPathAsync(filePath));
 		} catch (error) {
 			const message = error instanceof Error ? error.message : "failed to load theme";
 			diagnostics.push({ type: "warning", message, path: filePath });

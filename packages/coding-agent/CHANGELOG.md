@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Breaking Changes
+
+- **BREAKING: `loadSkills()` and `loadSkillsFromDir()` are now async (return `Promise`)** — previously synchronous functions now return `Promise<LoadSkillsResult>`. All internal call sites have been updated. External SDK consumers must `await` these calls. Affected exports in `index.ts`: `loadSkills`, `loadSkillsFromDir`. Related functions `loadPromptTemplates()` and `loadProjectContextFiles()` are also async.
+
 ## [2.3.7] - 2026-08-07
 
 ### Новое

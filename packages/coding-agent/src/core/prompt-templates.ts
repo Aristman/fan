@@ -1,4 +1,5 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "fs";
+import { existsSync, statSync } from "fs";
+import { readdir, readFile } from "fs/promises";
 import { homedir } from "os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "path";
 import { CONFIG_DIR_NAME, getPromptsDir } from "../config.js";
@@ -100,9 +101,9 @@ export function substituteArgs(content: string, args: string[]): string {
 	return result;
 }
 
-function loadTemplateFromFile(filePath: string, sourceInfo: SourceInfo): PromptTemplate | null {
+async function loadTemplateFromFileAsync(filePath: string, sourceInfo: SourceInfo): Promise<PromptTemplate | null> {
 	try {
-		const rawContent = readFileSync(filePath, "utf-8");
+		const rawContent = await readFile(filePath, "utf-8");
 		const { frontmatter, body } = parseFrontmatter<Record<string, string>>(rawContent);
 
 		const name = basename(filePath).replace(/\.md$/, "");
@@ -133,7 +134,10 @@ function loadTemplateFromFile(filePath: string, sourceInfo: SourceInfo): PromptT
 /**
  * Scan a directory for .md files (non-recursive) and load them as prompt templates.
  */
-function loadTemplatesFromDir(dir: string, getSourceInfo: (filePath: string) => SourceInfo): PromptTemplate[] {
+async function loadTemplatesFromDirAsync(
+	dir: string,
+	getSourceInfo: (filePath: string) => SourceInfo,
+): Promise<PromptTemplate[]> {
 	const templates: PromptTemplate[] = [];
 
 	if (!existsSync(dir)) {
@@ -141,7 +145,7 @@ function loadTemplatesFromDir(dir: string, getSourceInfo: (filePath: string) => 
 	}
 
 	try {
-		const entries = readdirSync(dir, { withFileTypes: true });
+		const entries = await readdir(dir, { withFileTypes: true });
 
 		for (const entry of entries) {
 			const fullPath = join(dir, entry.name);
@@ -159,7 +163,7 @@ function loadTemplatesFromDir(dir: string, getSourceInfo: (filePath: string) => 
 			}
 
 			if (isFile && entry.name.endsWith(".md")) {
-				const template = loadTemplateFromFile(fullPath, getSourceInfo(fullPath));
+				const template = await loadTemplateFromFileAsync(fullPath, getSourceInfo(fullPath));
 				if (template) {
 					templates.push(template);
 				}
@@ -202,7 +206,7 @@ function resolvePromptPath(p: string, cwd: string): string {
  * 2. Project: cwd/{CONFIG_DIR_NAME}/prompts/
  * 3. Explicit prompt paths
  */
-export function loadPromptTemplates(options: LoadPromptTemplatesOptions = {}): PromptTemplate[] {
+export async function loadPromptTemplates(options: LoadPromptTemplatesOptions = {}): Promise<PromptTemplate[]> {
 	const resolvedCwd = options.cwd ?? process.cwd();
 	const resolvedAgentDir = options.agentDir ?? getPromptsDir();
 	const promptPaths = options.promptPaths ?? [];
@@ -244,8 +248,13 @@ export function loadPromptTemplates(options: LoadPromptTemplatesOptions = {}): P
 	};
 
 	if (includeDefaults) {
-		templates.push(...loadTemplatesFromDir(globalPromptsDir, getSourceInfo));
-		templates.push(...loadTemplatesFromDir(projectPromptsDir, getSourceInfo));
+		// Parallel scan of default prompt directories (order preserved by sequential push)
+		const [globalTemplates, projectTemplates] = await Promise.all([
+			loadTemplatesFromDirAsync(globalPromptsDir, getSourceInfo),
+			loadTemplatesFromDirAsync(projectPromptsDir, getSourceInfo),
+		]);
+		templates.push(...globalTemplates);
+		templates.push(...projectTemplates);
 	}
 
 	// 3. Load explicit prompt paths
@@ -258,9 +267,10 @@ export function loadPromptTemplates(options: LoadPromptTemplatesOptions = {}): P
 		try {
 			const stats = statSync(resolvedPath);
 			if (stats.isDirectory()) {
-				templates.push(...loadTemplatesFromDir(resolvedPath, getSourceInfo));
+				const dirTemplates = await loadTemplatesFromDirAsync(resolvedPath, getSourceInfo);
+				templates.push(...dirTemplates);
 			} else if (stats.isFile() && resolvedPath.endsWith(".md")) {
-				const template = loadTemplateFromFile(resolvedPath, getSourceInfo(resolvedPath));
+				const template = await loadTemplateFromFileAsync(resolvedPath, getSourceInfo(resolvedPath));
 				if (template) {
 					templates.push(template);
 				}

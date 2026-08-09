@@ -1,6 +1,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { access, readdir as readdirAsync, readFile as readFileAsync } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import ignore from "ignore";
@@ -190,7 +191,7 @@ function prefixIgnorePattern(line: string, prefix: string): string | null {
 	return negated ? `!${prefixed}` : prefixed;
 }
 
-function addIgnoreRules(ig: IgnoreMatcher, dir: string, rootDir: string): void {
+async function addIgnoreRulesAsync(ig: IgnoreMatcher, dir: string, rootDir: string): Promise<void> {
 	const relativeDir = relative(rootDir, dir);
 	const prefix = relativeDir ? `${toPosixPath(relativeDir)}/` : "";
 
@@ -198,7 +199,7 @@ function addIgnoreRules(ig: IgnoreMatcher, dir: string, rootDir: string): void {
 		const ignorePath = join(dir, filename);
 		if (!existsSync(ignorePath)) continue;
 		try {
-			const content = readFileSync(ignorePath, "utf-8");
+			const content = await readFileAsync(ignorePath, "utf-8");
 			const patterns = content
 				.split(/\r?\n/)
 				.map((line) => prefixIgnorePattern(line, prefix))
@@ -227,22 +228,22 @@ function splitPatterns(entries: string[]): { plain: string[]; patterns: string[]
 	return { plain, patterns };
 }
 
-function collectFiles(
+async function collectFilesAsync(
 	dir: string,
 	filePattern: RegExp,
 	skipNodeModules = true,
 	ignoreMatcher?: IgnoreMatcher,
 	rootDir?: string,
-): string[] {
+): Promise<string[]> {
 	const files: string[] = [];
 	if (!existsSync(dir)) return files;
 
 	const root = rootDir ?? dir;
 	const ig = ignoreMatcher ?? ignore();
-	addIgnoreRules(ig, dir, root);
+	await addIgnoreRulesAsync(ig, dir, root);
 
 	try {
-		const entries = readdirSync(dir, { withFileTypes: true });
+		const entries = await readdirAsync(dir, { withFileTypes: true });
 		for (const entry of entries) {
 			if (entry.name.startsWith(".")) continue;
 			if (skipNodeModules && entry.name === "node_modules") continue;
@@ -266,7 +267,8 @@ function collectFiles(
 			if (ig.ignores(ignorePath)) continue;
 
 			if (isDir) {
-				files.push(...collectFiles(fullPath, filePattern, skipNodeModules, ig, root));
+				const subFiles = await collectFilesAsync(fullPath, filePattern, skipNodeModules, ig, root);
+				files.push(...subFiles);
 			} else if (isFile && filePattern.test(entry.name)) {
 				files.push(fullPath);
 			}
@@ -280,21 +282,21 @@ function collectFiles(
 
 type SkillDiscoveryMode = "fan" | "agents";
 
-function collectSkillEntries(
+async function collectSkillEntriesAsync(
 	dir: string,
 	mode: SkillDiscoveryMode,
 	ignoreMatcher?: IgnoreMatcher,
 	rootDir?: string,
-): string[] {
+): Promise<string[]> {
 	const entries: string[] = [];
 	if (!existsSync(dir)) return entries;
 
 	const root = rootDir ?? dir;
 	const ig = ignoreMatcher ?? ignore();
-	addIgnoreRules(ig, dir, root);
+	await addIgnoreRulesAsync(ig, dir, root);
 
 	try {
-		const dirEntries = readdirSync(dir, { withFileTypes: true });
+		const dirEntries = await readdirAsync(dir, { withFileTypes: true });
 
 		for (const entry of dirEntries) {
 			if (entry.name !== "SKILL.md") {
@@ -345,7 +347,8 @@ function collectSkillEntries(
 			if (!isDir) continue;
 			if (ig.ignores(`${relPath}/`)) continue;
 
-			entries.push(...collectSkillEntries(fullPath, mode, ig, root));
+			const subEntries = await collectSkillEntriesAsync(fullPath, mode, ig, root);
+			entries.push(...subEntries);
 		}
 	} catch {
 		// Ignore errors
@@ -354,15 +357,18 @@ function collectSkillEntries(
 	return entries;
 }
 
-function collectAutoSkillEntries(dir: string, mode: SkillDiscoveryMode): string[] {
-	return collectSkillEntries(dir, mode);
+async function collectAutoSkillEntriesAsync(dir: string, mode: SkillDiscoveryMode): Promise<string[]> {
+	return collectSkillEntriesAsync(dir, mode);
 }
 
-function findGitRepoRoot(startDir: string): string | null {
+async function findGitRepoRootAsync(startDir: string): Promise<string | null> {
 	let dir = resolve(startDir);
 	while (true) {
-		if (existsSync(join(dir, ".git"))) {
+		try {
+			await access(join(dir, ".git"));
 			return dir;
+		} catch {
+			// .git not found, continue walking up
 		}
 		const parent = dirname(dir);
 		if (parent === dir) {
@@ -372,10 +378,10 @@ function findGitRepoRoot(startDir: string): string | null {
 	}
 }
 
-function collectAncestorAgentsSkillDirs(startDir: string): string[] {
+async function collectAncestorAgentsSkillDirsAsync(startDir: string): Promise<string[]> {
 	const skillDirs: string[] = [];
 	const resolvedStartDir = resolve(startDir);
-	const gitRepoRoot = findGitRepoRoot(resolvedStartDir);
+	const gitRepoRoot = await findGitRepoRootAsync(resolvedStartDir);
 
 	let dir = resolvedStartDir;
 	while (true) {
@@ -393,15 +399,15 @@ function collectAncestorAgentsSkillDirs(startDir: string): string[] {
 	return skillDirs;
 }
 
-function collectAutoPromptEntries(dir: string): string[] {
+async function collectAutoPromptEntriesAsync(dir: string): Promise<string[]> {
 	const entries: string[] = [];
 	if (!existsSync(dir)) return entries;
 
 	const ig = ignore();
-	addIgnoreRules(ig, dir, dir);
+	await addIgnoreRulesAsync(ig, dir, dir);
 
 	try {
-		const dirEntries = readdirSync(dir, { withFileTypes: true });
+		const dirEntries = await readdirAsync(dir, { withFileTypes: true });
 		for (const entry of dirEntries) {
 			if (entry.name.startsWith(".")) continue;
 			if (entry.name === "node_modules") continue;
@@ -430,15 +436,15 @@ function collectAutoPromptEntries(dir: string): string[] {
 	return entries;
 }
 
-function collectAutoThemeEntries(dir: string): string[] {
+async function collectAutoThemeEntriesAsync(dir: string): Promise<string[]> {
 	const entries: string[] = [];
 	if (!existsSync(dir)) return entries;
 
 	const ig = ignore();
-	addIgnoreRules(ig, dir, dir);
+	await addIgnoreRulesAsync(ig, dir, dir);
 
 	try {
-		const dirEntries = readdirSync(dir, { withFileTypes: true });
+		const dirEntries = await readdirAsync(dir, { withFileTypes: true });
 		for (const entry of dirEntries) {
 			if (entry.name.startsWith(".")) continue;
 			if (entry.name === "node_modules") continue;
@@ -467,9 +473,9 @@ function collectAutoThemeEntries(dir: string): string[] {
 	return entries;
 }
 
-function readFanManifestFile(packageJsonPath: string): FanManifest | null {
+async function readFanManifestFileAsync(packageJsonPath: string): Promise<FanManifest | null> {
 	try {
-		const content = readFileSync(packageJsonPath, "utf-8");
+		const content = await readFileAsync(packageJsonPath, "utf-8");
 		const pkg = JSON.parse(content) as { fan?: FanManifest };
 		return pkg.fan ?? null;
 	} catch {
@@ -477,10 +483,10 @@ function readFanManifestFile(packageJsonPath: string): FanManifest | null {
 	}
 }
 
-function resolveExtensionEntries(dir: string): string[] | null {
+async function resolveExtensionEntriesAsync(dir: string): Promise<string[] | null> {
 	const packageJsonPath = join(dir, "package.json");
 	if (existsSync(packageJsonPath)) {
-		const manifest = readFanManifestFile(packageJsonPath);
+		const manifest = await readFanManifestFileAsync(packageJsonPath);
 		if (manifest?.extensions?.length) {
 			const entries: string[] = [];
 			for (const extPath of manifest.extensions) {
@@ -507,22 +513,22 @@ function resolveExtensionEntries(dir: string): string[] | null {
 	return null;
 }
 
-function collectAutoExtensionEntries(dir: string): string[] {
+async function collectAutoExtensionEntriesAsync(dir: string): Promise<string[]> {
 	const entries: string[] = [];
 	if (!existsSync(dir)) return entries;
 
 	// First check if this directory itself has explicit extension entries (package.json or index)
-	const rootEntries = resolveExtensionEntries(dir);
+	const rootEntries = await resolveExtensionEntriesAsync(dir);
 	if (rootEntries) {
 		return rootEntries;
 	}
 
 	// Otherwise, discover extensions from directory contents
 	const ig = ignore();
-	addIgnoreRules(ig, dir, dir);
+	await addIgnoreRulesAsync(ig, dir, dir);
 
 	try {
-		const dirEntries = readdirSync(dir, { withFileTypes: true });
+		const dirEntries = await readdirAsync(dir, { withFileTypes: true });
 		for (const entry of dirEntries) {
 			if (entry.name.startsWith(".")) continue;
 			if (entry.name === "node_modules") continue;
@@ -548,7 +554,7 @@ function collectAutoExtensionEntries(dir: string): string[] {
 			if (isFile && (entry.name.endsWith(".ts") || entry.name.endsWith(".js"))) {
 				entries.push(fullPath);
 			} else if (isDir) {
-				const resolvedEntries = resolveExtensionEntries(fullPath);
+				const resolvedEntries = await resolveExtensionEntriesAsync(fullPath);
 				if (resolvedEntries) {
 					entries.push(...resolvedEntries);
 				}
@@ -565,14 +571,14 @@ function collectAutoExtensionEntries(dir: string): string[] {
  * Collect resource files from a directory based on resource type.
  * Extensions use smart discovery (index.ts in subdirs), others use recursive collection.
  */
-function collectResourceFiles(dir: string, resourceType: ResourceType): string[] {
+async function collectResourceFilesAsync(dir: string, resourceType: ResourceType): Promise<string[]> {
 	if (resourceType === "skills") {
-		return collectSkillEntries(dir, "fan");
+		return collectSkillEntriesAsync(dir, "fan");
 	}
 	if (resourceType === "extensions") {
-		return collectAutoExtensionEntries(dir);
+		return collectAutoExtensionEntriesAsync(dir);
 	}
-	return collectFiles(dir, FILE_PATTERNS[resourceType]);
+	return collectFilesAsync(dir, FILE_PATTERNS[resourceType]);
 }
 
 function matchesAnyPattern(filePath: string, patterns: string[], baseDir: string): boolean {
@@ -826,7 +832,7 @@ export class DefaultPackageManager implements PackageManager {
 			const target = this.getTargetMap(accumulator, resourceType);
 			const globalEntries = (globalSettings[resourceType] ?? []) as string[];
 			const projectEntries = (projectSettings[resourceType] ?? []) as string[];
-			this.resolveLocalEntries(
+			await this.resolveLocalEntriesAsync(
 				projectEntries,
 				resourceType,
 				target,
@@ -837,7 +843,7 @@ export class DefaultPackageManager implements PackageManager {
 				},
 				projectBaseDir,
 			);
-			this.resolveLocalEntries(
+			await this.resolveLocalEntriesAsync(
 				globalEntries,
 				resourceType,
 				target,
@@ -850,7 +856,13 @@ export class DefaultPackageManager implements PackageManager {
 			);
 		}
 
-		this.addAutoDiscoveredResources(accumulator, globalSettings, projectSettings, globalBaseDir, projectBaseDir);
+		await this.addAutoDiscoveredResourcesAsync(
+			accumulator,
+			globalSettings,
+			projectSettings,
+			globalBaseDir,
+			projectBaseDir,
+		);
 
 		return this.toResolvedPaths(accumulator);
 	}
@@ -1081,7 +1093,7 @@ export class DefaultPackageManager implements PackageManager {
 
 			if (parsed.type === "local") {
 				const baseDir = this.getBaseDirForScope(scope);
-				this.resolveLocalExtensionSource(parsed, accumulator, filter, metadata, baseDir);
+				await this.resolveLocalExtensionSourceAsync(parsed, accumulator, filter, metadata, baseDir);
 				continue;
 			}
 
@@ -1110,7 +1122,7 @@ export class DefaultPackageManager implements PackageManager {
 					if (!installed) continue;
 				}
 				metadata.baseDir = installedPath;
-				this.collectPackageResources(installedPath, accumulator, filter, metadata);
+				await this.collectPackageResourcesAsync(installedPath, accumulator, filter, metadata);
 				continue;
 			}
 
@@ -1123,18 +1135,18 @@ export class DefaultPackageManager implements PackageManager {
 					await this.refreshTemporaryGitSource(parsed, sourceStr);
 				}
 				metadata.baseDir = installedPath;
-				this.collectPackageResources(installedPath, accumulator, filter, metadata);
+				await this.collectPackageResourcesAsync(installedPath, accumulator, filter, metadata);
 			}
 		}
 	}
 
-	private resolveLocalExtensionSource(
+	private async resolveLocalExtensionSourceAsync(
 		source: LocalSource,
 		accumulator: ResourceAccumulator,
 		filter: PackageFilter | undefined,
 		metadata: PathMetadata,
 		baseDir: string,
-	): void {
+	): Promise<void> {
 		const resolved = this.resolvePathFromBase(source.path, baseDir);
 		if (!existsSync(resolved)) {
 			return;
@@ -1149,7 +1161,7 @@ export class DefaultPackageManager implements PackageManager {
 			}
 			if (stats.isDirectory()) {
 				metadata.baseDir = resolved;
-				const resources = this.collectPackageResources(resolved, accumulator, filter, metadata);
+				const resources = await this.collectPackageResourcesAsync(resolved, accumulator, filter, metadata);
 				if (!resources) {
 					this.addResource(accumulator.extensions, resolved, metadata, true);
 				}
@@ -1783,30 +1795,30 @@ export class DefaultPackageManager implements PackageManager {
 		return resolve(baseDir, trimmed);
 	}
 
-	private collectPackageResources(
+	private async collectPackageResourcesAsync(
 		packageRoot: string,
 		accumulator: ResourceAccumulator,
 		filter: PackageFilter | undefined,
 		metadata: PathMetadata,
-	): boolean {
+	): Promise<boolean> {
 		if (filter) {
 			for (const resourceType of RESOURCE_TYPES) {
 				const patterns = filter[resourceType as keyof PackageFilter];
 				const target = this.getTargetMap(accumulator, resourceType);
 				if (patterns !== undefined) {
-					this.applyPackageFilter(packageRoot, patterns, resourceType, target, metadata);
+					await this.applyPackageFilterAsync(packageRoot, patterns, resourceType, target, metadata);
 				} else {
-					this.collectDefaultResources(packageRoot, resourceType, target, metadata);
+					await this.collectDefaultResourcesAsync(packageRoot, resourceType, target, metadata);
 				}
 			}
 			return true;
 		}
 
-		const manifest = this.readFanManifest(packageRoot);
+		const manifest = await this.readFanManifestAsync(packageRoot);
 		if (manifest) {
 			for (const resourceType of RESOURCE_TYPES) {
 				const entries = manifest[resourceType as keyof FanManifest];
-				this.addManifestEntries(
+				await this.addManifestEntriesAsync(
 					entries,
 					packageRoot,
 					resourceType,
@@ -1822,7 +1834,7 @@ export class DefaultPackageManager implements PackageManager {
 			const dir = join(packageRoot, resourceType);
 			if (existsSync(dir)) {
 				// Collect all files from the directory (all enabled by default)
-				const files = collectResourceFiles(dir, resourceType);
+				const files = await collectResourceFilesAsync(dir, resourceType);
 				for (const f of files) {
 					this.addResource(this.getTargetMap(accumulator, resourceType), f, metadata, true);
 				}
@@ -1832,36 +1844,36 @@ export class DefaultPackageManager implements PackageManager {
 		return hasAnyDir;
 	}
 
-	private collectDefaultResources(
+	private async collectDefaultResourcesAsync(
 		packageRoot: string,
 		resourceType: ResourceType,
 		target: Map<string, { metadata: PathMetadata; enabled: boolean }>,
 		metadata: PathMetadata,
-	): void {
-		const manifest = this.readFanManifest(packageRoot);
+	): Promise<void> {
+		const manifest = await this.readFanManifestAsync(packageRoot);
 		const entries = manifest?.[resourceType as keyof FanManifest];
 		if (entries) {
-			this.addManifestEntries(entries, packageRoot, resourceType, target, metadata);
+			await this.addManifestEntriesAsync(entries, packageRoot, resourceType, target, metadata);
 			return;
 		}
 		const dir = join(packageRoot, resourceType);
 		if (existsSync(dir)) {
 			// Collect all files from the directory (all enabled by default)
-			const files = collectResourceFiles(dir, resourceType);
+			const files = await collectResourceFilesAsync(dir, resourceType);
 			for (const f of files) {
 				this.addResource(target, f, metadata, true);
 			}
 		}
 	}
 
-	private applyPackageFilter(
+	private async applyPackageFilterAsync(
 		packageRoot: string,
 		userPatterns: string[],
 		resourceType: ResourceType,
 		target: Map<string, { metadata: PathMetadata; enabled: boolean }>,
 		metadata: PathMetadata,
-	): void {
-		const { allFiles } = this.collectManifestFiles(packageRoot, resourceType);
+	): Promise<void> {
+		const { allFiles } = await this.collectManifestFilesAsync(packageRoot, resourceType);
 
 		if (userPatterns.length === 0) {
 			// Empty array explicitly disables all resources of this type
@@ -1885,14 +1897,14 @@ export class DefaultPackageManager implements PackageManager {
 	 * Returns { allFiles, enabledByManifest } where enabledByManifest is the set of files
 	 * that pass the manifest's own patterns.
 	 */
-	private collectManifestFiles(
+	private async collectManifestFilesAsync(
 		packageRoot: string,
 		resourceType: ResourceType,
-	): { allFiles: string[]; enabledByManifest: Set<string> } {
-		const manifest = this.readFanManifest(packageRoot);
+	): Promise<{ allFiles: string[]; enabledByManifest: Set<string> }> {
+		const manifest = await this.readFanManifestAsync(packageRoot);
 		const entries = manifest?.[resourceType as keyof FanManifest];
 		if (entries && entries.length > 0) {
-			const allFiles = this.collectFilesFromManifestEntries(entries, packageRoot, resourceType);
+			const allFiles = await this.collectFilesFromManifestEntriesAsync(entries, packageRoot, resourceType);
 			const manifestPatterns = entries.filter(isPattern);
 			const enabledByManifest =
 				manifestPatterns.length > 0 ? applyPatterns(allFiles, manifestPatterns, packageRoot) : new Set(allFiles);
@@ -1903,18 +1915,18 @@ export class DefaultPackageManager implements PackageManager {
 		if (!existsSync(conventionDir)) {
 			return { allFiles: [], enabledByManifest: new Set() };
 		}
-		const allFiles = collectResourceFiles(conventionDir, resourceType);
+		const allFiles = await collectResourceFilesAsync(conventionDir, resourceType);
 		return { allFiles, enabledByManifest: new Set(allFiles) };
 	}
 
-	private readFanManifest(packageRoot: string): FanManifest | null {
+	private async readFanManifestAsync(packageRoot: string): Promise<FanManifest | null> {
 		const packageJsonPath = join(packageRoot, "package.json");
 		if (!existsSync(packageJsonPath)) {
 			return null;
 		}
 
 		try {
-			const content = readFileSync(packageJsonPath, "utf-8");
+			const content = await readFileAsync(packageJsonPath, "utf-8");
 			const pkg = JSON.parse(content) as { fan?: FanManifest };
 			return pkg.fan ?? null;
 		} catch {
@@ -1922,16 +1934,16 @@ export class DefaultPackageManager implements PackageManager {
 		}
 	}
 
-	private addManifestEntries(
+	private async addManifestEntriesAsync(
 		entries: string[] | undefined,
 		root: string,
 		resourceType: ResourceType,
 		target: Map<string, { metadata: PathMetadata; enabled: boolean }>,
 		metadata: PathMetadata,
-	): void {
+	): Promise<void> {
 		if (!entries) return;
 
-		const allFiles = this.collectFilesFromManifestEntries(entries, root, resourceType);
+		const allFiles = await this.collectFilesFromManifestEntriesAsync(entries, root, resourceType);
 		const patterns = entries.filter(isPattern);
 		const enabledPaths = applyPatterns(allFiles, patterns, root);
 
@@ -1942,25 +1954,29 @@ export class DefaultPackageManager implements PackageManager {
 		}
 	}
 
-	private collectFilesFromManifestEntries(entries: string[], root: string, resourceType: ResourceType): string[] {
+	private async collectFilesFromManifestEntriesAsync(
+		entries: string[],
+		root: string,
+		resourceType: ResourceType,
+	): Promise<string[]> {
 		const plain = entries.filter((entry) => !isPattern(entry));
 		const resolved = plain.map((entry) => resolve(root, entry));
-		return this.collectFilesFromPaths(resolved, resourceType);
+		return this.collectFilesFromPathsAsync(resolved, resourceType);
 	}
 
-	private resolveLocalEntries(
+	private async resolveLocalEntriesAsync(
 		entries: string[],
 		resourceType: ResourceType,
 		target: Map<string, { metadata: PathMetadata; enabled: boolean }>,
 		metadata: PathMetadata,
 		baseDir: string,
-	): void {
+	): Promise<void> {
 		if (entries.length === 0) return;
 
 		// Collect all files from plain entries (non-pattern entries)
 		const { plain, patterns } = splitPatterns(entries);
 		const resolvedPlain = plain.map((p) => this.resolvePathFromBase(p, baseDir));
-		const allFiles = this.collectFilesFromPaths(resolvedPlain, resourceType);
+		const allFiles = await this.collectFilesFromPathsAsync(resolvedPlain, resourceType);
 
 		// Determine which files are enabled based on patterns
 		const enabledPaths = applyPatterns(allFiles, patterns, baseDir);
@@ -1971,13 +1987,13 @@ export class DefaultPackageManager implements PackageManager {
 		}
 	}
 
-	private addAutoDiscoveredResources(
+	private async addAutoDiscoveredResourcesAsync(
 		accumulator: ResourceAccumulator,
 		globalSettings: ReturnType<SettingsManager["getGlobalSettings"]>,
 		projectSettings: ReturnType<SettingsManager["getProjectSettings"]>,
 		globalBaseDir: string,
 		projectBaseDir: string,
-	): void {
+	): Promise<void> {
 		const userMetadata: PathMetadata = {
 			source: "auto",
 			scope: "user",
@@ -2017,10 +2033,28 @@ export class DefaultPackageManager implements PackageManager {
 			themes: join(projectBaseDir, "themes"),
 		};
 		const userAgentsSkillsDir = join(getHomeDir(), ".agents", "skills");
-		const projectAgentsSkillDirs = collectAncestorAgentsSkillDirs(this.cwd).filter(
-			(dir) => resolve(dir) !== resolve(userAgentsSkillsDir),
-		);
+		const ancestorDirs = await collectAncestorAgentsSkillDirsAsync(this.cwd);
+		const projectAgentsSkillDirs = ancestorDirs.filter((dir) => resolve(dir) !== resolve(userAgentsSkillsDir));
 
+		// Collect all paths in parallel for maximum I/O concurrency
+		const [projectExtPaths, projectSkillPaths, projectPromptPaths, projectThemePaths, projectAgentsPaths] =
+			await Promise.all([
+				collectAutoExtensionEntriesAsync(projectDirs.extensions),
+				collectAutoSkillEntriesAsync(projectDirs.skills, "fan"),
+				collectAutoPromptEntriesAsync(projectDirs.prompts),
+				collectAutoThemeEntriesAsync(projectDirs.themes),
+				Promise.all(projectAgentsSkillDirs.map((dir) => collectAutoSkillEntriesAsync(dir, "agents"))),
+			]);
+
+		const [userExtPaths, userSkillPaths, userPromptPaths, userThemePaths, userAgentsPaths] = await Promise.all([
+			collectAutoExtensionEntriesAsync(userDirs.extensions),
+			collectAutoSkillEntriesAsync(userDirs.skills, "fan"),
+			collectAutoPromptEntriesAsync(userDirs.prompts),
+			collectAutoThemeEntriesAsync(userDirs.themes),
+			collectAutoSkillEntriesAsync(userAgentsSkillsDir, "agents"),
+		]);
+
+		// Add resources sequentially to preserve deterministic order (project before user)
 		const addResources = (
 			resourceType: ResourceType,
 			paths: string[],
@@ -2035,72 +2069,30 @@ export class DefaultPackageManager implements PackageManager {
 			}
 		};
 
-		addResources(
-			"extensions",
-			collectAutoExtensionEntries(projectDirs.extensions),
-			projectMetadata,
-			projectOverrides.extensions,
-			projectBaseDir,
-		);
+		addResources("extensions", projectExtPaths, projectMetadata, projectOverrides.extensions, projectBaseDir);
 		addResources(
 			"skills",
-			[
-				...collectAutoSkillEntries(projectDirs.skills, "fan"),
-				...projectAgentsSkillDirs.flatMap((dir) => collectAutoSkillEntries(dir, "agents")),
-			],
+			[...projectSkillPaths, ...projectAgentsPaths.flat()],
 			projectMetadata,
 			projectOverrides.skills,
 			projectBaseDir,
 		);
-		addResources(
-			"prompts",
-			collectAutoPromptEntries(projectDirs.prompts),
-			projectMetadata,
-			projectOverrides.prompts,
-			projectBaseDir,
-		);
-		addResources(
-			"themes",
-			collectAutoThemeEntries(projectDirs.themes),
-			projectMetadata,
-			projectOverrides.themes,
-			projectBaseDir,
-		);
+		addResources("prompts", projectPromptPaths, projectMetadata, projectOverrides.prompts, projectBaseDir);
+		addResources("themes", projectThemePaths, projectMetadata, projectOverrides.themes, projectBaseDir);
 
-		addResources(
-			"extensions",
-			collectAutoExtensionEntries(userDirs.extensions),
-			userMetadata,
-			userOverrides.extensions,
-			globalBaseDir,
-		);
+		addResources("extensions", userExtPaths, userMetadata, userOverrides.extensions, globalBaseDir);
 		addResources(
 			"skills",
-			[
-				...collectAutoSkillEntries(userDirs.skills, "fan"),
-				...collectAutoSkillEntries(userAgentsSkillsDir, "agents"),
-			],
+			[...userSkillPaths, ...userAgentsPaths],
 			userMetadata,
 			userOverrides.skills,
 			globalBaseDir,
 		);
-		addResources(
-			"prompts",
-			collectAutoPromptEntries(userDirs.prompts),
-			userMetadata,
-			userOverrides.prompts,
-			globalBaseDir,
-		);
-		addResources(
-			"themes",
-			collectAutoThemeEntries(userDirs.themes),
-			userMetadata,
-			userOverrides.themes,
-			globalBaseDir,
-		);
+		addResources("prompts", userPromptPaths, userMetadata, userOverrides.prompts, globalBaseDir);
+		addResources("themes", userThemePaths, userMetadata, userOverrides.themes, globalBaseDir);
 	}
 
-	private collectFilesFromPaths(paths: string[], resourceType: ResourceType): string[] {
+	private async collectFilesFromPathsAsync(paths: string[], resourceType: ResourceType): Promise<string[]> {
 		const files: string[] = [];
 		for (const p of paths) {
 			if (!existsSync(p)) continue;
@@ -2110,7 +2102,8 @@ export class DefaultPackageManager implements PackageManager {
 				if (stats.isFile()) {
 					files.push(p);
 				} else if (stats.isDirectory()) {
-					files.push(...collectResourceFiles(p, resourceType));
+					const collected = await collectResourceFilesAsync(p, resourceType);
+					files.push(...collected);
 				}
 			} catch {
 				// Ignore errors

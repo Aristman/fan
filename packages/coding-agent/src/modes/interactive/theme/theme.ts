@@ -609,6 +609,12 @@ export function loadThemeFromPath(themePath: string, mode?: ColorMode): Theme {
 	return createTheme(themeJson, mode, themePath);
 }
 
+export async function loadThemeFromPathAsync(themePath: string, mode?: ColorMode): Promise<Theme> {
+	const content = await fs.promises.readFile(themePath, "utf-8");
+	const themeJson = parseThemeJsonContent(themePath, content);
+	return createTheme(themeJson, mode, themePath);
+}
+
 function loadTheme(name: string, mode?: ColorMode): Theme {
 	const registeredTheme = registeredThemes.get(name);
 	if (registeredTheme) {

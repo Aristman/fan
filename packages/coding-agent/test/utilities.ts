@@ -223,7 +223,7 @@ export function createTestResourceLoader(options: CreateTestResourceLoaderOption
 		getAgentsFiles: () => ({ agentsFiles: [] }),
 		getSystemPrompt: () => undefined,
 		getAppendSystemPrompt: () => [],
-		extendResources: () => {},
+		extendResources: async () => {},
 		reload: async () => {},
 	};
 }

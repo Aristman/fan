@@ -1,4 +1,5 @@
-import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "fs";
+import { existsSync, statSync } from "fs";
+import { readdir, readFile, realpath } from "fs/promises";
 import ignore from "ignore";
 import { homedir } from "os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "path";
@@ -44,7 +45,7 @@ function prefixIgnorePattern(line: string, prefix: string): string | null {
 	return negated ? `!${prefixed}` : prefixed;
 }
 
-function addIgnoreRules(ig: IgnoreMatcher, dir: string, rootDir: string): void {
+async function addIgnoreRulesAsync(ig: IgnoreMatcher, dir: string, rootDir: string): Promise<void> {
 	const relativeDir = relative(rootDir, dir);
 	const prefix = relativeDir ? `${toPosixPath(relativeDir)}/` : "";
 
@@ -52,7 +53,7 @@ function addIgnoreRules(ig: IgnoreMatcher, dir: string, rootDir: string): void {
 		const ignorePath = join(dir, filename);
 		if (!existsSync(ignorePath)) continue;
 		try {
-			const content = readFileSync(ignorePath, "utf-8");
+			const content = await readFile(ignorePath, "utf-8");
 			const patterns = content
 				.split(/\r?\n/)
 				.map((line) => prefixIgnorePattern(line, prefix))
@@ -169,18 +170,18 @@ function createSkillSourceInfo(filePath: string, baseDir: string, source: string
  * - otherwise, load direct .md children in the root
  * - recurse into subdirectories to find SKILL.md
  */
-export function loadSkillsFromDir(options: LoadSkillsFromDirOptions): LoadSkillsResult {
+export async function loadSkillsFromDir(options: LoadSkillsFromDirOptions): Promise<LoadSkillsResult> {
 	const { dir, source } = options;
-	return loadSkillsFromDirInternal(dir, source, true);
+	return loadSkillsFromDirInternalAsync(dir, source, true);
 }
 
-function loadSkillsFromDirInternal(
+async function loadSkillsFromDirInternalAsync(
 	dir: string,
 	source: string,
 	includeRootFiles: boolean,
 	ignoreMatcher?: IgnoreMatcher,
 	rootDir?: string,
-): LoadSkillsResult {
+): Promise<LoadSkillsResult> {
 	const skills: Skill[] = [];
 	const diagnostics: ResourceDiagnostic[] = [];
 
@@ -190,10 +191,10 @@ function loadSkillsFromDirInternal(
 
 	const root = rootDir ?? dir;
 	const ig = ignoreMatcher ?? ignore();
-	addIgnoreRules(ig, dir, root);
+	await addIgnoreRulesAsync(ig, dir, root);
 
 	try {
-		const entries = readdirSync(dir, { withFileTypes: true });
+		const entries = await readdir(dir, { withFileTypes: true });
 
 		for (const entry of entries) {
 			if (entry.name !== "SKILL.md") {
@@ -205,7 +206,8 @@ function loadSkillsFromDirInternal(
 			let isFile = entry.isFile();
 			if (entry.isSymbolicLink()) {
 				try {
-					isFile = statSync(fullPath).isFile();
+					const stats = statSync(fullPath);
+					isFile = stats.isFile();
 				} catch {
 					continue;
 				}
@@ -216,7 +218,7 @@ function loadSkillsFromDirInternal(
 				continue;
 			}
 
-			const result = loadSkillFromFile(fullPath, source);
+			const result = await loadSkillFromFileAsync(fullPath, source);
 			if (result.skill) {
 				skills.push(result.skill);
 			}
@@ -257,7 +259,7 @@ function loadSkillsFromDirInternal(
 			}
 
 			if (isDirectory) {
-				const subResult = loadSkillsFromDirInternal(fullPath, source, false, ig, root);
+				const subResult = await loadSkillsFromDirInternalAsync(fullPath, source, false, ig, root);
 				skills.push(...subResult.skills);
 				diagnostics.push(...subResult.diagnostics);
 				continue;
@@ -267,7 +269,7 @@ function loadSkillsFromDirInternal(
 				continue;
 			}
 
-			const result = loadSkillFromFile(fullPath, source);
+			const result = await loadSkillFromFileAsync(fullPath, source);
 			if (result.skill) {
 				skills.push(result.skill);
 			}
@@ -278,14 +280,14 @@ function loadSkillsFromDirInternal(
 	return { skills, diagnostics };
 }
 
-function loadSkillFromFile(
+async function loadSkillFromFileAsync(
 	filePath: string,
 	source: string,
-): { skill: Skill | null; diagnostics: ResourceDiagnostic[] } {
+): Promise<{ skill: Skill | null; diagnostics: ResourceDiagnostic[] }> {
 	const diagnostics: ResourceDiagnostic[] = [];
 
 	try {
-		const rawContent = readFileSync(filePath, "utf-8");
+		const rawContent = await readFile(filePath, "utf-8");
 		const { frontmatter } = parseFrontmatter<SkillFrontmatter>(rawContent);
 		const skillDir = dirname(filePath);
 		const parentDirName = basename(skillDir);
@@ -401,7 +403,7 @@ function resolveSkillPath(p: string, cwd: string): string {
  * Load skills from all configured locations.
  * Returns skills and any validation diagnostics.
  */
-export function loadSkills(options: LoadSkillsOptions = {}): LoadSkillsResult {
+export async function loadSkills(options: LoadSkillsOptions = {}): Promise<LoadSkillsResult> {
 	const { cwd = process.cwd(), agentDir, skillPaths = [], includeDefaults = true } = options;
 
 	// Resolve agentDir - if not provided, use default from config
@@ -412,13 +414,14 @@ export function loadSkills(options: LoadSkillsOptions = {}): LoadSkillsResult {
 	const allDiagnostics: ResourceDiagnostic[] = [];
 	const collisionDiagnostics: ResourceDiagnostic[] = [];
 
-	function addSkills(result: LoadSkillsResult) {
-		allDiagnostics.push(...result.diagnostics);
-		for (const skill of result.skills) {
+	async function addSkills(result: LoadSkillsResult | Promise<LoadSkillsResult>) {
+		const resolved = await result;
+		allDiagnostics.push(...resolved.diagnostics);
+		for (const skill of resolved.skills) {
 			// Resolve symlinks to detect duplicate files
 			let realPath: string;
 			try {
-				realPath = realpathSync(skill.filePath);
+				realPath = await realpath(skill.filePath);
 			} catch {
 				realPath = skill.filePath;
 			}
@@ -449,8 +452,13 @@ export function loadSkills(options: LoadSkillsOptions = {}): LoadSkillsResult {
 	}
 
 	if (includeDefaults) {
-		addSkills(loadSkillsFromDirInternal(join(resolvedAgentDir, "skills"), "user", true));
-		addSkills(loadSkillsFromDirInternal(resolve(cwd, CONFIG_DIR_NAME, "skills"), "project", true));
+		// Parallel scan of default skill directories (order preserved by sequential addSkills)
+		const [userResult, projectResult] = await Promise.all([
+			loadSkillsFromDirInternalAsync(join(resolvedAgentDir, "skills"), "user", true),
+			loadSkillsFromDirInternalAsync(resolve(cwd, CONFIG_DIR_NAME, "skills"), "project", true),
+		]);
+		await addSkills(userResult);
+		await addSkills(projectResult);
 	}
 
 	const userSkillsDir = join(resolvedAgentDir, "skills");
@@ -473,6 +481,7 @@ export function loadSkills(options: LoadSkillsOptions = {}): LoadSkillsResult {
 		return "path";
 	};
 
+	// Process explicit skill paths
 	for (const rawPath of skillPaths) {
 		const resolvedPath = resolveSkillPath(rawPath, cwd);
 		if (!existsSync(resolvedPath)) {
@@ -484,11 +493,11 @@ export function loadSkills(options: LoadSkillsOptions = {}): LoadSkillsResult {
 			const stats = statSync(resolvedPath);
 			const source = getSource(resolvedPath);
 			if (stats.isDirectory()) {
-				addSkills(loadSkillsFromDirInternal(resolvedPath, source, true));
+				await addSkills(loadSkillsFromDirInternalAsync(resolvedPath, source, true));
 			} else if (stats.isFile() && resolvedPath.endsWith(".md")) {
-				const result = loadSkillFromFile(resolvedPath, source);
+				const result = await loadSkillFromFileAsync(resolvedPath, source);
 				if (result.skill) {
-					addSkills({ skills: [result.skill], diagnostics: result.diagnostics });
+					await addSkills({ skills: [result.skill], diagnostics: result.diagnostics });
 				} else {
 					allDiagnostics.push(...result.diagnostics);
 				}

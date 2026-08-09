@@ -20,6 +20,15 @@ export function time(label: string): void {
 	lastTime = now;
 }
 
+/**
+ * Record a pre-measured duration (for use inside parallel branches
+ * where calling time() would corrupt the sequential lastTime chain).
+ */
+export function timeWithDuration(label: string, ms: number): void {
+	if (!ENABLED) return;
+	timings.push({ label, ms });
+}
+
 export function printTimings(): void {
 	if (!ENABLED || timings.length === 0) return;
 	console.error("\n--- Startup Timings ---");
