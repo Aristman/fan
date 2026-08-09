@@ -9,7 +9,6 @@
     "packages/coding-agent/examples/extensions/with-deps",
     "packages/coding-agent/examples/extensions/custom-provider-anthropic",
     "packages/coding-agent/examples/extensions/custom-provider-gitlab-duo",
-    "!packages/fan-persistent-memory",
     "packages/coding-agent/examples/extensions/custom-provider-qwen-cli"
   ],
   "scripts": {

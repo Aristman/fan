@@ -20,8 +20,6 @@
 			"@seaagents/fan-web-ui/*": ["./packages/web-ui/src/*"],
 			"@fan/db": ["./packages/db/src/index.ts"],
 			"@fan/db/*": ["./packages/db/src/*"],
-			"@fan/orchestrator": ["./packages/orchestrator/src/index.ts"],
-			"@fan/orchestrator/*": ["./packages/orchestrator/src/*"],
 			"@fan/model-manager": ["./packages/model-manager/src/index.ts"],
 			"@fan/model-manager/*": ["./packages/model-manager/src/*"],
 			"@fan/store": ["./packages/store/src/index.ts"],

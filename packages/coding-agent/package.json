@@ -43,7 +43,6 @@
     "@fan/api-gateway": "*",
     "@fan/db": "*",
     "@fan/model-manager": "*",
-    "@seaagents/fan-web-ui": "*",
     "@fan/store": "*",
     "@fan/mcp": "*",
     "@seaagents/fan-agent-core": "*",
