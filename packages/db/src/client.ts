@@ -220,6 +220,8 @@ export async function initDatabase(prisma?: PrismaClient): Promise<void> {
  * Ensures initDatabase() runs exactly once and can be awaited at first use.
  */
 let _initPromise: Promise<void> | null = null;
+/** Tracks whether the cached promise has settled (resolved or rejected). */
+let _initSettled = false;
 
 /**
  * Ensure the database schema is initialized (lazy, singleton).
@@ -233,19 +235,46 @@ let _initPromise: Promise<void> | null = null;
  */
 export function ensureDatabase(): Promise<void> {
 	if (!_initPromise) {
-		_initPromise = initDatabase().catch((e) => {
-			console.error("Failed to initialize database:", e);
-		});
+		_initSettled = false;
+		_initPromise = initDatabase()
+			.catch((e) => {
+				console.error("Failed to initialize database:", e);
+			})
+			.finally(() => {
+				_initSettled = true;
+			});
 	}
 	return _initPromise;
 }
 
-/** Close the Prisma connection */
+/**
+ * Close the Prisma connection and reset the init singleton.
+ *
+ * Resets _initPromise only when the cached promise has already settled,
+ * so concurrent awaiters holding a reference to an in-flight promise are
+ * not affected. After close + reset, the next ensureDatabase() call will
+ * re-run DDL init against the new client — essential for long-running
+ * scenarios (tests, reconnection).
+ */
 export async function closePrismaClient(): Promise<void> {
 	if (_client) {
 		const client = _client;
 		_client = null;
+		if (_initSettled) {
+			_initPromise = null;
+		}
 		return client.$disconnect();
 	}
 	return Promise.resolve();
+}
+
+/**
+ * @internal Reset all singleton state for testing. Do NOT call in production.
+ * Clears _client, _initPromise, and _initSettled so the next ensureDatabase()
+ * call starts from a clean slate.
+ */
+export function __resetForTesting(): void {
+	_client = null;
+	_initPromise = null;
+	_initSettled = false;
 }

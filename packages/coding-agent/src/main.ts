@@ -979,14 +979,10 @@ export async function main(args: string[]) {
 		time("runMigrations");
 
 		// Initialize database schema via cached singleton.
-		// ensureDatabase() runs initDatabase() exactly once and caches the
-		// promise; subsequent calls (e.g. model-manager) are instant.
-		try {
-			const { ensureDatabase } = await import("@fan/db");
-			await ensureDatabase();
-		} catch (e) {
-			console.error("Failed to initialize database:", e);
-		}
+		// ensureDatabase() swallows errors internally (.catch → always resolved),
+		// so no try/catch needed here — the promise never rejects.
+		const { ensureDatabase } = await import("@fan/db");
+		await ensureDatabase();
 		time("initDatabase");
 	} else {
 		time("runMigrations (skipped – worker mode)");

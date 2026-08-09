@@ -15,6 +15,7 @@
 		"clean": "shx rm -rf dist",
 		"build": "prisma generate && tsgo -p tsconfig.build.json",
 		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
+		"test": "vitest run",
 		"db:migrate": "prisma migrate dev",
 		"db:studio": "prisma studio",
 		"db:push": "prisma db push",
@@ -26,6 +27,7 @@
 	},
 	"devDependencies": {
 		"prisma": "^6.5.0",
-		"shx": "^0.4.0"
+		"shx": "^0.4.0",
+		"vitest": "^3.2.4"
 	}
 }
