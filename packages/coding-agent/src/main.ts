@@ -8,9 +8,7 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { createInterface } from "node:readline";
-import { type SessionAdapter, startServer } from "@fan/api-gateway";
-import { mcpExtension } from "@fan/mcp";
-import { storeExtension } from "@fan/store";
+import type { SessionAdapter } from "@fan/api-gateway";
 import { type ImageContent, modelsAreEqual, supportsXhigh } from "@seaagents/fan-ai";
 import { ProcessTerminal, setKeybindings, TUI } from "@seaagents/fan-tui";
 import chalk from "chalk";
@@ -33,9 +31,9 @@ import {
 } from "./core/agent-session-services.js";
 import { AuthStorage } from "./core/auth-storage.js";
 import { exportFromFile } from "./core/export-html/index.js";
-import type { ExtensionFactory as CodingAgentExtensionFactory } from "./core/extensions/types.js";
+import type { ExtensionFactory as CodingAgentExtensionFactory, ExtensionAPI } from "./core/extensions/types.js";
 import { KeybindingsManager } from "./core/keybindings.js";
-import type { ModelRegistry } from "./core/model-registry.js";
+import { ModelRegistry } from "./core/model-registry.js";
 import { resolveCliModel, resolveModelScope, type ScopedModel } from "./core/model-resolver.js";
 import { restoreStdout, takeOverStdout } from "./core/output-guard.js";
 import type { CreateAgentSessionOptions } from "./core/sdk.js";
@@ -933,6 +931,22 @@ export async function main(args: string[]) {
 		process.exit(0);
 	}
 
+	// Early --help: print help text without loading extensions or DB.
+	// Extension-specific CLI flags won't be shown, but core help is available instantly.
+	if (parsed.help) {
+		printHelp();
+		process.exit(0);
+	}
+
+	// Early --list-models: only needs ModelRegistry (models.json + built-in), not extensions.
+	if (parsed.listModels !== undefined) {
+		const searchPattern = typeof parsed.listModels === "string" ? parsed.listModels : undefined;
+		const authStorage = AuthStorage.create();
+		const modelRegistry = ModelRegistry.create(authStorage);
+		await listModels(modelRegistry, searchPattern);
+		process.exit(0);
+	}
+
 	if (parsed.export) {
 		let result: string;
 		try {
@@ -1031,8 +1045,18 @@ export async function main(args: string[]) {
 				systemPrompt: parsed.systemPrompt,
 				appendSystemPrompt: parsed.appendSystemPrompt,
 				extensionFactories: [
-					...(parsed.noStore ? [] : [storeExtension as unknown as CodingAgentExtensionFactory]),
-					mcpExtension as unknown as CodingAgentExtensionFactory,
+					...(parsed.noStore
+						? []
+						: [
+								(async (api: ExtensionAPI) => {
+									const { storeExtension } = await import("@fan/store");
+									return storeExtension(api as any);
+								}) as unknown as CodingAgentExtensionFactory,
+							]),
+					(async (api: ExtensionAPI) => {
+						const mod = await import("@fan/mcp");
+						return (mod.mcpExtension as unknown as CodingAgentExtensionFactory)(api);
+					}) as unknown as CodingAgentExtensionFactory,
 				],
 			},
 		});
@@ -1110,21 +1134,7 @@ export async function main(args: string[]) {
 	});
 	time("createAgentSessionRuntime");
 	const { services, session, modelFallbackMessage } = runtime;
-	const { settingsManager, modelRegistry, resourceLoader } = services;
-
-	if (parsed.help) {
-		const extensionFlags = resourceLoader
-			.getExtensions()
-			.extensions.flatMap((extension) => Array.from(extension.flags.values()));
-		printHelp(extensionFlags);
-		process.exit(0);
-	}
-
-	if (parsed.listModels !== undefined) {
-		const searchPattern = typeof parsed.listModels === "string" ? parsed.listModels : undefined;
-		await listModels(modelRegistry, searchPattern);
-		process.exit(0);
-	}
+	const { settingsManager } = services;
 
 	// Read piped stdin content (if any) - skip for RPC and server modes which use stdin differently
 	let stdinContent: string | undefined;
@@ -1234,6 +1244,7 @@ export async function main(args: string[]) {
 		}
 		const adapter = createSessionAdapter(runtime);
 		await adapter.bindSessionExtensions();
+		const { startServer } = await import("@fan/api-gateway");
 		const { port, stop } = await startServer(modelManager, adapter, {
 			port: parsed.port || 3456,
 			host: parsed.host || "localhost",
