@@ -399,7 +399,10 @@ export async function loadExtensions(paths: string[], cwd: string, eventBus?: Ev
 
 	for (const extPath of paths) {
 		const { extension, error } = await loadExtension(extPath, cwd, resolvedEventBus, runtime);
-		time(`ext:${path.basename(extPath)}`);
+		const extDirName = path.basename(path.dirname(extPath));
+		const extLabel =
+			extDirName === "src" ? path.basename(path.dirname(path.dirname(extPath))) : extDirName;
+		time(`ext:${extLabel}/${path.basename(extPath)}`);
 
 		if (error) {
 			errors.push({ path: extPath, error });

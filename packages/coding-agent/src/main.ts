@@ -918,6 +918,12 @@ export async function main(args: string[]) {
 		return;
 	}
 
+	// Alias: `fan list-models [search]` → same as `--list-models` (early exit, no bootstrap).
+	// Without this the subcommand falls through as a prompt message and costs a full startup.
+	if (args[0] === "list-models") {
+		args = ["--list-models", ...args.slice(1)];
+	}
+
 	const parsed = parseArgs(args);
 	if (parsed.diagnostics.length > 0) {
 		for (const d of parsed.diagnostics) {

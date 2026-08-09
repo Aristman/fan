@@ -293,6 +293,7 @@ ${chalk.bold("Options:")}
   --no-themes                    Disable theme discovery and loading
   --no-store                      Disable FAN Store extension (no /store command or store_* tools)
   --export <file>                Export session file to HTML and exit
+  list-models [search]           Alias for --list-models (fast, no bootstrap)
   --list-models [search]         List available models (with optional fuzzy search)
   --verbose                      Force verbose startup (overrides quietStartup setting)
   --dangerously-skip-permissions  Skip dangerous command checks in the bash tool
