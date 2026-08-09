@@ -438,25 +438,25 @@ export class DefaultResourceLoader implements ResourceLoader {
 			(async () => {
 				const start = Date.now();
 				await this.updateSkillsFromPathsAsync(skillPaths, metadataByPath);
-				timeWithDuration("loadSkills", Date.now() - start);
+				timeWithDuration("loadSkills", Date.now() - start, { parallel: true });
 				return { skills: this.skills, diagnostics: this.skillDiagnostics };
 			})(),
 			(async () => {
 				const start = Date.now();
 				await this.updatePromptsFromPathsAsync(promptPaths, metadataByPath);
-				timeWithDuration("loadPromptTemplates", Date.now() - start);
+				timeWithDuration("loadPromptTemplates", Date.now() - start, { parallel: true });
 				return { prompts: this.prompts, diagnostics: this.promptDiagnostics };
 			})(),
 			(async () => {
 				const start = Date.now();
 				await this.updateThemesFromPathsAsync(themePaths, metadataByPath);
-				timeWithDuration("loadThemes", Date.now() - start);
+				timeWithDuration("loadThemes", Date.now() - start, { parallel: true });
 				return { themes: this.themes, diagnostics: this.themeDiagnostics };
 			})(),
 			(async () => {
 				const start = Date.now();
 				const result = await loadProjectContextFilesAsync({ cwd: this.cwd, agentDir: this.agentDir });
-				timeWithDuration("loadProjectContext", Date.now() - start);
+				timeWithDuration("loadProjectContext", Date.now() - start, { parallel: true });
 				return result;
 			})(),
 		]);

@@ -4,7 +4,7 @@
  */
 
 const ENABLED = process.env.FAN_TIMING === "1";
-const timings: Array<{ label: string; ms: number }> = [];
+const timings: Array<{ label: string; ms: number; parallel: boolean }> = [];
 let lastTime = Date.now();
 
 export function resetTimings(): void {
@@ -16,7 +16,7 @@ export function resetTimings(): void {
 export function time(label: string): void {
 	if (!ENABLED) return;
 	const now = Date.now();
-	timings.push({ label, ms: now - lastTime });
+	timings.push({ label, ms: now - lastTime, parallel: false });
 	lastTime = now;
 }
 
@@ -24,9 +24,9 @@ export function time(label: string): void {
  * Record a pre-measured duration (for use inside parallel branches
  * where calling time() would corrupt the sequential lastTime chain).
  */
-export function timeWithDuration(label: string, ms: number): void {
+export function timeWithDuration(label: string, ms: number, options?: { parallel?: boolean }): void {
 	if (!ENABLED) return;
-	timings.push({ label, ms });
+	timings.push({ label, ms, parallel: options?.parallel === true });
 }
 
 export function printTimings(): void {
@@ -35,6 +35,7 @@ export function printTimings(): void {
 	for (const t of timings) {
 		console.error(`  ${t.label}: ${t.ms}ms`);
 	}
-	console.error(`  TOTAL: ${timings.reduce((a, b) => a + b.ms, 0)}ms`);
+	const total = timings.reduce((a, b) => a + (b.parallel ? 0 : b.ms), 0);
+	console.error(`  TOTAL: ${total}ms`);
 	console.error("------------------------\n");
 }
