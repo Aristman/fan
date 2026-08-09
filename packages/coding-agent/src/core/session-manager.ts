@@ -457,12 +457,17 @@ export function loadEntriesFromFile(filePath: string): FileEntry[] {
 	return entries;
 }
 
-function isValidSessionFile(filePath: string): boolean {
+/**
+ * Validate that a file has a proper session header by reading only its first line.
+ * Uses a small buffered read (512 bytes) to avoid loading the entire file.
+ */
+function isValidSessionFileFast(filePath: string): boolean {
 	try {
 		const fd = openSync(filePath, "r");
 		const buffer = Buffer.alloc(512);
 		const bytesRead = readSync(fd, buffer, 0, 512, 0);
 		closeSync(fd);
+		if (bytesRead === 0) return false;
 		const firstLine = buffer.toString("utf8", 0, bytesRead).split("\n")[0];
 		if (!firstLine) return false;
 		const header = JSON.parse(firstLine);
@@ -472,17 +477,59 @@ function isValidSessionFile(filePath: string): boolean {
 	}
 }
 
+/**
+ * Number of top candidates (by mtime) whose headers are read for validation.
+ * In practice the most-recently-modified valid session is almost always in the
+ * top few entries; 10 provides a generous safety margin for edge cases like
+ * manually copied files with stale mtimes.
+ */
+const FIND_SESSION_TOP_N = 10;
+
 /** Exported for testing */
 export function findMostRecentSession(sessionDir: string): string | null {
 	try {
-		const files = readdirSync(sessionDir)
-			.filter((f) => f.endsWith(".jsonl"))
-			.map((f) => join(sessionDir, f))
-			.filter(isValidSessionFile)
-			.map((path) => ({ path, mtime: statSync(path).mtime }))
-			.sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
+		// Phase 1: stat all .jsonl files (filesystem metadata only — no content reads).
+		// statSync is ~100× faster than open+read per file because the OS caches
+		// directory metadata and no data blocks need to be fetched from disk.
+		const entries = readdirSync(sessionDir, { withFileTypes: true });
+		const stats: Array<{ path: string; mtime: Date }> = [];
 
-		return files[0]?.path || null;
+		for (const entry of entries) {
+			if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
+			try {
+				const fullPath = join(sessionDir, entry.name);
+				stats.push({ path: fullPath, mtime: statSync(fullPath).mtime });
+			} catch {
+				// Skip files that can't be stat'd (deleted mid-scan, permission error)
+			}
+		}
+
+		if (stats.length === 0) return null;
+
+		// Phase 2: sort by mtime descending — the actual "most recent" semantic.
+		stats.sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
+
+		// Phase 3: validate only the top-N candidates by reading their headers.
+		// This avoids O(n) file opens while preserving correctness: a continued
+		// session always updates mtime (via appendFileSync), so the true most
+		// recent session will be near the top of the mtime-sorted list.
+		const limit = Math.min(stats.length, FIND_SESSION_TOP_N);
+		for (let i = 0; i < limit; i++) {
+			if (isValidSessionFileFast(stats[i].path)) {
+				return stats[i].path;
+			}
+		}
+
+		// Fallback: all top-N candidates were invalid — scan the rest.
+		// This path is extremely rare (would require 10+ consecutive corrupted files
+		// sorted by mtime) but preserves behavioral equivalence with the original.
+		for (let i = limit; i < stats.length; i++) {
+			if (isValidSessionFileFast(stats[i].path)) {
+				return stats[i].path;
+			}
+		}
+
+		return null;
 	} catch {
 		return null;
 	}

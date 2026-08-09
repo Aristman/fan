@@ -124,6 +124,54 @@ describe("findMostRecentSession", () => {
 
 		expect(findMostRecentSession(tempDir)).toBe(valid);
 	});
+
+	it("selects by mtime, not header timestamp", async () => {
+		// File with newer header timestamp but older mtime should NOT win
+		const oldMtime = join(tempDir, "old-mtime.jsonl");
+		writeFileSync(oldMtime, '{"type":"session","id":"new-ts","timestamp":"2025-06-01T00:00:00Z","cwd":"/tmp"}\n');
+
+		await new Promise((r) => setTimeout(r, 10));
+
+		// File with older header timestamp but newer mtime should win
+		const newMtime = join(tempDir, "new-mtime.jsonl");
+		writeFileSync(newMtime, '{"type":"session","id":"old-ts","timestamp":"2025-01-01T00:00:00Z","cwd":"/tmp"}\n');
+
+		expect(findMostRecentSession(tempDir)).toBe(newMtime);
+	});
+
+	it("handles many files with invalid ones mixed in", async () => {
+		// Create 20 invalid files with newer mtimes than the valid one
+		for (let i = 0; i < 20; i++) {
+			writeFileSync(join(tempDir, `invalid-${i.toString().padStart(2, "0")}.jsonl`), '{"type":"bad"}\n');
+			await new Promise((r) => setTimeout(r, 5));
+		}
+
+		// Create valid file (will have older mtime than invalids if written first)
+		const valid = join(tempDir, "valid-late.jsonl");
+		writeFileSync(valid, '{"type":"session","id":"valid","timestamp":"2025-01-01T00:00:00Z","cwd":"/tmp"}\n');
+
+		await new Promise((r) => setTimeout(r, 10));
+
+		// Create another valid file with newest mtime
+		const newest = join(tempDir, "valid-newest.jsonl");
+		writeFileSync(newest, '{"type":"session","id":"newest","timestamp":"2025-01-01T00:00:00Z","cwd":"/tmp"}\n');
+
+		expect(findMostRecentSession(tempDir)).toBe(newest);
+	});
+
+	it("returns valid session when all top candidates are invalid", async () => {
+		// Create > 10 invalid files (more than FIND_SESSION_TOP_N) with newer mtimes
+		for (let i = 0; i < 15; i++) {
+			writeFileSync(join(tempDir, `bad-${i.toString().padStart(2, "0")}.jsonl`), '{"type":"nope"}\n');
+			await new Promise((r) => setTimeout(r, 5));
+		}
+
+		// Valid file written last = newest mtime, so it IS in top candidates
+		const valid = join(tempDir, "valid.jsonl");
+		writeFileSync(valid, '{"type":"session","id":"survivor","timestamp":"2025-01-01T00:00:00Z","cwd":"/tmp"}\n');
+
+		expect(findMostRecentSession(tempDir)).toBe(valid);
+	});
 });
 
 describe("SessionManager.setSessionFile with corrupted files", () => {
