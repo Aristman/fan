@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.5.1] — 2026-08-09
+
+### Исправлено
+
+**`@seaagents/fan-coding-agent` 2.4.1:**
+
+- **`fan list-models` (subcommand) маршрутизируется в early-exit** — раньше
+  уходил в полный bootstrap (~17 с), теперь ~1 с
+- **Per-extension таймеры с именами пакетов** в выводе FAN_TIMING
+
+### Изменения версий
+
+- **fan** (root) — `2.5.0` → `2.5.1`
+- **`@seaagents/fan-coding-agent`** — `2.4.0` → `2.4.1`
+
 ## [2.5.0] — 2026-08-09
 
 ### Startup Optimization Release

@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.4.1] - 2026-08-09
+
+### Исправлено
+
+- **`fan list-models` (subcommand) маршрутизируется в early-exit** — раньше
+  падал в путь полного bootstrap (~17 с), теперь работает как флаг
+  `--list-models` (~1 с).
+- **Per-extension таймеры с именами пакетов** — `ext:fan-orchestrator/index.js`
+  вместо `ext:index.ts` в выводе FAN_TIMING.
+
 ## [2.4.0] - 2026-08-09
 
 ### Новое
@@ -42,11 +52,6 @@
 - **printTimings TOTAL** — исключён двойной учёт parallel-веток.
 - **bindSessionExtensions** — fire-and-forget rebind, больше не падает с
   unhandled rejection.
-- **`fan list-models` (subcommand) маршрутизируется в early-exit** — раньше
-  падал в путь полного bootstrap (~17 с), теперь работает как флаг
-  `--list-models` (~1 с).
-- **Per-extension таймеры с именами пакетов** — `ext:fan-orchestrator/index.js`
-  вместо `ext:index.ts` в выводе FAN_TIMING.
 
 ### Breaking Changes
 
