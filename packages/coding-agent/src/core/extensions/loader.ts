@@ -9,22 +9,9 @@ import { createRequire } from "node:module";
 import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import * as _bundledMcp from "@fan/mcp";
-import * as _bundledStore from "@fan/store";
-import { createJiti } from "@mariozechner/jiti";
-import * as _bundledPiAgentCore from "@seaagents/fan-agent-core";
-import * as _bundledPiAi from "@seaagents/fan-ai";
-import * as _bundledPiAiOauth from "@seaagents/fan-ai/oauth";
+import { createJiti, type Jiti } from "@mariozechner/jiti";
 import type { KeyId } from "@seaagents/fan-tui";
-import * as _bundledPiTui from "@seaagents/fan-tui";
-// Static imports of packages that extensions may use.
-// These MUST be static so Bun bundles them into the compiled binary.
-// The virtualModules option then makes them available to extensions.
-import * as _bundledTypebox from "@sinclair/typebox";
 import { getAgentDir, isBunBinary } from "../../config.js";
-// NOTE: This import works because loader.ts exports are NOT re-exported from index.ts,
-// avoiding a circular dependency. Extensions can import from @seaagents/fan-coding-agent.
-import * as _bundledPiCodingAgent from "../../index.js";
 import { createEventBus, type EventBus } from "../event-bus.js";
 import type { ExecOptions } from "../exec.js";
 import { execCommand } from "../exec.js";
@@ -41,18 +28,6 @@ import type {
 	RegisteredCommand,
 	ToolDefinition,
 } from "./types.js";
-
-/** Modules available to extensions via virtualModules (for compiled Bun binary) */
-const VIRTUAL_MODULES: Record<string, unknown> = {
-	"@sinclair/typebox": _bundledTypebox,
-	"@seaagents/fan-agent-core": _bundledPiAgentCore,
-	"@seaagents/fan-tui": _bundledPiTui,
-	"@seaagents/fan-ai": _bundledPiAi,
-	"@seaagents/fan-ai/oauth": _bundledPiAiOauth,
-	"@seaagents/fan-coding-agent": _bundledPiCodingAgent,
-	"@fan/store": _bundledStore,
-	"@fan/mcp": _bundledMcp,
-};
 
 const require = createRequire(import.meta.url);
 
@@ -308,15 +283,42 @@ export function createExtensionAPI(
 	return api;
 }
 
-async function loadExtensionModule(extensionPath: string) {
-	const jiti = createJiti(import.meta.url, {
-		moduleCache: false,
-		// In Bun binary: use virtualModules for bundled packages (no filesystem resolution)
-		// Also disable tryNative so jiti handles ALL imports (not just the entry point)
-		// In Node.js/dev: use aliases to resolve to node_modules paths
-		...(isBunBinary ? { virtualModules: VIRTUAL_MODULES, tryNative: false } : { alias: getAliases() }),
-	});
+/**
+ * Shared jiti instance (lazy singleton).
+ *
+ * One jiti for ALL extensions instead of creating a new instance per extension.
+ * Savings come from:
+ * - Config/alias resolution computed once (getAliases() involves require.resolve
+ *   and filesystem checks — previously done 10 times)
+ * - Internal jiti state (transformer, resolver, V8 codegen) shared across calls
+ * - fsCache:true persists transpiled output to disk; on warm runs the cached
+ *   transpilation is reused, avoiding re-transformation of large .ts files
+ *
+ * moduleCache is kept false to preserve extension isolation — each extension
+ * gets a fresh module evaluation (no shared require.cache between extensions).
+ */
+let _sharedJiti: Jiti | null = null;
+async function getSharedJiti(): Promise<Jiti> {
+	if (_sharedJiti) return _sharedJiti;
 
+	// In Bun binary: dynamically import bundled modules so bun build --compile
+	// includes them in the single-binary output (virtualModules). In Node.js/dev
+	// the bundled modules are never loaded — extensions use jiti aliases instead.
+	const jitiOptions: Record<string, unknown> = { moduleCache: false, fsCache: true };
+	if (isBunBinary) {
+		const { VIRTUAL_MODULES } = await import("./bundled-modules.js");
+		jitiOptions.virtualModules = VIRTUAL_MODULES;
+		jitiOptions.tryNative = false;
+	} else {
+		jitiOptions.alias = getAliases();
+	}
+
+	_sharedJiti = createJiti(import.meta.url, jitiOptions as any);
+	return _sharedJiti;
+}
+
+async function loadExtensionModule(extensionPath: string) {
+	const jiti = await getSharedJiti();
 	const module = await jiti.import(extensionPath, { default: true });
 	const factory = module as ExtensionFactory;
 	return typeof factory !== "function" ? undefined : factory;
