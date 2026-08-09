@@ -60,6 +60,8 @@ export interface SessionAdapter {
 	getAvailableModels(): Promise<ModelInfo[]>;
 	/** Bind extensions to the current session (called after session switch/create) */
 	bindSessionExtensions(): Promise<void>;
+	/** Resolves when extensions are ready (non-blocking server start). Optional. */
+	whenReady?(): Promise<void>;
 	/** List analytics report files */
 	listAnalyticsReports(): Promise<AnalyticsReportMeta[]>;
 	/** Read a single analytics report by name */
@@ -152,18 +154,21 @@ async function createApp(
 
 	// --- Sessions ---
 	app.post("/api/sessions", async (c) => {
+		await sessionAdapter.whenReady?.();
 		const body = await c.req.json<CreateSessionRequest>();
 		const session = await sessionAdapter.createSession(body);
 		return c.json(session, 201);
 	});
 
 	app.get("/api/sessions", async (c) => {
+		await sessionAdapter.whenReady?.();
 		const sessions = await sessionAdapter.listSessions();
 		const resp: ListSessionsResponse = { sessions };
 		return c.json(resp);
 	});
 
 	app.get("/api/sessions/:id", async (c) => {
+		await sessionAdapter.whenReady?.();
 		const id = c.req.param("id");
 		const session = await sessionAdapter.getSession(id);
 		if (!session) {
@@ -173,6 +178,7 @@ async function createApp(
 	});
 
 	app.delete("/api/sessions/:id", async (c) => {
+		await sessionAdapter.whenReady?.();
 		const id = c.req.param("id");
 		const deleted = await sessionAdapter.deleteSession(id);
 		if (!deleted) {
@@ -184,6 +190,7 @@ async function createApp(
 
 	// --- Messages ---
 	app.post("/api/sessions/:id/messages", async (c) => {
+		await sessionAdapter.whenReady?.();
 		const sessionId = c.req.param("id");
 		const body = await c.req.json<SendMessageRequest>();
 		const sent = await sessionAdapter.sendMessage(sessionId, body.message, body.streamingBehavior);

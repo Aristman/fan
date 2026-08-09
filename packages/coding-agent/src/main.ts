@@ -193,10 +193,14 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 		ensureRuntimeSubscription();
 	}
 
+	// Readiness tracking: allows HTTP server to start before extensions finish binding.
+	// Session-mutating requests await whenReady() which resolves after bindExtensions completes.
+	let _bindPromise: Promise<void> = Promise.resolve();
+
 	// Bind extensions to the current runtime session so they receive session_start event.
 	// Must be called after every switchSession/newSession since a new AgentSession is created.
 	async function bindSessionExtensions(): Promise<void> {
-		await runtime.session.bindExtensions({
+		const p = runtime.session.bindExtensions({
 			commandContextActions: {
 				waitForIdle: () => runtime.session.agent.waitForIdle(),
 				newSession: async (options) => {
@@ -227,6 +231,13 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 				console.error(`[extension] ${error.extensionPath}: ${error.error}`);
 			},
 		});
+		_bindPromise = p.catch((err) => {
+			console.error("[extension] bindExtensions failed:", err);
+		});
+		// Await the caught promise so fire-and-forget callers (session switch/
+		// create/fork) never produce an unhandled rejection — bind failures are
+		// logged above and must not crash the process (Node unhandled rejection).
+		await _bindPromise;
 	}
 
 	// --- Helpers ---
@@ -524,6 +535,9 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 		},
 
 		bindSessionExtensions,
+		whenReady() {
+			return _bindPromise;
+		},
 	};
 }
 
@@ -1241,7 +1255,12 @@ export async function main(args: string[]) {
 			process.exit(1);
 		}
 		const adapter = createSessionAdapter(runtime);
-		await adapter.bindSessionExtensions();
+		// Start binding extensions in background (MCP connectAll, etc.)
+		// Server starts immediately — session endpoints await readiness via adapter.whenReady()
+		const bindPromise = adapter.bindSessionExtensions();
+		bindPromise.catch((err) => {
+			console.error("[fan] Extension binding failed (server continues):", err);
+		});
 		const { startServer } = await import("@fan/api-gateway");
 		const { port, stop } = await startServer(modelManager, adapter, {
 			port: parsed.port || 3456,

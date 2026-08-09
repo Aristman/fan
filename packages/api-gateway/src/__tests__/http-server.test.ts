@@ -28,6 +28,7 @@ const mockSessionAdapter = {
 	subscribeToSession: vi.fn().mockReturnValue(() => {}),
 	getAvailableModels: vi.fn().mockResolvedValue([]),
 	bindSessionExtensions: vi.fn().mockResolvedValue(undefined),
+	whenReady: vi.fn().mockResolvedValue(undefined),
 	listAnalyticsReports: vi.fn().mockResolvedValue([]),
 	readAnalyticsReport: vi.fn().mockResolvedValue(null),
 };
@@ -79,6 +80,7 @@ describe("HTTP Server", () => {
 		mockSessionAdapter.deleteSession.mockResolvedValue(false);
 		mockSessionAdapter.sendMessage.mockResolvedValue(true);
 		mockSessionAdapter.getAvailableModels.mockResolvedValue([]);
+		mockSessionAdapter.whenReady.mockResolvedValue(undefined);
 		mockSessionAdapter.listAnalyticsReports.mockResolvedValue([]);
 		mockSessionAdapter.readAnalyticsReport.mockResolvedValue(null);
 		mockRandomBytes.mockReturnValue({

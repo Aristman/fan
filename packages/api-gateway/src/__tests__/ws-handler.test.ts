@@ -48,6 +48,7 @@ describe("WebSocket Handler", () => {
 			subscribeToSession: vi.fn().mockReturnValue(() => {}),
 			getAvailableModels: vi.fn().mockResolvedValue([]),
 			bindSessionExtensions: vi.fn().mockResolvedValue(undefined),
+			whenReady: vi.fn().mockResolvedValue(undefined),
 			listAnalyticsReports: vi.fn().mockResolvedValue([]),
 			readAnalyticsReport: vi.fn().mockResolvedValue(null),
 		};
