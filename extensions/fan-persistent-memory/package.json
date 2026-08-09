@@ -1,6 +1,6 @@
 {
   "name": "fan-persistent-memory",
-  "version": "4.0.1",
+  "version": "4.1.0",
   "description": "Расширение персистентной памяти для FAN с гибридным RAG-поиском (FTS4 + эмбеддинги)",
   "type": "module",
   "main": "src/index.ts",

@@ -1,10 +1,56 @@
 # Changelog
 
-## [Unreleased]
+## [2.4.0] - 2026-08-09
+
+### Новое
+
+- **Гранулярные FAN_TIMING таймеры startup** — `resolvePackages`, `loadExtensions`,
+  `ext:<name>`, `loadSkills`, `loadPromptTemplates`, `loadThemes`,
+  `loadProjectContext`, `initDatabase`, `createAgentSessionRuntime`. Включаются
+  переменной окружения `FAN_TIMING=1`. `timeWithDuration()` для корректного
+  измерения parallel-веток (TOTAL без двойного учёта).
+- **Ранние выходы CLI** — `--help`, `--version`, `--list-models` завершаются ДО
+  bootstrap (без загрузки extensions/skills/models). `--help` ~4.2x быстрее,
+  `--list-models` ~15x быстрее. Trade-off: `--help` не показывает
+  extension-флаги.
+
+### Изменено
+
+- **jiti singleton + fsCache для загрузки extensions** — общий экземпляр jiti
+  переиспользуется между расширениями, файловый кеш ускоряет повторные
+  загрузки (−31% времени загрузки extensions). Bundled-модули (mcp, store,
+  fan-ai, fan-tui) вынесены в `bundled-modules.ts`, грузятся только в Bun
+  binary.
+- **Lazy dynamic import** — `@fan/api-gateway`, `@fan/mcp`, `@fan/store`
+  импортируются динамически только при реальном использовании, не на старте.
+- **Async parallel resource discovery** — skills/prompts/themes/context
+  загружаются через `Promise.all` с `fs/promises` вместо sync I/O.
+- **Context-walk останавливается на git-root** — `loadProjectContextFiles`
+  больше не поднимается выше корня репозитория. `FAN_CONTEXT_WALK=fsroot`
+  восстанавливает старое поведение.
+- **findMostRecentSession — stat-first + top-10 валидация** — 42x ускорение
+  на 2000 файлах сессий (stat по дате → проверка заголовков только top-10).
+- **fd/rg скачивание в фоне** — бинари скачиваются после `ui.start()`,
+  атомарные загрузки (temp + rename), честный статус в UI.
+- **Удалена мёртвая зависимость** `@seaagents/fan-web-ui` из package.json.
+
+### Исправлено
+
+- **getPackageDir() пропускает dist/package.json** — артефакт `build:binary`
+  больше не вызывает crash server/TUI с ENOENT dark.json. Добавлен
+  `resolveAssetDir` helper.
+- **printTimings TOTAL** — исключён двойной учёт parallel-веток.
+- **bindSessionExtensions** — fire-and-forget rebind, больше не падает с
+  unhandled rejection.
 
 ### Breaking Changes
 
-- **BREAKING: `loadSkills()` and `loadSkillsFromDir()` are now async (return `Promise`)** — previously synchronous functions now return `Promise<LoadSkillsResult>`. All internal call sites have been updated. External SDK consumers must `await` these calls. Affected exports in `index.ts`: `loadSkills`, `loadSkillsFromDir`. Related functions `loadPromptTemplates()` and `loadProjectContextFiles()` are also async.
+- **BREAKING: `loadSkills()` и `loadSkillsFromDir()` are now async (return `Promise`)**
+  — ранее синхронные функции теперь возвращают `Promise<LoadSkillsResult>`.
+  Все внутренние вызовы обновлены. Внешние SDK-потребители должны `await`
+  эти вызовы. Затронутые экспорты в `index.ts`: `loadSkills`,
+  `loadSkillsFromDir`. Связанные функции `loadPromptTemplates()` и
+  `loadProjectContextFiles()` также стали async.
 
 ## [2.3.7] - 2026-08-07
 

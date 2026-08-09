@@ -168,4 +168,6 @@ fan store install fan-persistent-memory
 
 ## Версия
 
-4.0.0 — Гибридный RAG-поиск (FTS4 + векторные эмбеддинги), sql.js WASM backend
+4.1.0 — Удалены мёртвые экспорты (UsageRepository, getMemoryDir, preprocessQuery,
+tagsToSearchable, MemoryUsageEntry). Гибридный RAG-поиск (FTS4 + векторные
+эмбеддинги), sql.js WASM backend.

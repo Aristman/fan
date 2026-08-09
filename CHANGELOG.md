@@ -1,15 +1,78 @@
 # Changelog
 
-## [Unreleased]
+## [2.5.0] — 2026-08-09
 
-### Changed
+### Startup Optimization Release
 
-- **Context file walk stops at git-root** — `loadProjectContextFiles` now stops ascending
-  ancestor directories after reaching the git repository root (`.git` file or directory)
-  instead of walking to the filesystem root. This eliminates unnecessary directory
-  traversals on deep paths (Windows: ~5 levels, ~0.3ms pure walk + concurrent I/O
-  contention savings). Set `FAN_CONTEXT_WALK=fsroot` to restore the previous behaviour
-  (walk to filesystem root).
+Релиз производительности запуска. 15 коммитов оптимизации: гранулярные таймеры,
+ленивые импорты, parallel resource discovery, jiti singleton, ранние выходы CLI.
+Time-to-health API Gateway ~6.5s → ~2.7s.
+
+### Новое
+
+**`@seaagents/fan-coding-agent` 2.4.0:**
+
+- **Гранулярные FAN_TIMING таймеры startup** — `resolvePackages`, `loadExtensions`,
+  `ext:<name>`, `loadSkills`, `loadPromptTemplates`, `loadThemes`,
+  `loadProjectContext`, `initDatabase`, `createAgentSessionRuntime`
+- **Ранние выходы CLI** — `--help` ~4.2x, `--list-models` ~15x быстрее
+  (завершение ДО bootstrap, без загрузки extensions/skills/models)
+- **jiti singleton + fsCache** — −31% времени загрузки extensions;
+  bundled-модули вынесены в `bundled-modules.ts`
+- **Lazy dynamic import** — `@fan/api-gateway`, `@fan/mcp`, `@fan/store`
+  грузятся только при реальном использовании
+- **Async parallel resource discovery** — skills/prompts/themes/context
+  через `Promise.all` с `fs/promises`
+- **findMostRecentSession** — stat-first + top-10 валидация (42x на 2000 файлах)
+- **fd/rg скачивание в фоне** после `ui.start()`, атомарные загрузки
+
+**`@fan/api-gateway` 1.2.0:**
+
+- **HTTP-сервер стартует без ожидания extension binding** — `MCP connectAll`
+  в фоне; `SessionAdapter.whenReady()` для гейтинга session-endpoints;
+  `/api/health` отвечает мгновенно. Time-to-health ~6.5s → ~2.7s
+
+**`@fan/db` 1.1.0:**
+
+- **`ensureDatabase()`** — идемпотентный singleton для schema init
+  (ошибки логируются, промис всегда resolved)
+- **`closePrismaClient()`** сбрасывает init-singleton (reconnect сценарии)
+- Первая тест-суита пакета (5 тестов, vitest)
+
+**`@fan/model-manager` 1.1.0:**
+
+- **`db()` helper** триггерит `ensureDatabase()` как safety net
+
+### Изменено
+
+- **Context-walk останавливается на git-root** — `loadProjectContextFiles`
+  больше не поднимается выше корня репозитория. `FAN_CONTEXT_WALK=fsroot`
+  восстанавливает старое поведение
+- **Удалена мёртвая зависимость** `@seaagents/fan-web-ui`
+- **Extensions**: удалены мёртвые экспорты (`fan-persistent-memory` 4.1.0,
+  `fan-session-analytics` 1.4.1)
+
+### Исправлено
+
+- **getPackageDir() пропускает dist/package.json** — устранён crash server/TUI
+  с ENOENT dark.json (артефакт `build:binary`); `resolveAssetDir` helper
+- **printTimings TOTAL** — исключён двойной учёт parallel-веток
+- **bindSessionExtensions** — fire-and-forget rebind, нет unhandled rejection
+
+### Breaking Changes
+
+- **`loadSkills()` и `loadSkillsFromDir()` возвращают `Promise`** — все
+  внешние SDK-потребители должны `await` эти вызовы
+
+### Изменения версий
+
+- **fan** (root) — `2.4.2` → `2.5.0`
+- **`@seaagents/fan-coding-agent`** — `2.3.7` → `2.4.0`
+- **`@fan/api-gateway`** — `1.1.1` → `1.2.0`
+- **`@fan/db`** — `1.0.1` → `1.1.0`
+- **`@fan/model-manager`** — `1.0.1` → `1.1.0`
+- **fan-persistent-memory** — `4.0.1` → `4.1.0`
+- **fan-session-analytics** — `1.4.0` → `1.4.1`
 
 ## [2.4.2] — 2026-08-07
 

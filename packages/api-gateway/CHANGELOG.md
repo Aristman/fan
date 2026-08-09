@@ -1,5 +1,48 @@
 # Changelog
 
+## [1.2.0] - 2026-08-09
+
+### Изменено
+
+- **HTTP-сервер стартует без ожидания extension binding** — `MCP connectAll`
+  выполняется в фоне; `SessionAdapter.whenReady()` используется для гейтинга
+  5 session-endpoints (`/api/sessions*`, `/api/sessions/:id/messages`);
+  `/api/health` отвечает мгновенно без ожидания готовности расширений.
+  Time-to-health ~6.5s → ~2.7s.
+
+---
+
+## [1.1.1] - 2026-08-02
+
+### Новое
+
+- **Analytics endpoints** — `GET /api/analytics/reports[/:name]` для дашборд-вкладки
+  «Аналитика» (fan-session-analytics интеграция).
+
+---
+
+## [1.1.0] - 2026-07-16
+
+### Новое
+
+- **`GET /api/mcp/servers`** — эндпоинт-заглушка для MCP-серверов (Phase 3
+  интеграции, полный runtime-мост в Phase 4).
+
+### Изменено
+
+- Ребрендинг на Fast Agents Network, lint-фиксы (biome).
+
+---
+
+## [1.0.1] - 2026-06-17
+
+### Изменено
+
+- Ребрендинг: замена оставшихся `pi`-упоминаний на `fan`.
+- Удалён `scripts/sync-version.mjs`, независимое версионирование пакетов.
+
+---
+
 ## [1.0.0] - 2026-06-14
 
 FAN 1.0.0 — стабилизация API Gateway. Все 14 эндпоинтов достигли
