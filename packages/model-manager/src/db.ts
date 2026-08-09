@@ -1,12 +1,18 @@
 import type { PrismaClient } from "@fan/db";
-import { getPrismaClient } from "@fan/db";
+import { ensureDatabase, getPrismaClient } from "@fan/db";
 
 let _db: PrismaClient | null = null;
 
-/** Get Prisma client, throws if DB not available */
+/** Get Prisma client. On first access also kicks off ensureDatabase()
+ *  as a safety net — callers on the critical path should await
+ *  ensureDatabase() before reaching DB operations. */
 function db(): PrismaClient {
 	if (!_db) {
 		_db = getPrismaClient();
+		// Safety net: ensure schema init is in-flight.
+		// Critical-path callers (main.ts createRuntime factory) already
+		// await ensureDatabase() before creating the AgentSession.
+		void ensureDatabase();
 	}
 	return _db;
 }

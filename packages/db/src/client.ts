@@ -215,6 +215,31 @@ export async function initDatabase(prisma?: PrismaClient): Promise<void> {
 	}
 }
 
+/**
+ * Cached promise for lazy/async database initialization.
+ * Ensures initDatabase() runs exactly once and can be awaited at first use.
+ */
+let _initPromise: Promise<void> | null = null;
+
+/**
+ * Ensure the database schema is initialized (lazy, singleton).
+ *
+ * On first call, kicks off initDatabase() and caches the promise.
+ * Subsequent calls return the same promise. Safe to await from multiple
+ * concurrent callers — they all receive the same in-flight promise.
+ *
+ * Errors are logged but swallowed (same semantics as the old try/catch
+ * in main.ts) so that a DB failure is non-fatal.
+ */
+export function ensureDatabase(): Promise<void> {
+	if (!_initPromise) {
+		_initPromise = initDatabase().catch((e) => {
+			console.error("Failed to initialize database:", e);
+		});
+	}
+	return _initPromise;
+}
+
 /** Close the Prisma connection */
 export async function closePrismaClient(): Promise<void> {
 	if (_client) {

@@ -978,10 +978,12 @@ export async function main(args: string[]) {
 		({ migratedAuthProviders: migratedProviders, deprecationWarnings } = runMigrations(process.cwd()));
 		time("runMigrations");
 
-		// Initialize database schema (create tables if needed)
+		// Initialize database schema via cached singleton.
+		// ensureDatabase() runs initDatabase() exactly once and caches the
+		// promise; subsequent calls (e.g. model-manager) are instant.
 		try {
-			const { initDatabase } = await import("@fan/db");
-			await initDatabase();
+			const { ensureDatabase } = await import("@fan/db");
+			await ensureDatabase();
 		} catch (e) {
 			console.error("Failed to initialize database:", e);
 		}
