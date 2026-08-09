@@ -52,6 +52,7 @@ Keys can also be set per-provider in `models.json` via `apiKey` (takes precedenc
 | `FAN_CACHE_RETENTION` | `"default"` | `"long"` for 24h Anthropic cache TTL |
 | `FAN_CLEAR_ON_SHRINK` | `"0"` | `"1"` to clear empty rows on shrink |
 | `FAN_HARDWARE_CURSOR` | `"0"` | `"1"` to show hardware cursor |
+| `FAN_CONTEXT_WALK` | `"gitroot"` | `"fsroot"` to walk ancestor dirs to FS root instead of stopping at git-root |
 
 ## Settings Reference
 

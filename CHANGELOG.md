@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- **Context file walk stops at git-root** — `loadProjectContextFiles` now stops ascending
+  ancestor directories after reaching the git repository root (`.git` file or directory)
+  instead of walking to the filesystem root. This eliminates unnecessary directory
+  traversals on deep paths (Windows: ~5 levels, ~0.3ms pure walk + concurrent I/O
+  contention savings). Set `FAN_CONTEXT_WALK=fsroot` to restore the previous behaviour
+  (walk to filesystem root).
+
 ## [2.4.2] — 2026-08-07
 
 ### Новое

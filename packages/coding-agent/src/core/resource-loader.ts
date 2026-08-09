@@ -1,7 +1,7 @@
 import { existsSync, statSync } from "node:fs";
-import { readdir, readFile } from "node:fs/promises";
+import { access, readdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join, resolve, sep } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import chalk from "chalk";
 import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
 import { loadThemeFromPathAsync, type Theme } from "../modes/interactive/theme/theme.js";
@@ -75,6 +75,21 @@ async function loadContextFileFromDirAsync(dir: string): Promise<{ path: string;
 	return null;
 }
 
+async function findGitRepoRootAsync(startDir: string): Promise<string | null> {
+	let dir = resolve(startDir);
+	while (true) {
+		try {
+			await access(join(dir, ".git"));
+			return dir;
+		} catch {
+			// .git not found at this level
+		}
+		const parent = dirname(dir);
+		if (parent === dir) return null;
+		dir = parent;
+	}
+}
+
 async function loadProjectContextFilesAsync(
 	options: { cwd?: string; agentDir?: string } = {},
 ): Promise<Array<{ path: string; content: string }>> {
@@ -92,6 +107,11 @@ async function loadProjectContextFilesAsync(
 
 	const ancestorContextFiles: Array<{ path: string; content: string }> = [];
 
+	// Stop at git-root by default; FAN_CONTEXT_WALK=fsroot restores old FS-root walk
+	const walkMode = process.env.FAN_CONTEXT_WALK;
+	const stopAtGitRoot = walkMode !== "fsroot";
+	const gitRoot = stopAtGitRoot ? await findGitRepoRootAsync(resolvedCwd) : null;
+
 	let currentDir = resolvedCwd;
 	const root = resolve("/");
 
@@ -103,6 +123,7 @@ async function loadProjectContextFilesAsync(
 		}
 
 		if (currentDir === root) break;
+		if (gitRoot && currentDir === gitRoot) break;
 
 		const parentDir = resolve(currentDir, "..");
 		if (parentDir === currentDir) break;

@@ -562,4 +562,119 @@ export default function(fan: ExtensionAPI) {
 			expect(runner.getToolDefinition("duplicate-tool")?.description).toBe("explicit tool");
 		});
 	});
+
+	describe("context file walk — git-root stop", () => {
+		it("should stop walking at git-root (does not read parent dirs)", async () => {
+			// Simulate:  root/  (no .git, has AGENTS.md)
+			//              repo/  (.git, has CLAUDE.md)
+			//                sub/   (cwd)
+			const root = join(tempDir, "walk-root");
+			const repo = join(root, "repo");
+			const sub = join(repo, "sub");
+			mkdirSync(sub, { recursive: true });
+			mkdirSync(join(repo, ".git"), { recursive: true }); // directory .git = normal repo
+
+			writeFileSync(join(root, "AGENTS.md"), "# root");
+			writeFileSync(join(repo, "CLAUDE.md"), "# repo");
+
+			const loader = new DefaultResourceLoader({ cwd: sub, agentDir });
+			await loader.reload();
+
+			const { agentsFiles } = loader.getAgentsFiles();
+			const paths = agentsFiles.map((f) => f.path);
+
+			// CLAUDE.md at repo-root should be found
+			expect(paths.some((p) => p.endsWith("CLAUDE.md") && p.startsWith(repo))).toBe(true);
+			// AGENTS.md above git-root should NOT be found
+			expect(paths.some((p) => p.endsWith("AGENTS.md") && p.startsWith(root))).toBe(false);
+		});
+
+		it("should also stop when .git is a file (worktree)", async () => {
+			const root = join(tempDir, "wt-root");
+			const repo = join(root, "repo");
+			const sub = join(repo, "deep", "dir");
+			mkdirSync(sub, { recursive: true });
+			writeFileSync(join(repo, ".git"), "gitdir: /some/other/place"); // file .git = worktree
+
+			writeFileSync(join(root, "AGENTS.md"), "# root");
+			writeFileSync(join(repo, "CLAUDE.md"), "# repo");
+
+			const loader = new DefaultResourceLoader({ cwd: sub, agentDir });
+			await loader.reload();
+
+			const { agentsFiles } = loader.getAgentsFiles();
+			const paths = agentsFiles.map((f) => f.path);
+
+			expect(paths.some((p) => p.startsWith(repo))).toBe(true);
+			expect(paths.some((p) => p.endsWith("AGENTS.md") && p.startsWith(root))).toBe(false);
+		});
+
+		it("should walk to FS root when no .git exists", async () => {
+			// No .git anywhere in the temp tree — should walk to resolve("/")
+			const noGitDir = join(tempDir, "no-git");
+			const sub = join(noGitDir, "a", "b");
+			mkdirSync(sub, { recursive: true });
+			writeFileSync(join(noGitDir, "AGENTS.md"), "# no-git");
+
+			const loader = new DefaultResourceLoader({ cwd: sub, agentDir });
+			await loader.reload();
+
+			const { agentsFiles } = loader.getAgentsFiles();
+			// Should find AGENTS.md in the ancestor chain (no-git/)
+			expect(agentsFiles.some((f) => f.path.endsWith("AGENTS.md"))).toBe(true);
+		});
+
+		it("should respect FAN_CONTEXT_WALK=fsroot (walk past git-root)", async () => {
+			const root = join(tempDir, "fsroot-test");
+			const repo = join(root, "repo");
+			const sub = join(repo, "sub");
+			mkdirSync(sub, { recursive: true });
+			mkdirSync(join(repo, ".git"), { recursive: true });
+
+			writeFileSync(join(root, "AGENTS.md"), "# above-git");
+			writeFileSync(join(repo, "CLAUDE.md"), "# at-git");
+
+			const prevEnv = process.env.FAN_CONTEXT_WALK;
+			try {
+				process.env.FAN_CONTEXT_WALK = "fsroot";
+				const loader = new DefaultResourceLoader({ cwd: sub, agentDir });
+				await loader.reload();
+
+				const { agentsFiles } = loader.getAgentsFiles();
+				const paths = agentsFiles.map((f) => f.path);
+
+				// Both should be found with fsroot mode
+				expect(paths.some((p) => p.endsWith("CLAUDE.md") && p.startsWith(repo))).toBe(true);
+				expect(paths.some((p) => p.endsWith("AGENTS.md") && p.startsWith(root))).toBe(true);
+			} finally {
+				if (prevEnv === undefined) {
+					delete process.env.FAN_CONTEXT_WALK;
+				} else {
+					process.env.FAN_CONTEXT_WALK = prevEnv;
+				}
+			}
+		});
+
+		it("should preserve root→cwd ordering of context files", async () => {
+			const repo = join(tempDir, "order-repo");
+			const sub = join(repo, "sub");
+			mkdirSync(sub, { recursive: true });
+			mkdirSync(join(repo, ".git"), { recursive: true });
+
+			writeFileSync(join(repo, "CLAUDE.md"), "# repo-level");
+			writeFileSync(join(sub, "AGENTS.md"), "# sub-level");
+
+			const loader = new DefaultResourceLoader({ cwd: sub, agentDir });
+			await loader.reload();
+
+			const { agentsFiles } = loader.getAgentsFiles();
+			// Filter to only the files we created (exclude global agentDir context)
+			const ours = agentsFiles.filter((f) => f.path.startsWith(repo) || f.path.startsWith(sub));
+
+			// root→cwd ordering: repo-level CLAUDE.md comes before sub-level AGENTS.md
+			expect(ours.length).toBe(2);
+			expect(ours[0].path).toContain("CLAUDE.md");
+			expect(ours[1].path).toContain("AGENTS.md");
+		});
+	});
 });
