@@ -1,5 +1,4 @@
 import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
-import { existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import type { GoldenEntry } from "./types.js";
 
@@ -131,13 +130,6 @@ export async function saveState(
 		}
 		return false;
 	}
-}
-
-/**
- * Check if state.json exists.
- */
-export function stateExists(extensionDir: string): boolean {
-	return existsSync(getStatePath(extensionDir));
 }
 
 // ============================================================================

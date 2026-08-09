@@ -92,33 +92,3 @@ export function ftsSearch(
     return [];
   }
 }
-
-// ──────────────────────────────────────────────
-// Query preprocessing helpers
-// ──────────────────────────────────────────────
-
-export function preprocessQuery(query: string): {
-  keywords: string[];
-  ftsQuery: string;
-} {
-  const tokens = query
-    .toLowerCase()
-    .replace(/[^a-z0-9а-яё\s\-_\/\.]/g, " ")
-    .split(/\s+/)
-    .filter((t) => t.length > 0 && !STOP_WORDS.has(t));
-
-  const ftsQuery = tokens.join(" OR ");
-
-  return { keywords: tokens, ftsQuery };
-}
-
-/**
- * Pre-process tags for FTS: convert JSON array to space-separated tokens.
- * Example: ["typescript", "react"] → "typescript react"
- */
-export function tagsToSearchable(tags: string[]): string {
-  return tags
-    .flatMap((tag) => tag.toLowerCase().replace(/[^a-z0-9а-яё_\-]/g, " ").split(/\s+/))
-    .filter((t) => t.length > 1 && !STOP_WORDS.has(t))
-    .join(" ");
-}

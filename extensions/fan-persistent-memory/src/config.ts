@@ -115,10 +115,6 @@ const DEFAULTS: MemoryConfig = {
 const CONFIG_DIR = join(homedir(), ".fan", "agent", "memory");
 const CONFIG_PATH = join(CONFIG_DIR, "config.json");
 
-export function getMemoryDir(): string {
-  return CONFIG_DIR;
-}
-
 export function getGlobalDbPath(): string {
   return join(CONFIG_DIR, "global.db");
 }

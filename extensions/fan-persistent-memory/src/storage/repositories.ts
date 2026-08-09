@@ -532,37 +532,3 @@ export class ClusterRepository {
     return result.changes > 0;
   }
 }
-
-// ──────────────────────────────────────────────
-// Usage Repository
-// ──────────────────────────────────────────────
-
-export class UsageRepository {
-  constructor(private db: MemoryDatabase) {}
-
-  log(params: {
-    memoryId: string;
-    sessionId?: string;
-    promptHash?: string;
-    score: number;
-  }): void {
-    this.db.getDb().prepare(`
-      INSERT INTO memory_usage (memory_id, session_id, prompt_hash, retrieved_at, retrieved_score)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(
-      params.memoryId,
-      params.sessionId ?? null,
-      params.promptHash ?? null,
-      Date.now(),
-      params.score
-    );
-  }
-
-  getAccessStats(memoryId: string): { count: number; lastAccess: number | null } {
-    const mem = this.db
-      .getDb()
-      .prepare("SELECT access_count, last_accessed_at FROM memories WHERE id = ?")
-      .get(memoryId) as { access_count: number; last_accessed_at: number | null } | undefined;
-    return mem ? { count: mem.access_count, lastAccess: mem.last_accessed_at } : { count: 0, lastAccess: null };
-  }
-}

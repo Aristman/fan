@@ -51,16 +51,6 @@ export interface Cluster {
   updatedAt: number;
 }
 
-export interface MemoryUsageEntry {
-  id: number;
-  memoryId: string;
-  sessionId: string | null;
-  promptHash: string | null;
-  wasUseful: boolean | null;
-  retrievedAt: number;
-  retrievedScore: number;
-}
-
 export interface RetrievalResult {
   memory: Memory;
   score: number;
