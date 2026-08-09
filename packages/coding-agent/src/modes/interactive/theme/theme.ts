@@ -451,6 +451,17 @@ function getBuiltinThemes(): Record<string, ThemeJson> {
 		const themesDir = getThemesDir();
 		const darkPath = path.join(themesDir, "dark.json");
 		const lightPath = path.join(themesDir, "light.json");
+
+		// Verify theme files exist before reading (defense-in-depth)
+		if (!fs.existsSync(darkPath) || !fs.existsSync(lightPath)) {
+			const missing = [darkPath, lightPath].filter((p) => !fs.existsSync(p));
+			throw new Error(
+				`Built-in theme files not found. Checked paths:\n` +
+					missing.map((p) => `  - ${p}`).join("\n") +
+					`\nEnsure the package is built correctly (npm run build) or themes are copied to dist/.`,
+			);
+		}
+
 		BUILTIN_THEMES = {
 			dark: JSON.parse(fs.readFileSync(darkPath, "utf-8")) as ThemeJson,
 			light: JSON.parse(fs.readFileSync(lightPath, "utf-8")) as ThemeJson,

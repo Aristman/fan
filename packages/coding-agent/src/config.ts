@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, realpathSync } from "fs";
 import { homedir } from "os";
-import { dirname, join, resolve } from "path";
+import { basename, dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
 
 // =============================================================================
@@ -95,6 +95,16 @@ export function getPackageDir(): string {
 	let dir = __dirname;
 	while (dir !== dirname(dir)) {
 		if (existsSync(join(dir, "package.json"))) {
+			// Skip dist/package.json if parent also has package.json.
+			// In monorepo/dev layout, copy-binary-assets puts package.json into dist/,
+			// but the real package root is the parent directory.
+			if (basename(dir) === "dist") {
+				const parent = dirname(dir);
+				if (existsSync(join(parent, "package.json"))) {
+					dir = parent;
+					continue;
+				}
+			}
 			return dir;
 		}
 		dir = dirname(dir);
@@ -115,6 +125,20 @@ function getBinaryDir(): string {
 }
 
 /**
+ * Resolve an asset subdirectory under src/ or dist/, preferring whichever exists.
+ * Defense-in-depth: verifies the resulting directory exists before returning.
+ * Falls back to the other variant (src↔dist) if the first choice is missing.
+ */
+function resolveAssetDir(packageDir: string, ...subpath: string[]): string {
+	const srcPath = join(packageDir, "src", ...subpath);
+	const distPath = join(packageDir, "dist", ...subpath);
+	if (existsSync(srcPath)) return srcPath;
+	if (existsSync(distPath)) return distPath;
+	// Neither exists — return the dist path as default (will produce a clear error downstream)
+	return distPath;
+}
+
+/**
  * Get path to built-in themes directory (shipped with package)
  * - For Bun binary: theme/ next to executable
  * - For Node.js (dist/): dist/modes/interactive/theme/
@@ -126,8 +150,7 @@ export function getThemesDir(): string {
 	}
 	// Theme is in modes/interactive/theme/ relative to src/ or dist/
 	const packageDir = getPackageDir();
-	const srcOrDist = existsSync(join(packageDir, "src")) ? "src" : "dist";
-	return join(packageDir, srcOrDist, "modes", "interactive", "theme");
+	return resolveAssetDir(packageDir, "modes", "interactive", "theme");
 }
 
 /**
@@ -141,8 +164,7 @@ export function getExportTemplateDir(): string {
 		return join(getBinaryDir(), "export-html");
 	}
 	const packageDir = getPackageDir();
-	const srcOrDist = existsSync(join(packageDir, "src")) ? "src" : "dist";
-	return join(packageDir, srcOrDist, "core", "export-html");
+	return resolveAssetDir(packageDir, "core", "export-html");
 }
 
 /** Get path to package.json */
@@ -181,8 +203,7 @@ export function getInteractiveAssetsDir(): string {
 		return join(getBinaryDir(), "assets");
 	}
 	const packageDir = getPackageDir();
-	const srcOrDist = existsSync(join(packageDir, "src")) ? "src" : "dist";
-	return join(packageDir, srcOrDist, "modes", "interactive", "assets");
+	return resolveAssetDir(packageDir, "modes", "interactive", "assets");
 }
 
 /** Get path to a bundled interactive asset */
