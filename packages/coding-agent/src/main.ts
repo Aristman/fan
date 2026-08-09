@@ -971,6 +971,7 @@ export async function main(args: string[]) {
 		} catch (e) {
 			console.error("Failed to initialize database:", e);
 		}
+		time("initDatabase");
 	} else {
 		time("runMigrations (skipped – worker mode)");
 	}
@@ -1107,6 +1108,7 @@ export async function main(args: string[]) {
 		agentDir,
 		sessionManager,
 	});
+	time("createAgentSessionRuntime");
 	const { services, session, modelFallbackMessage } = runtime;
 	const { settingsManager, modelRegistry, resourceLoader } = services;
 

@@ -29,6 +29,7 @@ import { createEventBus, type EventBus } from "../event-bus.js";
 import type { ExecOptions } from "../exec.js";
 import { execCommand } from "../exec.js";
 import { createSyntheticSourceInfo } from "../source-info.js";
+import { time } from "../timings.js";
 import type {
 	Extension,
 	ExtensionAPI,
@@ -396,6 +397,7 @@ export async function loadExtensions(paths: string[], cwd: string, eventBus?: Ev
 
 	for (const extPath of paths) {
 		const { extension, error } = await loadExtension(extPath, cwd, resolvedEventBus, runtime);
+		time(`ext:${path.basename(extPath)}`);
 
 		if (error) {
 			errors.push({ path: extPath, error });

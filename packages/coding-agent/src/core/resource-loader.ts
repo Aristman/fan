@@ -19,6 +19,7 @@ import { SettingsManager } from "./settings-manager.js";
 import type { Skill } from "./skills.js";
 import { loadSkills } from "./skills.js";
 import { createSourceInfo, type SourceInfo } from "./source-info.js";
+import { time } from "./timings.js";
 
 export interface ResourceExtensionPaths {
 	skillPaths?: Array<{ path: string; metadata: PathMetadata }>;
@@ -321,6 +322,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 		const cliExtensionPaths = await this.packageManager.resolveExtensionSources(this.additionalExtensionPaths, {
 			temporary: true,
 		});
+		time("resolvePackages");
 		const metadataByPath = new Map<string, PathMetadata>();
 
 		this.extensionSkillSourceInfos = new Map();
@@ -393,6 +395,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 			: this.mergePaths(cliEnabledExtensions, enabledExtensions);
 
 		const extensionsResult = await loadExtensions(extensionPaths, this.cwd, this.eventBus);
+		time("loadExtensions");
 		const inlineExtensions = await this.loadExtensionFactories(extensionsResult.runtime);
 		extensionsResult.extensions.push(...inlineExtensions.extensions);
 		extensionsResult.errors.push(...inlineExtensions.errors);
@@ -418,6 +421,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 
 		this.lastSkillPaths = skillPaths;
 		this.updateSkillsFromPaths(skillPaths, metadataByPath);
+		time("loadSkills");
 		for (const p of this.additionalSkillPaths) {
 			if (isLocalPath(p) && !existsSync(p) && !this.skillDiagnostics.some((d) => d.path === p)) {
 				this.skillDiagnostics.push({ type: "error", message: "Skill path does not exist", path: p });
@@ -430,6 +434,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 
 		this.lastPromptPaths = promptPaths;
 		this.updatePromptsFromPaths(promptPaths, metadataByPath);
+		time("loadPromptTemplates");
 		for (const p of this.additionalPromptTemplatePaths) {
 			if (isLocalPath(p) && !existsSync(p) && !this.promptDiagnostics.some((d) => d.path === p)) {
 				this.promptDiagnostics.push({ type: "error", message: "Prompt template path does not exist", path: p });
@@ -442,6 +447,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 
 		this.lastThemePaths = themePaths;
 		this.updateThemesFromPaths(themePaths, metadataByPath);
+		time("loadThemes");
 		for (const p of this.additionalThemePaths) {
 			if (!existsSync(p) && !this.themeDiagnostics.some((d) => d.path === p)) {
 				this.themeDiagnostics.push({ type: "error", message: "Theme path does not exist", path: p });
@@ -449,6 +455,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 		}
 
 		const agentsFiles = { agentsFiles: loadProjectContextFiles({ cwd: this.cwd, agentDir: this.agentDir }) };
+		time("loadProjectContext");
 		const resolvedAgentsFiles = this.agentsFilesOverride ? this.agentsFilesOverride(agentsFiles) : agentsFiles;
 		this.agentsFiles = resolvedAgentsFiles.agentsFiles;
 
