@@ -186,8 +186,11 @@ async function downloadTool(tool: "fd" | "rg"): Promise<string> {
 	const binaryExt = plat === "win32" ? ".exe" : "";
 	const binaryPath = join(TOOLS_DIR, config.binaryName + binaryExt);
 
-	// Download
-	await downloadFile(downloadUrl, archivePath);
+	// Download to a temp file first, then rename to the final archive path.
+	// This prevents a partial/corrupt archive from being mistaken for a complete
+	// one if the process is killed mid-download.
+	const tmpArchivePath = `${archivePath}.tmp_${process.pid}`;
+	await downloadFile(downloadUrl, tmpArchivePath);
 
 	// Extract into a unique temp directory. fd and rg downloads can run concurrently
 	// during startup, so sharing a fixed directory causes races.
@@ -199,13 +202,13 @@ async function downloadTool(tool: "fd" | "rg"): Promise<string> {
 
 	try {
 		if (assetName.endsWith(".tar.gz")) {
-			const extractResult = spawnSync("tar", ["xzf", archivePath, "-C", extractDir], { stdio: "pipe" });
+			const extractResult = spawnSync("tar", ["xzf", tmpArchivePath, "-C", extractDir], { stdio: "pipe" });
 			if (extractResult.error || extractResult.status !== 0) {
 				const errMsg = extractResult.error?.message ?? extractResult.stderr?.toString().trim() ?? "unknown error";
 				throw new Error(`Failed to extract ${assetName}: ${errMsg}`);
 			}
 		} else if (assetName.endsWith(".zip")) {
-			await extractZip(archivePath, { dir: extractDir });
+			await extractZip(tmpArchivePath, { dir: extractDir });
 		} else {
 			throw new Error(`Unsupported archive format: ${assetName}`);
 		}
@@ -222,6 +225,8 @@ async function downloadTool(tool: "fd" | "rg"): Promise<string> {
 		}
 
 		if (extractedBinary) {
+			// Remove any pre-existing binary first (renameSync may not overwrite on Windows)
+			rmSync(binaryPath, { force: true });
 			renameSync(extractedBinary, binaryPath);
 		} else {
 			throw new Error(`Binary not found in archive: expected ${binaryFileName} under ${extractDir}`);
@@ -233,6 +238,7 @@ async function downloadTool(tool: "fd" | "rg"): Promise<string> {
 		}
 	} finally {
 		// Cleanup
+		rmSync(tmpArchivePath, { force: true });
 		rmSync(archivePath, { force: true });
 		rmSync(extractDir, { recursive: true, force: true });
 	}
@@ -246,9 +252,16 @@ const TERMUX_PACKAGES: Record<string, string> = {
 	rg: "ripgrep",
 };
 
-// Ensure a tool is available, downloading if necessary
-// Returns the path to the tool, or null if unavailable
+// Cache of in-flight download promises. Prevents concurrent ensureTool() calls
+// for the same tool from triggering duplicate downloads. Once a download settles
+// (success or failure), the entry is removed so subsequent calls re-check disk.
+const inflightPromises = new Map<string, Promise<string | undefined>>();
+
+// Ensure a tool is available, downloading if necessary.
+// Concurrent calls for the same tool share a single in-flight download promise.
+// Returns the path to the tool, or undefined if unavailable.
 export async function ensureTool(tool: "fd" | "rg", silent: boolean = false): Promise<string | undefined> {
+	// Fast path: binary already on disk or in system PATH (no I/O beyond existsSync)
 	const existingPath = getToolPath(tool);
 	if (existingPath) {
 		return existingPath;
@@ -274,21 +287,48 @@ export async function ensureTool(tool: "fd" | "rg", silent: boolean = false): Pr
 		return undefined;
 	}
 
-	// Tool not found - download it
+	// Re-use an in-flight download if one is already running for this tool
+	const inflight = inflightPromises.get(tool);
+	if (inflight) {
+		return inflight;
+	}
+
+	// Tool not found — download it
 	if (!silent) {
 		console.log(chalk.dim(`${config.name} not found. Downloading...`));
 	}
 
-	try {
-		const path = await downloadTool(tool);
-		if (!silent) {
-			console.log(chalk.dim(`${config.name} installed to ${path}`));
+	const promise = (async (): Promise<string | undefined> => {
+		try {
+			const path = await downloadTool(tool);
+			if (!silent) {
+				console.log(chalk.dim(`${config.name} installed to ${path}`));
+			}
+			return path;
+		} catch (e) {
+			if (!silent) {
+				console.log(chalk.yellow(`Failed to download ${config.name}: ${e instanceof Error ? e.message : e}`));
+			}
+			return undefined;
+		} finally {
+			inflightPromises.delete(tool);
 		}
-		return path;
-	} catch (e) {
-		if (!silent) {
-			console.log(chalk.yellow(`Failed to download ${config.name}: ${e instanceof Error ? e.message : e}`));
-		}
-		return undefined;
-	}
+	})();
+
+	inflightPromises.set(tool, promise);
+	return promise;
+}
+
+/**
+ * Fire-and-forget wrapper around ensureTool for use on non-critical paths.
+ * Logs status via the optional callback but never throws.
+ */
+export function ensureToolBackground(tool: "fd" | "rg", onReady?: (path: string | undefined) => void): void {
+	ensureTool(tool, true)
+		.then((p) => {
+			onReady?.(p);
+		})
+		.catch(() => {
+			// Already logged inside ensureTool; swallow to avoid unhandled rejection
+		});
 }

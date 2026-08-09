@@ -63,7 +63,7 @@ import { getChangelogPath, getNewEntries, parseChangelog } from "../../utils/cha
 import { copyToClipboard } from "../../utils/clipboard.js";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.js";
 import { parseGitUrl } from "../../utils/git.js";
-import { ensureTool } from "../../utils/tools-manager.js";
+import { ensureToolBackground } from "../../utils/tools-manager.js";
 import { ArminComponent } from "./components/armin.js";
 import { AssistantMessageComponent } from "./components/assistant-message.js";
 import { BashExecutionComponent } from "./components/bash-execution.js";
@@ -372,6 +372,45 @@ export class InteractiveMode {
 			}));
 	}
 
+	/**
+	 * Kick off background download of fd/rg tools. Non-blocking.
+	 * When complete, updates this.fdPath and re-initializes autocomplete
+	 * so that file-path completions become available seamlessly.
+	 */
+	private startBackgroundToolInit(): void {
+		let fdSettled = false;
+		let rgSettled = false;
+		let fdOk = false;
+		let rgOk = false;
+
+		const maybeNotify = () => {
+			if (!fdSettled || !rgSettled) return;
+			if (fdOk && rgOk) {
+				this.showStatus("Tools ready (fd, rg)");
+			} else if (!fdOk && !rgOk) {
+				this.showStatus("Tools unavailable (fd, rg) — using built-in fallback");
+			} else {
+				this.showStatus(`Tools ready (${fdOk ? "fd" : "rg"}), fallback for ${fdOk ? "rg" : "fd"}`);
+			}
+		};
+
+		ensureToolBackground("fd", (fdPath) => {
+			fdSettled = true;
+			fdOk = !!fdPath;
+			if (fdPath) {
+				this.fdPath = fdPath;
+				this.setupAutocomplete(this.fdPath);
+			}
+			maybeNotify();
+		});
+
+		ensureToolBackground("rg", (rgPath) => {
+			rgSettled = true;
+			rgOk = !!rgPath;
+			maybeNotify();
+		});
+	}
+
 	private setupAutocomplete(fdPath: string | undefined): void {
 		// Define commands for autocomplete
 		const slashCommands: SlashCommand[] = BUILTIN_SLASH_COMMANDS.map((command) => ({
@@ -488,10 +527,8 @@ export class InteractiveMode {
 		// Load changelog (only show new entries, skip for resumed sessions)
 		this.changelogMarkdown = this.getChangelogForDisplay();
 
-		// Ensure fd and rg are available (downloads if missing, adds to PATH via getBinDir)
-		// Both are needed: fd for autocomplete, rg for grep tool and bash commands
-		const [fdPath] = await Promise.all([ensureTool("fd"), ensureTool("rg")]);
-		this.fdPath = fdPath;
+		// NOTE: fd/rg tool availability is checked in background after ui.start()
+		// (see below). This keeps network I/O off the critical startup path.
 
 		// Add header container as first child
 		this.ui.addChild(this.headerContainer);
@@ -557,6 +594,12 @@ export class InteractiveMode {
 		// Start the UI before initializing extensions so session_start handlers can use interactive dialogs
 		this.ui.start();
 		this.isInitialized = true;
+
+		// Kick off fd/rg tool download in background — off the critical startup path.
+		// If binaries are already present, getToolPath() returns immediately (sync existsSync).
+		// If download is needed, it runs concurrently; find/grep tools will await the same
+		// shared promise via the inflight cache in tools-manager.
+		this.startBackgroundToolInit();
 
 		// Initialize extensions first so resources are shown before messages
 		await this.bindCurrentSessionExtensions();
