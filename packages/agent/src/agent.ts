@@ -91,6 +91,14 @@ function createMutableAgentState(
 	};
 }
 
+/** Thrown when a message queue (steering or follow-up) exceeds its capacity limit. */
+export class QueueOverflowError extends Error {
+	constructor(queueName: string, current: number, limit: number) {
+		super(`QueueOverflowError: ${queueName} queue full (${current}/${limit})`);
+		this.name = "QueueOverflowError";
+	}
+}
+
 /** Options for constructing an {@link Agent}. */
 export interface AgentOptions {
 	initialState?: Partial<Omit<AgentState, "pendingToolCalls" | "isStreaming" | "streamingMessage" | "errorMessage">>;
@@ -103,6 +111,7 @@ export interface AgentOptions {
 	afterToolCall?: (context: AfterToolCallContext, signal?: AbortSignal) => Promise<AfterToolCallResult | undefined>;
 	steeringMode?: QueueMode;
 	followUpMode?: QueueMode;
+	messageQueueLimit?: number;
 	sessionId?: string;
 	thinkingBudgets?: ThinkingBudgets;
 	transport?: Transport;
@@ -113,9 +122,16 @@ export interface AgentOptions {
 class PendingMessageQueue {
 	private messages: AgentMessage[] = [];
 
-	constructor(public mode: QueueMode) {}
+	constructor(
+		public mode: QueueMode,
+		public readonly name: string,
+		public readonly limit: number,
+	) {}
 
 	enqueue(message: AgentMessage): void {
+		if (this.messages.length >= this.limit) {
+			throw new QueueOverflowError(this.name, this.messages.length, this.limit);
+		}
 		this.messages.push(message);
 	}
 
@@ -195,8 +211,18 @@ export class Agent {
 		this.onPayload = options.onPayload;
 		this.beforeToolCall = options.beforeToolCall;
 		this.afterToolCall = options.afterToolCall;
-		this.steeringQueue = new PendingMessageQueue(options.steeringMode ?? "one-at-a-time");
-		this.followUpQueue = new PendingMessageQueue(options.followUpMode ?? "one-at-a-time");
+		const queueLimit = options.messageQueueLimit ?? 50;
+		if (
+			options.messageQueueLimit !== undefined &&
+			(typeof options.messageQueueLimit !== "number" ||
+				Number.isNaN(options.messageQueueLimit) ||
+				options.messageQueueLimit < 1 ||
+				!Number.isInteger(options.messageQueueLimit))
+		) {
+			throw new Error("messageQueueLimit must be a positive integer");
+		}
+		this.steeringQueue = new PendingMessageQueue(options.steeringMode ?? "one-at-a-time", "steering", queueLimit);
+		this.followUpQueue = new PendingMessageQueue(options.followUpMode ?? "one-at-a-time", "followUp", queueLimit);
 		this.sessionId = options.sessionId;
 		this.thinkingBudgets = options.thinkingBudgets;
 		this.transport = options.transport ?? "sse";

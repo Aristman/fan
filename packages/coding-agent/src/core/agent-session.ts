@@ -1200,8 +1200,6 @@ export class AgentSession {
 	 * Internal: Queue a steering message (already expanded, no extension command check).
 	 */
 	private async _queueSteer(text: string, images?: ImageContent[]): Promise<void> {
-		this._steeringMessages.push(text);
-		this._emitQueueUpdate();
 		const content: (TextContent | ImageContent)[] = [{ type: "text", text }];
 		if (images) {
 			content.push(...images);
@@ -1211,14 +1209,14 @@ export class AgentSession {
 			content,
 			timestamp: Date.now(),
 		});
+		this._steeringMessages.push(text);
+		this._emitQueueUpdate();
 	}
 
 	/**
 	 * Internal: Queue a follow-up message (already expanded, no extension command check).
 	 */
 	private async _queueFollowUp(text: string, images?: ImageContent[]): Promise<void> {
-		this._followUpMessages.push(text);
-		this._emitQueueUpdate();
 		const content: (TextContent | ImageContent)[] = [{ type: "text", text }];
 		if (images) {
 			content.push(...images);
@@ -1228,6 +1226,8 @@ export class AgentSession {
 			content,
 			timestamp: Date.now(),
 		});
+		this._followUpMessages.push(text);
+		this._emitQueueUpdate();
 	}
 
 	/**
