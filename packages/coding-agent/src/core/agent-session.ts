@@ -74,6 +74,7 @@ import { buildSystemPrompt } from "./system-prompt.js";
 import { type BashOperations, createLocalBashOperations } from "./tools/bash.js";
 import { createAllToolDefinitions } from "./tools/index.js";
 import { createToolDefinitionFromAgentTool, wrapToolDefinition } from "./tools/tool-definition-wrapper.js";
+import { WatchdogTimer } from "./watchdog-timer.js";
 
 // ============================================================================
 // Skill Block Parsing
@@ -120,7 +121,8 @@ export type AgentSessionEvent =
 			errorMessage?: string;
 	  }
 	| { type: "auto_retry_start"; attempt: number; maxAttempts: number; delayMs: number; errorMessage: string }
-	| { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string };
+	| { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string }
+	| { type: "watchdog_timeout"; tool: string; reason: string; elapsedMs: number; toolCallId: string };
 
 /** Listener function for agent session events */
 export type AgentSessionEventListener = (event: AgentSessionEvent) => void;
@@ -262,6 +264,9 @@ export class AgentSession {
 	private _bashAbortController: AbortController | undefined = undefined;
 	private _pendingBashMessages: BashExecutionMessage[] = [];
 
+	// Watchdog timer state (per-toolCallId)
+	private _watchdog: WatchdogTimer;
+
 	// Extension system
 	private _extensionRunner: ExtensionRunner | undefined = undefined;
 	private _turnIndex = 0;
@@ -309,6 +314,12 @@ export class AgentSession {
 		this._baseToolsOverride = config.baseToolsOverride;
 		this._sessionStartEvent = config.sessionStartEvent ?? { type: "session_start", reason: "startup" };
 		this._modelManager = config.modelManager;
+
+		this._watchdog = new WatchdogTimer({
+			onTimeout: (e) => this._onWatchdogTimeout(e.toolCallId, e.toolName, e.elapsedMs),
+			getTimeoutMs: () => this.settingsManager.getWatchdogTimeoutMs(),
+			isEnabled: () => this.settingsManager.isWatchdogEnabled(),
+		});
 
 		// Always subscribe to agent events for internal handling
 		// (session persistence, extensions, auto-compaction, retry logic)
@@ -514,6 +525,15 @@ export class AgentSession {
 
 		// Notify all listeners
 		this._emit(event);
+
+		// Watchdog integration: arm/reset/cancel based on tool lifecycle events.
+		if (event.type === "tool_execution_start") {
+			this._watchdog.arm(event.toolCallId, event.toolName);
+		} else if (event.type === "tool_execution_update") {
+			this._watchdog.reset(event.toolCallId);
+		} else if (event.type === "tool_execution_end") {
+			this._watchdog.cancel(event.toolCallId);
+		}
 
 		// Handle session persistence
 		if (event.type === "message_end") {
@@ -730,7 +750,26 @@ export class AgentSession {
 	 * Remove all listeners and disconnect from agent.
 	 * Call this when completely done with the session.
 	 */
+	// =========================================================================
+	// Watchdog Timer
+	// =========================================================================
+
+	/** Handler invoked when a per-tool watchdog timer fires. */
+	private _onWatchdogTimeout(toolCallId: string, tool: string, elapsedMs: number): void {
+		this._emit({
+			type: "watchdog_timeout",
+			tool,
+			reason: "watchdog_timeout",
+			elapsedMs,
+			toolCallId,
+		});
+
+		// Abort the in-flight agent run so the hung tool is interrupted.
+		this.agent.abort();
+	}
+
 	dispose(): void {
+		this._watchdog.dispose();
 		this._disconnectFromAgent();
 		this._eventListeners = [];
 	}

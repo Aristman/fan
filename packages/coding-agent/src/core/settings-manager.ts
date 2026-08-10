@@ -43,6 +43,11 @@ export interface MarkdownSettings {
 	codeBlockIndent?: string; // default: "  "
 }
 
+export interface WatchdogSettings {
+	enabled?: boolean; // default: true
+	timeoutMs?: number; // default: 720000 (12 minutes)
+}
+
 export type TransportSetting = Transport;
 
 /**
@@ -122,6 +127,7 @@ export interface Settings {
 	showHardwareCursor?: boolean; // Show terminal cursor while still positioning it for IME
 	markdown?: MarkdownSettings;
 	sessionDir?: string; // Custom session storage directory (same format as --session-dir CLI flag)
+	watchdog?: WatchdogSettings;
 }
 
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
@@ -701,6 +707,24 @@ export class SettingsManager {
 			baseDelayMs: this.settings.retry?.baseDelayMs ?? 2000,
 			maxDelayMs: this.settings.retry?.maxDelayMs ?? 60000,
 		};
+	}
+
+	/** Default watchdog timeout in milliseconds (12 minutes). */
+	static readonly DEFAULT_WATCHDOG_TIMEOUT_MS = 720000;
+
+	getWatchdogTimeoutMs(): number {
+		const raw = this.settings.watchdog?.timeoutMs;
+		if (raw !== undefined && (!Number.isFinite(raw) || raw < 1)) {
+			console.warn(
+				`[settings-manager] Invalid watchdog timeoutMs (${raw}), falling back to default ${SettingsManager.DEFAULT_WATCHDOG_TIMEOUT_MS} ms`,
+			);
+			return SettingsManager.DEFAULT_WATCHDOG_TIMEOUT_MS;
+		}
+		return raw ?? SettingsManager.DEFAULT_WATCHDOG_TIMEOUT_MS;
+	}
+
+	isWatchdogEnabled(): boolean {
+		return this.settings.watchdog?.enabled !== false;
 	}
 
 	getHideThinkingBlock(): boolean {
