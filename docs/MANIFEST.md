@@ -1,5 +1,5 @@
 # Documentation Manifest
-> Last updated: 2026-07-29
+> Last updated: 2026-08-10
 > Comprehensive index of all project documentation.
 > Maintainer: docs-impl agent
 
@@ -97,7 +97,7 @@
 | `skills/dev-docs-pack/` | ✅ | Documentation pack generator |
 | `skills/fan-forge/` | ✅ | Extension & skill factory |
 | `skills/feature-pipeline/` | ✅ | TDD feature development pipeline |
-| `skills/feature-roadmap/` | ✅ | TDD roadmap generator |
+| `skills/feature-roadmap/` | ✅ | TDD roadmap generator (v1.3.0: RGR TDD, e2e/smoke, references/) |
 | `skills/idea-lab/` | ✅ | Idea research (technical/business/creative) |
 | `skills/repo-explorer/` | ✅ | Git repo analysis (GitHub & local) |
 | `skills/research-spec-generator/` | ✅ | Research + specification generation |
