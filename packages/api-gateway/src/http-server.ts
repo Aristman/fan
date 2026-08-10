@@ -66,6 +66,8 @@ export interface SessionAdapter {
 	listAnalyticsReports(): Promise<AnalyticsReportMeta[]>;
 	/** Read a single analytics report by name */
 	readAnalyticsReport(name: string): Promise<string | null>;
+	/** Abort active generation for a session. Returns true if session exists, false if not found. */
+	abortSession(id: string, reason?: string): Promise<boolean>;
 }
 
 // ============================================================================
@@ -251,6 +253,17 @@ async function createApp(
 		await modelManager.configureBudget(body);
 		const resp: UpdateBudgetResponse = { config: body };
 		return c.json(resp);
+	});
+
+	// --- Abort (F-01) ---
+	app.post("/api/sessions/:id/abort", async (c) => {
+		await sessionAdapter.whenReady?.();
+		const id = c.req.param("id");
+		const result = await sessionAdapter.abortSession(id);
+		if (!result) {
+			return c.json({ error: "Session not found", code: "NOT_FOUND" } satisfies ApiError, 404);
+		}
+		return c.json({ status: "aborted" }, 202);
 	});
 
 	// --- Analytics ---

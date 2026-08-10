@@ -31,6 +31,7 @@ const mockSessionAdapter = {
 	whenReady: vi.fn().mockResolvedValue(undefined),
 	listAnalyticsReports: vi.fn().mockResolvedValue([]),
 	readAnalyticsReport: vi.fn().mockResolvedValue(null),
+	abortSession: vi.fn().mockResolvedValue(true),
 };
 
 vi.mock("@fan/model-manager", () => ({

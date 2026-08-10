@@ -159,8 +159,15 @@ export function attachWebSocketHandler(options: WsHandlerOptions): { close: () =
 							ws.send(
 								JSON.stringify({ type: "pong", sessionId: connSessionId, timestamp: new Date().toISOString() }),
 							);
+						} else if (msg.type === "abort") {
+							// F-01: abort active generation for the connected session
+							sessionAdapter.abortSession(connSessionId).catch((err: unknown) => {
+								console.warn(
+									`[ws-handler] Abort failed for session ${connSessionId}:`,
+									err instanceof Error ? err.message : err,
+								);
+							});
 						}
-						// Other message types can be handled here in the future
 					} catch {
 						// Ignore malformed messages
 					}

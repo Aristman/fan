@@ -254,4 +254,4 @@ export interface WsError extends WsMessage {
 export type WsOutgoingMessage = WsAgentEvent | WsBudgetAlert | WsModelSwitch | WsError;
 
 /** Incoming WebSocket messages from client */
-export type WsIncomingMessage = { type: "ping" } | { type: "subscribe"; sessionId: string };
+export type WsIncomingMessage = { type: "ping" } | { type: "subscribe"; sessionId: string } | { type: "abort" };

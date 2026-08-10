@@ -534,6 +534,26 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 			return null;
 		},
 
+		// --- abortSession (F-01): abort active generation for the given session ---
+		async abortSession(id: string, reason?: string) {
+			const abortReason = reason ?? "operator";
+			if (id === runtime.session.sessionId) {
+				console.info(`[session-adapter] Aborting session ${id} (reason: ${abortReason})`);
+				runtime.session.clearQueue();
+				// Fire-and-forget: don't await abort completion (REST must respond <1s)
+				runtime.session.abort().catch((err: unknown) => {
+					console.warn(
+						`[session-adapter] Abort failed for session ${id}:`,
+						err instanceof Error ? err.message : err,
+					);
+				});
+				return true;
+			}
+			console.info(`[session-adapter] Abort requested for non-active session ${id} (reason: ${abortReason})`);
+			const diskSessions = await loadDiskSessions();
+			return diskSessions.some((s) => s.id === id);
+		},
+
 		bindSessionExtensions,
 		whenReady() {
 			return _bindPromise;
