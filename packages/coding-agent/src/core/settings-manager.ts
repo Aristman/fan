@@ -48,6 +48,11 @@ export interface WatchdogSettings {
 	timeoutMs?: number; // default: 720000 (12 minutes)
 }
 
+export interface LoopDetectorSettings {
+	enabled?: boolean; // default: true
+	threshold?: number; // default: 2 — consecutive identical errors before firing
+}
+
 export type TransportSetting = Transport;
 
 /**
@@ -128,6 +133,7 @@ export interface Settings {
 	markdown?: MarkdownSettings;
 	sessionDir?: string; // Custom session storage directory (same format as --session-dir CLI flag)
 	watchdog?: WatchdogSettings;
+	loopDetector?: LoopDetectorSettings;
 }
 
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
@@ -725,6 +731,21 @@ export class SettingsManager {
 
 	isWatchdogEnabled(): boolean {
 		return this.settings.watchdog?.enabled !== false;
+	}
+
+	/** Default loop detector threshold (consecutive identical errors). */
+	static readonly DEFAULT_LOOP_DETECTOR_THRESHOLD = 2;
+
+	getLoopDetectorThreshold(): number {
+		const raw = this.settings.loopDetector?.threshold;
+		if (raw !== undefined && (!Number.isFinite(raw) || raw < 1)) {
+			return SettingsManager.DEFAULT_LOOP_DETECTOR_THRESHOLD;
+		}
+		return raw ?? SettingsManager.DEFAULT_LOOP_DETECTOR_THRESHOLD;
+	}
+
+	isLoopDetectorEnabled(): boolean {
+		return this.settings.loopDetector?.enabled !== false;
 	}
 
 	getHideThinkingBlock(): boolean {

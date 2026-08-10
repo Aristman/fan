@@ -170,6 +170,13 @@ async function runLoop(
 
 		// Inner loop: process tool calls and steering messages
 		while (hasMoreToolCalls || pendingMessages.length > 0) {
+			// Check abort signal before starting the next turn.
+			// This catches aborts from loop detector, watchdog, REST API, etc.
+			if (signal?.aborted) {
+				await emit({ type: "agent_end", messages: newMessages });
+				return;
+			}
+
 			if (!firstTurn) {
 				await emit({ type: "turn_start" });
 			} else {

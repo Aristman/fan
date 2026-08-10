@@ -16,7 +16,15 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import type { ModelManager } from "@fan/model-manager";
-import type { Agent, AgentEvent, AgentMessage, AgentState, AgentTool, ThinkingLevel } from "@seaagents/fan-agent-core";
+import {
+	type Agent,
+	type AgentEvent,
+	type AgentMessage,
+	type AgentState,
+	type AgentTool,
+	QueueOverflowError,
+	type ThinkingLevel,
+} from "@seaagents/fan-agent-core";
 import type { AssistantMessage, ImageContent, Message, Model, TextContent } from "@seaagents/fan-ai";
 import { isContextOverflow, modelsAreEqual, resetApiProviders, supportsXhigh } from "@seaagents/fan-ai";
 import { getDocsPath } from "../config.js";
@@ -61,6 +69,7 @@ import {
 	type TurnStartEvent,
 	wrapRegisteredTools,
 } from "./extensions/index.js";
+import { LoopDetector, normalizeErrorText } from "./loop-detector.js";
 import type { BashExecutionMessage, CustomMessage } from "./messages.js";
 import type { ModelRegistry } from "./model-registry.js";
 import { expandPromptTemplate, type PromptTemplate } from "./prompt-templates.js";
@@ -86,6 +95,23 @@ export interface ParsedSkillBlock {
 	location: string;
 	content: string;
 	userMessage: string | undefined;
+}
+
+/**
+ * Extract the first text content from a tool result (used to read error messages).
+ */
+function extractErrorText(result: unknown): string | undefined {
+	if (!result || typeof result !== "object") return undefined;
+	const r = result as { content?: unknown };
+	if (!Array.isArray(r.content)) return undefined;
+	for (const block of r.content) {
+		if (block && typeof block === "object" && (block as { type?: string }).type === "text") {
+			const raw = (block as { text: string }).text;
+			// Normalize volatile fragments for loop-detector signature stability.
+			return normalizeErrorText(raw);
+		}
+	}
+	return undefined;
 }
 
 /**
@@ -122,7 +148,8 @@ export type AgentSessionEvent =
 	  }
 	| { type: "auto_retry_start"; attempt: number; maxAttempts: number; delayMs: number; errorMessage: string }
 	| { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string }
-	| { type: "watchdog_timeout"; tool: string; reason: string; elapsedMs: number; toolCallId: string };
+	| { type: "watchdog_timeout"; tool: string; reason: string; elapsedMs: number; toolCallId: string }
+	| { type: "loop_detected"; reason: "loop_detected"; tool: string; error: string; count: number };
 
 /** Listener function for agent session events */
 export type AgentSessionEventListener = (event: AgentSessionEvent) => void;
@@ -267,6 +294,10 @@ export class AgentSession {
 	// Watchdog timer state (per-toolCallId)
 	private _watchdog: WatchdogTimer;
 
+	// Loop detector state (F-04)
+	private _loopDetector: LoopDetector;
+	private _loopDetectorFired = false;
+
 	// Extension system
 	private _extensionRunner: ExtensionRunner | undefined = undefined;
 	private _turnIndex = 0;
@@ -319,6 +350,12 @@ export class AgentSession {
 			onTimeout: (e) => this._onWatchdogTimeout(e.toolCallId, e.toolName, e.elapsedMs),
 			getTimeoutMs: () => this.settingsManager.getWatchdogTimeoutMs(),
 			isEnabled: () => this.settingsManager.isWatchdogEnabled(),
+		});
+
+		this._loopDetector = new LoopDetector({
+			onLoopDetected: (diag) => this._onLoopDetected(diag),
+			getThreshold: () => this.settingsManager.getLoopDetectorThreshold(),
+			isEnabled: () => this.settingsManager.isLoopDetectorEnabled(),
 		});
 
 		// Always subscribe to agent events for internal handling
@@ -520,6 +557,14 @@ export class AgentSession {
 			}
 		}
 
+		// Reset loop detector on each new user prompt so one-shot
+		// firing does not permanently disable detection.
+		// This runs independently of the extension system.
+		if (event.type === "agent_start") {
+			this._loopDetector.reset();
+			this._loopDetectorFired = false;
+		}
+
 		// Emit to extensions first
 		await this._emitExtensionEvent(event);
 
@@ -529,10 +574,13 @@ export class AgentSession {
 		// Watchdog integration: arm/reset/cancel based on tool lifecycle events.
 		if (event.type === "tool_execution_start") {
 			this._watchdog.arm(event.toolCallId, event.toolName);
+			this._loopDetector.onToolStart(event.toolCallId, event.toolName, event.args);
 		} else if (event.type === "tool_execution_update") {
 			this._watchdog.reset(event.toolCallId);
 		} else if (event.type === "tool_execution_end") {
 			this._watchdog.cancel(event.toolCallId);
+			const errorText = event.isError ? extractErrorText(event.result) : undefined;
+			this._loopDetector.onToolEnd(event.toolCallId, event.isError, errorText);
 		}
 
 		// Handle session persistence
@@ -768,8 +816,58 @@ export class AgentSession {
 		this.agent.abort();
 	}
 
+	// =========================================================================
+	// Loop Detector (F-04)
+	// =========================================================================
+
+	/**
+	 * Handler invoked when the loop detector fires.
+	 *
+	 * Synchronous: emits the `loop_detected` event and aborts the agent
+	 * immediately (mirrors `_onWatchdogTimeout`).  The `tool_execution_end`
+	 * event has already been delivered to listeners before this hook runs
+	 * (see _processAgentEvent ordering).
+	 *
+	 * Additionally injects a steer message forbidding the failed approach
+	 * so the next context window is aware of the ban.
+	 */
+	private _onLoopDetected(diag: { reason: "loop_detected"; tool: string; error: string; count: number }): void {
+		if (this._loopDetectorFired) return;
+		this._loopDetectorFired = true;
+
+		this._emit({
+			type: "loop_detected",
+			reason: diag.reason,
+			tool: diag.tool,
+			error: diag.error,
+			count: diag.count,
+		});
+
+		// Abort the in-flight agent run so the loop is interrupted.
+		try {
+			this.agent.abort();
+		} catch {
+			/* agent may already be disposed */
+		}
+
+		// Inject a steer message banning the failed approach so the
+		// next context knows not to repeat it.
+		const banMessage = `Подход «${diag.tool} с этими аргументами» приводит к одной и той же ошибке ${diag.count} раз подряд. ЗАПРЕЩЕНО повторять этот подход. Выбери другой.`;
+		try {
+			this.agent.steer({
+				role: "user",
+				content: [{ type: "text", text: banMessage }],
+				timestamp: Date.now(),
+			});
+		} catch (e) {
+			if (!(e instanceof QueueOverflowError)) throw e;
+			/* steering queue full — silently drop the ban message */
+		}
+	}
+
 	dispose(): void {
 		this._watchdog.dispose();
+		this._loopDetector.dispose();
 		this._disconnectFromAgent();
 		this._eventListeners = [];
 	}
