@@ -755,4 +755,67 @@ describe("agentLoopContinue with AgentMessage", () => {
 		expect(messages.length).toBe(1);
 		expect(messages[0].role).toBe("assistant");
 	});
+
+	// -----------------------------------------------------------------------
+	// P1 regression: abort signal BEFORE getFollowUpMessages prevents drain
+	// -----------------------------------------------------------------------
+
+	it("should NOT drain followUp queue when signal is aborted after text-only turn", async () => {
+		const context: AgentContext = {
+			systemPrompt: "You are helpful.",
+			messages: [],
+			tools: [],
+		};
+
+		const userPrompt: AgentMessage = createUserMessage("Hello");
+
+		// Text-only response — no tool calls, so the inner loop exits after one turn.
+		const streamFn = () => {
+			const stream = new MockAssistantStream();
+			queueMicrotask(() => {
+				const message = createAssistantMessage([{ type: "text", text: "text-only response" }]);
+				stream.push({ type: "done", reason: "stop", message });
+			});
+			return stream;
+		};
+
+		// Track whether getFollowUpMessages was called.
+		let followUpDrained = false;
+
+		const abortController = new AbortController();
+
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: identityConverter,
+			getFollowUpMessages: async () => {
+				followUpDrained = true;
+				return [
+					{
+						role: "user" as const,
+						content: [{ type: "text" as const, text: "queued follow-up" }],
+						timestamp: Date.now(),
+					},
+				];
+			},
+		};
+
+		const stream = agentLoop([userPrompt], context, config, abortController.signal, streamFn);
+
+		// Abort after turn_end fires (simulates drain synchronous abort).
+		const events: AgentEvent[] = [];
+		for await (const event of stream) {
+			events.push(event);
+			if (event.type === "turn_end") {
+				// Synchronously abort — mirrors session._handleAgentEvent at turn_end.
+				abortController.abort();
+			}
+		}
+
+		// The followUp queue must NOT have been drained (P1 fix).
+		expect(followUpDrained).toBe(false);
+
+		// agent_end must have been emitted.
+		const agentEnds = events.filter((e) => e.type === "agent_end");
+		expect(agentEnds).toHaveLength(1);
+	});
 });

@@ -149,7 +149,11 @@ export type AgentSessionEvent =
 	| { type: "auto_retry_start"; attempt: number; maxAttempts: number; delayMs: number; errorMessage: string }
 	| { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string }
 	| { type: "watchdog_timeout"; tool: string; reason: string; elapsedMs: number; toolCallId: string }
-	| { type: "loop_detected"; reason: "loop_detected"; tool: string; error: string; count: number };
+	| { type: "loop_detected"; reason: "loop_detected"; tool: string; error: string; count: number }
+	| { type: "drain_started" }
+	| { type: "drain_completed" }
+	| { type: "drain_cancelled" }
+	| { type: "drain_resumed" };
 
 /** Listener function for agent session events */
 export type AgentSessionEventListener = (event: AgentSessionEvent) => void;
@@ -297,6 +301,27 @@ export class AgentSession {
 	// Loop detector state (F-04)
 	private _loopDetector: LoopDetector;
 	private _loopDetectorFired = false;
+
+	// Drain flag (F-05) — graceful pause for super-orchestrator
+	//
+	// State model (strict 1:1:1 drain_started → drain_completed | drain_cancelled):
+	//   idle → draining → drained → (resume | prompt) → idle
+	//   idle → draining → (cancel) → idle  (drain_cancelled)
+	//
+	//   _drainAfterCurrentTurn = true  → "draining"  (turn in flight, abort pending)
+	//   _drainStopPending      = true  → abort was fired on turn_end; drain_completed is owed
+	//   _isDrained             = true  → "drained"   (drain_completed emitted, standing by)
+	//
+	//   setDrainAfterCurrentTurn(true)  emits drain_started
+	//   agent_end of drained run        emits drain_completed (via _drainStopPending || _drainAfterCurrentTurn)
+	//   setDrainAfterCurrentTurn(false) emits drain_cancelled (if drain was active)
+	//   resume()                        emits drain_resumed
+	//
+	//   isDraining is true ONLY in the "draining" state.
+	//   After drain_completed the session is "drained" — prompt() works, resume() is optional.
+	private _drainAfterCurrentTurn = false;
+	private _drainStopPending = false;
+	private _isDrained = false;
 
 	// Extension system
 	private _extensionRunner: ExtensionRunner | undefined = undefined;
@@ -495,6 +520,15 @@ export class AgentSession {
 		// and waitForRetry() can miss the in-flight retry.
 		this._createRetryPromiseForAgentEnd(event);
 
+		// F-05 drain: synchronously abort the agent after turn_end when draining,
+		// so the inner agent-loop sees signal.aborted before the next LLM call.
+		// Latch _drainStopPending so that drain_completed is emitted on agent_end
+		// even if resume() clears _drainAfterCurrentTurn in between (P4 race fix).
+		if (event.type === "turn_end" && this._drainAfterCurrentTurn) {
+			this._drainStopPending = true;
+			this.agent.abort();
+		}
+
 		this._agentEventQueue = this._agentEventQueue.then(
 			() => this._processAgentEvent(event),
 			() => this._processAgentEvent(event),
@@ -637,13 +671,27 @@ export class AgentSession {
 			}
 		}
 
+		// F-05 drain: emit drain_completed BEFORE retry/compaction checks.
+		// The orchestrator must not wait for LLM summarization (compaction) to
+		// learn that the drain finished.  Uses _drainStopPending (latched at
+		// turn_end) OR _drainAfterCurrentTurn (blocker fix: drain set in the
+		// turn_end→agent_end window, after the last turn_end already fired).
+		// After emission, reset flags and enter "drained" state (_isDrained = true).
+		if (event.type === "agent_end" && (this._drainStopPending || this._drainAfterCurrentTurn)) {
+			this._drainAfterCurrentTurn = false;
+			this._drainStopPending = false;
+			this._isDrained = true;
+			this._emit({ type: "drain_completed" });
+		}
+
 		// Check auto-retry and auto-compaction after agent completes
 		if (event.type === "agent_end" && this._lastAssistantMessage) {
 			const msg = this._lastAssistantMessage;
 			this._lastAssistantMessage = undefined;
 
 			// Check for retryable errors first (overloaded, rate limit, server errors)
-			if (this._isRetryableError(msg)) {
+			// F-05 P3: skip retry when draining — go straight to drain_completed.
+			if (this._isRetryableError(msg) && !this._drainAfterCurrentTurn && !this._isDrained) {
 				const didRetry = await this._handleRetryableError(msg);
 				if (didRetry) return; // Retry was initiated, don't proceed to compaction
 			}
@@ -1129,6 +1177,17 @@ export class AgentSession {
 			expandedText = expandPromptTemplate(expandedText, [...this.promptTemplates]);
 		}
 
+		// F-05 P2: reject prompt while actively draining.
+		// After drain completes (drained state), prompt() is allowed — it clears _isDrained.
+		if (this._drainAfterCurrentTurn) {
+			throw new Error("Session is draining (F-05). Wait for drain_completed, then call resume() or prompt() again.");
+		}
+
+		// If session was drained, transition to idle — new prompt resets the state.
+		if (this._isDrained) {
+			this._isDrained = false;
+		}
+
 		// If streaming, queue via steer() or followUp() based on option
 		if (this.isStreaming) {
 			if (!options?.streamingBehavior) {
@@ -1499,6 +1558,99 @@ export class AgentSession {
 	/** Get pending follow-up messages (read-only) */
 	getFollowUpMessages(): readonly string[] {
 		return this._followUpMessages;
+	}
+
+	// =========================================================================
+	// Drain Flag (F-05) — Graceful pause for super-orchestrator
+	// =========================================================================
+
+	/**
+	 * Set the drain flag. When `true`, the current in-flight tool call completes
+	 * normally but no new turn begins afterwards. Idempotent — repeated calls
+	 * with `true` are no-ops.
+	 *
+	 * State model (F-05):
+	 *   idle → draining → drained → (resume | prompt) → idle
+	 *
+	 * When called with `true`:
+	 *   - If already draining/drained → no-op
+	 *   - If agent is streaming → enter "draining" (abort at next turn_end)
+	 *   - If agent is idle → skip draining, go straight to "drained"
+	 *     (drain_started + drain_completed emitted synchronously)
+	 */
+	setDrainAfterCurrentTurn(value: boolean): void {
+		if (value) {
+			// Idempotent: already draining or drained → no-op
+			if (this._drainAfterCurrentTurn || this._isDrained) return;
+
+			this._drainAfterCurrentTurn = true;
+			this._emit({ type: "drain_started" });
+
+			if (!this.isStreaming) {
+				// No active turn — skip "draining" phase, go straight to "drained".
+				// drain_completed is emitted here; drain_started ↔ drain_completed 1:1.
+				this._drainAfterCurrentTurn = false;
+				this._isDrained = true;
+				this._emit({ type: "drain_completed" });
+			}
+			// else: streaming → abort will fire at turn_end, agent_end emits drain_completed
+		} else {
+			// Explicit cancel — revoke the drain request.
+			//
+			// Semantics (1:1:1 drain_started → drain_completed | drain_cancelled):
+			//   If drain_started was emitted and the abort has NOT yet latched
+			//   (_drainStopPending is false), emit drain_cancelled — clean cancel.
+			//   If the abort already latched (_drainStopPending is true), the
+			//   agent is already stopping and agent_end WILL emit drain_completed.
+			//   In that case we do NOT clear _drainStopPending (would break 1:1:1)
+			//   and do NOT emit drain_cancelled (drain_completed is the terminal).
+			const wasDraining = this._drainAfterCurrentTurn;
+			const abortAlreadyLatched = this._drainStopPending;
+
+			if (wasDraining && !abortAlreadyLatched) {
+				// Clean cancel: abort hasn't fired, no terminal event owed.
+				this._drainAfterCurrentTurn = false;
+				this._isDrained = false;
+				this._emit({ type: "drain_cancelled" });
+			}
+			// If abortAlreadyLatched: don't touch flags — agent_end will emit
+			// drain_completed.  Cancel is effectively a no-op in this window.
+			// If !wasDraining: drain was idle (no-op) or already drained (no-op).
+		}
+	}
+
+	/** Whether the drain flag is currently set. */
+	get drainAfterCurrentTurn(): boolean {
+		return this._drainAfterCurrentTurn;
+	}
+
+	/**
+	 * Alias for `drainAfterCurrentTurn` — true only in the "draining" state.
+	 * False in "drained" state (turn finished, abort already processed).
+	 */
+	get isDraining(): boolean {
+		return this._drainAfterCurrentTurn;
+	}
+
+	/**
+	 * Clear the drain flag so new turns can begin again.
+	 * Emits `drain_resumed` for observability (P5).
+	 *
+	 * If called while "draining" (turn still in flight), the drain is cancelled —
+	 * the turn_end handler will NOT abort because _drainAfterCurrentTurn is now false.
+	 * If called while "drained", transitions to idle and emits drain_resumed.
+	 */
+	resume(): void {
+		const wasDrainingOrDrained = this._drainAfterCurrentTurn || this._isDrained;
+		this._drainAfterCurrentTurn = false;
+		// NOTE: _drainStopPending is intentionally NOT cleared here.
+		// If the abort already fired at turn_end, the agent_end handler must
+		// still emit drain_completed (P4 race fix).  Clearing _drainAfterCurrentTurn
+		// is enough to prevent the abort from firing on a future turn_end.
+		this._isDrained = false;
+		if (wasDrainingOrDrained) {
+			this._emit({ type: "drain_resumed" });
+		}
 	}
 
 	get resourceLoader(): ResourceLoader {
@@ -2129,12 +2281,18 @@ export class AgentSession {
 					this.agent.state.messages = messages.slice(0, -1);
 				}
 
-				setTimeout(() => {
-					this.agent.continue().catch(() => {});
-				}, 100);
-			} else if (this.agent.hasQueuedMessages()) {
+				// F-05 drain-guard: skip retry continuation when draining/drained
+				// (same guard as the queued-messages branch below).
+				if (!this._drainAfterCurrentTurn && !this._isDrained) {
+					setTimeout(() => {
+						this.agent.continue().catch(() => {});
+					}, 100);
+				}
+			} else if (this.agent.hasQueuedMessages() && !this._drainAfterCurrentTurn && !this._isDrained) {
 				// Auto-compaction can complete while follow-up/steering/custom messages are waiting.
 				// Kick the loop so queued messages are actually delivered.
+				// F-05 P6: skip kick when draining or drained — messages stay queued
+				// and are delivered after resume + next prompt.
 				setTimeout(() => {
 					this.agent.continue().catch(() => {});
 				}, 100);

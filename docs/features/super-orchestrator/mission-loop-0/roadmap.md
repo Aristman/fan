@@ -173,7 +173,7 @@
 
 ---
 
-#### ☐ F-05: Drain-флаг в agent-session
+#### ✅ F-05: Drain-флаг в agent-session
 
 - **Приоритет:** P0
 - **Слой:** [BIZ]
