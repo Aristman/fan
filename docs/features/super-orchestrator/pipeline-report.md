@@ -29,7 +29,7 @@
 | F-06 Drain API | ✅ | 94c659d | 81/81 api-gateway | 1 |
 | F-07 budget_alert | ✅ | 41fcf61 | 92/92 api-gateway | 1 (+1 fix) |
 | F-08 File-state-manager | ✅ | 6e51409 | 84/84 | 1 (+1 fix) |
-| F-09 Mission loop | ✅ | pending | 163/163 fan-mission | 1 (+3 fix) |
+| F-09 Mission loop | ✅ | dcdde97 | 163/163 fan-mission | 1 (+3 fix) |
 | F-10 CLI init | ☐ | — | — | — |
 | F-11 Slash-команды | ☐ | — | — | — |
 | F-12 TUI-виджет | ☐ | — | — | — |
@@ -43,6 +43,22 @@
 ### Этап 2: http-hierarchy-2 (F-23..F-35) — ожидает
 ### Этап 3: depth-and-dashboard-3 (F-36..F-47) — ожидает
 
+## Точка возобновления (2026-08-10, остановка по команде оператора)
+
+**Состояние:** этап 0, фаза B в работе. Сделано 9/15 фич этапа 0 (фаза A ✅ 7/7 + phase-gate, фаза B: F-08 ✅, F-09 ✅).
+
+**Следующий шаг:** F-10 «CLI fan mission init + шаблоны» (taskId `84e8d482-8d2d-427b-ae20-02743d669f34`, зависимость F-08 ✅ — разблокирована). Далее F-11 (зависит F-09 ✅, F-06 ✅), F-12 (F-09 ✅), фаза C: F-13, F-14, F-15. После фазы B — phase-gate (smoke + e2e фазы B из roadmap).
+
+**Протокол возобновления:** прочитать этот файл + roadmap `mission-loop-0/roadmap.md` (статусы ✅), взять первую фичу ☐, Red → Green → verify → commit per-function. Контрольные точки: только в конце. Ветка: FAN/feature/new-agents-flow.
+
+**Ключевые решения по ходу (для будущих фич):**
+- `writeMissionStatus` — единственный легальный способ менять MISSION.md (только status, через FSM canTransition);
+- abort-гонка исправлена глобально: agent-loop чекает signal.aborted между ходами;
+- drain state-машина: idle→draining→drained→idle, события 1:1:1;
+- budget=0 = unlimited (везде); budgetCountedFor привязан к item;
+- recovery контура: по наличию iterationResult в журнале, независимо от interrupted;
+- известный pre-existing падеж: agent-session-concurrent steering-тест (quarantine-тикет в бэклоге).
+
 ## Журнал
 
 - **2026-08-10** — Pipeline инициализирован. Создано 18 задач (15 фич + verify/smoke/docs), зависимости wired.
@@ -52,6 +68,8 @@
 - **2026-08-10** — **F-04 ✅** Детектор циклов. Red 5/11 → Green → verify FAIL (микротаск-эстафета 700×count, one-shot на сессию, biome) → fix1 → verify FAIL (гонка abort в runLoop, reset за extensionRunner) → fix2 (чек signal.aborted между ходами в agent-loop — глобальный фикс abort-гонки; reset на agent_start) → **PASS**. Коммит `7a41f82`.
 - **2026-08-10** — **F-05 ✅** Drain-флаг. Red 10/10 → Green (+36 LOC) → verify FAIL (P1 потеря followUp после text-only хода, P2 prompt-байпас, P3 retry-байпас, P4 гонка resume) → fix1 (state-машина idle→draining→drained→idle, guard'ы) → verify FAIL (гонка установки drain в окне turn_end→agent_end) → fix2 (условие `_drainStopPending || _drainAfterCurrentTurn`, drain_cancelled, compaction-гварды) → гейт PASS. Коммит `cb66834`. Старт: F-06.
 - **2026-08-10** — ⚠️ Инцидент: pipeline-report.md потерял несохранённые правки после stash-проверки флаки-теста. Восстановлен из контекста координатора; отныне коммитится вместе с каждой фичей.
+- **2026-08-10** — ⚠️ Сеть: 4 воркера убиты обрывами (verify F-09, bug-fix ×3). Перезапуск роутера решил. Урок: воркеры чувствительны к сети; умершие воркеры не оставляют правок — повторять делегацию.
+- **2026-08-10** — **F-09 ✅** Mission loop. Red 22/22 → Green 387 LOC → verify FAIL (recovery работал только в сконструированном тесте: lastStep на 3/7, abort mid-tick коммитил после I0, шаг 6 неатомарен, budget_usd не enforced, зомби-цикл, нет межпроцессного lock) → fix1 (глубокий: журнал по шагам, abort-сигнал, file-lock, архивация) → verify FAIL (SIGKILL recovery, double-count, paused, zombie-дубли) → fix2 → verify FAIL (writeRoadmap неатомарен, stale budgetCounted → under-count) → fix3 (budgetCountedFor per-item, atomic writeRoadmap) → **PASS** (окна W3/W4/W5 эмпирически). 163/163. Коммит `dcdde97`. **Остановка по команде оператора** — точка возобновления выше.
 
 ## Бэклог (follow-ups, не блокеры)
 
