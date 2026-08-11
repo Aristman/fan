@@ -27,7 +27,7 @@
 | F-04 Детектор циклов | ✅ | 7a41f82 | 33 / 1121 | 1 (+2 fix) |
 | F-05 Drain-флаг | ✅ | cb66834 | 17 drain + 55 agent | 1 (+2 fix) |
 | F-06 Drain API | ✅ | 94c659d | 81/81 api-gateway | 1 |
-| F-07 budget_alert | ✅ | pending | 92/92 api-gateway | 1 (+1 fix) |
+| F-07 budget_alert | ✅ | 41fcf61 | 92/92 api-gateway | 1 (+1 fix) |
 | F-08 File-state-manager | ☐ | — | — | — |
 | F-09 Mission loop | ☐ | — | — | — |
 | F-10 CLI init | ☐ | — | — | — |
