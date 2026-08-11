@@ -554,6 +554,18 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 			return diskSessions.some((s) => s.id === id);
 		},
 
+		// --- drainSession (F-06): gracefully drain active generation for the given session ---
+		async drainSession(id: string) {
+			if (id === runtime.session.sessionId) {
+				console.info(`[session-adapter] Draining session ${id}`);
+				runtime.session.setDrainAfterCurrentTurn(true);
+				return true;
+			}
+			console.info(`[session-adapter] Drain requested for non-active session ${id}`);
+			const diskSessions = await loadDiskSessions();
+			return diskSessions.some((s) => s.id === id);
+		},
+
 		bindSessionExtensions,
 		whenReady() {
 			return _bindPromise;

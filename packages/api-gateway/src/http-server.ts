@@ -68,6 +68,8 @@ export interface SessionAdapter {
 	readAnalyticsReport(name: string): Promise<string | null>;
 	/** Abort active generation for a session. Returns true if session exists, false if not found. */
 	abortSession(id: string, reason?: string): Promise<boolean>;
+	/** Drain a session (graceful stop after current turn). Returns true if session exists, false if not found. */
+	drainSession(id: string): Promise<boolean>;
 }
 
 // ============================================================================
@@ -264,6 +266,17 @@ async function createApp(
 			return c.json({ error: "Session not found", code: "NOT_FOUND" } satisfies ApiError, 404);
 		}
 		return c.json({ status: "aborted" }, 202);
+	});
+
+	// --- Drain (F-06) ---
+	app.post("/api/sessions/:id/drain", async (c) => {
+		await sessionAdapter.whenReady?.();
+		const id = c.req.param("id");
+		const result = await sessionAdapter.drainSession(id);
+		if (!result) {
+			return c.json({ error: "Session not found", code: "NOT_FOUND" } satisfies ApiError, 404);
+		}
+		return c.json({ status: "draining" }, 202);
 	});
 
 	// --- Analytics ---

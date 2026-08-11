@@ -167,6 +167,14 @@ export function attachWebSocketHandler(options: WsHandlerOptions): { close: () =
 									err instanceof Error ? err.message : err,
 								);
 							});
+						} else if (msg.type === "drain") {
+							// F-06: drain (graceful stop) for the connected session
+							sessionAdapter.drainSession(connSessionId).catch((err: unknown) => {
+								console.warn(
+									`[ws-handler] Drain failed for session ${connSessionId}:`,
+									err instanceof Error ? err.message : err,
+								);
+							});
 						}
 					} catch {
 						// Ignore malformed messages
