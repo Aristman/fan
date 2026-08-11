@@ -1,0 +1,855 @@
+// F-09: Mission loop — deterministic 7-step external cycle for the FAN super-orchestrator.
+// Each tick() executes: wake → read → decide → iterate → verify → commit → backlog.
+// Stateless recovery via `.mission-loop.json` (survives process crashes between ticks).
+//
+// Deep-fix (P0-1..P2-9): per-step journal, abort signal, atomic step 6,
+// budget_usd enforcement, STATE.md auto-archiving, file-lock, CRLF preservation.
+
+import { randomUUID } from "node:crypto";
+import { existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import {
+	ARCHIVE_KEEP_COUNT,
+	archiveOldDoneItems,
+	canTransition,
+	checkStateFileSize,
+	MAX_STATE_BYTES,
+	readMission,
+	readRoadmap,
+	readState,
+	StateFileTooLarge,
+	writeMissionStatus,
+	writeRoadmap,
+	writeState,
+} from "./file-state-manager.js";
+
+// ─── Types ──────────────────────────────────────────────────────────────────
+
+export type MissionStatus = "active" | "paused" | "completed" | "aborted" | "failed" | "budget_exhausted";
+
+export interface IterationResult {
+	status: "COMPLETE" | "BLOCKED" | "DECIDE" | "FAILED";
+	reason?: string;
+	question?: string;
+	commitMessage?: string;
+	costTokens?: number;
+	costUsd?: number;
+}
+
+export interface MissionExecutor {
+	runIteration(opts: { missionDir: string; prompt: string; cwd: string }): Promise<IterationResult>;
+}
+
+export interface MissionGit {
+	commit(opts: { cwd: string; message: string; files: string[] }): Promise<{ hash: string }>;
+	log(opts: { cwd: string; maxCount?: number }): Promise<Array<{ hash: string; subject: string; date: string }>>;
+	status(opts: { cwd: string }): Promise<{ clean: boolean }>;
+}
+
+export interface MissionClock {
+	now(): Date | Promise<Date>;
+}
+
+export interface MissionLock {
+	acquire(): Promise<boolean>;
+	release(): Promise<void>;
+}
+
+export interface MissionLoopDeps {
+	executor: MissionExecutor;
+	git: MissionGit;
+	clock: MissionClock;
+	lock?: MissionLock;
+}
+
+export interface TickSteps {
+	wake: boolean;
+	read: boolean;
+	decide: boolean;
+	iterate: boolean;
+	verify: boolean;
+	commit: boolean;
+	backlog: boolean;
+}
+
+export interface TickResult {
+	iteration: number;
+	steps: TickSteps;
+	status: MissionStatus;
+	interrupted?: boolean;
+	item?: string;
+}
+
+interface LoopState {
+	currentIteration: number;
+	lastStep: number;
+	interrupted: boolean;
+	budgetUsed: { tokens: number; usd: number };
+	// P0-1: persisted iteration result for recovery after step 4
+	iterationResult?: IterationResult;
+	// P0-1: roadmap item being processed (survives crash)
+	pendingItem?: string;
+	pendingItemIndex?: number;
+	// P0-1: whether step 6 commit was completed
+	committed?: boolean;
+	// P0-2: abort signal persisted by abort()
+	abortedByOperator?: boolean;
+	// P1-1: which item the step 5 budget increment was persisted for (prevents double-count on recovery)
+	budgetCountedFor?: string | null;
+}
+
+// ─── Loop state persistence (.mission-loop.json) ────────────────────────────
+
+const LOOP_STATE_FILE = ".mission-loop.json";
+const ABORT_SIGNAL_FILE = ".mission-abort-signal";
+
+function defaultLoopState(): LoopState {
+	return {
+		currentIteration: 0,
+		lastStep: 0,
+		interrupted: false,
+		budgetUsed: { tokens: 0, usd: 0 },
+	};
+}
+
+export async function readMissionLoopState(missionDir: string): Promise<LoopState> {
+	const filePath = join(missionDir, LOOP_STATE_FILE);
+	if (!existsSync(filePath)) {
+		return defaultLoopState();
+	}
+	const raw = readFileSync(filePath, "utf8");
+	return { ...defaultLoopState(), ...JSON.parse(raw) };
+}
+
+function writeLoopStateSync(missionDir: string, state: LoopState): void {
+	const filePath = join(missionDir, LOOP_STATE_FILE);
+	const tmpPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
+	const content = JSON.stringify(state, null, 2);
+	try {
+		writeFileSync(tmpPath, content, "utf8");
+		renameSync(tmpPath, filePath);
+	} catch (err) {
+		try {
+			if (existsSync(tmpPath)) {
+				unlinkSync(tmpPath);
+			}
+		} catch {
+			// best-effort cleanup
+		}
+		throw err;
+	}
+}
+
+// ─── Abort signal (lock-free) ───────────────────────────────────────────────
+
+function writeAbortSignal(missionDir: string): void {
+	const signalPath = join(missionDir, ABORT_SIGNAL_FILE);
+	writeFileSync(signalPath, JSON.stringify({ abortedByOperator: true, ts: Date.now() }), "utf8");
+}
+
+function readAbortSignal(missionDir: string): boolean {
+	const signalPath = join(missionDir, ABORT_SIGNAL_FILE);
+	return existsSync(signalPath);
+}
+
+function clearAbortSignal(missionDir: string): void {
+	const signalPath = join(missionDir, ABORT_SIGNAL_FILE);
+	try {
+		if (existsSync(signalPath)) unlinkSync(signalPath);
+	} catch {
+		// best-effort
+	}
+}
+
+// ─── ROADMAP helpers ────────────────────────────────────────────────────────
+
+function parseFirstUnchecked(raw: string): { index: number; text: string } | null {
+	const lines = raw.split("\n");
+	for (let i = 0; i < lines.length; i++) {
+		const m = /^- \[ \] (.+)$/.exec(lines[i].trim());
+		if (m) return { index: i, text: m[1] };
+	}
+	return null;
+}
+
+function markRoadmapDone(raw: string, lineIndex: number): string {
+	const lines = raw.split("\n");
+	if (lineIndex >= 0 && lineIndex < lines.length) {
+		lines[lineIndex] = lines[lineIndex].replace("- [ ] ", "- [x] ");
+	}
+	return lines.join("\n");
+}
+
+function isRoadmapItemChecked(raw: string, lineIndex: number): boolean {
+	const lines = raw.split("\n");
+	if (lineIndex < 0 || lineIndex >= lines.length) return false;
+	return /^- \[x\] /.test(lines[lineIndex].trim());
+}
+
+// ─── File lock (P1-6) ───────────────────────────────────────────────────────
+
+const LOCK_FILE = ".mission-loop.lock";
+
+function isProcessAlive(pid: number): boolean {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Create a file-based inter-process lock for the mission directory.
+ * Lock file `.mission-loop.lock` stores {pid, timestamp}.
+ *
+ * Acquire semantics:
+ *   - File exists AND process is alive AND timestamp < 60 s → deny (busy)
+ *   - File exists but process is dead OR timestamp ≥ 60 s → take over (stale)
+ *   - File doesn't exist → acquire
+ *
+ * Release: delete the lock file.
+ */
+export function createFileLock(missionDir: string): MissionLock {
+	return {
+		async acquire(): Promise<boolean> {
+			const lockPath = join(missionDir, LOCK_FILE);
+			if (existsSync(lockPath)) {
+				try {
+					const data = JSON.parse(readFileSync(lockPath, "utf8"));
+					const pid = data.pid as number;
+					const ts = data.timestamp as number;
+					const age = Date.now() - ts;
+					if (isProcessAlive(pid) && age < 60_000) {
+						return false; // busy
+					}
+					// stale lock — take over
+				} catch {
+					// corrupted lock file — take over
+				}
+			}
+			writeFileSync(lockPath, JSON.stringify({ pid: process.pid, timestamp: Date.now() }), "utf8");
+			return true;
+		},
+		async release(): Promise<void> {
+			const lockPath = join(missionDir, LOCK_FILE);
+			try {
+				if (existsSync(lockPath)) unlinkSync(lockPath);
+			} catch {
+				// best-effort
+			}
+		},
+	};
+}
+
+// ─── MissionLoop ────────────────────────────────────────────────────────────
+
+export class MissionLoop {
+	private missionDir: string;
+	private deps: MissionLoopDeps;
+	private lock: MissionLock;
+
+	constructor(opts: { missionDir: string; deps: MissionLoopDeps }) {
+		this.missionDir = opts.missionDir;
+		this.deps = opts.deps;
+		// P1-6: use provided lock or default file-lock
+		this.lock = opts.deps.lock ?? createFileLock(opts.missionDir);
+	}
+
+	// ── Public API ──────────────────────────────────────────────────────────
+
+	async tick(): Promise<TickResult> {
+		const acquired = await this.lock.acquire();
+		if (!acquired) {
+			throw new Error("Lock is busy — concurrent tick not allowed");
+		}
+
+		const steps: TickSteps = {
+			wake: false,
+			read: false,
+			decide: false,
+			iterate: false,
+			verify: false,
+			commit: false,
+			backlog: false,
+		};
+		let resultStatus: MissionStatus = "active";
+		let currentIteration = 0;
+		let currentItem: string | undefined;
+		let lastCompletedStep = 0;
+		let loopState = defaultLoopState();
+
+		try {
+			// ── Step 1: Wake ───────────────────────────────────────────────
+			steps.wake = true;
+			loopState = await readMissionLoopState(this.missionDir);
+			currentIteration = loopState.currentIteration;
+
+			// P0-2: respect abort signal from previous run
+			if (loopState.abortedByOperator) {
+				loopState.abortedByOperator = false;
+				loopState.interrupted = false;
+				loopState.iterationResult = undefined;
+				loopState.pendingItem = undefined;
+				loopState.committed = false;
+				writeLoopStateSync(this.missionDir, loopState);
+				clearAbortSignal(this.missionDir);
+				return { iteration: currentIteration, steps, status: "aborted" };
+			}
+
+			const mission = await readMission(this.missionDir);
+			const missionStatus = String(mission.frontmatter.status) as MissionStatus;
+			const budgetTokens = Number(mission.frontmatter.budget_tokens) || 0;
+			const budgetUsd = Number(mission.frontmatter.budget_usd) || 0;
+
+			// Terminal statuses → no-op
+			if (
+				missionStatus === "aborted" ||
+				missionStatus === "completed" ||
+				missionStatus === "failed" ||
+				missionStatus === "budget_exhausted"
+			) {
+				return { iteration: currentIteration, steps, status: missionStatus };
+			}
+
+			// P1-2: Paused mission → no-op (resume only via explicit external action)
+			if (missionStatus === "paused") {
+				return { iteration: currentIteration, steps, status: "paused" };
+			}
+
+			resultStatus = missionStatus as MissionStatus;
+			// Save original recovery info BEFORE journalStep overwrites lastStep
+			const recoveredLastStep = loopState.lastStep;
+			const recoveredInterrupted = loopState.interrupted;
+			lastCompletedStep = 1;
+			this.journalStep(loopState, 1);
+
+			// ── Step 2: Read ───────────────────────────────────────────────
+			steps.read = true;
+
+			// P1-5: preflight STATE.md size — archive if over limit
+			// readState may throw StateFileTooLarge, so handle it proactively
+			let stateSize = checkStateFileSize(this.missionDir);
+			if (stateSize >= MAX_STATE_BYTES) {
+				const archived = await archiveOldDoneItems(this.missionDir, ARCHIVE_KEEP_COUNT);
+				if (!archived) {
+					resultStatus = "failed";
+					await writeMissionStatus(this.missionDir, "failed");
+					this.journalStep(loopState, 7);
+					loopState.interrupted = false;
+					writeLoopStateSync(this.missionDir, loopState);
+					return {
+						iteration: currentIteration,
+						steps,
+						status: "failed",
+						item: "STATE.md overflow — archiving impossible",
+					};
+				}
+				stateSize = checkStateFileSize(this.missionDir);
+			}
+
+			// Validate STATE.md exists and parse it (may throw for schema issues)
+			try {
+				await readState(this.missionDir);
+			} catch (e) {
+				if (e instanceof StateFileTooLarge && stateSize < MAX_STATE_BYTES) {
+					// Shouldn't happen, but handle gracefully
+					const archived = await archiveOldDoneItems(this.missionDir, ARCHIVE_KEEP_COUNT);
+					if (!archived) {
+						resultStatus = "failed";
+						await writeMissionStatus(this.missionDir, "failed");
+						this.journalStep(loopState, 7);
+						loopState.interrupted = false;
+						writeLoopStateSync(this.missionDir, loopState);
+						return {
+							iteration: currentIteration,
+							steps,
+							status: "failed",
+							item: "STATE.md overflow — archiving impossible",
+						};
+					}
+					await readState(this.missionDir); // re-read after archive
+				} else {
+					throw e;
+				}
+			}
+
+			const roadmapRaw = await readRoadmap(this.missionDir);
+			await this.deps.git.log({ cwd: this.missionDir });
+
+			lastCompletedStep = 2;
+			this.journalStep(loopState, 2);
+
+			// ── Step 3: Decide ─────────────────────────────────────────────
+			steps.decide = true;
+			const nextItem = parseFirstUnchecked(roadmapRaw);
+
+			// All items done → completed
+			if (!nextItem) {
+				if (canTransition(resultStatus, "completed")) {
+					resultStatus = "completed";
+					await writeMissionStatus(this.missionDir, "completed");
+				}
+				this.journalStep(loopState, 3);
+				loopState.interrupted = false;
+				loopState.iterationResult = undefined;
+				loopState.pendingItem = undefined;
+				loopState.committed = false;
+				writeLoopStateSync(this.missionDir, loopState);
+				return { iteration: currentIteration, steps, status: resultStatus };
+			}
+
+			// Recovery: determine resume point (use ORIGINAL values from disk)
+			// P0 fix: recovery triggers by PRESENCE of saved iterationResult in journal
+			// (which is persisted at step 5 together with budgetCountedFor), NOT solely
+			// by the interrupted flag. After SIGKILL, interrupted=false but the journal
+			// may still have the saved result from step 5.
+			//
+			// - lastStep >= 4 with saved iterationResult + pendingItem → resume from step 5+
+			//   (executor skipped, budget already counted via budgetCountedFor)
+			// - interrupted=true with lastStep > 0 → in-process crash, resume from lastStep+1
+			// - Otherwise → fresh iteration (no recovery needed)
+			let resumeFromStep = 0;
+			if (recoveredLastStep >= 4 && loopState.iterationResult && loopState.pendingItem) {
+				resumeFromStep = recoveredLastStep + 1;
+			} else if (recoveredInterrupted && recoveredLastStep > 0) {
+				resumeFromStep = recoveredLastStep + 1;
+			}
+
+			// Increment iteration only for fresh starts (not recovery past step 1)
+			if (resumeFromStep <= 1) {
+				currentIteration++;
+				loopState.currentIteration = currentIteration;
+			}
+
+			currentItem = nextItem.text;
+			lastCompletedStep = 3;
+			this.journalStep(loopState, 3);
+
+			// Recovery: skip past commit → just finish backlog
+			if (resumeFromStep > 6) {
+				steps.backlog = true;
+				const now = await this.deps.clock.now();
+				await this.appendBacklogEntry(loopState, now, currentIteration, {
+					text: nextItem.text,
+					isSuccess: true,
+					isBlockOrFail: false,
+					costUsd: 0,
+					iterStatus: loopState.iterationResult?.status,
+				});
+				loopState.interrupted = false;
+				loopState.iterationResult = undefined;
+				loopState.pendingItem = undefined;
+				loopState.pendingItemIndex = undefined;
+				loopState.committed = false;
+				loopState.budgetCountedFor = null;
+				this.journalStep(loopState, 7);
+				writeLoopStateSync(this.missionDir, loopState);
+				return { iteration: currentIteration, steps, status: resultStatus, item: currentItem };
+			}
+
+			// ── Step 4: Iterate ────────────────────────────────────────────
+			let iterResult: IterationResult;
+
+			if (resumeFromStep >= 4 && loopState.iterationResult && loopState.pendingItem === nextItem.text) {
+				// P0-1: Recovery with saved result — skip executor
+				iterResult = loopState.iterationResult;
+				steps.iterate = false;
+
+				// Note: loopState.committed is always false here — step 6 clears
+				// committed before advancing lastStep to 6. If the full tick completed,
+				// pendingItem is also cleared, so we never enter this branch.
+			} else {
+				// P1-4 + P2-7: Budget preflight BEFORE executor
+				steps.iterate = true;
+
+				// P2 fix: budget=0 / missing = unlimited (no limit).
+				// Only check preflight when budget > 0 (explicit limit set).
+				const tokensRemaining = budgetTokens - loopState.budgetUsed.tokens;
+				const usdRemaining = budgetUsd - loopState.budgetUsed.usd;
+				const tokensPreflightFail = budgetTokens > 0 && tokensRemaining <= 0;
+				const usdPreflightFail = budgetUsd > 0 && usdRemaining <= 0;
+				if (tokensPreflightFail || usdPreflightFail) {
+					resultStatus = "budget_exhausted";
+					await writeMissionStatus(this.missionDir, "budget_exhausted");
+					return this.finishTickNoIterate(loopState, steps, currentIteration, resultStatus, currentItem);
+				}
+
+				// P0-2: abort check before expensive work
+				if (this.isAborted()) {
+					return this.abortTick(loopState, steps, currentIteration, currentItem);
+				}
+
+				const prompt = `Execute mission item: ${nextItem.text}`;
+				iterResult = await this.deps.executor.runIteration({
+					missionDir: this.missionDir,
+					prompt,
+					cwd: this.missionDir,
+				});
+
+				// P0-1: persist result immediately after step 4
+				loopState.iterationResult = iterResult;
+				loopState.pendingItem = nextItem.text;
+				loopState.pendingItemIndex = nextItem.index;
+				loopState.committed = false;
+				this.journalStep(loopState, 4);
+			}
+
+			lastCompletedStep = 4;
+
+			// P0-2: abort check after iteration, before commit
+			if (this.isAborted()) {
+				return this.abortTick(loopState, steps, currentIteration, currentItem);
+			}
+
+			// ── Step 5: Verify ─────────────────────────────────────────────
+			steps.verify = true;
+			const costTokens = iterResult.costTokens || 0;
+			const costUsd = iterResult.costUsd || 0;
+
+			// P1-1 fix: increment budget BEFORE journal write so that when
+			// journal confirms step 5 (budgetCountedFor present), budgetUsed is
+			// guaranteed to already include the cost. Crash between increment and
+			// journal = no journal → budget lost but not double-counted on recovery.
+			const wasBudgetCounted = loopState.budgetCountedFor === nextItem.text;
+			if (!wasBudgetCounted) {
+				loopState.budgetUsed.tokens += costTokens;
+				loopState.budgetUsed.usd += costUsd;
+			}
+			// else: budget already counted for this item — skip to prevent double-count
+
+			loopState.iterationResult = iterResult;
+			loopState.pendingItem = nextItem.text;
+			loopState.pendingItemIndex = nextItem.index;
+			loopState.committed = false;
+			loopState.budgetCountedFor = nextItem.text;
+			this.journalStep(loopState, 5);
+
+			// P1-4: check both token and USD limits
+			const tokensExceeded = budgetTokens > 0 && loopState.budgetUsed.tokens > budgetTokens;
+			const usdExceeded = budgetUsd > 0 && loopState.budgetUsed.usd > budgetUsd;
+			const budgetExceededPostHoc = tokensExceeded || usdExceeded;
+
+			const isSuccess = iterResult.status === "COMPLETE";
+			const isBlockOrFail = iterResult.status === "BLOCKED" || iterResult.status === "FAILED";
+
+			// P2-7: budget exceeded AFTER successful iteration → commit first, then status
+			if (budgetExceededPostHoc && !isSuccess) {
+				resultStatus = "budget_exhausted";
+			} else if (budgetExceededPostHoc && isSuccess) {
+				// Will set budget_exhausted AFTER commit
+				resultStatus = "active"; // temporarily — will change after commit
+			}
+
+			lastCompletedStep = 5;
+
+			// ── Step 6: Commit ─────────────────────────────────────────────
+			steps.commit = true;
+			await this.doStep6Commit(
+				loopState,
+				nextItem,
+				roadmapRaw,
+				iterResult,
+				isSuccess,
+				isBlockOrFail,
+				budgetExceededPostHoc,
+			);
+
+			// P3-d: deduplicated — single branch for budget_exhausted after commit
+			if (budgetExceededPostHoc) {
+				resultStatus = "budget_exhausted";
+				await writeMissionStatus(this.missionDir, "budget_exhausted");
+			}
+
+			// P0-1: Clear iteration result INSIDE step 6 (before advancing lastStep)
+			// This ensures that if we crash between step 6 and step 7,
+			// recovery won't try to re-execute the already-committed item.
+			loopState.iterationResult = undefined;
+			loopState.pendingItem = undefined;
+			loopState.pendingItemIndex = undefined;
+			loopState.committed = false;
+
+			this.journalStep(loopState, 6);
+			lastCompletedStep = 6;
+
+			// P0-2: abort check after commit
+			if (this.isAborted()) {
+				return this.abortTick(loopState, steps, currentIteration, currentItem);
+			}
+
+			// ── Step 7: Backlog ────────────────────────────────────────────
+			steps.backlog = true;
+			const now = await this.deps.clock.now();
+			await this.appendBacklogEntry(loopState, now, currentIteration, {
+				text: nextItem.text,
+				isSuccess,
+				isBlockOrFail,
+				costUsd,
+				iterStatus: iterResult.status,
+				budgetExhausted: budgetExceededPostHoc,
+				budgetUsed: loopState.budgetUsed,
+				budgetTokens,
+			});
+
+			// ── Finalise ───────────────────────────────────────────────────
+			loopState.lastStep = 7;
+			loopState.interrupted = false;
+			loopState.budgetCountedFor = null; // P1-1: reset for next iteration
+			writeLoopStateSync(this.missionDir, loopState);
+			lastCompletedStep = 7;
+
+			return {
+				iteration: currentIteration,
+				steps,
+				status: resultStatus,
+				item: currentItem,
+			};
+		} catch (err) {
+			// Record crash marker for recovery, then re-throw
+			// Merge with on-disk state to preserve abort signals
+			try {
+				const crashState = await readMissionLoopState(this.missionDir);
+				crashState.currentIteration = currentIteration;
+				crashState.lastStep = lastCompletedStep;
+				crashState.interrupted = true;
+				writeLoopStateSync(this.missionDir, crashState);
+			} catch {
+				// best-effort
+			}
+			throw err;
+		} finally {
+			await this.lock.release();
+		}
+	}
+
+	async abort(): Promise<void> {
+		// P0-2: write abort signal file (lock-free, atomic)
+		writeAbortSignal(this.missionDir);
+		// Also update journal for persistence across restarts
+		try {
+			const loopState = await readMissionLoopState(this.missionDir);
+			loopState.abortedByOperator = true;
+			loopState.interrupted = true;
+			writeLoopStateSync(this.missionDir, loopState);
+		} catch {
+			// best-effort
+		}
+		// Update MISSION.md status
+		try {
+			await writeMissionStatus(this.missionDir, "aborted");
+		} catch {
+			// best-effort — abort signal file is the primary mechanism
+		}
+	}
+
+	async status(): Promise<MissionStatus> {
+		const mission = await readMission(this.missionDir);
+		return String(mission.frontmatter.status) as MissionStatus;
+	}
+
+	// ── Private helpers ────────────────────────────────────────────────────
+
+	/**
+	 * Check if the abort signal file exists (lock-free read).
+	 */
+	private isAborted(): boolean {
+		return readAbortSignal(this.missionDir);
+	}
+
+	/**
+	 * Write lastStep to journal atomically.
+	 */
+	private journalStep(state: LoopState, step: number): void {
+		state.lastStep = step;
+		writeLoopStateSync(this.missionDir, state);
+	}
+
+	/**
+	 * Finish a tick without running the executor (budget preflight exhausted).
+	 * Writes backlog entry and returns.
+	 */
+	private async finishTickNoIterate(
+		loopState: LoopState,
+		steps: TickSteps,
+		currentIteration: number,
+		resultStatus: MissionStatus,
+		currentItem: string | undefined,
+	): Promise<TickResult> {
+		steps.iterate = false;
+		steps.verify = false;
+		steps.commit = false;
+		steps.backlog = true;
+
+		const now = await this.deps.clock.now();
+		await this.appendBacklogEntry(loopState, now, currentIteration, {
+			text: "Budget exhausted before iteration",
+			isSuccess: false,
+			isBlockOrFail: false,
+			costUsd: 0,
+			budgetExhausted: true,
+			budgetUsed: loopState.budgetUsed,
+		});
+
+		loopState.lastStep = 7;
+		loopState.interrupted = false;
+		writeLoopStateSync(this.missionDir, loopState);
+
+		return {
+			iteration: currentIteration,
+			steps,
+			status: resultStatus,
+			item: currentItem,
+		};
+	}
+
+	/**
+	 * Handle abort during tick: set journal interrupted, return aborted status,
+	 * do NOT commit or write done-entries.
+	 * P3-c: degraded-abort — persist abortedByOperator in journal AND update MISSION.md,
+	 * so next tick is a no-op even if signal file is lost.
+	 */
+	private async abortTick(
+		loopState: LoopState,
+		steps: TickSteps,
+		currentIteration: number,
+		currentItem: string | undefined,
+	): Promise<TickResult> {
+		loopState.interrupted = true;
+		loopState.abortedByOperator = true; // P3-c: persist for degraded recovery
+		writeLoopStateSync(this.missionDir, loopState);
+		// P3-c: update MISSION.md status to aborted (idempotent, best-effort)
+		try {
+			await writeMissionStatus(this.missionDir, "aborted");
+		} catch {
+			// best-effort — signal file is the primary mechanism
+		}
+		clearAbortSignal(this.missionDir);
+		return {
+			iteration: currentIteration,
+			steps,
+			status: "aborted",
+			interrupted: true,
+			item: currentItem,
+		};
+	}
+
+	/**
+	 * Step 6: Commit — writeState → writeRoadmap → git.commit → journal.
+	 * P0-3: Idempotent — checks for duplicate done-entries and already-checked roadmap.
+	 */
+	private async doStep6Commit(
+		loopState: LoopState,
+		nextItem: { index: number; text: string },
+		roadmapRaw: string,
+		iterResult: IterationResult,
+		isSuccess: boolean,
+		isBlockOrFail: boolean,
+		budgetExceeded: boolean,
+	): Promise<void> {
+		const currentState = await readState(this.missionDir);
+		const newDone = [...currentState.done];
+		const newBlockers = [...currentState.blockers];
+		let newNextSteps = [...currentState.nextSteps];
+		let shouldGitCommit = false;
+
+		// Check if already committed (recovery scenario)
+		const alreadyInDone = currentState.done.includes(nextItem.text);
+		const alreadyChecked = isRoadmapItemChecked(roadmapRaw, nextItem.index);
+		const wasAlreadyCommitted = loopState.committed === true;
+
+		if (wasAlreadyCommitted || (alreadyInDone && alreadyChecked)) {
+			// Already committed during recovery — skip all writes
+			return;
+		}
+
+		if (isSuccess) {
+			// P0-3: dedup — only add if not already present
+			if (!alreadyInDone) {
+				newDone.push(nextItem.text);
+			}
+			newNextSteps = [];
+			shouldGitCommit = true;
+		} else if (isBlockOrFail) {
+			const reason = iterResult.reason || "Blocker detected";
+			newBlockers.push(reason);
+		} else if (budgetExceeded) {
+			newBlockers.push(
+				`Budget exhausted: used ${loopState.budgetUsed.tokens} tokens / $${loopState.budgetUsed.usd.toFixed(2)}`,
+			);
+		}
+
+		// P0-3: order — writeState → writeRoadmap → git.commit → lastStep=6
+		await writeState(this.missionDir, {
+			done: newDone,
+			blockers: newBlockers,
+			nextSteps: newNextSteps,
+		});
+
+		if (shouldGitCommit) {
+			// Mark roadmap checkbox BEFORE git commit (so commit includes both)
+			const updatedRoadmap = markRoadmapDone(roadmapRaw, nextItem.index);
+			await writeRoadmap(this.missionDir, updatedRoadmap);
+
+			const msg = `mission: ${nextItem.text}`;
+			await this.deps.git.commit({
+				cwd: this.missionDir,
+				message: msg,
+				files: ["STATE.md", "ROADMAP.md"],
+			});
+
+			loopState.committed = true;
+			writeLoopStateSync(this.missionDir, loopState);
+		}
+
+		// Persist budget_exhausted status (blocker already written above)
+		if (budgetExceeded) {
+			await writeMissionStatus(this.missionDir, "budget_exhausted");
+		}
+	}
+
+	/**
+	 * Append a backlog entry (step 7 helper).
+	 */
+	private async appendBacklogEntry(
+		_loopState: LoopState,
+		now: Date,
+		currentIteration: number,
+		opts: {
+			text: string;
+			isSuccess: boolean;
+			isBlockOrFail: boolean;
+			costUsd: number;
+			iterStatus?: string;
+			budgetExhausted?: boolean;
+			budgetUsed?: { tokens: number; usd: number };
+			budgetTokens?: number;
+		},
+	): Promise<void> {
+		const { appendBacklog } = await import("./file-state-manager.js");
+
+		let idea: string;
+		if (opts.budgetExhausted && !opts.isSuccess) {
+			const used = opts.budgetUsed;
+			idea = used
+				? `Budget exhausted: ${used.tokens} tokens / $${used.usd.toFixed(2)}`
+				: `Budget exhausted: ${opts.text}`;
+		} else if (opts.isSuccess) {
+			idea = `Completed: ${opts.text}`;
+		} else {
+			idea = `Iteration ${currentIteration}: ${opts.iterStatus ?? opts.text}`;
+		}
+
+		await appendBacklog(this.missionDir, {
+			id: randomUUID().slice(0, 8),
+			date: now.toISOString(),
+			idea,
+			source: "mission-loop",
+			fit: 0,
+			value: opts.isSuccess ? 1 : 0,
+			risk: opts.isBlockOrFail ? 1 : 0,
+			cost: opts.costUsd,
+			score: opts.isSuccess ? 1 : 0,
+			status: opts.iterStatus ?? (opts.isSuccess ? "COMPLETE" : opts.isBlockOrFail ? "BLOCKED" : "DECIDE"),
+		});
+	}
+}

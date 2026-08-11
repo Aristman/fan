@@ -364,6 +364,38 @@ export async function updateMission(_missionDir: string, _updates: Record<string
 	throw new MissionFileImmutable();
 }
 
+/**
+ * Update only the `status` field in MISSION.md frontmatter.
+ * Respects FSM transitions (canTransition) and preserves all body content.
+ * This is the ONLY mutation allowed on MISSION.md after init.
+ *
+ * P2-8: Preserves the file's original line-ending style (CRLF→CRLF, LF→LF).
+ */
+export async function writeMissionStatus(missionDir: string, newStatus: string): Promise<void> {
+	const missionPath = join(missionDir, "MISSION.md");
+	if (!existsSync(missionPath)) {
+		throw new MissionNotFound(missionDir);
+	}
+	const rawOriginal = readFileSync(missionPath, "utf8");
+	const useCRLF = rawOriginal.includes("\r\n");
+	const raw = rawOriginal.replace(/\r\n/g, "\n");
+	const fmMatch = raw.match(/^---\n([\s\S]*?)\n---\n/);
+	if (!fmMatch) throw new Error("MISSION.md missing frontmatter");
+
+	const fm = parseSimpleYaml(fmMatch[1]);
+	const currentStatus = String(fm.status ?? "active");
+	if (currentStatus === newStatus) return; // idempotent
+	if (!canTransition(currentStatus, newStatus)) {
+		throw new Error(`Invalid status transition: ${currentStatus} → ${newStatus}`);
+	}
+
+	let updated = raw.replace(/^(status:\s*).*$/m, `$1${newStatus}`);
+	if (useCRLF) {
+		updated = updated.replace(/\n/g, "\r\n");
+	}
+	atomicWriteFileSync(missionPath, updated);
+}
+
 // ─── BACKLOG.md ─────────────────────────────────────────────────────────────
 
 /**
@@ -506,7 +538,7 @@ export async function readRoadmap(missionDir: string): Promise<string> {
 }
 
 export async function writeRoadmap(missionDir: string, content: string): Promise<void> {
-	writeFileSync(join(missionDir, "ROADMAP.md"), content, "utf8");
+	atomicWriteFileSync(join(missionDir, "ROADMAP.md"), content);
 }
 
 // ─── FSM: mission status transitions ────────────────────────────────────────
@@ -550,6 +582,101 @@ function parseSections(content: string): Map<string, string[]> {
 		result.set(header, items);
 	}
 	return result;
+}
+
+// ─── STATE.md size preflight & archiving (P1-5) ────────────────────────────
+
+/** Default number of recent done-items to keep after archiving. */
+export const ARCHIVE_KEEP_COUNT = 10;
+
+/**
+ * Check STATE.md byte size without parsing (no throw on missing file).
+ * Returns 0 if the file doesn't exist yet.
+ */
+export function checkStateFileSize(missionDir: string): number {
+	const statePath = join(missionDir, "STATE.md");
+	if (!existsSync(statePath)) return 0;
+	const raw = readFileSync(statePath, "utf8");
+	return Buffer.byteLength(raw, "utf8");
+}
+
+/**
+ * Ensure ARCHIVE.md exists with a proper header.
+ */
+function ensureArchive(missionDir: string): void {
+	const archivePath = join(missionDir, "ARCHIVE.md");
+	if (!existsSync(archivePath)) {
+		writeFileSync(archivePath, "# Archive\n\n", "utf8");
+	}
+}
+
+/**
+ * Move old done-items from STATE.md to ARCHIVE.md, keeping the last `keepCount`.
+ * Returns true if items were archived, false if nothing to archive or archiving failed.
+ *
+ * P1-3 fix: compute result in memory first. If kept items still exceed MAX_STATE_BYTES,
+ * return false WITHOUT touching ARCHIVE.md (prevents zombie-cycle and duplicates).
+ * Deduplicates archived items against existing ARCHIVE.md entries.
+ *
+ * Bypasses the MAX_STATE_BYTES size check in readState (the whole point
+ * of archiving is to reduce size when STATE.md is already too large).
+ */
+export async function archiveOldDoneItems(
+	missionDir: string,
+	keepCount: number = ARCHIVE_KEEP_COUNT,
+): Promise<boolean> {
+	// Read state bypassing size limit (the file may be oversized — that's why we're archiving)
+	const statePath = join(missionDir, "STATE.md");
+	if (!existsSync(statePath)) return false;
+	const raw = readFileSync(statePath, "utf8");
+	const sections = parseSections(raw);
+	const done = sections.get("Сделано");
+	const blockers = sections.get("Блокеры") ?? [];
+	const nextSteps = sections.get("Следующие шаги") ?? [];
+	if (!done || done.length <= keepCount) return false;
+
+	const toArchive = done.slice(0, done.length - keepCount);
+	const toKeep = done.slice(done.length - keepCount);
+
+	// P1-3: compute new STATE.md in memory and check if it fits BEFORE writing anything
+	const newLines: string[] = [];
+	newLines.push("## Сделано");
+	for (const item of toKeep) newLines.push(`- ${item.replace(/[\r\n]+/g, " ")}`);
+	newLines.push("");
+	newLines.push("## Блокеры");
+	for (const item of blockers) newLines.push(`- ${item.replace(/[\r\n]+/g, " ")}`);
+	newLines.push("");
+	newLines.push("## Следующие шаги");
+	for (const item of nextSteps) newLines.push(`- ${item.replace(/[\r\n]+/g, " ")}`);
+	newLines.push("");
+	const newStateContent = newLines.join("\n");
+
+	// If kept items still exceed limit → abort without touching ARCHIVE.md
+	if (Buffer.byteLength(newStateContent, "utf8") > MAX_STATE_BYTES) {
+		return false;
+	}
+
+	// P1-3: dedup — only archive items not already in ARCHIVE.md
+	ensureArchive(missionDir);
+	const archivePath = join(missionDir, "ARCHIVE.md");
+	const existingArchive = readFileSync(archivePath, "utf8");
+	const existingItems = new Set<string>();
+	for (const line of existingArchive.split("\n")) {
+		const m = /^- (.+)$/.exec(line.trim());
+		if (m) existingItems.add(m[1]);
+	}
+	const newArchiveItems = toArchive.filter((item) => !existingItems.has(item));
+
+	// Write ARCHIVE.md (only if there are new items to add)
+	if (newArchiveItems.length > 0) {
+		const archiveLines = newArchiveItems.map((item) => `- ${item}`).join("\n");
+		atomicWriteFileSync(archivePath, `${existingArchive}${archiveLines}\n`);
+	}
+
+	// Write new STATE.md (guaranteed to fit from the check above)
+	atomicWriteFileSync(join(missionDir, "STATE.md"), newStateContent);
+
+	return true;
 }
 
 /**

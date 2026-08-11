@@ -11,9 +11,9 @@
 | Метрика | Значение |
 |---------|----------|
 | Всего фич (4 roadmap) | 47 |
-| Реализовано (✅) | 8 |
+| Реализовано (✅) | 9 |
 | Провалено (❌) | 0 |
-| Коммитов | 9 |
+| Коммитов | 10 |
 
 ## Прогресс
 
@@ -28,8 +28,8 @@
 | F-05 Drain-флаг | ✅ | cb66834 | 17 drain + 55 agent | 1 (+2 fix) |
 | F-06 Drain API | ✅ | 94c659d | 81/81 api-gateway | 1 |
 | F-07 budget_alert | ✅ | 41fcf61 | 92/92 api-gateway | 1 (+1 fix) |
-| F-08 File-state-manager | ✅ | pending | 84/84 | 1 (+1 fix) |
-| F-09 Mission loop | ☐ | — | — | — |
+| F-08 File-state-manager | ✅ | 6e51409 | 84/84 | 1 (+1 fix) |
+| F-09 Mission loop | ✅ | pending | 163/163 fan-mission | 1 (+3 fix) |
 | F-10 CLI init | ☐ | — | — | — |
 | F-11 Slash-команды | ☐ | — | — | — |
 | F-12 TUI-виджет | ☐ | — | — | — |
