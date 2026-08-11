@@ -11,9 +11,9 @@
 | Метрика | Значение |
 |---------|----------|
 | Всего фич (4 roadmap) | 47 |
-| Реализовано (✅) | 7 |
+| Реализовано (✅) | 8 |
 | Провалено (❌) | 0 |
-| Коммитов | 7 |
+| Коммитов | 9 |
 
 ## Прогресс
 
@@ -28,7 +28,7 @@
 | F-05 Drain-флаг | ✅ | cb66834 | 17 drain + 55 agent | 1 (+2 fix) |
 | F-06 Drain API | ✅ | 94c659d | 81/81 api-gateway | 1 |
 | F-07 budget_alert | ✅ | 41fcf61 | 92/92 api-gateway | 1 (+1 fix) |
-| F-08 File-state-manager | ☐ | — | — | — |
+| F-08 File-state-manager | ✅ | pending | 84/84 | 1 (+1 fix) |
 | F-09 Mission loop | ☐ | — | — | — |
 | F-10 CLI init | ☐ | — | — | — |
 | F-11 Slash-команды | ☐ | — | — | — |
@@ -36,6 +36,8 @@
 | F-13 fan-scheduler | ☐ | — | — | — |
 | F-14 fan-webhook | ☐ | — | — | — |
 | F-15 Интеграционные тесты | ☐ | — | — | — |
+
+### Фаза A «Ядро прерываний» — ✅ ЗАВЕРШЕНА (phase-gate `31f605e`: 3 e2e + 131 unit, PASS)
 
 ### Этап 1: mission-validation-1 (F-16..F-22) — ожидает
 ### Этап 2: http-hierarchy-2 (F-23..F-35) — ожидает
