@@ -1,18 +1,26 @@
 import type { IncomingMessage, Server } from "node:http";
+import type { BudgetAlert, BudgetAlertHandler } from "@fan/model-manager";
 import type { WebSocket as WsWebSocket } from "ws";
 import { isAuthDisabled, validateToken } from "./auth.js";
 import type { SessionAdapter } from "./http-server.js";
-import type { WsIncomingMessage, WsOutgoingMessage } from "./types.js";
+import type { WsBudgetAlert, WsIncomingMessage, WsOutgoingMessage } from "./types.js";
 
 // ============================================================================
 // Types
 // ============================================================================
+
+/** Structural type for budget tracker — accepts BudgetTracker or any compatible object. */
+export interface BudgetTrackerLike {
+	onAlert(handler: BudgetAlertHandler): () => void;
+}
 
 export interface WsHandlerOptions {
 	server: Server;
 	sessionAdapter: SessionAdapter;
 	/** Path prefix for WebSocket connections. Default: "/api/ws/" */
 	pathPrefix?: string;
+	/** Budget tracker for broadcasting budget_alert events to WS clients (F-07). */
+	budgetTracker?: BudgetTrackerLike;
 }
 
 interface ClientConnection {
@@ -26,7 +34,7 @@ interface ClientConnection {
 // ============================================================================
 
 export function attachWebSocketHandler(options: WsHandlerOptions): { close: () => void } {
-	const { server, sessionAdapter, pathPrefix = "/api/ws/" } = options;
+	const { server, sessionAdapter, pathPrefix = "/api/ws/", budgetTracker } = options;
 
 	// Map: sessionId → Set of connected clients
 	const sessionClients = new Map<string, Set<ClientConnection>>();
@@ -45,6 +53,88 @@ export function attachWebSocketHandler(options: WsHandlerOptions): { close: () =
 				client.ws.send(data);
 			}
 		}
+	}
+
+	// F-07: Broadcast budget_alert to ALL connected WS clients (system-wide, not per-session)
+	function broadcastBudgetAlert(message: WsBudgetAlert): void {
+		const data = JSON.stringify(message);
+		for (const [, clients] of sessionClients) {
+			for (const client of clients) {
+				if (client.ws.readyState === 1) {
+					client.ws.send(data);
+				}
+			}
+		}
+	}
+
+	// F-07: Register budget alert handler + dedup with reset detection.
+	// Dedup key: provider|period|alertType — but we track usage to detect budget resets.
+	// When tokensUsed or costUsed decreases (autoReset), the dedup entry is cleared so
+	// alerts in the new budget period can fire again.
+	const firedAlerts = new Map<string, { tokensUsed: number; costUsed: number }>();
+	let currentAlertHandler: BudgetAlertHandler | undefined;
+	let budgetUnsub: (() => void) | undefined;
+
+	function registerBudgetHandler(handler: BudgetAlertHandler) {
+		currentAlertHandler = handler;
+		if (budgetTracker) {
+			budgetUnsub = budgetTracker.onAlert(handler);
+		}
+	}
+
+	// F-07 (Blocker A): Rebind budget alert subscription to the active session's ModelManager
+	// after every newSession/switchSession. Without this, the handler stays subscribed to a
+	// dead ModelManager and alerts from new sessions are silently dropped.
+	function rebindBudgetAlerts() {
+		if (!currentAlertHandler) return;
+		budgetUnsub?.();
+		budgetUnsub = undefined;
+		firedAlerts.clear(); // New session → clean dedup state
+		const activeMM = sessionAdapter.getActiveModelManager?.();
+		if (activeMM) {
+			budgetUnsub = activeMM.onBudgetAlert(currentAlertHandler);
+		}
+	}
+
+	// Register the session change callback for automatic rebinding
+	sessionAdapter.onSessionChange?.(rebindBudgetAlerts);
+
+	if (budgetTracker) {
+		registerBudgetHandler((alert: BudgetAlert) => {
+			const alertType = alert.type; // BudgetAlert.type → mapped to alertType in WS envelope
+			const dedupKey = `${alert.provider}|${alert.period}|${alertType}`;
+
+			const prev = firedAlerts.get(dedupKey);
+			if (prev) {
+				// Detect budget reset: usage decreased → new period started
+				if (alert.tokensUsed < prev.tokensUsed || alert.costUsed < prev.costUsed) {
+					firedAlerts.delete(dedupKey);
+				} else {
+					// Same period — update to track max usage (needed for future reset detection)
+					firedAlerts.set(dedupKey, {
+						tokensUsed: Math.max(prev.tokensUsed, alert.tokensUsed),
+						costUsed: Math.max(prev.costUsed, alert.costUsed),
+					});
+					return; // Same period, same alert type → deduplicated
+				}
+			}
+			firedAlerts.set(dedupKey, { tokensUsed: alert.tokensUsed, costUsed: alert.costUsed });
+
+			// Use active session's ID, fall back to "system" for system-wide alerts
+			const sessionId = sessionAdapter.getActiveSessionId?.() ?? "system";
+
+			broadcastBudgetAlert({
+				type: "budget_alert",
+				sessionId,
+				timestamp: new Date().toISOString(),
+				alert: {
+					provider: alert.provider,
+					period: alert.period,
+					alertType,
+					message: alert.message,
+				},
+			});
+		});
 	}
 
 	function removeClient(client: ClientConnection): void {
@@ -205,6 +295,14 @@ export function attachWebSocketHandler(options: WsHandlerOptions): { close: () =
 			if (cleanupDone) return;
 			cleanupDone = true;
 			server.off("upgrade", handleUpgrade);
+			// Unsubscribe from budget alerts
+			if (budgetUnsub) {
+				try {
+					budgetUnsub();
+				} catch {
+					/* ignore */
+				}
+			}
 			// Close all client connections
 			for (const [, clients] of sessionClients) {
 				for (const client of clients) {

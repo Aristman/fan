@@ -70,6 +70,12 @@ export interface SessionAdapter {
 	abortSession(id: string, reason?: string): Promise<boolean>;
 	/** Drain a session (graceful stop after current turn). Returns true if session exists, false if not found. */
 	drainSession(id: string): Promise<boolean>;
+	/** Get the currently active session ID. Optional — used for system-wide WS events. */
+	getActiveSessionId?(): string;
+	/** Get the currently active ModelManager (may change after session switch/create). Optional. */
+	getActiveModelManager?(): ModelManager | undefined;
+	/** Register a callback invoked after every session switch/create (for rebinding WS budget alerts). */
+	onSessionChange?(callback: () => void): void;
 }
 
 // ============================================================================
@@ -439,8 +445,25 @@ export async function startServer(
 		// serve() returns the raw http.Server (ServerType) which we need for WebSocket upgrade
 		const httpServer = serve({ fetch: app.fetch, port, hostname: host });
 
+		// F-07 fix (Blocker A): Proxy budget tracker that delegates to the active session's
+		// ModelManager. The ws-handler handles rebinding via sessionAdapter.onSessionChange.
+		// This proxy provides the initial subscription target (the startup modelManager).
+		const budgetTrackerProxy: { onAlert: (h: import("@fan/model-manager").BudgetAlertHandler) => () => void } = {
+			onAlert: (h) => {
+				const activeMM = sessionAdapter.getActiveModelManager?.() ?? modelManager;
+				if (activeMM) {
+					return activeMM.onBudgetAlert(h);
+				}
+				return () => {};
+			},
+		};
+
 		// Attach WebSocket handler (requires 'ws' package)
-		const wsHandler = attachWebSocketHandler({ server: httpServer as any, sessionAdapter });
+		const wsHandler = attachWebSocketHandler({
+			server: httpServer as any,
+			sessionAdapter,
+			budgetTracker: budgetTrackerProxy,
+		});
 
 		stop = async () => {
 			wsHandler.close();

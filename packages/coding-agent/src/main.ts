@@ -197,6 +197,19 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 	// Session-mutating requests await whenReady() which resolves after bindExtensions completes.
 	let _bindPromise: Promise<void> = Promise.resolve();
 
+	// F-07: Session change callbacks — used by the WS budget_alert producer to rebind
+	// to the new session's ModelManager after every newSession/switchSession.
+	const _sessionChangeCallbacks: Array<() => void> = [];
+	function notifySessionChange() {
+		for (const cb of _sessionChangeCallbacks) {
+			try {
+				cb();
+			} catch {
+				/* ignore rebind errors */
+			}
+		}
+	}
+
 	// Bind extensions to the current runtime session so they receive session_start event.
 	// Must be called after every switchSession/newSession since a new AgentSession is created.
 	async function bindSessionExtensions(): Promise<void> {
@@ -333,6 +346,7 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 		bindSessionExtensions();
 		diskCacheTime = 0; // invalidate cache after switch
 		resubscribeAfterSwitch();
+		notifySessionChange();
 		return true;
 	}
 
@@ -388,6 +402,7 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 			bindSessionExtensions();
 			diskCacheTime = 0;
 			resubscribeAfterSwitch();
+			notifySessionChange();
 			return {
 				id: runtime.session.sessionId,
 				title: opts?.title || runtime.session.sessionName || "New Session",
@@ -569,6 +584,17 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 		bindSessionExtensions,
 		whenReady() {
 			return _bindPromise;
+		},
+
+		// F-07: Expose active session ID and ModelManager for WS budget_alert producer
+		getActiveSessionId() {
+			return runtime.session.sessionId;
+		},
+		getActiveModelManager() {
+			return runtime.session.modelManager;
+		},
+		onSessionChange(callback: () => void) {
+			_sessionChangeCallbacks.push(callback);
 		},
 	};
 }
