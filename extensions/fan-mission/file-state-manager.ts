@@ -12,6 +12,38 @@ export const MAX_STATE_BYTES = 5 * 1024;
 export const MAX_SLUG_LENGTH = 100;
 export const MISSION_FILES = ["MISSION.md", "ROADMAP.md", "STATE.md", "BACKLOG.md", "DECISIONS.md"] as const;
 
+// ─── Dynamic template loader (handles .ts and .js at runtime) ──────────────
+
+interface MissionTemplateFiles {
+	"MISSION.md": string;
+	"ROADMAP.md": string;
+	"STATE.md": string;
+	"BACKLOG.md": string;
+	"DECISIONS.md": string;
+}
+
+interface TemplateModule {
+	loadTemplate(name: string): Promise<MissionTemplateFiles>;
+	renderTemplate(raw: string, vars: { slug: string; missionId: string; now: string }): string;
+}
+
+let templateModuleCache: TemplateModule | undefined;
+
+async function getTemplateModule(): Promise<TemplateModule> {
+	if (templateModuleCache) return templateModuleCache;
+
+	const here = new URL(".", import.meta.url);
+	// Try .js first (compiled), then .ts (dev / strip-mode)
+	for (const ext of ["js", "ts"]) {
+		try {
+			const mod = (await import(new URL(`./templates/index.${ext}`, here).href)) as TemplateModule;
+			templateModuleCache = mod;
+			return mod;
+		} catch {}
+	}
+	throw new Error("Template module not found (tried ./templates/index.js and ./templates/index.ts)");
+}
+
 // Windows reserved device names (case-insensitive, with or without extension)
 const WINDOWS_RESERVED = new Set([
 	"CON",
@@ -81,6 +113,17 @@ export class MissionNotFound extends Error {
 	constructor(missionDir: string) {
 		super(`Mission not found: ${missionDir}`);
 		this.name = "MissionNotFound";
+	}
+}
+
+export class InvalidTransitionError extends Error {
+	readonly from: string;
+	readonly to: string;
+	constructor(from: string, to: string) {
+		super(`Invalid status transition: ${from} → ${to}`);
+		this.name = "InvalidTransitionError";
+		this.from = from;
+		this.to = to;
 	}
 }
 
@@ -198,7 +241,7 @@ function atomicWriteFileSync(filePath: string, content: string): void {
 
 // ─── Mission init ───────────────────────────────────────────────────────────
 
-export async function initMission(slug: string, opts?: { baseDir?: string }): Promise<string> {
+export async function initMission(slug: string, opts?: { baseDir?: string; template?: string }): Promise<string> {
 	validateSlug(slug);
 	const baseDir = opts?.baseDir ?? join("docs", "missions");
 	const missionDir = resolve(baseDir, slug);
@@ -208,53 +251,20 @@ export async function initMission(slug: string, opts?: { baseDir?: string }): Pr
 		return missionDir;
 	}
 
+	// Load template files (default if not specified)
+	const templateName = opts?.template ?? "default";
+	const tmpl = await getTemplateModule();
+	const templates = await tmpl.loadTemplate(templateName);
+
 	mkdirSync(missionDir, { recursive: true });
 
 	const now = new Date().toISOString();
 	const missionId = `mission-${randomUUID()}`;
+	const vars = { slug, missionId, now };
 
-	writeFileSync(
-		join(missionDir, "MISSION.md"),
-		`---
-mission_id: ${missionId}
-created: ${now}
-status: active
-metric_type: test_pass_rate
-metric_command: npm test
-budget_tokens: 500000
-budget_usd: 10.00
-max_depth: 4
-max_width: 4
----
-
-# Mission: ${slug}
-
-## Goal
-
-## Scope
-
-## Unbreakable Metric
-
-## Constraints
-`,
-		"utf8",
-	);
-
-	writeFileSync(
-		join(missionDir, "STATE.md"),
-		["## Сделано", "", "## Блокеры", "", "## Следующие шаги", ""].join("\n"),
-		"utf8",
-	);
-
-	writeFileSync(
-		join(missionDir, "ROADMAP.md"),
-		["# Roadmap", "", `- [ ] Bootstrap mission: ${slug}`, ""].join("\n"),
-		"utf8",
-	);
-
-	writeFileSync(join(missionDir, "BACKLOG.md"), ["# Backlog", ""].join("\n"), "utf8");
-
-	writeFileSync(join(missionDir, "DECISIONS.md"), ["# Decisions", ""].join("\n"), "utf8");
+	for (const [fileName, raw] of Object.entries(templates) as [keyof MissionTemplateFiles, string][]) {
+		writeFileSync(join(missionDir, fileName), tmpl.renderTemplate(raw, vars), "utf8");
+	}
 
 	return missionDir;
 }
@@ -386,7 +396,7 @@ export async function writeMissionStatus(missionDir: string, newStatus: string):
 	const currentStatus = String(fm.status ?? "active");
 	if (currentStatus === newStatus) return; // idempotent
 	if (!canTransition(currentStatus, newStatus)) {
-		throw new Error(`Invalid status transition: ${currentStatus} → ${newStatus}`);
+		throw new InvalidTransitionError(currentStatus, newStatus);
 	}
 
 	let updated = raw.replace(/^(status:\s*).*$/m, `$1${newStatus}`);

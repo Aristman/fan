@@ -16,6 +16,7 @@ import { type Args, type Mode, parseArgs, printHelp } from "./cli/args.js";
 import { processFileArguments } from "./cli/file-processor.js";
 import { buildInitialMessage } from "./cli/initial-message.js";
 import { listModels } from "./cli/list-models.js";
+import { handleMissionCommand } from "./cli/mission-command.js";
 import { cleanupOldBinaries, handleUpdateCommand } from "./cli/self-update.js";
 import { selectSession } from "./cli/session-picker.js";
 import { getAgentDir, getModelsPath, isBunBinary, VERSION } from "./config.js";
@@ -957,6 +958,10 @@ export async function main(args: string[]) {
 	}
 
 	if (await handlePackageCommand(args)) {
+		return;
+	}
+
+	if (await handleMissionCommand(args)) {
 		return;
 	}
 

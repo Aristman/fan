@@ -60,6 +60,7 @@ import {
 	initMission,
 	InvalidSlug,
 	InvalidStateSchema,
+	InvalidTransitionError,
 	MISSION_FILES,
 	MAX_SLUG_LENGTH,
 	MAX_STATE_BYTES,
@@ -73,6 +74,7 @@ import {
 	StateFileTooLarge,
 	updateMission,
 	validateSlug,
+	writeMissionStatus,
 	writeRoadmap,
 	writeState,
 } from "../file-state-manager.js";
@@ -976,5 +978,91 @@ describe("F-08 / duplicate sections in STATE.md", () => {
 			].join("\n"),
 		);
 		await expect(readState(missionDir)).rejects.toThrow(/duplicate|Сделано/i);
+	});
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// P-3: Template selection — initMission with { template: 'refactor' }
+
+describe("F-08 / P-3: Template selection", () => {
+	let baseDir;
+	beforeEach(() => {
+		baseDir = freshBaseDir();
+	});
+	afterEach(() => {
+		rmSync(baseDir, { recursive: true, force: true });
+	});
+
+	it("initMission(slug, { template: 'refactor' }) creates MISSION.md with template: refactor frontmatter", async () => {
+		const missionDir = await initMission("refactor-test", { baseDir, template: "refactor" });
+		const { frontmatter } = await readMission(missionDir);
+		expect(frontmatter.template).toBe("refactor");
+		expect(frontmatter.metric_type).toBe("code_complexity_reduction");
+	});
+
+	it("refactor MISSION.md body contains 'Refactor Mission'", async () => {
+		const missionDir = await initMission("refactor-body", { baseDir, template: "refactor" });
+		const { body } = await readMission(missionDir);
+		expect(body).toContain("Refactor Mission: refactor-body");
+	});
+
+	it("default template (no template opt) has no template field in frontmatter", async () => {
+		const missionDir = await initMission("default-test", { baseDir });
+		const { frontmatter } = await readMission(missionDir);
+		expect(frontmatter.template).toBeUndefined();
+	});
+
+	it("default template metric_type is test_pass_rate", async () => {
+		const missionDir = await initMission("default-metric", { baseDir });
+		const { frontmatter } = await readMission(missionDir);
+		expect(frontmatter.metric_type).toBe("test_pass_rate");
+	});
+
+	it("refactor template creates all 5 mission files", async () => {
+		const missionDir = await initMission("refactor-files", { baseDir, template: "refactor" });
+		for (const file of MISSION_FILES) {
+			expect(existsSync(join(missionDir, file))).toBe(true);
+		}
+	});
+
+	it("unknown template name throws", async () => {
+		await expect(initMission("bad-template", { baseDir, template: "nonexistent" })).rejects.toThrow(
+			/[Uu]nknown.*template/i,
+		);
+	});
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// P-5/P-6: InvalidTransitionError — writeMissionStatus throws typed error
+
+describe("F-08 / P-5/P-6: InvalidTransitionError from writeMissionStatus", () => {
+	let baseDir;
+	beforeEach(() => {
+		baseDir = freshBaseDir();
+	});
+	afterEach(() => {
+		rmSync(baseDir, { recursive: true, force: true });
+	});
+
+	it("writeMissionStatus throws InvalidTransitionError for invalid transition", async () => {
+		const missionDir = await initMission("trans-test", { baseDir });
+		// Set status to completed
+		await writeMissionStatus(missionDir, "completed");
+		// completed → paused is invalid
+		await expect(writeMissionStatus(missionDir, "paused")).rejects.toThrow();
+		try {
+			await writeMissionStatus(missionDir, "paused");
+		} catch (err) {
+			expect(err).toBeInstanceOf(InvalidTransitionError);
+			expect(err.name).toBe("InvalidTransitionError");
+		}
+	});
+
+	it("InvalidTransitionError has from and to properties", async () => {
+		const err = new InvalidTransitionError("completed", "paused");
+		expect(err.from).toBe("completed");
+		expect(err.to).toBe("paused");
+		expect(err.message).toContain("completed");
+		expect(err.message).toContain("paused");
 	});
 });

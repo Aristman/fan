@@ -475,6 +475,20 @@ fan list                      # List installed packages
 fan config                    # Enable/disable package resources
 ```
 
+### Mission Commands
+
+Requires the `fan-mission` extension. Manages long-running autonomous missions
+with file-based state tracking (MISSION.md, STATE.md, ROADMAP.md, BACKLOG.md, DECISIONS.md).
+
+```bash
+fan mission init <slug>       # Initialize a new mission
+fan mission start             # Start the active mission
+fan mission stop              # Abort the current mission
+fan mission status            # Show mission state and progress
+fan mission pause             # Pause the active mission
+fan mission resume            # Resume a paused/aborted mission
+```
+
 ### Modes
 
 | Flag | Description |

@@ -257,6 +257,8 @@ ${chalk.bold("Commands:")}
   ${APP_NAME} server start         Start server as background daemon
   ${APP_NAME} server stop          Stop background server
   ${APP_NAME} server status        Check server status (use --json for machine-readable output)
+  ${APP_NAME} mission init <slug>  Initialize a new mission (requires fan-mission extension)
+  ${APP_NAME} mission start|stop|status|pause|resume   Mission lifecycle commands
   ${APP_NAME} <command> --help          Show help for install/remove/uninstall/update/list
 
 ${chalk.bold("Options:")}
