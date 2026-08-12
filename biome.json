@@ -31,6 +31,8 @@
 			"packages/web-ui/src/**/*.ts",
 			"packages/web-ui/example/**/*.ts",
 			"extensions/fan-mission/**/*.ts",
+			"extensions/fan-scheduler/**/*.ts",
+			"extensions/fan-webhook/**/*.ts",
 			"!**/node_modules/**/*",
 			"!**/models.generated.ts",
 			"!packages/web-ui/src/app.css",

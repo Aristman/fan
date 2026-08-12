@@ -1,0 +1,27 @@
+// F-14: Общие типы расширения fan-webhook.
+//
+// Карточка: docs/features/super-orchestrator/mission-loop-0/roadmap.md §F-14
+// Спека (I2/I3): docs/specs/spec_super-orchestrator_v3_2026-08-10.md
+
+/** Поддерживаемые типы событий вебхука (I2: steer, I3: followUp). */
+export type WebhookStreamingBehavior = "steer" | "followUp";
+
+/** Действия, доступные обработчику вебхука (DI-интерфейс). */
+export interface WebhookActions {
+	sendMessage(text: string, streamingBehavior: WebhookStreamingBehavior): void | Promise<void>;
+}
+
+/** Контекст для запуска webhook-сервера. */
+export interface WebhookCtx {
+	actions: WebhookActions;
+	/** Порт для bind. Не задан → дефолт 9090; 0 → ephemeral (OS назначает сама). */
+	port?: number;
+}
+
+/** Handle запущенного webhook-сервера. */
+export interface WebhookServerHandle {
+	/** Останавливает сервер и освобождает порт. Идемпотентен. */
+	stop: () => Promise<void>;
+	/** Фактически занятый порт (для port=0 — назначенный OS). */
+	port: number;
+}

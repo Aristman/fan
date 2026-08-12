@@ -1,0 +1,25 @@
+{
+	"name": "fan-webhook",
+	"version": "0.0.1",
+	"description": "Webhook-расширение FAN — микро-Hono сервер, принимающий POST-запросы от внешних систем (CI, git-push, мониторинг) и маршрутизирующий их как steer/followUp-сообщения в активную миссию.",
+	"type": "module",
+	"private": true,
+	"fan": {
+		"name": "fan-webhook",
+		"type": "extension",
+		"displayName": "FAN Webhook Listener",
+		"description": "Webhook-listener (Hono) для mission loop — POST /webhook доставляет steer/followUp-сообщения в сессию.",
+		"version": "0.0.1",
+		"author": "FAN Team",
+		"tags": [
+			"webhook",
+			"http",
+			"integ",
+			"mission",
+			"i2",
+			"i3",
+			"steer",
+			"followUp"
+		]
+	}
+}
