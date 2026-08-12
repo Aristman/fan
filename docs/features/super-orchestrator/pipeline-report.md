@@ -47,9 +47,9 @@
 
 **Состояние:** этап 0, фаза B в работе. Сделано 9/15 фич этапа 0 (фаза A ✅ 7/7 + phase-gate, фаза B: F-08 ✅, F-09 ✅).
 
-**Следующий шаг:** F-10 «CLI fan mission init + шаблоны» (taskId `84e8d482-8d2d-427b-ae20-02743d669f34`, зависимость F-08 ✅ — разблокирована). Далее F-11 (зависит F-09 ✅, F-06 ✅), F-12 (F-09 ✅), фаза C: F-13, F-14, F-15. После фазы B — phase-gate (smoke + e2e фазы B из roadmap).
+**Следующий шаг:** F-10 «CLI fan mission init + шаблоны» (зависимость F-08 ✅ — разблокирована). Далее F-11 (F-09 ✅, F-06 ✅), F-12 (F-09 ✅), фаза C: F-13, F-14, F-15. После фазы B — phase-gate (smoke + e2e фазы B из roadmap).
 
-**Протокол возобновления:** прочитать этот файл + roadmap `mission-loop-0/roadmap.md` (статусы ✅), взять первую фичу ☐, Red → Green → verify → commit per-function. Контрольные точки: только в конце. Ветка: FAN/feature/new-agents-flow.
+**Протокол возобновления:** прочитать этот файл + roadmap `mission-loop-0/roadmap.md` (статусы ✅). ВАЖНО: таск-лист оркестратора (TaskCreate/TaskUpdate) живёт только в памяти процесса и после перезапуска пуст — taskId из этого отчёта будут недействительны. Пересоздать задачи на оставшиеся фичи (F-10..F-15 + verify/smoke/docs) по roadmap, затем взять первую фичу ☐, Red → Green → verify → commit per-function. Контрольные точки: только в конце. Ветка: FAN/feature/new-agents-flow.
 
 **Ключевые решения по ходу (для будущих фич):**
 - `writeMissionStatus` — единственный легальный способ менять MISSION.md (только status, через FSM canTransition);
