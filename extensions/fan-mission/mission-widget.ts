@@ -8,9 +8,9 @@
 //
 // DI-стиль по образцу fan-orchestrator task widget.
 
-import { readMission, readMissionLoopState } from "./mission-loop.js";
-import type { MissionLoop } from "./mission-loop.js";
 import { getFileStateManager } from "./file-state-manager.js";
+import type { MissionLoop } from "./mission-loop.js";
+import { readMissionLoopState } from "./mission-loop.js";
 
 /** Снимок статуса миссии. */
 export interface MissionStatusSnapshot {
@@ -52,13 +52,20 @@ export interface MissionWidgetArgs {
 
 function statusLabelRu(status: string): string {
 	switch (status) {
-		case "active": return "активна";
-		case "paused": return "пауза";
-		case "completed": return "завершена";
-		case "aborted": return "aborted";
-		case "failed": return "failed";
-		case "budget_exhausted": return "budget exhausted";
-		default: return status;
+		case "active":
+			return "активна";
+		case "paused":
+			return "пауза";
+		case "completed":
+			return "завершена";
+		case "aborted":
+			return "aborted";
+		case "failed":
+			return "failed";
+		case "budget_exhausted":
+			return "budget exhausted";
+		default:
+			return status;
 	}
 }
 
@@ -66,8 +73,8 @@ function statusLabelRu(status: string): string {
 function renderLines(snapshot: MissionStatusSnapshot, iterationOverride?: number): string[] {
 	const statusEmoji = snapshot.status === "active" ? "●" : "○";
 	const statusLabel = statusLabelRu(snapshot.status);
-	const budgetUsed = `\$${snapshot.budgetUsed.usd.toFixed(2)}`;
-	const budgetTotal = `\$${snapshot.budgetUsd.toFixed(2)}`;
+	const budgetUsed = `$${snapshot.budgetUsed.usd.toFixed(2)}`;
+	const budgetTotal = `$${snapshot.budgetUsd.toFixed(2)}`;
 	const iter = iterationOverride ?? snapshot.iteration;
 	return [
 		`Статус: ${statusEmoji} ${statusLabel} │ Итерация: ${iter} │ Расход: ${budgetUsed} / ${budgetTotal} │ Этап: ${snapshot.currentStep}`,
@@ -152,10 +159,14 @@ export function registerMissionWidget(args: MissionWidgetArgs): void {
 
 	const onIterationEnd = async (payload: unknown) => {
 		try {
-			const iterOverride = (payload && typeof payload === "object" && "iteration" in payload)
-				? Number((payload as { iteration?: unknown }).iteration)
-				: undefined;
-			await renderWidget(args, { visible, iterationOverride: Number.isFinite(iterOverride) ? iterOverride : undefined });
+			const iterOverride =
+				payload && typeof payload === "object" && "iteration" in payload
+					? Number((payload as { iteration?: unknown }).iteration)
+					: undefined;
+			await renderWidget(args, {
+				visible,
+				iterationOverride: Number.isFinite(iterOverride) ? iterOverride : undefined,
+			});
 		} catch {
 			/* не падаем */
 		}

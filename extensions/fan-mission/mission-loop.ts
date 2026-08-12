@@ -37,7 +37,13 @@ export interface IterationResult {
 }
 
 export interface MissionExecutor {
-	runIteration(opts: { missionDir: string; prompt: string; cwd: string }): Promise<IterationResult>;
+	runIteration(opts: {
+		missionDir: string;
+		prompt: string;
+		cwd: string;
+		/** F-15: pending operator steer message(s) for this iteration. */
+		steer?: string;
+	}): Promise<IterationResult>;
 }
 
 export interface MissionGit {
@@ -138,6 +144,83 @@ function writeLoopStateSync(missionDir: string, state: LoopState): void {
 		}
 		throw err;
 	}
+}
+
+// ─── F-15: drain & steer signals (file-based, shared loop state) ────────────
+
+const DRAIN_SIGNAL_FILE = ".mission-drain-flag";
+const STEER_QUEUE_FILE = ".mission-steer-queue.json";
+
+/**
+ * F-15: set/clear the drain signal for a mission dir.
+ * When set, the next MissionLoop.tick() finishes without starting a new
+ * iteration and pauses the mission (MISSION.md status → "paused").
+ */
+export function setDrainSignal(missionDir: string, value: boolean): void {
+	const signalPath = join(missionDir, DRAIN_SIGNAL_FILE);
+	if (value) {
+		writeFileSync(signalPath, JSON.stringify({ drainAfterCurrentTurn: true, ts: Date.now() }), "utf8");
+		return;
+	}
+	try {
+		if (existsSync(signalPath)) unlinkSync(signalPath);
+	} catch {
+		// best-effort
+	}
+}
+
+function readDrainSignal(missionDir: string): boolean {
+	return existsSync(join(missionDir, DRAIN_SIGNAL_FILE));
+}
+
+/**
+ * F-15: append a steer message to the mission's steer queue.
+ * The queue is consumed by the next MissionLoop.tick() (step 4) and passed
+ * to executor.runIteration as opts.steer (and appended to the prompt).
+ */
+export function appendSteerMessage(missionDir: string, text: string): void {
+	const queuePath = join(missionDir, STEER_QUEUE_FILE);
+	const queue = readSteerQueue(missionDir);
+	queue.push(text);
+	const tmpPath = `${queuePath}.tmp-${process.pid}-${Date.now()}`;
+	try {
+		writeFileSync(tmpPath, JSON.stringify(queue, null, 2), "utf8");
+		renameSync(tmpPath, queuePath);
+	} catch (err) {
+		try {
+			if (existsSync(tmpPath)) unlinkSync(tmpPath);
+		} catch {
+			// best-effort cleanup
+		}
+		throw err;
+	}
+}
+
+function readSteerQueue(missionDir: string): string[] {
+	const queuePath = join(missionDir, STEER_QUEUE_FILE);
+	if (!existsSync(queuePath)) return [];
+	try {
+		const parsed = JSON.parse(readFileSync(queuePath, "utf8"));
+		if (Array.isArray(parsed)) return parsed.filter((x): x is string => typeof x === "string");
+	} catch {
+		// corrupted queue — treat as empty
+	}
+	return [];
+}
+
+/**
+ * F-15: read and clear the steer queue (consumed by MissionLoop step 4).
+ */
+export function consumeSteerQueue(missionDir: string): string[] {
+	const queue = readSteerQueue(missionDir);
+	if (queue.length > 0) {
+		try {
+			unlinkSync(join(missionDir, STEER_QUEUE_FILE));
+		} catch {
+			// best-effort
+		}
+	}
+	return queue;
 }
 
 // ─── Abort signal (lock-free) ───────────────────────────────────────────────
@@ -248,10 +331,13 @@ export class MissionLoop {
 	private missionDir: string;
 	private deps: MissionLoopDeps;
 	private lock: MissionLock;
+	// F-15: optional DI drain flag (checked in addition to the file signal)
+	private drainFlag?: () => boolean;
 
-	constructor(opts: { missionDir: string; deps: MissionLoopDeps }) {
+	constructor(opts: { missionDir: string; deps: MissionLoopDeps; drainFlag?: () => boolean }) {
 		this.missionDir = opts.missionDir;
 		this.deps = opts.deps;
+		this.drainFlag = opts.drainFlag;
 		// P1-6: use provided lock or default file-lock
 		this.lock = opts.deps.lock ?? createFileLock(opts.missionDir);
 	}
@@ -315,6 +401,12 @@ export class MissionLoop {
 			// P1-2: Paused mission → no-op (resume only via explicit external action)
 			if (missionStatus === "paused") {
 				return { iteration: currentIteration, steps, status: "paused" };
+			}
+
+			// F-15: drain — current turn boundary reached: do NOT start a new
+			// iteration, record the pause in STATE.md and set MISSION.md → paused.
+			if (this.isDrainRequested()) {
+				return await this.drainTick(steps, currentIteration);
 			}
 
 			resultStatus = missionStatus as MissionStatus;
@@ -480,11 +572,18 @@ export class MissionLoop {
 					return this.abortTick(loopState, steps, currentIteration, currentItem);
 				}
 
-				const prompt = `Execute mission item: ${nextItem.text}`;
+				// F-15: consume pending steer messages (webhook / scheduler / operator)
+				const steerMessages = consumeSteerQueue(this.missionDir);
+				const steer = steerMessages.length > 0 ? steerMessages.join("\n") : undefined;
+				let prompt = `Execute mission item: ${nextItem.text}`;
+				if (steer) {
+					prompt += `\n\nOperator steer: ${steer}`;
+				}
 				iterResult = await this.deps.executor.runIteration({
 					missionDir: this.missionDir,
 					prompt,
 					cwd: this.missionDir,
+					...(steer ? { steer } : {}),
 				});
 
 				// P0-1: persist result immediately after step 4
@@ -654,6 +753,37 @@ export class MissionLoop {
 	 */
 	private isAborted(): boolean {
 		return readAbortSignal(this.missionDir);
+	}
+
+	/**
+	 * F-15: drain requested via DI flag or file signal (I1).
+	 */
+	private isDrainRequested(): boolean {
+		return this.drainFlag?.() === true || readDrainSignal(this.missionDir);
+	}
+
+	/**
+	 * F-15: handle a drain signal — skip iteration, note the pause in STATE.md,
+	 * transition MISSION.md to "paused" and clear the signal.
+	 */
+	private async drainTick(steps: TickSteps, currentIteration: number): Promise<TickResult> {
+		setDrainSignal(this.missionDir, false);
+		// Record the pause reason in STATE.md (best-effort: keep existing content)
+		try {
+			const state = await readState(this.missionDir);
+			const marker = "Drain requested — mission paused";
+			if (!state.blockers.includes(marker)) {
+				await writeState(this.missionDir, {
+					done: state.done,
+					blockers: [...state.blockers, marker],
+					nextSteps: state.nextSteps,
+				});
+			}
+		} catch {
+			// best-effort — status transition below is the primary effect
+		}
+		await writeMissionStatus(this.missionDir, "paused");
+		return { iteration: currentIteration, steps, status: "paused" };
 	}
 
 	/**
