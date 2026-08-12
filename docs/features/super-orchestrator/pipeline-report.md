@@ -57,6 +57,7 @@
 - drain state-машина: idle→draining→drained→idle, события 1:1:1;
 - budget=0 = unlimited (везде); budgetCountedFor привязан к item;
 - recovery контура: по наличию iterationResult в журнале, независимо от interrupted;
+- **таск-лист эфемерен** (`TaskManager` в `extensions/fan-orchestrator/task-manager.js:11` хранит задачи в `new Map()`, `serialize()` ~273 написан, но нигде не вызывается) — персистентность запланирована фичей **F-48** (этап 1, `mission-validation-1`), подробности — backlog `docs/backlogs/tasklist-persistence-backlog.md`; до тех пор доска пересоздаётся из этого `pipeline-report.md` и соответствующего roadmap;
 - известный pre-existing падеж: agent-session-concurrent steering-тест (quarantine-тикет в бэклоге).
 
 ## Журнал
@@ -79,3 +80,4 @@
 4. **F-03 P3:** событие `watchdog_timeout` не персистится в JSONL и не показывается в TUI; docs (sdk.md/rpc.md) не описывают. То же для `loop_detected` и drain-событий (F-04/F-05).
 5. **F-04:** `normalizeErrorText` не гасит Windows-пути, перенормализует host:port/время; ban-message хардкод на русском (i18n).
 6. **F-04:** провайдеры без поддержки AbortSignal — abort проигрывает (gap agent-core, честные провайдеры сигнал чтят).
+7. **Персистентность таск-листа** — теперь запланирована в этапе 1 как фича **F-48** (`mission-validation-1/roadmap.md`), подробности — backlog `docs/backlogs/tasklist-persistence-backlog.md`. Snapshot `TaskManager` в session JSONL, десериализация, restore-семантика `in_progress`→`pending`+`recovered`.
