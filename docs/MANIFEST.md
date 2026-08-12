@@ -1,5 +1,5 @@
 # Documentation Manifest
-> Last updated: 2026-08-10
+> Last updated: 2026-08-12
 > Comprehensive index of all project documentation.
 > Maintainer: docs-impl agent
 
@@ -61,6 +61,9 @@
 | `packages/dashboard/README.md` | ✅ | @fan/dashboard — Web UI |
 | `tools/fan-store-server/GUIDE.md` | ✅ | FAN Store server guide |
 | `extensions/fan-orchestrator/README.md` | ✅ | FAN Orchestrator v7.10.0 — `/orchestrator models`, named presets, multi-provider lists, permission approval, broker-handler |
+| `extensions/fan-mission/` | ✅ | Mission loop extension (F-08..F-12) — file-state-manager, mission-loop, slash-commands, mission-widget, templates/{default,refactor} |
+| `extensions/fan-scheduler/` | ✅ | Cron tick scheduler (F-13) — 5-field cron со строгой валидацией, I4 тики |
+| `extensions/fan-webhook/` | ✅ | Hono webhook server (F-14) — steer/followUp dispatch на порту 9090 |
 
 ## Roadmaps & Research
 | File | Status | Description |
@@ -80,12 +83,15 @@
 | `docs/develop/tests/orchestrator-phase4.md` | ✅ | Orchestrator Phase 4 (18 ✅) |
 | `docs/develop/tests/orchestrator-phase5.md` | ✅ | Orchestrator Phase 5 — Hardening |
 | `docs/develop/tests/dashboard-phase6.md` | ✅ | Dashboard Phase 6 (26/30 ✅) |
+| `docs/features/super-orchestrator/pipeline-report.md` | ✅ | Pipeline отчёт сверх-оркестратора FAN — Этап 0 завершён (15/15, phase-gate `31f605e`, verify final PASS) |
+| `docs/features/super-orchestrator/mission-loop-0/roadmap.md` | ✅ | Этап 0 roadmap — все 15 фич ✅, добавлена секция «Этап 0 завершён» (2026-08-12) |
 
 ## Backlogs
 | File | Status | Description |
 |------|--------|-------------|
 | `docs/backlogs/package-fork-backlog.md` | ✅ | Fork backlog @mariozechner/* → @seaagents/* |
 | `docs/backlogs/setup-wizard-backlog.md` | ✅ | fan init setup wizard backlog |
+| `docs/backlogs/tasklist-persistence-backlog.md` | ✅ | TaskList persistence (P1..P3) — реализация запланирована F-48 (этап 1, `mission-validation-1`) |
 
 ## Skills (11 встроенных)
 | File | Status | Description |
@@ -113,4 +119,4 @@
 
 All 5 package READMEs have been created — status updated to ✅.
 
-Total: **46 tracked documents** (44 ✅, 6 ⚠️, 0 ❌)
+Total: **55 tracked documents** (51 ✅, 4 ⚠️, 0 ❌)

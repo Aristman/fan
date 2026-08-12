@@ -1,5 +1,52 @@
 # Changelog
 
+## [Unreleased] — 2026-08-12
+
+### Сверх-оркестратор FAN — Этап 0 «Миссионный контур» завершён
+
+Закрытие roadmap `docs/features/super-orchestrator/mission-loop-0/roadmap.md`:
+все 15 фич (F-01..F-15) реализованы, phase-gate фазы A пройден
+([`31f605e`](https://github.com/seaagents/fan/commit/31f605e)), verify final
+2100+ тестов зелёные, smoke `e2e-phase-a-interrupts` 3/3 PASS. Подробный
+отчёт — `docs/features/super-orchestrator/pipeline-report.md`.
+
+**Фаза A «Ядро прерываний» (F-01..F-07):**
+
+- **`fan-coding-agent`/`api-gateway`/`agent`** — REST+WS abort (`f0a83af`),
+  лимиты очередей + `QueueOverflowError` (`42360a6`), `WatchdogTimer` для
+  зависших tool call (`bb273e3`), `LoopDetector` для повторных ошибок
+  (`7a41f82`), drain state-машина `idle→draining→drained→idle` (`cb66834`),
+  REST+WS drain endpoint (`94c659d`), `budget_alert` WS-продюсер с порогами
+  80%/95%/100% и дедупликацией по периоду (`41fcf61`).
+
+**Фаза B «Контур миссии» (F-08..F-12):**
+
+- **Расширение `fan-mission`** — `file-state-manager.ts` (MISSION/ROADMAP/STATE/
+  BACKLOG/DECISIONS, FSM статусов, лимит STATE.md 5 KB, immutable MISSION.md)
+  в [`6e51409`](https://github.com/seaagents/fan/commit/6e51409);
+  7-шаговый mission loop с crash recovery и file-lock в [`dcdde97`](https://github.com/seaagents/fan/commit/dcdde97).
+- **`fan-coding-agent` CLI** — `fan mission init|start|stop|status|pause|resume`
+  + `--template <T>` (default + refactor), `InvalidTransitionError` в
+  [`665a392`](https://github.com/seaagents/fan/commit/665a392); slash-команды
+  `/mission:*` (start/stop/pause/resume/status/steer/decide, 7 шт.) в
+  [`0fb7284`](https://github.com/seaagents/fan/commit/0fb7284); TUI-виджет
+  статуса миссии (Alt+M) в [`5fd84c1`](https://github.com/seaagents/fan/commit/5fd84c1).
+
+**Фаза C «Внешние триггеры и интеграция» (F-13..F-15):**
+
+- **Расширение `fan-scheduler`** — cron-планировщик тиков I4, 5-field cron со
+  строгой валидацией, resilience к падениям `sendMessage` в
+  [`a972f23`](https://github.com/seaagents/fan/commit/a972f23).
+- **Расширение `fan-webhook`** — Hono-сервер на порту 9090, event-router
+  для steer/followUp в [`d9ef7d1`](https://github.com/seaagents/fan/commit/d9ef7d1).
+- **Интеграция** — 22 интеграционных теста + 5 фикстур в
+  `extensions/fan-mission/test/fixtures/mission/sample/`, общение расширений
+  через файловые сигналы `.mission-steer-queue.json` и `.mission-drain-flag`
+  в [`d5c3b42`](https://github.com/seaagents/fan/commit/d5c3b42).
+
+**Следующий шаг:** этап 1 `mission-validation-1` (F-16..F-22) + F-48
+(персистентность таск-листа оркестратора).
+
 ## [2.5.1] — 2026-08-09
 
 ### Исправлено

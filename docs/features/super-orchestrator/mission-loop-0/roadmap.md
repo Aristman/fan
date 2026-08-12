@@ -535,23 +535,23 @@
 ## Полный чеклист по приоритетам
 
 ### P0 — Критические
-- [ ] F-01 [API]: REST abort эндпоинт
-- [ ] F-02 [BIZ]: Лимиты очередей сообщений
-- [ ] F-03 [BIZ]: Watchdog (сторожевой таймер runtime)
-- [ ] F-04 [BIZ]: Детектор циклов
-- [ ] F-05 [BIZ]: Drain-флаг в agent-session
-- [ ] F-06 [API]: Drain API эндпоинт
-- [ ] F-07 [BIZ]: Продюсер budget_alert
-- [ ] F-08 [DATA]: File-state-manager (файловое хранилище миссии)
-- [ ] F-09 [BIZ]: Mission loop (внешний 7-шаговый цикл)
-- [ ] F-10 [CLI]: CLI `fan mission init` + шаблоны файлов
-- [ ] F-11 [CLI]: Slash-команды `/mission:*`
-- [ ] F-13 [INTEG]: Расширение fan-scheduler (тики I4)
-- [ ] F-14 [INTEG]: Расширение fan-webhook (слушатель вебхуков)
+- [x] F-01 [API]: REST abort эндпоинт
+- [x] F-02 [BIZ]: Лимиты очередей сообщений
+- [x] F-03 [BIZ]: Watchdog (сторожевой таймер runtime)
+- [x] F-04 [BIZ]: Детектор циклов
+- [x] F-05 [BIZ]: Drain-флаг в agent-session
+- [x] F-06 [API]: Drain API эндпоинт
+- [x] F-07 [BIZ]: Продюсер budget_alert
+- [x] F-08 [DATA]: File-state-manager (файловое хранилище миссии)
+- [x] F-09 [BIZ]: Mission loop (внешний 7-шаговый цикл)
+- [x] F-10 [CLI]: CLI `fan mission init` + шаблоны файлов
+- [x] F-11 [CLI]: Slash-команды `/mission:*`
+- [x] F-13 [INTEG]: Расширение fan-scheduler (тики I4)
+- [x] F-14 [INTEG]: Расширение fan-webhook (слушатель вебхуков)
 
 ### P1 — Высокие
-- [ ] F-12 [UI]: TUI-виджет статуса миссии
-- [ ] F-15 [INTEG]: Интеграционные тесты и фикстуры контура
+- [x] F-12 [UI]: TUI-виджет статуса миссии
+- [x] F-15 [INTEG]: Интеграционные тесты и фикстуры контура
 
 ### P2 — Средние
 (нет)
@@ -597,3 +597,34 @@
   - `../mission-validation-1/roadmap.md` (Этап 1: теги обещаний, генерация идей, DECIDE, verification ladder)
   - `../http-hierarchy-2/roadmap.md` (Этап 2: HTTP-иерархия, process manager, бюджет)
   - `../depth-and-dashboard-3/roadmap.md` (Этап 3: Dashboard, глубина 3–4, манифесты)
+
+---
+
+## Этап 0 завершён
+
+**Дата:** 2026-08-12
+**Phase-gate:** [`31f605e`](https://github.com/seaagents/fan/commit/31f605e) — `test(coding-agent): phase-gate e2e for interrupt core (phase A)` (3 e2e + 131 unit, PASS)
+**Verify final:** PASS — 2100+ тестов зелёные во всех вовлечённых пакетах
+**Smoke:** PASS — `packages/coding-agent/test/e2e-phase-a-interrupts.test.ts` (3/3)
+**Сводка:** 15/15 фич реализовано (F-01..F-15). Все три фазы этапа 0 завершены:
+
+| Фаза | Фичи | Phase-gate / smoke |
+|------|------|--------------------|
+| A «Ядро прерываний» | F-01..F-07 (7/7) | [`31f605e`](https://github.com/seaagents/fan/commit/31f605e) — e2e phase A: 3/3 + 131 unit |
+| B «Контур миссии» | F-08..F-12 (5/5) | mission-loop integration: 258/258 fan-mission |
+| C «Внешние триггеры и интеграция» | F-13..F-15 (3/3) | fan-scheduler 38/38, fan-webhook 46/46, integration 22/22 |
+
+**Коммиты этапа 0 (F-01..F-15):** `f0a83af`, `42360a6`, `bb273e3`, `7a41f82`, `cb66834`, `94c659d`, `41fcf61`, `6e51409`, `dcdde97`, `665a392`, `0fb7284`, `5fd84c1`, `a972f23`, `d9ef7d1`, `d5c3b42`.
+
+**Артефакты этапа:**
+- `extensions/fan-mission/` — file-state-manager, mission-loop, slash-commands, mission-widget, templates/{default,refactor}
+- `extensions/fan-scheduler/` — cron-parser, scheduler (I4)
+- `extensions/fan-webhook/` — webhook-server, event-router (I2/I3)
+- `packages/coding-agent/src/cli/mission-command.ts` — `fan mission init|start|stop|status|pause|resume` + `--template <T>`
+- `packages/coding-agent/test/e2e-phase-a-interrupts.test.ts` — phase-gate smoke
+- `packages/coding-agent/CHANGELOG.md` — записи о CLI mission-командах
+- `packages/coding-agent/README.md` — секция «Mission Commands» с `--template`, slash-эквивалентами и триггер-расширениями
+
+**Точка возобновления:** этап 1 `mission-validation-1` (F-16..F-22) + F-48 (tasklist persistence). Подробности протокола — `docs/features/super-orchestrator/pipeline-report.md`.
+
+**Известные ограничения / non-blockers:** см. «Бэклог» в `pipeline-report.md` — 6 пунктов (флаки-тест, невыставленные настройки `messageQueueLimit`, события не персистятся в JSONL, i18n ban-message, провайдеры без AbortSignal, tasklist persistence).
