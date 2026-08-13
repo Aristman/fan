@@ -554,12 +554,14 @@ export async function writeRoadmap(missionDir: string, content: string): Promise
 // ─── FSM: mission status transitions ────────────────────────────────────────
 
 const TRANSITIONS: Record<string, Set<string>> = {
-	active: new Set(["paused", "completed", "aborted", "failed", "budget_exhausted"]),
+	active: new Set(["paused", "completed", "aborted", "failed", "budget_exhausted", "awaiting_decision"]),
 	paused: new Set(["active", "aborted"]),
 	completed: new Set(),
 	aborted: new Set(["active"]),
 	failed: new Set(["active"]),
 	budget_exhausted: new Set(["active"]),
+	// F-17: DECIDE interruption — loop blocked until operator answer or timeout
+	awaiting_decision: new Set(["active", "aborted"]),
 };
 
 export function canTransition(from: string, to: string): boolean {

@@ -10,9 +10,11 @@ import { existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 
 import { join } from "node:path";
 import {
 	ARCHIVE_KEEP_COUNT,
+	appendDecision,
 	archiveOldDoneItems,
 	canTransition,
 	checkStateFileSize,
+	InvalidTransitionError,
 	MAX_STATE_BYTES,
 	readMission,
 	readRoadmap,
@@ -22,10 +24,18 @@ import {
 	writeRoadmap,
 	writeState,
 } from "./file-state-manager.js";
+import { parsePromise } from "./promise-parser.js";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-export type MissionStatus = "active" | "paused" | "completed" | "aborted" | "failed" | "budget_exhausted";
+export type MissionStatus =
+	| "active"
+	| "paused"
+	| "completed"
+	| "aborted"
+	| "failed"
+	| "budget_exhausted"
+	| "awaiting_decision";
 
 export interface IterationResult {
 	status: "COMPLETE" | "BLOCKED" | "DECIDE" | "FAILED";
@@ -34,6 +44,8 @@ export interface IterationResult {
 	commitMessage?: string;
 	costTokens?: number;
 	costUsd?: number;
+	/** F-17: raw LLM response — parsed via parsePromise() for promise tags (DECIDE). */
+	response?: string;
 }
 
 export interface MissionExecutor {
@@ -102,6 +114,10 @@ interface LoopState {
 	abortedByOperator?: boolean;
 	// P1-1: which item the step 5 budget increment was persisted for (prevents double-count on recovery)
 	budgetCountedFor?: string | null;
+	// F-17: pending DECIDE question (survives restarts, consumed by resolveDecision)
+	pendingDecision?: { question: string; date: string };
+	// F-17: operator answer to a DECIDE question (consumed by the next tick)
+	pendingOperatorAnswer?: string;
 }
 
 // ─── Loop state persistence (.mission-loop.json) ────────────────────────────
@@ -333,11 +349,20 @@ export class MissionLoop {
 	private lock: MissionLock;
 	// F-15: optional DI drain flag (checked in addition to the file signal)
 	private drainFlag?: () => boolean;
+	// F-17: DECIDE wait timeout (default 1 hour) and its pending timer
+	private decideTimeoutMs: number;
+	private decideTimer?: ReturnType<typeof setTimeout>;
 
-	constructor(opts: { missionDir: string; deps: MissionLoopDeps; drainFlag?: () => boolean }) {
+	constructor(opts: {
+		missionDir: string;
+		deps: MissionLoopDeps;
+		drainFlag?: () => boolean;
+		decideTimeoutMs?: number;
+	}) {
 		this.missionDir = opts.missionDir;
 		this.deps = opts.deps;
 		this.drainFlag = opts.drainFlag;
+		this.decideTimeoutMs = opts.decideTimeoutMs ?? 3_600_000;
 		// P1-6: use provided lock or default file-lock
 		this.lock = opts.deps.lock ?? createFileLock(opts.missionDir);
 	}
@@ -401,6 +426,12 @@ export class MissionLoop {
 			// P1-2: Paused mission → no-op (resume only via explicit external action)
 			if (missionStatus === "paused") {
 				return { iteration: currentIteration, steps, status: "paused" };
+			}
+
+			// F-17: DECIDE interruption — loop is blocked until the operator answers
+			// via resolveDecision() (or the decide timeout aborts the mission).
+			if (missionStatus === "awaiting_decision") {
+				return { iteration: currentIteration, steps, status: "awaiting_decision" };
 			}
 
 			// F-15: drain — current turn boundary reached: do NOT start a new
@@ -574,7 +605,13 @@ export class MissionLoop {
 
 				// F-15: consume pending steer messages (webhook / scheduler / operator)
 				const steerMessages = consumeSteerQueue(this.missionDir);
-				const steer = steerMessages.length > 0 ? steerMessages.join("\n") : undefined;
+				let steer = steerMessages.length > 0 ? steerMessages.join("\n") : undefined;
+				// F-17: consume pending operator answer to a DECIDE question
+				if (loopState.pendingOperatorAnswer !== undefined) {
+					const answerLine = `operator_answer: ${loopState.pendingOperatorAnswer}`;
+					steer = steer ? `${steer}\n${answerLine}` : answerLine;
+					loopState.pendingOperatorAnswer = undefined;
+				}
 				let prompt = `Execute mission item: ${nextItem.text}`;
 				if (steer) {
 					prompt += `\n\nOperator steer: ${steer}`;
@@ -599,6 +636,13 @@ export class MissionLoop {
 			// P0-2: abort check after iteration, before commit
 			if (this.isAborted()) {
 				return this.abortTick(loopState, steps, currentIteration, currentItem);
+			}
+
+			// F-17: DECIDE interruption — parse the promise tag from the raw response.
+			// Call-site guard: only strings are parsed (parsePromise(non-string) throws).
+			const parsedPromise = typeof iterResult.response === "string" ? parsePromise(iterResult.response) : null;
+			if (parsedPromise?.tag === "DECIDE") {
+				return await this.decideTick(loopState, steps, currentIteration, currentItem, parsedPromise.reason);
 			}
 
 			// ── Step 5: Verify ─────────────────────────────────────────────
@@ -739,6 +783,44 @@ export class MissionLoop {
 		} catch {
 			// best-effort — abort signal file is the primary mechanism
 		}
+		// F-17: no pending decide timeout after abort
+		this.clearDecideTimer();
+	}
+
+	/**
+	 * F-17: resolve a DECIDE interruption. Valid only from awaiting_decision.
+	 * Records the operator answer in DECISIONS.md (question + answer, ADR format),
+	 * clears the decide timeout and transitions back to active. The next tick()
+	 * passes the answer to the executor as `operator_answer: <answer>`.
+	 */
+	async resolveDecision(answer: string): Promise<void> {
+		const mission = await readMission(this.missionDir);
+		const currentStatus = String(mission.frontmatter.status);
+		if (currentStatus !== "awaiting_decision") {
+			throw new InvalidTransitionError(currentStatus, "active");
+		}
+
+		const loopState = await readMissionLoopState(this.missionDir);
+		const question = loopState.pendingDecision?.question ?? "не указан";
+		const now = await this.deps.clock.now();
+
+		// ADR-style answer entry (question + operator answer)
+		await appendDecision(this.missionDir, {
+			id: `ADR-${randomUUID().slice(0, 8)}`,
+			date: now.toISOString(),
+			status: "accepted",
+			context: question,
+			decision: answer,
+			consequences: "",
+		});
+
+		this.clearDecideTimer();
+
+		loopState.pendingDecision = undefined;
+		loopState.pendingOperatorAnswer = answer;
+		writeLoopStateSync(this.missionDir, loopState);
+
+		await writeMissionStatus(this.missionDir, "active");
 	}
 
 	async status(): Promise<MissionStatus> {
@@ -784,6 +866,109 @@ export class MissionLoop {
 		}
 		await writeMissionStatus(this.missionDir, "paused");
 		return { iteration: currentIteration, steps, status: "paused" };
+	}
+
+	/**
+	 * F-17: handle a DECIDE promise tag — record the question in DECISIONS.md
+	 * (ADR format, pending), transition to awaiting_decision, reset the step-4
+	 * journal (next tick after resolve starts a fresh iteration), start the
+	 * decide timeout and return without running steps 5–7.
+	 */
+	private async decideTick(
+		loopState: LoopState,
+		steps: TickSteps,
+		currentIteration: number,
+		currentItem: string | undefined,
+		rawReason: string | undefined,
+	): Promise<TickResult> {
+		const question = rawReason && rawReason.trim() !== "" ? rawReason.trim() : "не указан";
+		const now = await this.deps.clock.now();
+		const date = now.toISOString();
+
+		await appendDecision(this.missionDir, {
+			id: `ADR-${randomUUID().slice(0, 8)}`,
+			date,
+			status: "pending",
+			context: question,
+			decision: "",
+			consequences: "",
+		});
+
+		await writeMissionStatus(this.missionDir, "awaiting_decision");
+
+		// Reset the step-4 journal so the next tick after resolveDecision() runs
+		// a fresh iteration (the DECIDE iteration itself is not committed).
+		loopState.iterationResult = undefined;
+		loopState.pendingItem = undefined;
+		loopState.pendingItemIndex = undefined;
+		loopState.committed = false;
+		loopState.budgetCountedFor = null;
+		loopState.interrupted = false;
+		loopState.lastStep = 0;
+		// Persist the question so resolveDecision() can record it after a restart.
+		loopState.pendingDecision = { question, date };
+		writeLoopStateSync(this.missionDir, loopState);
+
+		this.startDecideTimer();
+
+		return { iteration: currentIteration, steps, status: "awaiting_decision", item: currentItem };
+	}
+
+	/** F-17: start the decide timeout (aborts the mission on expiry). */
+	private startDecideTimer(): void {
+		this.clearDecideTimer();
+		const timer = setTimeout(() => {
+			this.decideTimer = undefined;
+			void this.handleDecideTimeout();
+		}, this.decideTimeoutMs);
+		// Do not keep the Node process alive just for the decide timeout.
+		if (typeof timer === "object" && timer !== null && typeof timer.unref === "function") {
+			timer.unref();
+		}
+		this.decideTimer = timer;
+	}
+
+	/** F-17: clear the pending decide timeout (operator answered / aborted). */
+	private clearDecideTimer(): void {
+		if (this.decideTimer !== undefined) {
+			clearTimeout(this.decideTimer);
+			this.decideTimer = undefined;
+		}
+	}
+
+	/**
+	 * F-17: decide timeout fired — add the decide_timeout blocker to STATE.md
+	 * and abort the mission. No-op if the status is no longer awaiting_decision.
+	 */
+	private async handleDecideTimeout(): Promise<void> {
+		try {
+			const mission = await readMission(this.missionDir);
+			if (String(mission.frontmatter.status) !== "awaiting_decision") {
+				return; // resolved or otherwise transitioned in the meantime
+			}
+		} catch {
+			return;
+		}
+
+		// STATE.md blocker marker (best-effort)
+		try {
+			const state = await readState(this.missionDir);
+			if (!state.blockers.includes("decide_timeout")) {
+				await writeState(this.missionDir, {
+					done: state.done,
+					blockers: [...state.blockers, "decide_timeout"],
+					nextSteps: state.nextSteps,
+				});
+			}
+		} catch {
+			// best-effort — the abort status below is the primary effect
+		}
+
+		try {
+			await writeMissionStatus(this.missionDir, "aborted");
+		} catch {
+			// best-effort
+		}
 	}
 
 	/**
