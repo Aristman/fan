@@ -1,0 +1,631 @@
+// F-MISSION-INDEX: Расширение fan-mission — entry-point (index.ts) wiring — Red-фаза.
+//
+// Карточка: docs/features/super-orchestrator/mission-loop-0/roadmap.md §F-11/§F-12
+// Спека: docs/specs/spec_super-orchestrator_v3_2026-08-10.md §3.2.2 (I0–I3), §3.2.4, §6.3, §6.4
+//
+// ─── Точные контракты (прочитаны из исходников) ─────────────────────────────
+//
+// registerMissionSlashCommands(register, registrationCtx: SlashCtx): void
+//   (extensions/fan-mission/slash-commands.ts)
+//   • SlashCtx = {
+//       actions: SlashCtxActions;           // обязательное
+//       missionLoop?: MissionLoop | null;   // активный цикл (lazy: устанавливается в attachMission)
+//       output: (line: string) => void;    // обязательное
+//       missionDir?: string;
+//       getStatusSnapshot?: () => Promise<MissionStatusSnapshot>;
+//     }
+//   • SlashCtxActions = {
+//       sendMessage(text, opts?: { streamingBehavior?: "steer" | "followUp" }): void | Promise<void>;
+//       abort(): void | Promise<void>;                       // I0
+//       setDrainAfterCurrentTurn(value: boolean): void;       // I1 drain
+//       resume(): void;                                       // resume
+//     }
+//   • SlashCommandRegister = (name: string, cmd: { description: string; handler: (args, ctx) => Promise<void> }) => void
+//   • Регистрирует ровно 7 команд: mission:start, mission:stop, mission:status,
+//     mission:pause, mission:resume, mission:steer, mission:decide
+//
+// registerMissionWidget(args: MissionWidgetArgs): void
+//   (extensions/fan-mission/mission-widget.ts)
+//   • MissionWidgetArgs = {
+//       registerShortcut: (key, def) => void;     // DI: обёртка над fan.registerShortcut
+//       ui: { render(lines: string[]): void; toggle(key: string): void };
+//       missionLoop?: MissionLoop | null;
+//       missionDir?: string;
+//       uiEvents: { on(name, handler): void; off(name, handler): void };
+//       getStatusSnapshot?: () => Promise<MissionStatusSnapshot>;
+//     }
+//   • Регистрирует шорткат "alt+m" (description: "Toggle mission status widget (виджет миссии)")
+//
+// new MissionLoop(opts): MissionLoop
+//   (extensions/fan-mission/mission-loop.ts)
+//   • opts = { missionDir: string; deps: MissionLoopDeps; drainFlag?; decideTimeoutMs?; ... }
+//   • MissionLoopDeps = { executor: MissionExecutor; git: MissionGit; clock: MissionClock; lock?: MissionLock }
+//   • MissionClock = { now(): Date | Promise<Date> }
+//   • метод status(): Promise<MissionStatus> — читает MISSION.md frontmatter.status (строка)
+//     ("active"|"paused"|"completed"|"aborted"|"failed"|"budget_exhausted"|"awaiting_decision")
+//   • конструктор НЕ вызывает executor/git — только tick() делает это; значит attachMission
+//     может создать MissionLoop даже с mock/undefined-deps без副作用.
+//
+// createSessionExecutor({ runAgent }): MissionExecutor
+//   (extensions/fan-mission/session-executor.ts) — реализован (Green)
+//   • runAgent: (prompt, opts?: { cwd?; steer? }) => Promise<{ response; costTokens?; costUsd? }>
+//
+// createGitAdapter(opts?: { exec? }): MissionGit  — реализован (Green)
+//
+// initMission(slug, opts?: { baseDir?; template? }): Promise<string>  — реализован (Green)
+//   • возвращает missionDir; idempotent; дефолтный MISSION.md status: "active"
+//
+// ─── Контракт entry-point index.ts (для Green-фазы) ──────────────────────────
+//
+//   export function wireMission(fan, opts?): {
+//     attachMission(missionDir): MissionLoop;   // создаёт MissionLoop с production-deps:
+//                                               //   executor = createSessionExecutor({ runAgent: opts.runAgent ?? fan.runAgent })
+//                                               //   git = createGitAdapter()
+//                                               //   clock = { now: () => new Date() }
+//                                               //   lock = default (createFileLock)
+//                                               // сохраняет + возвращает missionLoop
+//     getMissionLoop(): MissionLoop | null;
+//     shutdown(): void;                         // missionLoop.abort() + очистка stored handle
+//   }
+//   opts.runAgent? — DI для executor (чтобы тесты не использовали реальный LLM).
+//
+//   export default function(fan): wiring-handle
+//     — фабрика расширения:
+//       1. wireMission(fan) → handle (ленивый missionLoop, устанавливается в attachMission);
+//       2. registerMissionSlashCommands((name, def) => fan.registerCommand(name, def), sharedCtx)
+//          где sharedCtx.missionLoop лениво резолвится из handle.getMissionLoop();
+//       3. registerMissionWidget({ registerShortcut: (k,d)=>fan.registerShortcut(k,d), ui, uiEvents, ... });
+//       4. fan.on("session_start", (event, ctx) => { определить missionDir из ctx.cwd
+//          (сканировать <cwd>/docs/missions/ на предмет каталога с MISSION.md не-терминального
+//          статуса) → если найден: handle.attachMission(missionDir) });
+//       5. fan.on("session_shutdown", () => handle.shutdown());
+//       Возвращает wiring-handle (minor deviation от `: void` — нужно, чтобы session_start
+//       hook был тестируем через handle.getMissionLoop(); см. ambiguity-решения ниже).
+//
+// ─── Ambiguity-решения (зафиксированы в тесте) ───────────────────────────────
+//
+// 1. Default-фабрика ВОЗВРАЩАЕТ wiring-handle (а не void) — единственный способ
+//    наблюдать побочный эффект session_start hook (getMissionLoop() не null) без
+//    внешнего side-effect. Разумное отклонение от контракта `: void`.
+// 2. session_start handler signature: (event, ctx) — читает ctx.cwd (cwd также
+//    продублирован в event-пayload для устойчивости). Сканирует <cwd>/docs/missions/
+//    на предмет подкаталога с MISSION.md не-терминального статуса (active/paused/
+//    awaiting_decision); первый найденный → attachMission. Нет миссии → no-op
+//    (getMissionLoop() остаётся null, без throw, без авто-создания миссии).
+// 3. attachMission ИДЕМПОТЕНТЕН для того же missionDir — повторный вызов с тем же
+//    путём возвращает тот же экземпляр MissionLoop (без двойного wiring/shutdown).
+// 4. shutdown() вызывает missionLoop.abort() и очищает stored handle →
+//    getMissionLoop() возвращает null. shutdown() идемпотентен.
+// 5. Mock fan включает runAgent (mock) — дефолтная фабрика использует его как
+//    runAgent для executor в session_start→attachMission (без него контур не сможет
+//    тикать на проде). Тесты TC-3..6 передают runAgent явно через opts.runAgent (DI).
+//
+// ─── Этап 0 (Red) ────────────────────────────────────────────────────────────
+// Модуль `extensions/fan-mission/index.ts` ещё не существует → динамический import
+// в beforeAll выбрасывает ERR_MODULE_NOT_FOUND, try/catch глушит его, символы
+// (wireMission, factory) остаются undefined. Каждый it падает ИНДИВИДУАЛЬНО на
+// вызове undefined-функции (правильный TDD Red: тесты запускаются и падают, а не
+// «файл не загрузился»). Существующие тесты fan-mission (503) НЕ затронуты —
+// отдельный файл, импортирует уже реализованные модули.
+
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { initMission } from "../file-state-manager.js";
+
+// ────────────────────────────────────────────────────────────────────────────
+// Динамический import SUT (index.ts → index.js через Vite-резолв .js→.ts).
+// На Red-фазе модуля нет → ERR_MODULE_NOT_FOUND → catch → символы undefined.
+// ────────────────────────────────────────────────────────────────────────────
+
+let wireMission;
+let factory;
+
+beforeAll(async () => {
+	try {
+		const mod = await import("../index.js");
+		wireMission = mod.wireMission;
+		factory = mod.default;
+	} catch {
+		// Red: index.ts ещё не реализован.
+	}
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// Mock fan-объект: on() записывает хуки в Map (для эмуляции через _emit),
+// registerCommand/registerShortcut пишут в Map для инспекции, sendUserMessage —
+// vi.fn() для assertions, events.{on,off} — vi.fn() (для mission-widget uiEvents),
+// appendEntry/getCustomEntries — vi.fn(). Добавлен runAgent (mock) для дефолтной
+// фабрики (см. ambiguity-решение №5).
+// ────────────────────────────────────────────────────────────────────────────
+
+function makeMockFan(overrides = {}) {
+	const hooks = new Map();
+	const on = vi.fn((event, handler) => {
+		hooks.set(event, handler);
+	});
+
+	const commands = new Map();
+	const registerCommand = vi.fn((name, def) => {
+		commands.set(name, def);
+	});
+
+	const shortcuts = new Map();
+	const registerShortcut = vi.fn((key, def) => {
+		shortcuts.set(key, def);
+	});
+
+	const sendUserMessage = vi.fn();
+	const eventsOn = vi.fn();
+	const eventsOff = vi.fn();
+	const appendEntry = vi.fn();
+	const getCustomEntries = vi.fn(() => []);
+
+	// Mock runAgent (НЕ реальный LLM). Дефолтная фабрика использует его для executor.
+	const runAgent = vi.fn().mockResolvedValue({
+		response: "<promise>COMPLETE</promise>",
+		costTokens: 10,
+		costUsd: 0.01,
+	});
+
+	return {
+		on,
+		registerCommand,
+		registerShortcut,
+		sendUserMessage,
+		events: { on: eventsOn, off: eventsOff },
+		appendEntry,
+		getCustomEntries,
+		runAgent,
+		_hooks: hooks,
+		_commands: commands,
+		_shortcuts: shortcuts,
+		/** Эмит событие: вызывает зарегистрированный хук и await-ит его. */
+		async _emit(event, ...args) {
+			const handler = hooks.get(event);
+			if (handler) {
+				await handler(...args);
+			}
+		},
+		...overrides,
+	};
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Хелпер: реальная миссия во временном каталоге через initMission.
+// Создаёт <baseDir>/docs/missions/<slug>/ с MISSION.md (status: active) + ROADMAP.md.
+// Это нужно, чтобы: (а) attachMission(missionDir) имел валидный MISSION.md для
+// status(); (б) factory session_start нашёл миссию, сканируя <cwd>/docs/missions/.
+// ────────────────────────────────────────────────────────────────────────────
+
+async function makeTempMission(slug = "wiring-mission") {
+	const baseDir = mkdtempSync(join(tmpdir(), "fan-mission-idx-"));
+	const missionDir = await initMission(slug, { baseDir: join(baseDir, "docs", "missions") });
+	writeFileSync(join(missionDir, "ROADMAP.md"), "# Roadmap\n\n- [ ] wiring step\n", "utf8");
+	return { baseDir, missionDir };
+}
+
+/** Пустой временный каталог (без docs/missions) — для TC-8 (session_start без миссии). */
+function makeEmptyTempDir() {
+	return mkdtempSync(join(tmpdir(), "fan-mission-idx-empty-"));
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Cleanup: гарантированный shutdown запущенных wiring-ов + rm tempdir-ов.
+// shutdown() идемпотентен — повторный вызов безопасен.
+// ────────────────────────────────────────────────────────────────────────────
+
+const liveWirings = [];
+const liveTempDirs = [];
+
+afterEach(async () => {
+	while (liveWirings.length > 0) {
+		const w = liveWirings.pop();
+		try {
+			await w.shutdown();
+		} catch {
+			// ignore — тест уже упал или wiring уже остановлен
+		}
+	}
+	while (liveTempDirs.length > 0) {
+		const d = liveTempDirs.pop();
+		try {
+			rmSync(d, { recursive: true, force: true });
+		} catch {
+			// ignore
+		}
+	}
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// TC-1: factory(fan) — фабрика не бросает, регистрирует хуки session_start /
+// session_shutdown и ≥7 slash-команд /mission:* через fan.registerCommand.
+// ────────────────────────────────────────────────────────────────────────────
+
+describe("F-MISSION-INDEX / TC-1: фабрика (default export) — регистрация", () => {
+	it("TC-1a: factory(fan) не бросает", () => {
+		const fan = makeMockFan();
+		expect(() => factory(fan)).not.toThrow();
+	});
+
+	it("TC-1b: factory регистрирует хуки session_start и session_shutdown через fan.on(...)", () => {
+		const fan = makeMockFan();
+		factory(fan);
+
+		expect(fan.on).toHaveBeenCalledWith("session_start", expect.any(Function));
+		expect(fan.on).toHaveBeenCalledWith("session_shutdown", expect.any(Function));
+	});
+
+	it("TC-1c: factory регистрирует ровно 7 slash-команд /mission:* через fan.registerCommand", () => {
+		const fan = makeMockFan();
+		factory(fan);
+
+		const expected = [
+			"mission:start",
+			"mission:stop",
+			"mission:status",
+			"mission:pause",
+			"mission:resume",
+			"mission:steer",
+			"mission:decide",
+		];
+		for (const name of expected) {
+			expect(fan._commands.has(name), `command ${name} not registered`).toBe(true);
+			const cmd = fan._commands.get(name);
+			expect(typeof cmd.handler, `command ${name} handler not a function`).toBe("function");
+			expect(cmd.description, `command ${name} description empty`).toBeTruthy();
+		}
+		expect(fan.registerCommand.mock.calls.length).toBeGreaterThanOrEqual(7);
+	});
+
+	it("TC-1c: каждая зарегистрированная /mission:* команда имеет handler(args, ctx) → Promise<void>", async () => {
+		const fan = makeMockFan();
+		factory(fan);
+
+		const stopCmd = fan._commands.get("mission:stop");
+		// handler принимает (args, ctx) и возвращает Promise (async или sync — await-safe)
+		await expect(stopCmd.handler("", { actions: {}, output: () => {} })).resolves.toBeUndefined();
+	});
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// TC-2: factory(fan) регистрирует виджет-shortcut "alt+m" через fan.registerShortcut.
+// ────────────────────────────────────────────────────────────────────────────
+
+describe("F-MISSION-INDEX / TC-2: фабрика регистрирует виджет-shortcut", () => {
+	it("TC-2: factory регистрирует shortcut 'alt+m' через fan.registerShortcut", () => {
+		const fan = makeMockFan();
+		factory(fan);
+
+		expect(fan.registerShortcut).toHaveBeenCalledWith("alt+m", expect.any(Object));
+		expect(fan._shortcuts.has("alt+m")).toBe(true);
+
+		const def = fan._shortcuts.get("alt+m");
+		expect(typeof def.handler).toBe("function");
+		expect(def.description).toBeTruthy();
+		expect(def.description).toMatch(/toggle|widget|виджет|миссия|status/i);
+	});
+
+	it("TC-2: fan.events.on используется для подписки виджета на mission_iteration_end", () => {
+		const fan = makeMockFan();
+		factory(fan);
+
+		// mission-widget подписывается на 'mission_iteration_end' через uiEvents.on
+		// (фабрика прокидывает fan.events как uiEvents)
+		expect(fan.events.on).toHaveBeenCalled();
+		const subscribeCalls = fan.events.on.mock.calls.filter((c) => c[0] === "mission_iteration_end");
+		expect(subscribeCalls.length).toBeGreaterThanOrEqual(1);
+	});
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// TC-3: wireMission(fan, {runAgent}).attachMission(tempMissionDir) возвращает
+// MissionLoop (не null); getMissionLoop() возвращает тот же инстанс.
+// ────────────────────────────────────────────────────────────────────────────
+
+describe("F-MISSION-INDEX / TC-3: wireMission — attachMission возвращает MissionLoop", () => {
+	it("TC-3: attachMission(missionDir) возвращает не-null; getMissionLoop() === тот же инстанс", async () => {
+		const { baseDir, missionDir } = await makeTempMission("attach-mission");
+		liveTempDirs.push(baseDir);
+
+		const mockRunAgent = vi.fn().mockResolvedValue({
+			response: "<promise>COMPLETE</promise>",
+			costTokens: 10,
+			costUsd: 0.01,
+		});
+		const fan = makeMockFan();
+		const wiring = wireMission(fan, { runAgent: mockRunAgent });
+		liveWirings.push(wiring);
+
+		const loop = wiring.attachMission(missionDir);
+		expect(loop).toBeDefined();
+		expect(loop).not.toBeNull();
+		expect(typeof loop.tick).toBe("function");
+		expect(typeof loop.status).toBe("function");
+		expect(typeof loop.abort).toBe("function");
+
+		// Тот же инстанс хранится и доступен через getMissionLoop()
+		expect(wiring.getMissionLoop()).toBe(loop);
+	});
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// TC-4: созданный MissionLoop использует injected runAgent как executor —
+// attachMission с mockRunAgent создаёт рабочий missionLoop (status() → строка).
+// ────────────────────────────────────────────────────────────────────────────
+
+describe("F-MISSION-INDEX / TC-4: executor обёрнут из injected runAgent", () => {
+	it("TC-4: attachMission с mockRunAgent → missionLoop.status() возвращает строку ('active')", async () => {
+		const { baseDir, missionDir } = await makeTempMission("status-mission");
+		liveTempDirs.push(baseDir);
+
+		const mockRunAgent = vi.fn().mockResolvedValue({
+			response: "<promise>COMPLETE</promise>",
+			costTokens: 10,
+			costUsd: 0.01,
+		});
+		const fan = makeMockFan();
+		const wiring = wireMission(fan, { runAgent: mockRunAgent });
+		liveWirings.push(wiring);
+
+		const loop = wiring.attachMission(missionDir);
+
+		// status() читает MISSION.md frontmatter.status (не вызывает executor) → "active"
+		const status = await loop.status();
+		expect(typeof status).toBe("string");
+		expect(status).toBe("active");
+
+		// missionLoop создан (executor не вызывался до tick) — runAgent не должен
+		// вызываться без tick
+		expect(mockRunAgent).not.toHaveBeenCalled();
+	});
+
+	it("TC-4: production-deps собраны — git=createGitAdapter, clock={now}, executor из runAgent (не бросает)", async () => {
+		const { baseDir, missionDir } = await makeTempMission("deps-mission");
+		liveTempDirs.push(baseDir);
+
+		const mockRunAgent = vi.fn().mockResolvedValue({
+			response: "<promise>COMPLETE</promise>",
+			costTokens: 10,
+			costUsd: 0.01,
+		});
+		const fan = makeMockFan();
+		const wiring = wireMission(fan, { runAgent: mockRunAgent });
+		liveWirings.push(wiring);
+
+		// attachMission не бросает — значит production-deps (git, clock, executor) собраны
+		const loop = wiring.attachMission(missionDir);
+		expect(loop).toBeDefined();
+		expect(wiring.getMissionLoop()).toBe(loop);
+	});
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// TC-5: повторный attachMission с тем же missionDir → идемпотентен (тот же инстанс).
+// Зафиксировано разумное поведение: attachMission идемпотентен для того же пути
+// (не пересоздаёт loop, не вызывает shutdown предыдущего).
+// ────────────────────────────────────────────────────────────────────────────
+
+describe("F-MISSION-INDEX / TC-5: повторный attachMission — идемпотентность", () => {
+	it("TC-5: повторный attachMission(same dir) возвращает тот же инстанс MissionLoop", async () => {
+		const { baseDir, missionDir } = await makeTempMission("idempotent-mission");
+		liveTempDirs.push(baseDir);
+
+		const mockRunAgent = vi.fn().mockResolvedValue({
+			response: "<promise>COMPLETE</promise>",
+			costTokens: 10,
+			costUsd: 0.01,
+		});
+		const fan = makeMockFan();
+		const wiring = wireMission(fan, { runAgent: mockRunAgent });
+		liveWirings.push(wiring);
+
+		const loop1 = wiring.attachMission(missionDir);
+		const loop2 = wiring.attachMission(missionDir);
+
+		// Идемпотентен: тот же инстанс (нет двойного wiring)
+		expect(loop2).toBe(loop1);
+		expect(wiring.getMissionLoop()).toBe(loop1);
+	});
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// TC-6: shutdown() после attachMission → getMissionLoop() возвращает null.
+// Зафиксировано: shutdown() abort-ит loop + очищает stored handle → null.
+// ────────────────────────────────────────────────────────────────────────────
+
+describe("F-MISSION-INDEX / TC-6: shutdown() очищает missionLoop", () => {
+	it("TC-6: после attachMission → shutdown() → getMissionLoop() === null", async () => {
+		const { baseDir, missionDir } = await makeTempMission("shutdown-mission");
+		liveTempDirs.push(baseDir);
+
+		const mockRunAgent = vi.fn().mockResolvedValue({
+			response: "<promise>COMPLETE</promise>",
+			costTokens: 10,
+			costUsd: 0.01,
+		});
+		const fan = makeMockFan();
+		const wiring = wireMission(fan, { runAgent: mockRunAgent });
+		// НЕ кладём в liveWirings — shutdown вызывается явно в тесте
+
+		const loop = wiring.attachMission(missionDir);
+		expect(wiring.getMissionLoop()).toBe(loop);
+
+		await wiring.shutdown();
+
+		// handle очищен → getMissionLoop() null (не aborted-инстанс)
+		expect(wiring.getMissionLoop()).toBeNull();
+	});
+
+	it("TC-6: shutdown() идемпотентен — повторный вызов не бросает", async () => {
+		const { baseDir, missionDir } = await makeTempMission("shutdown-idempotent");
+		liveTempDirs.push(baseDir);
+
+		const mockRunAgent = vi.fn().mockResolvedValue({
+			response: "<promise>COMPLETE</promise>",
+			costTokens: 10,
+			costUsd: 0.01,
+		});
+		const fan = makeMockFan();
+		const wiring = wireMission(fan, { runAgent: mockRunAgent });
+
+		wiring.attachMission(missionDir);
+		await wiring.shutdown();
+		await expect(wiring.shutdown()).resolves.toBeUndefined();
+	});
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// TC-7: Default-фабрика — session_start hook с mock ctx (cwd=tempdir где есть
+// миссия) → attachMission вызывается (getMissionLoop не null).
+// Миссия инициализирована реальным initMission в <tempdir>/docs/missions/<slug>.
+// ────────────────────────────────────────────────────────────────────────────
+
+describe("F-MISSION-INDEX / TC-7: session_start с активной миссией в cwd", () => {
+	it("TC-7: session_start (cwd с миссией) → getMissionLoop() не null (attachMission вызван)", async () => {
+		const { baseDir, missionDir } = await makeTempMission("autostart-mission");
+		liveTempDirs.push(baseDir);
+
+		const fan = makeMockFan();
+		const handle = factory(fan);
+		liveWirings.push(handle);
+		expect(handle).toBeDefined();
+		expect(typeof handle.getMissionLoop).toBe("function");
+
+		// mock ctx для session_start: cwd=tempdir с миссией, hasUI=true
+		// cwd продублирован в event-payload и в ctx (ambiguity-решение №2)
+		const sessionCtx = {
+			cwd: baseDir,
+			hasUI: true,
+			ui: { notify: vi.fn(), setWidget: vi.fn() },
+		};
+		await fan._emit("session_start", { type: "session_start", cwd: baseDir }, sessionCtx);
+
+		// attachMission вызван → missionLoop создан и сохранён
+		const loop = handle.getMissionLoop();
+		expect(loop).not.toBeNull();
+		expect(typeof loop.status).toBe("function");
+
+		// status() работает (читает MISSION.md → "active")
+		const status = await loop.status();
+		expect(status).toBe("active");
+	});
+
+	it("TC-7: найденная миссия — тот же каталог, что initMission создал (missionDir совпадает)", async () => {
+		const { baseDir, missionDir } = await makeTempMission("autostart-path");
+		liveTempDirs.push(baseDir);
+
+		const fan = makeMockFan();
+		const handle = factory(fan);
+		liveWirings.push(handle);
+
+		await fan._emit(
+			"session_start",
+			{ type: "session_start", cwd: baseDir },
+			{ cwd: baseDir, hasUI: true, ui: {} },
+		);
+
+		// missionLoop создан для найденного missionDir — status() читает именно его
+		const loop = handle.getMissionLoop();
+		expect(loop).not.toBeNull();
+		// Если status() возвращает "active" — значит MISSION.md найден в missionDir
+		const status = await loop.status();
+		expect(status).toBe("active");
+	});
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// TC-8: session_start с cwd БЕЗ миссии → getMissionLoop() null (не падает,
+// не создаёт миссию автоматически).
+// ────────────────────────────────────────────────────────────────────────────
+
+describe("F-MISSION-INDEX / TC-8: session_start без миссии в cwd", () => {
+	it("TC-8: session_start (cwd без docs/missions) → getMissionLoop() null, не бросает", async () => {
+		const emptyDir = makeEmptyTempDir();
+		liveTempDirs.push(emptyDir);
+
+		const fan = makeMockFan();
+		const handle = factory(fan);
+		liveWirings.push(handle);
+
+		// session_start с cwd без миссии — НЕ должен бросать
+		await expect(
+			fan._emit(
+				"session_start",
+				{ type: "session_start", cwd: emptyDir },
+				{ cwd: emptyDir, hasUI: true, ui: {} },
+			),
+		).resolves.toBeUndefined();
+
+		// Нет миссии → attachMission не вызван → getMissionLoop() null
+		expect(handle.getMissionLoop()).toBeNull();
+	});
+
+	it("TC-8: session_start без миссии не создаёт файлов миссии автоматически", async () => {
+		const emptyDir = makeEmptyTempDir();
+		liveTempDirs.push(emptyDir);
+
+		const fan = makeMockFan();
+		const handle = factory(fan);
+		liveWirings.push(handle);
+
+		await fan._emit(
+			"session_start",
+			{ type: "session_start", cwd: emptyDir },
+			{ cwd: emptyDir, hasUI: true, ui: {} },
+		);
+
+		// Никакой миссии не должно быть создано автоматически
+		expect(handle.getMissionLoop()).toBeNull();
+		// Страховка: repeat emit тоже не падает
+		await expect(
+			fan._emit(
+				"session_start",
+				{ type: "session_start", cwd: emptyDir },
+				{ cwd: emptyDir, hasUI: true, ui: {} },
+			),
+		).resolves.toBeUndefined();
+	});
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// TC-9 (lifecycle): session_shutdown hook вызывает shutdown → getMissionLoop() null.
+// Сценарий: factory(fan) → session_start (attach) → session_shutdown (shutdown) → null.
+// ────────────────────────────────────────────────────────────────────────────
+
+describe("F-MISSION-INDEX / TC-9: lifecycle через хуки factory", () => {
+	it("TC-9: session_shutdown хук вызывает shutdown — getMissionLoop() → null", async () => {
+		const { baseDir } = await makeTempMission("lifecycle-mission");
+		liveTempDirs.push(baseDir);
+
+		const fan = makeMockFan();
+		const handle = factory(fan);
+		// НЕ кладём в liveWirings — shutdown через session_shutdown hook
+
+		// session_start → attach (миссия найдена)
+		await fan._emit(
+			"session_start",
+			{ type: "session_start", cwd: baseDir },
+			{ cwd: baseDir, hasUI: true, ui: {} },
+		);
+		expect(handle.getMissionLoop()).not.toBeNull();
+
+		// session_shutdown → shutdown
+		await fan._emit("session_shutdown", { type: "session_shutdown" });
+
+		// handle очищен
+		expect(handle.getMissionLoop()).toBeNull();
+	});
+
+	it("TC-9: session_shutdown без предшествующего session_start — не бросает (no-op)", async () => {
+		const fan = makeMockFan();
+		factory(fan);
+
+		// shutdown без attach — идемпотентен, не бросает
+		await expect(
+			fan._emit("session_shutdown", { type: "session_shutdown" }),
+		).resolves.toBeUndefined();
+	});
+});
