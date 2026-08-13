@@ -481,6 +481,11 @@ function splitTableLine(line: string): string[] {
 	return cells;
 }
 
+/** Render one BACKLOG.md table row (without trailing newline). */
+function formatBacklogRow(entry: BacklogEntry): string {
+	return `| ${escapeTableCell(entry.id)} | ${escapeTableCell(entry.date)} | ${escapeTableCell(entry.idea)} | ${escapeTableCell(entry.source)} | ${entry.fit} | ${entry.value} | ${entry.risk} | ${entry.cost} | ${entry.score} | ${escapeTableCell(entry.status)} |`;
+}
+
 export async function appendBacklog(missionDir: string, entry: BacklogEntry): Promise<void> {
 	const filePath = join(missionDir, "BACKLOG.md");
 	let raw = readFileSync(filePath, "utf8");
@@ -491,8 +496,43 @@ export async function appendBacklog(missionDir: string, entry: BacklogEntry): Pr
 			"|---|---|---|---|---|---|---|---|---|---|\n";
 	}
 
-	const row = `| ${escapeTableCell(entry.id)} | ${escapeTableCell(entry.date)} | ${escapeTableCell(entry.idea)} | ${escapeTableCell(entry.source)} | ${entry.fit} | ${entry.value} | ${entry.risk} | ${entry.cost} | ${entry.score} | ${escapeTableCell(entry.status)} |\n`;
-	atomicWriteFileSync(filePath, raw + row);
+	atomicWriteFileSync(filePath, `${raw}${formatBacklogRow(entry)}\n`);
+}
+
+/**
+ * F-20: Update an existing BACKLOG.md entry by id (shallow merge of updates).
+ * Preserves the rest of the file (title, header, other rows) and the original
+ * line-ending style. Returns false if no entry with the given id exists.
+ */
+export async function updateBacklogEntry(
+	missionDir: string,
+	id: string,
+	updates: Partial<Omit<BacklogEntry, "id">>,
+): Promise<boolean> {
+	const entries = await readBacklog(missionDir);
+	const target = entries.find((entry) => entry.id === id);
+	if (!target) return false;
+	const updated = { ...target, ...updates };
+
+	const filePath = join(missionDir, "BACKLOG.md");
+	const rawOriginal = readFileSync(filePath, "utf8");
+	const useCRLF = rawOriginal.includes("\r\n");
+	const lines = rawOriginal.replace(/\r\n/g, "\n").split("\n");
+
+	for (let i = 0; i < lines.length; i++) {
+		const trimmed = lines[i].trim();
+		if (!trimmed.startsWith("|") || !trimmed.endsWith("|")) continue;
+		const cells = splitTableLine(trimmed);
+		if (cells.length < 10) continue;
+		const cellId = unescapeTableCell(cells[0]);
+		if (cellId === "id" || /^-+$/.test(cellId) || cellId !== id) continue;
+		lines[i] = formatBacklogRow(updated);
+		let content = lines.join("\n");
+		if (useCRLF) content = content.replace(/\n/g, "\r\n");
+		atomicWriteFileSync(filePath, content);
+		return true;
+	}
+	return false;
 }
 
 // ─── DECISIONS.md ───────────────────────────────────────────────────────────
