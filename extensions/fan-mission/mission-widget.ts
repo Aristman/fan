@@ -8,7 +8,7 @@
 //
 // DI-стиль по образцу fan-orchestrator task widget.
 
-import { getFileStateManager } from "./file-state-manager.js";
+import { readMission } from "./file-state-manager.js";
 import type { MissionLoop } from "./mission-loop.js";
 import { readMissionLoopState } from "./mission-loop.js";
 
@@ -100,13 +100,12 @@ async function fetchSnapshot(args: MissionWidgetArgs): Promise<MissionStatusSnap
 			let budgetUsed = { tokens: 0, usd: 0 };
 			let currentStep = "";
 			try {
-				const fsm = await getFileStateManager();
 				if (args.missionDir) {
 					const ls = await readMissionLoopState(args.missionDir);
 					iter = ls.currentIteration;
 					budgetUsed = ls.budgetUsed ?? { tokens: 0, usd: 0 };
 				}
-				const mission = await fsm.readMission(args.missionDir ?? ".");
+				const mission = await readMission(args.missionDir ?? ".");
 				currentStep = (mission.body?.[0] ?? "").toString().slice(0, 40);
 			} catch {
 				/* допустимо — клиент не успевает */

@@ -671,3 +671,72 @@ describe("F-12 / TC-F12-edge: edge cases", () => {
 	});
 
 });
+
+// ────────────────────────────────────────────────────────────────────────────
+// Regression: fetchSnapshot via file-state-manager (no getStatusSnapshot)
+// ────────────────────────────────────────────────────────────────────────────
+
+describe("F-12 / TC-F12-regression: fetchSnapshot via file-state-manager (no getStatusSnapshot)", () => {
+	let baseDir;
+
+	beforeEach(async () => {
+		await importMissionWidget();
+		baseDir = freshBaseDir();
+	});
+
+	afterEach(() => {
+		if (baseDir) rmSync(baseDir, { recursive: true, force: true });
+	});
+
+	it("TC-F12-regression: registerMissionWidget с missionDir и без getStatusSnapshot не падает при рендере", async () => {
+		const missionDir = await initMission("regression-fsm", { baseDir });
+		const ui = makeMockUI();
+		const uiEvents = makeMockUIEventEmitter();
+		const registerShortcut = makeMockRegisterShortcut();
+		const missionLoop = makeMockMissionLoop();
+
+		// Ключевой момент: НЕТ getStatusSnapshot, виджет должен читать через file-state-manager
+		registerMissionWidget({
+			registerShortcut: registerShortcut.register,
+			ui,
+			uiEvents,
+			missionLoop,
+			missionDir,
+		});
+
+		const handler = registerShortcut.shortcuts.get("alt+m").handler;
+		// Не должно упасть — раньше здесь был crash: getFileStateManager is not a function
+		await expect(handler(ui)).resolves.not.toThrow();
+		// render вызван хотя бы один раз
+		expect(ui.calls.render.length).toBeGreaterThan(0);
+	});
+
+	it("TC-F12-regression: fetchSnapshot через file-state-manager возвращает валидный snapshot с активной миссией", async () => {
+		const missionDir = await initMission("regression-fsm-snap", { baseDir });
+		const ui = makeMockUI();
+		const uiEvents = makeMockUIEventEmitter();
+		const registerShortcut = makeMockRegisterShortcut();
+		const missionLoop = makeMockMissionLoop();
+
+		registerMissionWidget({
+			registerShortcut: registerShortcut.register,
+			ui,
+			uiEvents,
+			missionLoop,
+			missionDir,
+		});
+
+		const handler = registerShortcut.shortcuts.get("alt+m").handler;
+		// 1st: toggle visible→hidden
+		await handler(ui);
+		// 2nd: toggle hidden→visible, теперь fetchSnapshot читает с диска
+		await handler(ui);
+
+		const lastRender = ui.calls.render.at(-1);
+		const text = flatten(lastRender);
+		// Виджет должен отрендерить строку статуса с данными из MISSION.md
+		expect(text).toMatch(/статус:/i);
+		expect(text).toMatch(/●/);
+		expect(text).toMatch(/расход:/i);
+	});
+});
