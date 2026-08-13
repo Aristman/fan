@@ -7,6 +7,12 @@
 import { randomUUID } from "node:crypto";
 /** All valid task statuses */
 const ALL_STATUSES = ["pending", "in_progress", "completed", "failed", "blocked"];
+/** Parse a snapshot timestamp (ISO string or Date) into a Date, falling back to now. */
+function parseSnapshotDate(value) {
+    if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+}
 export class TaskManager {
     tasks = new Map();
     /**
@@ -271,16 +277,78 @@ export class TaskManager {
     }
     /**
      * Serialize tasks for session persistence.
+     * Full per-task snapshot: includes links (blocks/blockedBy), owner,
+     * timestamps, type and any result/error/metadata.
      */
     serialize() {
         return this.getTasks().map((t) => ({
             id: t.id,
+            type: t.type,
             status: t.status,
             description: t.description,
             agentType: t.agentType,
-            result: t.result,
-            error: t.error,
+            parentTaskId: t.parentTaskId,
+            owner: t.owner,
+            blocks: t.blocks ?? [],
+            blockedBy: t.blockedBy ?? [],
+            createdAt: t.createdAt instanceof Date ? t.createdAt.toISOString() : t.createdAt,
+            updatedAt: t.updatedAt instanceof Date ? t.updatedAt.toISOString() : t.updatedAt,
+            ...(t.result !== undefined ? { result: t.result } : {}),
+            ...(t.error !== undefined ? { error: t.error } : {}),
+            ...(t.metadata !== undefined ? { metadata: t.metadata } : {}),
         }));
+    }
+    /**
+     * Replace the current task board from snapshot entries (see serialize()).
+     * Robust against garbage: non-array input, entries without id, or entries
+     * with a status outside ALL_STATUSES are skipped (never throws).
+     * Tasks whose snapshot status is "in_progress" are restored as "pending"
+     * with metadata.recovered = true (interrupted workers must be re-started).
+     * Bidirectional blocks/blockedBy links are rebuilt after restore.
+     */
+    deserialize(entries) {
+        this.tasks.clear();
+        if (!Array.isArray(entries)) return;
+        for (const raw of entries) {
+            if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+            const { id, status } = raw;
+            if (typeof id !== "string" || id.length === 0) continue;
+            if (!ALL_STATUSES.includes(status)) continue;
+            const recovered = status === "in_progress";
+            const metadata = raw.metadata && typeof raw.metadata === "object" ? { ...raw.metadata } : {};
+            if (recovered) metadata.recovered = true;
+            const task = {
+                id,
+                type: raw.type ?? "coding",
+                status: recovered ? "pending" : status,
+                description: typeof raw.description === "string" ? raw.description : "",
+                agentType: raw.agentType,
+                parentTaskId: raw.parentTaskId,
+                owner: raw.owner,
+                blocks: Array.isArray(raw.blocks) ? [...raw.blocks] : [],
+                blockedBy: Array.isArray(raw.blockedBy) ? [...raw.blockedBy] : [],
+                createdAt: parseSnapshotDate(raw.createdAt),
+                updatedAt: parseSnapshotDate(raw.updatedAt),
+                ...(raw.result !== undefined ? { result: raw.result } : {}),
+                ...(raw.error !== undefined ? { error: raw.error } : {}),
+                ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
+            };
+            this.tasks.set(id, task);
+        }
+        // Rebuild reverse links: if B.blocks contains A, then A.blockedBy must contain B.
+        // (Snapshots may only carry `blocks`; mirrors the linking done in createTask.)
+        for (const task of this.tasks.values()) {
+            for (const blockId of task.blocks) {
+                const blocker = this.tasks.get(blockId);
+                if (blocker) {
+                    if (!blocker.blockedBy)
+                        blocker.blockedBy = [];
+                    if (!blocker.blockedBy.includes(task.id)) {
+                        blocker.blockedBy.push(task.id);
+                    }
+                }
+            }
+        }
     }
     getTaskOrThrow(id) {
         const task = this.tasks.get(id);
@@ -296,9 +364,9 @@ export class TaskManager {
      * Throws if the prefix is ambiguous (matches multiple tasks).
      */
     resolveByPrefix(id) {
-        if (!id || id.length < 8) return null;
+        if (!id || id.length < 8) return undefined;
         const prefix = id;
-        let found = null;
+        let found = undefined;
         for (const [taskId, t] of this.tasks) {
             if (taskId.startsWith(prefix)) {
                 if (found) {
@@ -311,6 +379,27 @@ export class TaskManager {
             console.warn(`[TaskManager] Resolved partial ID "${id}" → full ID "${found.id}"`);
         }
         return found;
+    }
+    /**
+     * Validate a task status transition. Throws an Error naming both statuses
+     * when the transition is not allowed.
+     *   pending     → in_progress | blocked | failed
+     *   in_progress → completed | failed | blocked | pending
+     *   blocked     → pending | in_progress | failed
+     *   completed / failed are terminal.
+     */
+    validateTransition(from, to) {
+        const allowedTransitions = {
+            pending: ["in_progress", "blocked", "failed"],
+            in_progress: ["completed", "failed", "blocked", "pending"],
+            blocked: ["pending", "in_progress", "failed"],
+            completed: [],
+            failed: [],
+        };
+        const allowed = allowedTransitions[from] ?? [];
+        if (!allowed.includes(to)) {
+            throw new Error(`Invalid task transition: ${from} -> ${to}`);
+        }
     }
     unblockDependents(completedTaskId) {
         for (const task of this.tasks.values()) {

@@ -1112,6 +1112,12 @@ export interface ExtensionAPI {
 	/** Append a custom entry to the session for state persistence (not sent to LLM). */
 	appendEntry<T = unknown>(customType: string, data?: T): void;
 
+	/**
+	 * Read custom entries back from the current session (read counterpart of appendEntry).
+	 * Returns entries in insertion order; filtered by customType when provided.
+	 */
+	getCustomEntries<T = unknown>(customType?: string): Array<{ customType: string; data: T; timestamp?: string }>;
+
 	// =========================================================================
 	// Session Metadata
 	// =========================================================================
@@ -1330,6 +1336,10 @@ export type SendUserMessageHandler = (
 
 export type AppendEntryHandler = <T = unknown>(customType: string, data?: T) => void;
 
+export type GetCustomEntriesHandler = <T = unknown>(
+	customType?: string,
+) => Array<{ customType: string; data: T; timestamp?: string }>;
+
 export type SetSessionNameHandler = (name: string) => void;
 
 export type GetSessionNameHandler = () => string | undefined;
@@ -1383,6 +1393,7 @@ export interface ExtensionActions {
 	sendMessage: SendMessageHandler;
 	sendUserMessage: SendUserMessageHandler;
 	appendEntry: AppendEntryHandler;
+	getCustomEntries: GetCustomEntriesHandler;
 	setSessionName: SetSessionNameHandler;
 	getSessionName: GetSessionNameHandler;
 	setLabel: SetLabelHandler;

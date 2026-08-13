@@ -106,6 +106,7 @@ export function createExtensionRuntime(): ExtensionRuntime {
 		sendMessage: notInitialized,
 		sendUserMessage: notInitialized,
 		appendEntry: notInitialized,
+		getCustomEntries: notInitialized,
 		setSessionName: notInitialized,
 		getSessionName: notInitialized,
 		setLabel: notInitialized,
@@ -223,6 +224,10 @@ export function createExtensionAPI(
 
 		appendEntry(customType: string, data?: unknown): void {
 			runtime.appendEntry(customType, data);
+		},
+
+		getCustomEntries(customType?: string) {
+			return runtime.getCustomEntries(customType);
 		},
 
 		setSessionName(name: string): void {

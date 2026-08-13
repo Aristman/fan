@@ -2474,6 +2474,9 @@ export class AgentSession {
 				appendEntry: (customType, data) => {
 					this.sessionManager.appendCustomEntry(customType, data);
 				},
+				getCustomEntries: (customType) => {
+					return this.sessionManager.getCustomEntries(customType);
+				},
 				setSessionName: (name) => {
 					this.sessionManager.appendSessionInfo(name);
 				},
