@@ -226,25 +226,29 @@ describe("F-14 / index-wiring: дефолтный порт 9090", () => {
 
 describe("F-14 / index-wiring: lifecycle через хуки factory", () => {
 	it("session_shutdown хук вызывает stop — сервер останавливается", async () => {
+		// Ephemeral порт (0) — избегаем конфликта с внешним процессом на 9090.
+		process.env.FAN_WEBHOOK_PORT = "0";
 		const fan = makeMockFan();
 		// factory регистрирует session_start (старт) и session_shutdown (стоп)
-		factory(fan);
+		// и возвращает wiring-handle (как fan-mission).
+		const wiring = factory(fan);
+		liveWirings.push(wiring);
 
 		try {
-			// session_start → старт сервера (дефолтный порт 9090)
-			try {
-				await fan._emit(
-					"session_start",
-					{ type: "session_start", reason: "startup" },
-					{ hasUI: false },
-				);
-			} catch {
-				// 9090 занят внешним процессом — пропускаем gracefully
-				return;
-			}
+			// session_start → старт сервера (ephemeral порт через env)
+			await fan._emit(
+				"session_start",
+				{ type: "session_start", reason: "startup" },
+				{ hasUI: false },
+			);
+
+			// Узнаём реальный порт из wiring-handle (start идемпотентен).
+			const handle = await wiring.start();
+			const port = handle.port;
+			expect(port).toBeGreaterThan(0);
 
 			// Сервер работает: POST /webhook доходит, ответ 200
-			const up = await postWebhook(9090, { type: "steer", message: "lifecycle up" });
+			const up = await postWebhook(port, { type: "steer", message: "lifecycle up" });
 			expect(up.status).toBe(200);
 
 			// session_shutdown → стоп сервера
@@ -252,16 +256,10 @@ describe("F-14 / index-wiring: lifecycle через хуки factory", () => {
 
 			// Порт закрыт: повторный POST не проходит (ECONNREFUSED)
 			await expect(
-				postWebhook(9090, { type: "steer", message: "after shutdown" }),
+				postWebhook(port, { type: "steer", message: "after shutdown" }),
 			).rejects.toThrow();
 		} finally {
-			// Гарантированный стоп, чтобы не утекал порт 9090, даже если тест
-			// упал посреди сценария. stop() идемпотентен — повторный вызов безопасен.
-			try {
-				await fan._emit("session_shutdown", { type: "session_shutdown" });
-			} catch {
-				// ignore
-			}
+			delete process.env.FAN_WEBHOOK_PORT;
 		}
 	});
 });

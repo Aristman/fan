@@ -40,7 +40,8 @@ export function wireWebhook(fan: ExtensionAPI, opts?: WebhookWireOptions): Webho
 			actions: {
 				sendMessage: (text, behavior) => fan.sendUserMessage(text, { deliverAs: behavior }),
 			},
-			port: opts?.port ?? DEFAULT_WEBHOOK_PORT,
+			port:
+				opts?.port ?? (process.env.FAN_WEBHOOK_PORT ? Number(process.env.FAN_WEBHOOK_PORT) : DEFAULT_WEBHOOK_PORT),
 		});
 		return handle;
 	};
@@ -56,7 +57,7 @@ export function wireWebhook(fan: ExtensionAPI, opts?: WebhookWireOptions): Webho
 	return { start, stop };
 }
 
-export default function webhookExtension(fan: ExtensionAPI): void {
+export default function webhookExtension(fan: ExtensionAPI): WebhookWiring {
 	const wiring = wireWebhook(fan);
 
 	fan.on("session_start", async () => {
@@ -70,4 +71,6 @@ export default function webhookExtension(fan: ExtensionAPI): void {
 	fan.on("session_shutdown", async () => {
 		await wiring.stop();
 	});
+
+	return wiring;
 }
