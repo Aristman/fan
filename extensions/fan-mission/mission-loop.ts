@@ -25,6 +25,7 @@ import {
 	writeState,
 } from "./file-state-manager.js";
 import { parsePromise } from "./promise-parser.js";
+import type { VerificationLadder, VerificationLadderResult } from "./verification-ladder.js";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -78,6 +79,13 @@ export interface MissionLoopDeps {
 	git: MissionGit;
 	clock: MissionClock;
 	lock?: MissionLock;
+}
+
+/** F-18: escalation payload for promise-tag routing (I3 level). */
+export interface EscalationPayload {
+	tag: string | null;
+	reason?: string;
+	iteration: number;
 }
 
 export interface TickSteps {
@@ -352,17 +360,25 @@ export class MissionLoop {
 	// F-17: DECIDE wait timeout (default 1 hour) and its pending timer
 	private decideTimeoutMs: number;
 	private decideTimer?: ReturnType<typeof setTimeout>;
+	// F-18: verification ladder injected for step 5 (verify) of COMPLETE iterations
+	private verificationLadder?: VerificationLadder;
+	// F-18: escalation callback (I3) for promise-tag routing (no tag / BLOCKED)
+	private onEscalate?: (level: string, payload: EscalationPayload) => void;
 
 	constructor(opts: {
 		missionDir: string;
 		deps: MissionLoopDeps;
 		drainFlag?: () => boolean;
 		decideTimeoutMs?: number;
+		verificationLadder?: VerificationLadder;
+		onEscalate?: (level: string, payload: EscalationPayload) => void;
 	}) {
 		this.missionDir = opts.missionDir;
 		this.deps = opts.deps;
 		this.drainFlag = opts.drainFlag;
 		this.decideTimeoutMs = opts.decideTimeoutMs ?? 3_600_000;
+		this.verificationLadder = opts.verificationLadder;
+		this.onEscalate = opts.onEscalate;
 		// P1-6: use provided lock or default file-lock
 		this.lock = opts.deps.lock ?? createFileLock(opts.missionDir);
 	}
@@ -645,6 +661,23 @@ export class MissionLoop {
 				return await this.decideTick(loopState, steps, currentIteration, currentItem, parsedPromise.reason);
 			}
 
+			// F-18: promise-tag routing — COMPLETE/BLOCKED/FAILED tags take priority
+			// over iterResult.status; the reason from the tag becomes iterResult.reason.
+			if (parsedPromise) {
+				iterResult.status = parsedPromise.tag;
+				iterResult.reason = parsedPromise.reason;
+			} else {
+				// No promise tag in the raw response → I3 escalation, then fallback
+				// to iterResult.status (backward compat).
+				this.escalate("I3", { tag: null, iteration: currentIteration });
+			}
+
+			// F-18: BLOCKED (after routing) → I3 escalation with the blocker reason
+			// (the blocker itself is recorded in STATE.md by step 6).
+			if (iterResult.status === "BLOCKED") {
+				this.escalate("I3", { tag: "BLOCKED", reason: iterResult.reason, iteration: currentIteration });
+			}
+
 			// ── Step 5: Verify ─────────────────────────────────────────────
 			steps.verify = true;
 			const costTokens = iterResult.costTokens || 0;
@@ -673,8 +706,30 @@ export class MissionLoop {
 			const usdExceeded = budgetUsd > 0 && loopState.budgetUsed.usd > budgetUsd;
 			const budgetExceededPostHoc = tokensExceeded || usdExceeded;
 
-			const isSuccess = iterResult.status === "COMPLETE";
-			const isBlockOrFail = iterResult.status === "BLOCKED" || iterResult.status === "FAILED";
+			let isSuccess = iterResult.status === "COMPLETE";
+			let isBlockOrFail = iterResult.status === "BLOCKED" || iterResult.status === "FAILED";
+
+			// F-18: verification ladder — COMPLETE iterations are verified before
+			// commit (budget already counted: the work was done). Ladder failure →
+			// iteration treated as FAILED: no commit, no roadmap checkbox, diagnosis
+			// goes to STATE.md blockers (step 6), loop continues.
+			if (isSuccess && this.verificationLadder) {
+				const ladderOutcome = await this.runVerificationLadder();
+				if (!ladderOutcome.passed) {
+					iterResult.status = "FAILED";
+					iterResult.reason =
+						ladderOutcome.diagnosis ??
+						(ladderOutcome.failedStep
+							? `Verification failed at step: ${ladderOutcome.failedStep}`
+							: "Verification ladder failed");
+					// Persist the amended result so a crash before step 6 cannot
+					// recover as COMPLETE and commit a failed iteration.
+					loopState.iterationResult = iterResult;
+					writeLoopStateSync(this.missionDir, loopState);
+					isSuccess = false;
+					isBlockOrFail = true;
+				}
+			}
 
 			// P2-7: budget exceeded AFTER successful iteration → commit first, then status
 			if (budgetExceededPostHoc && !isSuccess) {
@@ -933,6 +988,41 @@ export class MissionLoop {
 		if (this.decideTimer !== undefined) {
 			clearTimeout(this.decideTimer);
 			this.decideTimer = undefined;
+		}
+	}
+
+	/**
+	 * F-18: invoke the escalation callback (I3) without failing the loop —
+	 * callback errors are swallowed.
+	 */
+	private escalate(level: string, payload: EscalationPayload): void {
+		if (!this.onEscalate) return;
+		try {
+			this.onEscalate(level, payload);
+		} catch {
+			// A failing escalation callback must not crash the loop.
+		}
+	}
+
+	/**
+	 * F-18: run the injected verification ladder (step 5 verify). Errors thrown
+	 * by the ladder are converted to a failed result with the error message as
+	 * diagnosis — the loop never crashes on ladder failure.
+	 */
+	private async runVerificationLadder(): Promise<VerificationLadderResult> {
+		try {
+			const result = await this.verificationLadder?.run(this.missionDir);
+			return {
+				passed: result?.passed === true,
+				failedStep: result?.failedStep ?? null,
+				diagnosis: result?.diagnosis ?? null,
+			};
+		} catch (err) {
+			return {
+				passed: false,
+				failedStep: null,
+				diagnosis: err instanceof Error ? err.message : String(err),
+			};
 		}
 	}
 
