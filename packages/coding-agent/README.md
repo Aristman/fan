@@ -506,6 +506,32 @@ Mission state machine: `active → paused → completed | aborted | failed |
 budget_exhausted` (FSM enforced in `extensions/fan-mission/file-state-manager.ts`).
 Re-running `init` on an existing slug returns exit code 1.
 
+**Promise protocol (result routing):** Each iteration ends with a `<promise>` tag
+parsed by `extensions/fan-mission/promise-parser.ts` that routes the result:
+
+- `COMPLETE` — success, proceed to verification
+- `BLOCKED:<reason>` — blocker logged to `STATE.md`, escalation
+- `DECIDE:<question>` — loop blocks in `awaiting_decision` until the operator
+  answers via `/mission:decide <answer>`; configurable `decideTimeoutMs`
+  (default 1h) aborts with `decide_timeout`
+- `FAILED:<reason>` — retry/escalation
+
+Tags inside fenced code blocks are ignored; when several appear, the last valid
+tag wins; no tag → `unknown` + I3 escalation.
+
+**Verification ladder:** After each iteration, `verification-ladder.ts` runs
+configurable stages (default: `typecheck → linters → build → tests → acceptance`)
+with per-stage `timeoutMs` (`verification-config.ts`). A failed stage yields
+`FAILED` with a diagnosis (tool output tail). Timeouts hard-kill the process tree
+(`taskkill /T /F` on Windows, `SIGKILL` process-group on POSIX). See
+`docs/specs/spec_super-orchestrator_v3_2026-08-10.md` §3.1.3, §3.2.4.
+
+**Orchestrator task board persistence:** The `fan-orchestrator` extension's
+`TaskManager` survives FAN restarts — task snapshots are written to session JSONL
+on `TaskCreate`/`TaskUpdate`/`TaskClear`/`cancel_task` and restored on session
+start; tasks left `in_progress` come back as `pending` with `recovered: true`
+(the worker likely died during the previous run).
+
 ### Modes
 
 | Flag | Description |

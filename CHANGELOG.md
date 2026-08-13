@@ -1,6 +1,64 @@
 # Changelog
 
-## [Unreleased] — 2026-08-12
+## [Unreleased] — 2026-08-13
+
+### Сверх-оркестратор FAN — Этап 1 «Валидация миссионного контура» завершён
+
+Закрытие roadmap `docs/features/super-orchestrator/mission-validation-1/roadmap.md`:
+все 8 фич (F-16..F-22 + F-48) реализованы, phase-gate фаз A/B/C пройдены
+(интеграционные коммиты [`aecc3c6`](https://github.com/seaagents/fan/commit/aecc3c6)
+и [`fd615ba`](https://github.com/seaagents/fan/commit/fd615ba); фаза C — покрытие
+компонентами F-22/F-48 без отдельного коммита), verify final 2085+ тестов зелёные.
+Подробный отчёт — `docs/features/super-orchestrator/pipeline-report.md`.
+
+**Фаза A «Протокол результатов» (F-16..F-18):**
+
+- **Расширение `fan-mission`** — парсер тегов обещаний `promise-parser.ts`
+  (`<promise>COMPLETE|BLOCKED|DECIDE|FAILED</promise>`, теги в code-блоках
+  игнорируются) в [`c347059`](https://github.com/seaagents/fan/commit/c347059);
+  DECIDE-прерывание: статус `awaiting_decision`, `resolveDecision`,
+  `decideTimeoutMs` (1h) → abort в [`f4119e0`](https://github.com/seaagents/fan/commit/f4119e0);
+  лестница верификации `verification-ladder.ts` + `verification-config.ts`
+  (5 ступеней, tree-kill таймаут) в [`0c42990`](https://github.com/seaagents/fan/commit/0c42990).
+- **Phase-gate A** — интеграция протокола результатов в контур
+  ([`aecc3c6`](https://github.com/seaagents/fan/commit/aecc3c6)): маршрутизация 4
+  тегов через `parsePromise` (приоритет над `iterResult.status`), лестница DI в
+  шаге 5, эскалация I3 (`onEscalate`).
+
+**Фаза B «Идеи и метрики» (F-19..F-21):**
+
+- **Расширение `fan-mission`** — генератор идей `idea-generator.ts` (протокол 5
+  вопросов, порог 3 итераций, дедупликация) в [`6d27769`](https://github.com/seaagents/fan/commit/6d27769);
+  скорер идей `idea-scorer.ts` (формула 0.3/0.2/0.2/0.3, пороги 0.7/0.5,
+  REJECTED → ADR) в [`8875b58`](https://github.com/seaagents/fan/commit/8875b58);
+  сбор метрик `metrics-collector.ts` (`metrics.jsonl`, `failureRate`/`prematureRate`)
+  в [`97ca862`](https://github.com/seaagents/fan/commit/97ca862).
+- **Phase-gate B** — интеграция идей/метрик в контур
+  ([`fd615ba`](https://github.com/seaagents/fan/commit/fd615ba)): `metricsCollector`
+  на каждой итерации, `ideaGenerator`/`ideaScorer` после шага 7, DECIDE скорера
+  через `enterAwaitingDecision`.
+
+**Фаза C «Валидация» (F-22, F-48):**
+
+- **Расширение `fan-mission`** — валидационный suite с реальными модулями (mock
+  только LLM/runCommand/executor): 4 тега e2e, скоринг, метрики 6 итераций
+  (failureRate 1/6 < 0.2 MAST), ladder-fail в [`ca344a3`](https://github.com/seaagents/fan/commit/ca344a3).
+- **Расширение `fan-orchestrator`** — персистентность таск-листа: `TaskManager`
+  `serialize`/`deserialize` в session JSONL custom entries, snapshot на
+  `TaskCreate`/`TaskUpdate`/`TaskClear`/`cancel_task`, restore на session start,
+  `in_progress`→`pending`+`recovered` (новый core API `getCustomEntries`) в
+  [`db133a2`](https://github.com/seaagents/fan/commit/db133a2).
+- **Phase-gate C** — production-валидация этапа 1 (без отдельного коммита):
+  сценарий 1 (F-22), сценарий 2 (mock LLM → генерация → скоринг →
+  ROADMAP/DECIDE/REJECTED), сценарий 3 (персистентность F-48). Smoke-критерии
+  этапа 1 (I0 <1c, I2 <500мс, DECIDE блокирует контур, failureRate <20%,
+  prematureRate <15%, build зелёный + unit-тесты) — PASS.
+
+**Тесты:** fan-mission 475, fan-orchestrator 186 (158 + 28 новых F-48),
+coding-agent 1190 (1 pre-existing flake `agent-session-concurrent` steering),
+итого 2085+ зелёные.
+
+**Следующий шаг:** этап 2 `http-hierarchy-2` (F-23..F-35, 13 фич).
 
 ### Сверх-оркестратор FAN — Этап 0 «Миссионный контур» завершён
 

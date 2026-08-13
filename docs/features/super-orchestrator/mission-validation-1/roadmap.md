@@ -330,14 +330,14 @@
 (нет)
 
 ### P1 — Высокие
-- [ ] F-16 [BIZ]: Парсер тегов обещаний
-- [ ] F-17 [BIZ]: DECIDE-прерывание (блокировка контура)
-- [ ] F-18 [BIZ]: Лестница верификации
-- [ ] F-19 [BIZ]: Генератор идей
-- [ ] F-20 [BIZ]: Скорер идей (гибридный LLM + арифметика)
-- [ ] F-21 [DATA]: Сбор метрик миссии
-- [ ] F-22 [INTEG]: Интеграционные тесты прерываний и генерации идей
-- [ ] F-48 [BIZ]: Персистентность таск-листа оркестратора
+- [x] F-16 [BIZ]: Парсер тегов обещаний
+- [x] F-17 [BIZ]: DECIDE-прерывание (блокировка контура)
+- [x] F-18 [BIZ]: Лестница верификации
+- [x] F-19 [BIZ]: Генератор идей
+- [x] F-20 [BIZ]: Скорер идей (гибридный LLM + арифметика)
+- [x] F-21 [DATA]: Сбор метрик миссии
+- [x] F-22 [INTEG]: Интеграционные тесты прерываний и генерации идей
+- [x] F-48 [BIZ]: Персистентность таск-листа оркестратора
 
 ### P2 — Средние
 (нет)
@@ -401,3 +401,39 @@
 | 13 | Граф зависимостей | ✅ Текстовый + проверка на циклы |
 | 14 | Блок делегирования | ✅ Родительская спека + sibling-roadmap |
 | 15 | Шаг 1.1 (прогон на эпиках) отражён | ✅ В E2E фазы C и Smoke-критерии |
+
+---
+
+## Этап 1 завершён
+
+**Дата:** 2026-08-13
+**Phase-gate:** A — [`aecc3c6`](https://github.com/seaagents/fan/commit/aecc3c6) — `feat(fan-mission): promise protocol integration into loop (phase-A gate)` (17 тестов); B — [`fd615ba`](https://github.com/seaagents/fan/commit/fd615ba) — `feat(fan-mission): ideas+metrics integration into loop (phase-B gate)` (16 тестов); C — без отдельного коммита, покрытие компонентами F-22/F-48.
+**Verify final:** PASS — 2085+ тестов зелёные (fan-mission 475, fan-orchestrator 186, coding-agent 1190 с 1 pre-existing flake `agent-session-concurrent`).
+**Smoke:** PASS — smoke-критерии этапа 1 (I0 <1c, I2 <500мс, DECIDE блокирует контур, failureRate <20%, prematureRate <15%, спорные идеи 0.5–0.7 → DECIDE, `npm run build` зелёный + unit-тесты) выполнены.
+**Сводка:** 8/8 фич реализовано (F-16..F-22 + F-48). Все три фазы этапа 1 завершены:
+
+| Фаза | Фичи | Phase-gate / smoke |
+|------|------|--------------------|
+| A «Протокол результатов» | F-16, F-17, F-18 (3/3) | [`aecc3c6`](https://github.com/seaagents/fan/commit/aecc3c6) — интеграция протокола в контур: 17 тестов |
+| B «Идеи и метрики» | F-19, F-20, F-21 (3/3) | [`fd615ba`](https://github.com/seaagents/fan/commit/fd615ba) — интеграция идей/метрик в контур: 16 тестов |
+| C «Валидация» | F-22, F-48 (2/2) | F-22 validation suite 7 тестов; F-48 28 тестов fan-orch + 9 core |
+
+**Коммиты этапа 1 (F-16..F-22 + F-48):** `c347059`, `f4119e0`, `0c42990`, `aecc3c6`, `6d27769`, `8875b58`, `97ca862`, `fd615ba`, `ca344a3`, `db133a2`, `bece93f` (docs checkpoint).
+
+**Артефакты этапа:**
+- `extensions/fan-mission/promise-parser.ts` — парсер тегов обещаний (F-16)
+- `extensions/fan-mission/mission-loop.ts` — DECIDE-прерывание, интеграция протокола/идей/метрик (F-17, phase-gate A/B)
+- `extensions/fan-mission/verification-ladder.ts` + `verification-config.ts` — 5-ступенчатая лестница, tree-kill таймаут (F-18)
+- `extensions/fan-mission/idea-generator.ts` + `backlog-format.ts` — генератор идей, протокол 5 вопросов (F-19)
+- `extensions/fan-mission/idea-scorer.ts` + `scorer-config.ts` — гибридный скорер (F-20)
+- `extensions/fan-mission/metrics-collector.ts` — сбор метрик в `metrics.jsonl` (F-21)
+- `extensions/fan-mission/tests/validation/` + `tests/fixtures/mission-validation/` — валидационный suite + `MockMissionValidationEnvironment` helper (F-22)
+- `extensions/fan-orchestrator/task-manager.js` — `serialize`/`deserialize`, restore, `recovered: true` (F-48)
+- `packages/coding-agent/src/core/` — новый core API `getCustomEntries` (session-manager + extension types/loader/runner/agent-session wiring, F-48)
+- `packages/coding-agent/README.md` — секция Mission Commands: протокол тегов обещаний, DECIDE, лестница верификации, персистентность таск-листа
+- `CHANGELOG.md` — запись этапа 1 в [Unreleased]
+- `docs/features/super-orchestrator/pipeline-report.md` — этап 1 ✅ 8/8, журнал, точка возобновления → этап 2
+
+**Точка возобновления:** этап 2 `http-hierarchy-2` (F-23..F-35, 13 фич). Протокол: прочитать roadmap `../http-hierarchy-2/roadmap.md`, создать таск-лист по зависимостям, первая фича — корневая P0 без зависимостей (по графу roadmap этапа 2). Подробности — `docs/features/super-orchestrator/pipeline-report.md`.
+
+**Известные ограничения / non-blockers:** см. «Бэклог» в `pipeline-report.md` — 10 пунктов (флаки-тест `agent-session-concurrent`, невыставленные настройки `messageQueueLimit`, события не персистятся в JSONL, i18n ban-message, провайдеры без AbortSignal, спека §3.2.4 drift, stale source map, compaction survival custom entries и др.).
