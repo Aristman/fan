@@ -12,10 +12,12 @@ import {
 	ARCHIVE_KEEP_COUNT,
 	appendDecision,
 	archiveOldDoneItems,
+	type BacklogEntry,
 	canTransition,
 	checkStateFileSize,
 	InvalidTransitionError,
 	MAX_STATE_BYTES,
+	readBacklog,
 	readMission,
 	readRoadmap,
 	readState,
@@ -24,7 +26,7 @@ import {
 	writeRoadmap,
 	writeState,
 } from "./file-state-manager.js";
-import { parsePromise } from "./promise-parser.js";
+import { type PromiseParseResult, parsePromise } from "./promise-parser.js";
 import type { VerificationLadder, VerificationLadderResult } from "./verification-ladder.js";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -79,6 +81,24 @@ export interface MissionLoopDeps {
 	git: MissionGit;
 	clock: MissionClock;
 	lock?: MissionLock;
+}
+
+/** Phase B (F-19): DI idea generator hook — called after each completed iteration. */
+export interface MissionIdeaGenerator {
+	generate(missionDir: string): Promise<{ added: number; skippedDuplicates: number }>;
+}
+
+/** Phase B (F-20): DI idea scorer hook — scores unscored BACKLOG ideas (status "IDEA"). */
+export interface MissionIdeaScorer {
+	scoreIdea(
+		missionDir: string,
+		idea: { id: string; idea: string; source: string },
+	): Promise<{ id: string; score: number; status: "ROADMAP" | "DECIDE" | "REJECTED" }>;
+}
+
+/** Phase B (F-21): DI metrics collector hook — records each iteration outcome. */
+export interface MissionMetricsHook {
+	onIterationEnd(missionDir: string, record: Record<string, unknown>): Promise<void>;
 }
 
 /** F-18: escalation payload for promise-tag routing (I3 level). */
@@ -364,6 +384,11 @@ export class MissionLoop {
 	private verificationLadder?: VerificationLadder;
 	// F-18: escalation callback (I3) for promise-tag routing (no tag / BLOCKED)
 	private onEscalate?: (level: string, payload: EscalationPayload) => void;
+	// Phase B (F-19/F-20/F-21): optional DI hooks — without injection the loop
+	// behaves exactly as before (backward compat).
+	private ideaGenerator?: MissionIdeaGenerator;
+	private ideaScorer?: MissionIdeaScorer;
+	private metricsCollector?: MissionMetricsHook;
 
 	constructor(opts: {
 		missionDir: string;
@@ -372,6 +397,9 @@ export class MissionLoop {
 		decideTimeoutMs?: number;
 		verificationLadder?: VerificationLadder;
 		onEscalate?: (level: string, payload: EscalationPayload) => void;
+		ideaGenerator?: MissionIdeaGenerator;
+		ideaScorer?: MissionIdeaScorer;
+		metricsCollector?: MissionMetricsHook;
 	}) {
 		this.missionDir = opts.missionDir;
 		this.deps = opts.deps;
@@ -379,6 +407,9 @@ export class MissionLoop {
 		this.decideTimeoutMs = opts.decideTimeoutMs ?? 3_600_000;
 		this.verificationLadder = opts.verificationLadder;
 		this.onEscalate = opts.onEscalate;
+		this.ideaGenerator = opts.ideaGenerator;
+		this.ideaScorer = opts.ideaScorer;
+		this.metricsCollector = opts.metricsCollector;
 		// P1-6: use provided lock or default file-lock
 		this.lock = opts.deps.lock ?? createFileLock(opts.missionDir);
 	}
@@ -796,6 +827,12 @@ export class MissionLoop {
 			writeLoopStateSync(this.missionDir, loopState);
 			lastCompletedStep = 7;
 
+			// ── Phase B hooks (F-19/F-20/F-21) ────────────────────────────
+			// After the journal write (lastStep=7), so a crash mid-hook recovers
+			// cleanly; hook errors never crash the loop (try/catch inside).
+			await this.emitIterationMetrics(currentIteration, iterResult, parsedPromise);
+			resultStatus = await this.runIdeaHooks(loopState, resultStatus);
+
 			return {
 				iteration: currentIteration,
 				steps,
@@ -937,6 +974,18 @@ export class MissionLoop {
 		rawReason: string | undefined,
 	): Promise<TickResult> {
 		const question = rawReason && rawReason.trim() !== "" ? rawReason.trim() : "не указан";
+		await this.enterAwaitingDecision(loopState, question);
+		return { iteration: currentIteration, steps, status: "awaiting_decision", item: currentItem };
+	}
+
+	/**
+	 * F-17 / Phase B shared transition: record the pending question in
+	 * DECISIONS.md (ADR format), move MISSION.md to awaiting_decision, reset
+	 * the step-4 journal (the next tick after resolveDecision() runs a fresh
+	 * iteration), persist pendingDecision (survives restarts) and start the
+	 * decide timeout.
+	 */
+	private async enterAwaitingDecision(loopState: LoopState, question: string): Promise<void> {
 		const now = await this.deps.clock.now();
 		const date = now.toISOString();
 
@@ -965,8 +1014,88 @@ export class MissionLoop {
 		writeLoopStateSync(this.missionDir, loopState);
 
 		this.startDecideTimer();
+	}
 
-		return { iteration: currentIteration, steps, status: "awaiting_decision", item: currentItem };
+	/**
+	 * Phase B (F-21): emit the iteration metrics record after the final
+	 * iteration status is known (COMPLETE/BLOCKED/FAILED incl. ladder-fail).
+	 * IterationResult carries no tokensIn/tokensOut/durationMs — the loop
+	 * passes what it has (costTokens as tokensIn, 0 for the rest). Collector
+	 * errors are swallowed — the loop never crashes on metrics.
+	 */
+	private async emitIterationMetrics(
+		iteration: number,
+		iterResult: IterationResult,
+		parsedPromise: PromiseParseResult | null,
+	): Promise<void> {
+		if (!this.metricsCollector) return;
+		try {
+			await this.metricsCollector.onIterationEnd(this.missionDir, {
+				iteration,
+				tokensIn: iterResult.costTokens ?? 0,
+				tokensOut: 0,
+				durationMs: 0,
+				status: iterResult.status.toLowerCase(),
+				promiseTag: parsedPromise?.tag ?? null,
+			});
+		} catch {
+			// A failing collector must not crash the loop.
+		}
+	}
+
+	/**
+	 * Phase B (F-19/F-20): idea generation + scoring after step 7 (backlog),
+	 * only when injected. Generator errors are swallowed; scorer errors leave
+	 * the idea unscored (status "IDEA") and the loop continues with the next
+	 * idea. A DECIDE verdict transitions the mission to awaiting_decision via
+	 * the F-17 mechanism (first DECIDE wins). Returns the possibly updated
+	 * tick result status.
+	 */
+	private async runIdeaHooks(loopState: LoopState, resultStatus: MissionStatus): Promise<MissionStatus> {
+		if (!this.ideaGenerator || resultStatus !== "active") return resultStatus;
+
+		let added = 0;
+		try {
+			const genResult = await this.ideaGenerator.generate(this.missionDir);
+			added = genResult?.added ?? 0;
+		} catch {
+			return resultStatus; // generator errors must not crash the loop
+		}
+		if (added <= 0 || !this.ideaScorer) return resultStatus;
+
+		let backlog: BacklogEntry[];
+		try {
+			backlog = await readBacklog(this.missionDir);
+		} catch {
+			return resultStatus;
+		}
+
+		let decide: { idea: string; score: number } | null = null;
+		for (const entry of backlog) {
+			if (entry.status !== "IDEA") continue;
+			try {
+				const result = await this.ideaScorer.scoreIdea(this.missionDir, {
+					id: entry.id,
+					idea: entry.idea,
+					source: entry.source,
+				});
+				if (result?.status === "DECIDE" && decide === null) {
+					decide = { idea: entry.idea, score: result.score };
+				}
+			} catch {
+				// Scorer error: the idea stays unscored ("IDEA"); continue.
+			}
+		}
+
+		if (decide) {
+			try {
+				await this.enterAwaitingDecision(loopState, `${decide.idea} (score: ${decide.score})`);
+				return "awaiting_decision";
+			} catch {
+				// A failed transition must not crash the loop.
+			}
+		}
+		return resultStatus;
 	}
 
 	/** F-17: start the decide timeout (aborts the mission on expiry). */
