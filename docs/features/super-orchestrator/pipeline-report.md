@@ -11,12 +11,13 @@
 | Метрика | Значение |
 |---------|----------|
 | Всего фич (4 roadmap) | 47 (48 с F-48) |
-| Реализовано (✅) | 15 (этап 0) |
+| Реализовано (✅) | 24 (этап 0: 15 + этап 1: F-16..F-22 = 7) + F-48 в работе |
 | Провалено (❌) | 0 |
-| Коммитов | 19 (15 фич + 2 phase-gate/docs + 2 doc) |
-| Verify final | PASS (2100+ тестов зелёные) |
-| Smoke e2e phase A | PASS (e2e-phase-a-interrupts 3/3) |
-| Phase-gate | PASS |
+| Коммитов | 28 (этап 0: 19 + этап 1: 9) |
+| Тесты fan-mission | 475 зелёные |
+| Тесты fan-orchestrator | 186 зелёные (158 + 28 новых F-48) |
+| Verify final этапа 0 | PASS (2100+ тестов) |
+| Phase-gate A/B этапа 1 | PASS (интеграция протокола + идей/метрик) |
 
 ## Прогресс
 
@@ -44,34 +45,53 @@
 ### Фаза B «Контур миссии» — ✅ ЗАВЕРШЕНА (F-08, F-09, F-10, F-11, F-12)
 ### Фаза C «Внешние триггеры и интеграция» — ✅ ЗАВЕРШЕНА (F-13, F-14, F-15)
 
-### Этап 1: mission-validation-1 (F-16..F-22) — ⏳ СЛЕДУЮЩИЙ (старт по команде)
-- F-48 (tasklist persistence) включён в этап 1 (запланирован фичей, см. `mission-validation-1/roadmap.md`)
+### Этап 1: mission-validation-1 (F-16..F-22 + F-48) — ⏳ В РАБОТЕ (7/8 + F-48 Green)
+
+| Фича | Статус | Коммит | Тесты | Попыток |
+|------|--------|--------|-------|---------|
+| F-16 Парсер тегов обещаний | ✅ | c347059 | 40 (fan-mission 298) | 1 |
+| F-17 DECIDE-прерывание | ✅ | f4119e0 | 19 (fan-mission 317) | 1 |
+| F-18 Лестница верификации | ✅ | 0c42990 | 20 (fan-mission 337) | 2 (verify FAIL: spawn timeout no-op → bug-fix tree kill) |
+| F-19 Генератор идей | ✅ | 6d27769 | 22 (fan-mission 376) | 1 |
+| F-20 Скорер идей | ✅ | 8875b58 | 39 (fan-mission 415) | 1 |
+| F-21 Сбор метрик | ✅ | 97ca862 | 37 (fan-mission 452) | 2 (verify FAIL: склейка JSONL без \n → bug-fix) |
+| F-22 Интеграционные тесты | ✅ | ca344a3 | 7 validation (fan-mission 475) | 1 |
+| F-48 Персистентность таск-листа | ⏳ Green | — | Red 37 → Green 186/186 fan-orch + 9/9 core | verify в процессе |
+
+**Phase-gate фазы A ✅** — интеграция протокола результатов в контур (коммит `aecc3c6`, 17 тестов): маршрутизация COMPLETE/BLOCKED/FAILED через parsePromise (приоритет над iterResult.status), лестница DI в шаге 5, эскалация I3 (onEscalate DI). Решение одобрено оператором (модули фазы A не покрывали интеграцию — scope расширен).
+**Phase-gate фазы B ✅** — интеграция идей/метрик в контур (коммит `fd615ba`, 16 тестов): metricsCollector на каждой итерации, ideaGenerator/ideaScorer после шага 7, DECIDE от скорера через enterAwaitingDecision (refactor decideTick). Та же стратегия что фаза A.
 
 ### Этап 2: http-hierarchy-2 (F-23..F-35) — ожидает
 ### Этап 3: depth-and-dashboard-3 (F-36..F-47) — ожидает
 
-## Точка возобновления (2026-08-12, ЭТАП 0 ЗАВЕРШЁН)
+## Точка возобновления (2026-08-13, ЭТАП 1: F-48 GREEN — VERIFY ПЕРЕД КОММИТОМ)
 
-**Состояние:** этап 0 полностью завершён. Все 15/15 фич реализованы и зелёные. Phase-gate фазы A пройден (commit `31f605e`, 3/3 e2e + 131 unit). Verify final: PASS (2100+ тестов). Smoke `e2e-phase-a-interrupts`: PASS (3/3).
+**Состояние:** этап 1 почти завершён. F-16..F-22 ✅ закоммичены (7 фич). Phase-gate фаз A и B ✅ (интеграционные коммиты `aecc3c6`, `fd615ba`). F-48: Red (37 тестов) + Green готовы — fan-orchestrator 186/186, core getCustomEntries 9/9, coding-agent suite зелёный (1 pre-existing flake). **F-48 НЕ верифицирован отдельным verify-воркером и НЕ закоммичен.** Рабочая копия содержит все изменения F-48 untracked/modified.
 
-**Следующий шаг:** начать этап 1 — `mission-validation-1` (F-16..F-22) + F-48 (персистентность таск-листа). Прочитать `docs/features/super-orchestrator/mission-validation-1/roadmap.md`, сгенерировать таск-лист (TaskCreate) на все 8 фич этапа 1, и взять первую P1-фичу (F-16 «Парсер тегов обещаний», нет зависимостей). Все фичи этапа 1 — P1, ни одна не блокирует другую по жёстким зависимостям (F-16 самостоятелен, F-17 ↔ F-09, F-18 ↔ F-09, F-19..F-22 самостоятельны или последовательны).
+**Следующий шаг:**
+1. Запустить verify-воркер на F-48 (карточка §F-48: roundtrip, restore после краша, in_progress→pending+recovered, backward compat, 158 старых тестов fan-orchestrator).
+2. При PASS: обновить roadmap статус F-48 → ✅, коммит `feat(fan-orchestrator): task list persistence via session JSONL (F-48)`.
+3. Phase-gate фазы C: e2e-сценарий фазы C (F-22 partially покрывает; сценарий 3 — персистентность — покрыт тестами F-48) + smoke-критерий этапа 1.
+4. Verify final этапа 1 → Smoke → Docs → отчёт.
+5. Далее этап 2 (`http-hierarchy-2`, F-23..F-35).
 
 **Протокол возобновления:**
-1. Прочитать этот файл + roadmap `mission-validation-1/roadmap.md` (статусы ☐).
-2. Создать таск-лист оркестратора (TaskCreate) на F-16..F-22 + F-48 + verify/smoke/docs (контрольная точка в конце этапа 1). Зависимости wired.
-3. Взять первую фичу ☐ (F-16), выполнить Red → Green → verify → commit per-function.
-4. Контрольные точки: только в конце этапа 1 (фазы A, B, C) — phase-gate там.
-5. Ветка: FAN/feature/new-agents-flow (та же).
+1. Прочитать этот файл + roadmap `mission-validation-1/roadmap.md`.
+2. Проверить `git status` — изменения F-48 должны быть в рабочей копии (task-manager.js, task-persistence.js, orchestrator-extension.js, session-manager.ts, extensions/types.ts, loader.ts, runner.ts, agent-session.ts + 3 тест-файла).
+3. Если рабочая копия чиста (потеряно) — F-48 повторить по карточке (Red-тесты в журнале ниже описаны).
+4. Создать таск-лист: F-48 verify/commit, phase-gate C, verify final, smoke, docs.
+5. Ветка: FAN/feature/new-agents-flow.
 
-**Ключевые решения по ходу (для будущих фич):**
-- `writeMissionStatus` — единственный легальный способ менять MISSION.md (только status, через FSM canTransition);
-- abort-гонка исправлена глобально: agent-loop чекает signal.aborted между ходами;
-- drain state-машина: idle→draining→drained→idle, события 1:1:1;
-- budget=0 = unlimited (везде); budgetCountedFor привязан к item;
-- recovery контура: по наличию iterationResult в журнале, независимо от interrupted;
-- integration через файловые сигналы: `.mission-steer-queue.json` (webhook→executor), `.mission-drain-flag` (drain→paused) — позволяет расширениям общаться без прямых импортов (DI-style);
-- **персистентность таск-листа** запланирована в этапе 1 как фича **F-48** (`mission-validation-1/roadmap.md`), подробности — backlog `docs/backlogs/tasklist-persistence-backlog.md`. До тех пор доска пересоздаётся из `pipeline-report.md` и соответствующего roadmap;
-- известный pre-existing падеж: agent-session-concurrent steering-тест (quarantine-тикет в бэклоге).
+**Ключевые решения этапа 1 (для будущих фич):**
+- **Тесты = контракт.** Девиации от regex спеки §3.2.4 в парсере (lookbehind, reason capture) закреплены тестами и задокументированы в коде; спека требует синхронизации (drift).
+- **Интеграция модулей в контур делается на phase-gate** (стратегия одобрена оператором): e2e-тесты → реализация DI-хуков. DI-опции MissionLoop: verificationLadder, onEscalate, ideaGenerator, ideaScorer, metricsCollector.
+- **Приоритет тегов:** parsePromise-тег перезаписывает iterResult.status; нет тега → I3-эскалация + fallback на status.
+- **Лестница в шаге 5:** ladder-fail → итерация FAILED, бюджет учтён (работа сделана), чекбокс ROADMAP не отмечается, журнала персистится для recovery.
+- **enterAwaitingDecision** — общий метод для DECIDE агента и DECIDE скорера (pendingDecision персистится в .mission-loop.json).
+- **Генератор идей:** порог 3 итераций, маркер .mission-ideas.json персистентен; скорер: формула FP-нормализована (Math.round*1e5), BACKLOG обновляется in-place (updateBacklogEntry, CRLF-safe).
+- **Метрики:** классификация статусов: failed/failed_watchdog → failureRate; failed_watchdog/watchdog/budget_exhausted → prematureRate; aborted → ни то ни другое.
+- **F-48:** validateTransition реализован (latent bug: метод вызывался но не существовал — updateTask работал, startTask/completeTask падали); serialize полный формат; getCustomEntries — новый core API (session-manager + extension types/loader/runner/agent-session wiring); snapshot на tool_result TaskCreate/TaskUpdate/TaskClear/cancel_task, restore на session_start.
+- Известный pre-existing падеж: agent-session-concurrent steering-тест (quarantine-тикет в бэклоге).
 
 ## Журнал
 
@@ -98,6 +118,17 @@
 - **2026-08-12** — **F-14 ✅** `fan-webhook` — Hono-сервер на порту 9090. `POST /webhook`: steer/followUp dispatch через `actions.sendMessage`. `event-router.ts`: валидация + маршрутизация (расширяемо для новых типов). `types.ts`: `WebhookActions`, `WebhookCtx`, `WebhookServerHandle`. 400 на валидации, 500 на падении sendMessage. `GET /health`, `stop()` идемпотентен, port conflict detection. 46 тестов (25 integration + 21 unit), все extensions не сломаны. Коммит `d9ef7d1`.
 - **2026-08-12** — **F-15 ✅** Интеграционные тесты + фикстуры контура. Steer/drain/scheduler integration через файловые сигналы: `.mission-steer-queue.json` (webhook→executor), `.mission-drain-flag` (drain→paused). Scheduler→missionLoop.tick() wiring. `MockMissionEnvironment` helper для переиспользования. 5 фикстур в `test/fixtures/mission/sample/`. Biome lint fixes (mission-widget.ts). 22 integration-теста (258 total fan-mission), все зелёные. Коммит `d5c3b42`.
 - **2026-08-12** — 🏁 **Этап 0 ЗАВЕРШЁН.** 15/15 фич реализовано. Verify final: PASS (2100+ тестов). Smoke e2e phase A: PASS (3/3). Phase-gate: PASS (`31f605e`). Точка возобновления: этап 1 (`mission-validation-1`, F-16..F-22 + F-48).
+- **2026-08-13** — **Этап 1 старт.** Создано 14 задач (8 фич + 3 phase-gate + verify/smoke/docs), зависимости wired.
+- **2026-08-13** — **F-16 ✅** Парсер тегов обещаний `promise-parser.ts` (56 LOC): parsePromise + stripCodeBlocks (refactor-цель). 2 осознанные девиации от regex спеки закреплены тестами (lookbehind, reason capture). 40 тестов. Коммит `c347059`.
+- **2026-08-13** — **F-17 ✅** DECIDE-прерывание: статус awaiting_decision (FSM), resolveDecision, decideTimeoutMs (1h, unref) → abort + decide_timeout, pendingDecision персистится (.mission-loop.json), операторский ответ → следующая итерация (operator_answer). 19 тестов. Коммит `f4119e0`.
+- **2026-08-13** — **F-18 ✅** Лестница верификации: verification-config.ts (DEFAULT_STEPS: typecheck/linters/build/tests/acceptance) + verification-ladder.ts (DI runCommand, diagnosis tail 2000). Verify FAIL: spawn(shell:true, timeout) — timeout игнорируется, hang навсегда → bug-fix: ручной setTimeout + killProcessTree (taskkill /T /F Windows, SIGKILL pg POSIX), settled-guard. Re-verify PASS (450ms при лимите 400ms). 20 тестов. Коммит `0c42990`.
+- **2026-08-13** — **Phase-gate A ✅** code-research выявил разрыв: модули фазы A не интегрированы в контур (только DECIDE). Вопрос оператору → стратегия «интегрировать сейчас TDD». Red 11 → Green (+92 LOC mission-loop): маршрутизация 4 тегов через parsePromise, лестница DI в шаге 5, onEscalate I3. 17 интеграционных тестов (3 e2e-сценария фазы + smoke 4 тега). Коммит `aecc3c6`.
+- **2026-08-13** — **F-19 ✅** Генератор идей: протокол 5 вопросов, порог 3 итераций (.mission-ideas.json маркер персистентен), дедупликация normalizeIdea, graceful на мусор LLM. backlog-format.ts (refactor-цель). 22 теста. Коммит `6d27769`.
+- **2026-08-13** — **F-20 ✅** Скорер идей: computeScore 0.3/0.2/0.2/0.3 + FP-нормализация, пороги 0.7/0.5, REJECTED → ADR в DECISIONS.md, updateBacklogEntry in-place (atomic, CRLF-safe). scorer-config.ts (refactor-цель). 39 тестов. Коммит `8875b58`.
+- **2026-08-13** — **F-21 ✅** Метрики: metrics.jsonl append-only, getMetrics агрегация (failureRate/prematureRate/totalTokens), классификация статусов. Verify FAIL: файл без финального \n → склейка записей → bug-fix: last-byte read + prefix \n (+3 регресс-теста). 37 тестов. Коммит `97ca862`.
+- **2026-08-13** — **Phase-gate B ✅** интеграция идей/метрик в контур (+131 LOC): metricsCollector на каждой итерации, ideaGenerator/ideaScorer после шага 7, DECIDE скорера через enterAwaitingDecision (общий с decideTick), хуки после журнала (recovery-safe). 16 тестов. Коммит `fd615ba`.
+- **2026-08-13** — **F-22 ✅** Валидационный suite: реальные модули (парсер/контур/генератор/скорер/лестница/метрики), mock только LLM/runCommand/executor. 4 тега e2e, скоринг 0.75/0.52/0.19, метрики 6 итераций (failureRate 1/6 < 0.2 MAST), ladder-fail. Фикстуры mission-validation. MockMissionValidationEnvironment helper (refactor-цель). Воркер tests-impl умер от контекста на 1-й попытке (читал весь mission-loop.ts) — перезапуск с компактным заданием. 7 тестов, fan-mission 475. Коммит `ca344a3`.
+- **2026-08-13** — **F-48 ⏳** Red 37 тестов (3 файла: task-manager-persistence 20, task-snapshot-hooks 8, extension-custom-entries-read 9) → Green: fan-orchestrator 186/186, core getCustomEntries 9/9, coding-agent suite зелёный. Разведка нашла latent bug: validateTransition вызывался но не существовал (updateTask ок, startTask/completeTask падали) — исправлен в Green. **Verify + коммит не выполнены.**
 
 ## Бэклог (follow-ups, не блокеры)
 
@@ -107,4 +138,7 @@
 4. **F-03 P3:** событие `watchdog_timeout` не персистится в JSONL и не показывается в TUI; docs (sdk.md/rpc.md) не описывают. То же для `loop_detected` и drain-событий (F-04/F-05).
 5. **F-04:** `normalizeErrorText` не гасит Windows-пути, перенормализует host:port/время; ban-message хардкод на русском (i18n).
 6. **F-04:** провайдеры без поддержки AbortSignal — abort проигрывает (gap agent-core, честные провайдеры сигнал чтят).
-7. **Персистентность таск-листа** — запланирована в этапе 1 как фича **F-48** (`mission-validation-1/roadmap.md`), подробности — backlog `docs/backlogs/tasklist-persistence-backlog.md`. Snapshot `TaskManager` в session JSONL, десериализация, restore-семантика `in_progress`→`pending`+`recovered`.
+7. **Персистентность таск-листа** — реализуется как F-48 (этап 1). Snapshot `TaskManager` в session JSONL custom entries, restore на session_start, `in_progress`→`pending`+`recovered`.
+8. **Спека §3.2.4 drift:** regex тегов в спеке расходится с реализацией F-16 (lookbehind + reason capture закреплены тестами). Синхронизировать спеку при обновлении документации.
+9. **task-manager.js.map** — stale source map после правок (runtime не влияет).
+10. **Compaction survival:** custom entries (snapshots F-48) не проверены на выживание при compaction контекста (backlog P2 риск).
