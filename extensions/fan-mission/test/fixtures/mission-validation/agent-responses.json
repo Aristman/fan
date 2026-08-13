@@ -1,0 +1,26 @@
+[
+  {
+    "id": "complete",
+    "status": "COMPLETE",
+    "commitMessage": "feat: implement auth module",
+    "costTokens": 1200,
+    "response": "Я завершил задачу. Все тесты пройдены, линтер чист.\n\n<promise>COMPLETE</promise>"
+  },
+  {
+    "id": "blocked",
+    "status": "BLOCKED",
+    "response": "Не могу продолжить работу без доступа к базе данных.\n\n<promise>BLOCKED:нет доступа к БД</promise>"
+  },
+  {
+    "id": "decide",
+    "status": "COMPLETE",
+    "commitMessage": "pending decision",
+    "costTokens": 800,
+    "response": "Нужен выбор архитектуры аутентификации.\n\n<promise>DECIDE:JWT или session?</promise>"
+  },
+  {
+    "id": "failed",
+    "status": "FAILED",
+    "response": "Тесты упали на этапе верификации.\n\n<promise>FAILED:тесты красные</promise>"
+  }
+]

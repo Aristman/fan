@@ -1,0 +1,5 @@
+{"iteration":1,"tokensIn":1200,"tokensOut":800,"durationMs":5000,"status":"complete","promiseTag":"COMPLETE","timestamp":"2026-08-13T10:00:00.000Z"}
+{"iteration":2,"tokensIn":1100,"tokensOut":700,"durationMs":4000,"status":"complete","promiseTag":"COMPLETE","timestamp":"2026-08-13T10:05:00.000Z"}
+{"iteration":3,"tokensIn":1500,"tokensOut":900,"durationMs":6000,"status":"complete","promiseTag":"COMPLETE","timestamp":"2026-08-13T10:10:00.000Z"}
+{"iteration":4,"tokensIn":900,"tokensOut":400,"durationMs":3000,"status":"failed","promiseTag":"FAILED","timestamp":"2026-08-13T10:15:00.000Z"}
+{"iteration":5,"tokensIn":800,"tokensOut":300,"durationMs":2500,"status":"blocked","promiseTag":"BLOCKED","timestamp":"2026-08-13T10:20:00.000Z"}
