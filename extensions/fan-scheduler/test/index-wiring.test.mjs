@@ -33,6 +33,9 @@
 // scheduler.test.mjs НЕ затронуты — отдельный файл, импортирует scheduler.js.
 // ────────────────────────────────────────────────────────────────────────────
 
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
 	afterEach,
 	beforeAll,
@@ -215,8 +218,10 @@ describe("F-13 / index-wiring: wireScheduler — реальный планиро
 
 // ────────────────────────────────────────────────────────────────────────────
 // TC-7: lifecycle через хуки factory — session_shutdown вызывает stop.
-// factory(fan) без opts → wireScheduler(fan) с дефолтами (intervalMs 300000,
-// getStatus () => "active"). Чтобы наблюдать тик до стопа — advance на 310000 мс.
+// factory(fan) без opts → дефолтный getStatus через детектор миссий: тики
+// идут только при активной миссии в ctx.cwd. Тест готовит tempdir с
+// docs/missions/m1/MISSION.md (status: active) и эмитит session_start с
+// ctx {cwd}. Чтобы наблюдать тик до стопа — advance на 310000 мс.
 // ────────────────────────────────────────────────────────────────────────────
 
 describe("F-13 / index-wiring: lifecycle через хуки factory", () => {
@@ -227,11 +232,16 @@ describe("F-13 / index-wiring: lifecycle через хуки factory", () => {
 
 	it("TC-7: session_shutdown хук вызывает stop — планировщик останавливается", async () => {
 		const fan = makeMockFan();
+		// Фабрика тикает только при активной миссии в ctx.cwd — готовим tempdir.
+		const tmp = mkdtempSync(join(tmpdir(), "fan-scheduler-tc7-"));
+		const missionDir = join(tmp, "docs", "missions", "m1");
+		mkdirSync(missionDir, { recursive: true });
+		writeFileSync(join(missionDir, "MISSION.md"), "---\nstatus: active\n---\n", "utf8");
 		try {
 			factory(fan);
 
-			// session_start → старт (дефолт intervalMs 300000, дефолт getStatus "active")
-			await fan._emit("session_start", { type: "session_start" });
+			// session_start → старт (дефолт intervalMs 300000; getStatus видит active)
+			await fan._emit("session_start", { type: "session_start" }, { cwd: tmp });
 
 			// 1 тик на дефолтном интервале (300000 мс)
 			await vi.advanceTimersByTimeAsync(310_000);
@@ -252,6 +262,7 @@ describe("F-13 / index-wiring: lifecycle через хуки factory", () => {
 			} catch {
 				// ignore
 			}
+			rmSync(tmp, { recursive: true, force: true });
 		}
 	});
 });

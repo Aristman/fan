@@ -10,7 +10,9 @@
 
 export type MissionStatus = "active" | "paused" | "completed" | "aborted" | "failed" | "budget_exhausted";
 
-export type StreamingBehavior = "steer" | "followUp" | "nextTurn";
+// Только "steer" | "followUp": fan.sendUserMessage поддерживает лишь эти два
+// режима deliverAs ("nextTurn" исключён — планировщик всегда шлёт "followUp").
+export type StreamingBehavior = "steer" | "followUp";
 
 export interface SchedulerActions {
 	sendMessage(text: string, streamingBehavior: StreamingBehavior): void | Promise<void>;
