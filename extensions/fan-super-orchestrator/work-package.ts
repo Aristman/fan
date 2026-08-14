@@ -1,0 +1,292 @@
+// F-27: Протокол «пакет работ» (L0 → L1).
+//
+// Карточка: docs/features/super-orchestrator/http-hierarchy-2/roadmap.md §F-27
+// Speка: docs/specs/spec_super-orchestrator_v3_2026-08-10.md §3.3.2
+//
+// Пакет работ — самодостаточное задание, которое L0 передаёт дочернему
+// узлу L1 через SendMessageRequest (message = JSON.stringify({ work_package: wp }),
+// streamingBehavior = "followUp"). Пакет несёт все лимиты и контекст,
+// необходимые дочернему узлу для автономной работы.
+
+/** Необязательный контекст, передаваемый дочернему узлу. */
+export interface WorkPackageContext {
+	parentSummary?: string;
+	relevantFiles?: string[];
+	constraints?: string[];
+}
+
+/** Пакет работ протокола L0 → L1. */
+export interface WorkPackage {
+	task: string;
+	/** Формат: <mission-id>/L<N>/node-<M>. */
+	correlationId: string;
+	depth: number;
+	/** Дефолт 0. */
+	spawnBudget: number;
+	tokenBudget: number;
+	/** Дефолт 0. */
+	costBudgetUsd: number;
+	/** Дефолт 2. */
+	maxRetries: number;
+	/** Дефолт []. */
+	toolManifest: string[];
+	/** ISO-8601, обязателен (непустая строка). */
+	deadline: string;
+	verificationCommand?: string;
+	context?: WorkPackageContext;
+}
+
+/** SendMessageRequest-подобная форма сериализованного пакета. */
+export interface SerializedWorkPackage {
+	message: string;
+	streamingBehavior: "followUp";
+}
+
+/** Входящие данные для createWorkPackage (дефолтные поля опциональны). */
+export type WorkPackageInput = Omit<WorkPackage, "spawnBudget" | "costBudgetUsd" | "maxRetries" | "toolManifest"> &
+	Partial<Pick<WorkPackage, "spawnBudget" | "costBudgetUsd" | "maxRetries" | "toolManifest">>;
+
+/** Ошибка валидации пакета работ. */
+export class WorkPackageValidationError extends Error {
+	readonly missingFields: string[];
+	readonly invalidFields: string[];
+
+	constructor(message: string, missingFields: string[] = [], invalidFields: string[] = []) {
+		super(message);
+		this.name = "WorkPackageValidationError";
+		this.missingFields = missingFields;
+		this.invalidFields = invalidFields;
+	}
+}
+
+/** Формат correlationId: <mission-id>/L<N>/node-<M> (N, M — целые ≥ 0). */
+const CORRELATION_ID_PATTERN = /^[^/]+\/L\d+\/node-\d+$/;
+
+/** Обязательные поля пакета (без дефолтов). */
+const REQUIRED_FIELDS = ["task", "correlationId", "depth", "tokenBudget", "deadline"] as const;
+
+/** Проверка: значение — непустая строка (не whitespace-only). */
+const isMissingString = (value: unknown): boolean => typeof value !== "string" || value.trim().length === 0;
+
+/** Проверка: значение — finite number (не NaN). */
+const isMissingNumber = (value: unknown): boolean => typeof value !== "number" || Number.isNaN(value);
+
+/** Проверка: значение — finite integer ≥ 0. */
+const isValidNonNegativeInteger = (value: unknown): boolean =>
+	typeof value === "number" && Number.isFinite(value) && Number.isInteger(value) && value >= 0;
+
+/** Проверка: значение — finite number ≥ 0. */
+const isValidNonNegativeNumber = (value: unknown): boolean =>
+	typeof value === "number" && Number.isFinite(value) && value >= 0;
+
+/**
+ * Внутренняя валидация полей пакета (используется createWorkPackage и parseWorkPackage).
+ * Возвращает { missingFields, invalidFields }.
+ */
+function validateWorkPackageFields(data: Record<string, unknown>): {
+	missingFields: string[];
+	invalidFields: string[];
+} {
+	const missingFields: string[] = [];
+	const invalidFields: string[] = [];
+
+	// Строковые обязательные поля: task, correlationId, deadline.
+	for (const field of ["task", "correlationId", "deadline"] as const) {
+		if (isMissingString(data[field])) {
+			missingFields.push(field);
+		}
+	}
+
+	// Числовые обязательные поля: depth, tokenBudget.
+	for (const field of ["depth", "tokenBudget"] as const) {
+		if (isMissingNumber(data[field])) {
+			missingFields.push(field);
+		}
+	}
+
+	// Если обязательные поля отсутствуют, дальнейшая семантическая проверка бессмысленна.
+	if (missingFields.length > 0) {
+		return { missingFields, invalidFields };
+	}
+
+	// Семантическая валидация числовых полей (finite, ≥ 0, integer где нужно).
+	if (!isValidNonNegativeInteger(data.depth)) {
+		invalidFields.push("depth");
+	}
+	if (!isValidNonNegativeInteger(data.tokenBudget)) {
+		invalidFields.push("tokenBudget");
+	}
+
+	// Опциональные числовые поля — проверяем только если присутствуют.
+	if (data.spawnBudget !== undefined && !isValidNonNegativeInteger(data.spawnBudget)) {
+		invalidFields.push("spawnBudget");
+	}
+	if (data.maxRetries !== undefined && !isValidNonNegativeInteger(data.maxRetries)) {
+		invalidFields.push("maxRetries");
+	}
+	if (data.costBudgetUsd !== undefined && !isValidNonNegativeNumber(data.costBudgetUsd)) {
+		invalidFields.push("costBudgetUsd");
+	}
+
+	// Формат correlationId.
+	if (typeof data.correlationId === "string" && !CORRELATION_ID_PATTERN.test(data.correlationId)) {
+		invalidFields.push("correlationId");
+	}
+
+	return { missingFields, invalidFields };
+}
+
+/**
+ * Создаёт валидированный пакет работ, подставляя дефолты
+ * (maxRetries=2, spawnBudget=0, costBudgetUsd=0, toolManifest=[]).
+ *
+ * @throws WorkPackageValidationError — отсутствуют обязательные поля,
+ *   невалидные значения или correlationId не соответствует формату.
+ */
+export function createWorkPackage(input: unknown): WorkPackage {
+	// Не-объект / null / undefined → все обязательные поля отсутствуют.
+	if (typeof input !== "object" || input === null || Array.isArray(input)) {
+		throw new WorkPackageValidationError(
+			`Work package input must be an object, got ${input === null ? "null" : typeof input}`,
+			[...REQUIRED_FIELDS],
+		);
+	}
+
+	const data = input as Record<string, unknown>;
+	const { missingFields, invalidFields } = validateWorkPackageFields(data);
+
+	if (missingFields.length > 0 || invalidFields.length > 0) {
+		const parts: string[] = [];
+		if (missingFields.length > 0) parts.push(`missing: ${missingFields.join(", ")}`);
+		if (invalidFields.length > 0) parts.push(`invalid: ${invalidFields.join(", ")}`);
+		throw new WorkPackageValidationError(
+			`Work package validation failed — ${parts.join("; ")}`,
+			missingFields,
+			invalidFields,
+		);
+	}
+
+	const wp: WorkPackage = {
+		task: data.task as string,
+		correlationId: data.correlationId as string,
+		depth: data.depth as number,
+		spawnBudget: (data.spawnBudget as number | undefined) ?? 0,
+		tokenBudget: data.tokenBudget as number,
+		costBudgetUsd: (data.costBudgetUsd as number | undefined) ?? 0,
+		maxRetries: (data.maxRetries as number | undefined) ?? 2,
+		toolManifest: (data.toolManifest as string[] | undefined) ?? [],
+		deadline: data.deadline as string,
+	};
+	if (data.verificationCommand !== undefined) {
+		wp.verificationCommand = data.verificationCommand as string;
+	}
+	if (data.context !== undefined) {
+		wp.context = data.context as WorkPackageContext;
+	}
+	return wp;
+}
+
+/**
+ * Сериализует пакет в SendMessageRequest-форму по спеке §3.3.2:
+ * `message = JSON.stringify({ work_package: wp })`.
+ */
+export function serializeWorkPackage(workPackage: WorkPackage): SerializedWorkPackage {
+	return {
+		message: JSON.stringify({ work_package: workPackage }),
+		streamingBehavior: "followUp",
+	};
+}
+
+/**
+ * Парсит сообщение как пакет работ по спеке §3.3.2.
+ * Ожидает `{"work_package": {...}}`, полностью валидирует объект.
+ * Не-JSON, не-объекты, массивы, отсутствие work_package или невалидные поля → null.
+ */
+export function parseWorkPackage(message: string): WorkPackage | null {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(message);
+	} catch {
+		return null;
+	}
+	if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+		return null;
+	}
+	const wp = (parsed as Record<string, unknown>).work_package;
+	if (typeof wp !== "object" || wp === null || Array.isArray(wp)) {
+		return null;
+	}
+
+	const { missingFields, invalidFields } = validateWorkPackageFields(wp as Record<string, unknown>);
+	if (missingFields.length > 0 || invalidFields.length > 0) {
+		return null;
+	}
+
+	// Все поля валидны — конструируем WorkPackage с дефолтами.
+	const data = wp as Record<string, unknown>;
+	const result: WorkPackage = {
+		task: data.task as string,
+		correlationId: data.correlationId as string,
+		depth: data.depth as number,
+		spawnBudget: (data.spawnBudget as number | undefined) ?? 0,
+		tokenBudget: data.tokenBudget as number,
+		costBudgetUsd: (data.costBudgetUsd as number | undefined) ?? 0,
+		maxRetries: (data.maxRetries as number | undefined) ?? 2,
+		toolManifest: (data.toolManifest as string[] | undefined) ?? [],
+		deadline: data.deadline as string,
+	};
+	if (data.verificationCommand !== undefined) {
+		result.verificationCommand = data.verificationCommand as string;
+	}
+	if (data.context !== undefined) {
+		result.context = data.context as WorkPackageContext;
+	}
+	return result;
+}
+
+/** Строит CLI-флаг инструментов: "--tools read,write" или "" для пустого manifest. */
+export function buildToolFlag(manifest: readonly string[]): string {
+	if (manifest.length === 0) {
+		return "";
+	}
+	return `--tools ${manifest.join(",")}`;
+}
+
+/**
+ * Строит argv-массив для spawn: `["--tools", "read,write,edit,bash"]`.
+ * Безопасно для child_process.spawn (каждый элемент — отдельный argv).
+ * НЕ для shell-конкатенации — используйте buildToolFlag для строкового флага.
+ */
+export function buildToolArgs(manifest: readonly string[]): string[] {
+	if (manifest.length === 0) {
+		return [];
+	}
+	return ["--tools", manifest.join(",")];
+}
+
+/**
+ * Собирает correlationId: <missionId>/L<depth>/node-<node>.
+ *
+ * @throws WorkPackageValidationError — missionId не непустая строка или содержит "/",
+ *   depth/node не finite integer ≥ 0.
+ */
+export function makeCorrelationId(missionId: string, depth: number, node: number): string {
+	const invalidFields: string[] = [];
+	if (typeof missionId !== "string" || missionId.trim().length === 0 || missionId.includes("/")) {
+		invalidFields.push("missionId");
+	}
+	if (!isValidNonNegativeInteger(depth)) {
+		invalidFields.push("depth");
+	}
+	if (!isValidNonNegativeInteger(node)) {
+		invalidFields.push("node");
+	}
+	if (invalidFields.length > 0) {
+		throw new WorkPackageValidationError(
+			`Invalid makeCorrelationId arguments: ${invalidFields.join(", ")}`,
+			[],
+			invalidFields,
+		);
+	}
+	return `${missionId}/L${depth}/node-${node}`;
+}
