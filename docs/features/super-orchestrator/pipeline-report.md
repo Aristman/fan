@@ -11,14 +11,15 @@
 | Метрика | Значение |
 |---------|----------|
 | Всего фич (4 roadmap) | 48 |
-| Реализовано (✅) | 24 (этап 0: 15 фич + 1 phase-gate e2e; этап 1: F-16..F-22 + F-48 = 8) |
+| Реализовано (✅) | 37 (этап 0: 15 фич + 1 phase-gate e2e; этап 1: F-16..F-22 + F-48 = 8; этап 2: F-23..F-35 = 13 + 1 phase-gate e2e) |
 | Провалено (❌) | 0 |
-| Коммитов | 30 (этап 0: 19 + этап 1: 11) |
+| Коммитов | 30+ (этап 0: 19 + этап 1: 11; этап 2: см. git log f01f7d0..3a95da8) |
 | Тесты fan-mission | 475 зелёные |
 | Тесты fan-orchestrator | 186 зелёные (158 + 28 новых F-48) |
+| Тесты fan-super-orchestrator | 457 зелёные (19 файлов) + 57 e2e-проверок (phase-gates A/B/C) |
 | Тесты coding-agent | 1190 (1 pre-existing flake) |
-| Verify final этапа 1 | PASS (2085+ тестов: fan-mission 475, fan-orchestrator 186, coding-agent 1190) |
-| Phase-gate A/B/C этапа 1 | PASS (протокол результатов + идей/метрик + валидация) |
+| Verify final этапа 2 | PASS (457 тестов + 57 e2e, phase-gates A/B/C зелёные) |
+| Phase-gate A/B/C этапа 2 | PASS (A: 11/11, B: 26/26, C: 20/20) |
 
 ## Прогресс
 
@@ -63,25 +64,47 @@
 **Phase-gate фазы B ✅** — интеграция идей/метрик в контур (коммит `fd615ba`, 16 тестов): metricsCollector на каждой итерации, ideaGenerator/ideaScorer после шага 7, DECIDE от скорера через enterAwaitingDecision (refactor decideTick). Та же стратегия что фаза A.
 **Phase-gate фазы C ✅** — production-валидация этапа 1 (без отдельного коммита, покрытие компонентами): сценарий 1 (валидация на реальных модулях) — покрыт F-22 (validation suite: парсер/контур/генератор/скорер/лестница/метрики, mock только LLM/runCommand/executor, 4 тега e2e, скоринг 0.75/0.52/0.19, метрики 6 итераций failureRate 1/6 < 0.2 MAST, ladder-fail); сценарий 2 (mock LLM → 3 итерации → генерация → скоринг → ROADMAP/DECIDE/REJECTED → метрики) — PASS; сценарий 3 (персистентность таск-листа: roundtrip serialize/deserialize, restore после краша, in_progress→pending+recovered, backward compat) — покрыт F-48 (28 тестов fan-orch + 9 core). Smoke-критерии этапа 1: I0 <1c / I2 <500мс (F-01/F-11), DECIDE блокирует контур (F-17), failureRate <20% / prematureRate <15% (F-21), спорные идеи 0.5–0.7 → DECIDE (F-20), `npm run build` зелёный + unit-тесты проходят — PASS.
 
-### Этап 2: http-hierarchy-2 (F-23..F-35) — ожидает
+### Этап 2: http-hierarchy-2 (F-23..F-35) — ✅ ЗАВЕРШЁН (13/13)
+
+| Фича | Статус | Описание | Тесты |
+|------|--------|----------|-------|
+| F-23 | ✅ | Менеджер дочерних процессов | process-manager + port-pool + health-checker |
+| F-24 | ✅ | Аутентификация узлов (FAN_NODE_TOKEN) | node-auth + seedNodeToken (api-gateway) |
+| F-25 | ✅ | Depth/width guard | depth-width-guard |
+| F-26 | ✅ | Sanitizer межагентных сообщений | message-sanitizer |
+| F-27 | ✅ | Протокол «пакет работ» (L0 → L1) | work-package |
+| F-28 | ✅ | Протокол «отчёт узла» (L1 → L0) | node-report |
+| F-29 | ✅ | Child node client (REST + WS) | child-node-client |
+| F-30 | ✅ | Агрегатор бюджета | budget-aggregator |
+| F-31 | ✅ | Global Budget Coordinator | budget-coordinator |
+| F-32 | ✅ | Tree journal (JSONL) | tree-journal |
+| F-33 | ✅ | Startup-reconciliation | startup-reconciliation |
+| F-34 | ✅ | MVP глубины 2 (L0 → 3–4×L1) | depth2-integration |
+| F-35 | ✅ | Тесты HTTP-иерархии и бюджета | hierarchy-* + phase-gate-* |
+
+**Коммиты:** f01f7d0 (scaffolding) .. 3a95da8 (argv dumps to tempdir).
+**Тесты:** 457 юнит/интеграционных (19 файлов) + 57 e2e-проверок (phase-gate-a 11/11, phase-gate-b 26/26, phase-gate-c 20/20).
+**Изменения ядра:** `seedNodeToken` в `packages/api-gateway` + сидинг `FAN_NODE_TOKEN`/`FAN_NODE_NAME` в `packages/coding-agent/src/main.ts`.
+**Phase-gates:** A ✅ (11/11 — процессы, auth, guard, sanitizer), B ✅ (26/26 — протоколы, бюджет, журнал, reconciliation), C ✅ (20/20 — depth-2 интеграция).
+**Финальная верификация:** PASS.
+
 ### Этап 3: depth-and-dashboard-3 (F-36..F-47) — ожидает
 
-## Точка возобновления (2026-08-13, ЭТАП 1 ЗАВЕРШЁН — СЛЕДУЮЩИЙ: ЭТАП 2)
+## Точка возобновления (2026-08-14, ЭТАП 2 ЗАВЕРШЁН — СЛЕДУЮЩИЙ: ЭТАП 3)
 
-**Состояние:** этап 1 завершён. Все 8 фич (F-16..F-22, F-48) закоммичены. Phase-gate фаз A/B/C ✅ (интеграционные коммиты `aecc3c6`, `fd615ba`; фаза C — покрытие компонентами F-22/F-48 без отдельного коммита). Verify final этапа 1: PASS (2085+ тестов). Docs-сессия обновляет pipeline-report/roadmap/README/CHANGELOG/MANIFEST без коммитов (по инструкции).
+**Состояние:** этап 2 завершён. Все 13 фич (F-23..F-35) реализованы. 14 модулей в `extensions/fan-super-orchestrator/`. Изменения ядра: `seedNodeToken` в api-gateway + сидинг env в main.ts. 457 тестов + 57 e2e-проверок. Phase-gates A/B/C зелёные (11/11, 26/26, 20/20). Коммиты f01f7d0..3a95da8.
 
 **Следующий шаг:**
-1. Прочитать roadmap `http-hierarchy-2/roadmap.md` (F-23..F-35, 13 фич).
-2. Создать таск-лист по зависимостям — первая фича корневая P0 без зависимостей (по графу roadmap этапа 2).
-3. Реализовать F-23 per-function TDD (Red → Green → verify → commit).
-4. Phase-gate на границах фаз этапа 2 (A/B/C).
-5. Verify final этапа 2 → Smoke → Docs → отчёт.
-6. Далее этап 3 (`depth-and-dashboard-3`, F-36..F-47).
+1. Прочитать roadmap `depth-and-dashboard-3/roadmap.md` (F-36..F-47, 12 фич).
+2. Создать таск-лист по зависимостям — первая фича корневая P0 без зависимостей (по графу roadmap этапа 3).
+3. Реализовать F-36 per-function TDD (Red → Green → verify → commit).
+4. Phase-gate на границах фаз этапа 3 (A/B/C).
+5. Verify final этапа 3 → Smoke → Docs → отчёт.
 
 **Протокол возобновления:**
-1. Прочитать этот файл + roadmap `http-hierarchy-2/roadmap.md`.
-2. Проверить `git status` — рабочая копия чиста (этап 1 полностью закоммичен в `db133a2`).
-3. Создать таск-лист: F-23..F-35 по фазам + 3 phase-gate + verify/smoke/docs, зависимости wired.
+1. Прочитать этот файл + roadmap `depth-and-dashboard-3/roadmap.md`.
+2. Проверить `git status` — рабочая копия чиста.
+3. Создать таск-лист: F-36..F-47 по фазам + 3 phase-gate + verify/smoke/docs, зависимости wired.
 4. Ветка: FAN/feature/new-agents-flow.
 
 **Ключевые решения этапа 1 (для будущих фич):**
@@ -138,6 +161,8 @@
 - **2026-08-13** — 📝 **Docs-сессия:** обновлены `pipeline-report.md` (этап 1 ✅ 8/8, F-48 `db133a2`, phase-gate C, verify final, точка возобновления → этап 2), `mission-validation-1/roadmap.md` (секция «Этап 1 завершён»), `packages/coding-agent/README.md` (протокол тегов обещаний, DECIDE, лестница верификации, персистентность таск-листа), `CHANGELOG.md` (запись этапа 1 в [Unreleased]), `docs/MANIFEST.md`. Коммиты НЕ делаются (по инструкции).
 - **2026-08-13** — 🔌 **Entry-point wiring (gap закрыт).** Расширения fan-mission/scheduler/webhook не имели точек входа (модули были мёртвым кодом без рантайм-запуска). Реализовано по TDD: **E-1** git-adapter.ts (production MissionGit, shell-injection-safe + root-commit parse fix, 17 тестов, `89d4b0b`); **E-2** session-executor.ts (MissionExecutor с DI runAgent, 11 тестов, `5fc3590`); **E-3** fan-webhook/index.ts (wireWebhook + фабрика, 7 интеграционных тестов с реальным сервером, `f94b55f`); **E-4** fan-scheduler/index.ts (wireScheduler + фабрика, 7 тестов, `2d0d436`); **E-5** fan-mission/index.ts (wireMission: MissionLoop с production deps + 7 slash-команд + виджет alt+m, ленивый slashCtx, 18 тестов, `415b3d2`). Попутно: fix phantom-импорта getFileStateManager в виджете (`63e3ee1`), fix flaky порта 9090 через FAN_WEBHOOK_PORT env (`a3c4532`), интеграционный тест загрузки всех 3 расширений (15 тестов, `72882c1`). Итог: fan-mission 538, fan-scheduler 45, fan-webhook 53, build 0.
 - **2026-08-13** — ⚠️ **Deployment-факт:** рантайм ищет расширения в `<cwd>/.fan/extensions/` и `~/.fan/agent/extensions/`, НЕ в `extensions/` репо. Deployed-копии в `~/.fan/agent/extensions/` СТАРЫЕ (orchestrator от 29 июля без F-48; mission/scheduler/webhook отсутствуют). Для реальной работы новых расширений нужен релиз в store + установка (отложено оператором). `index.ts` fallback достаточен для discovery (fan.extensions в package.json не требуется).
+- **2026-08-14** — 🏁 **Этап 2 ЗАВЕРШЁН.** 13/13 фич (F-23..F-35) реализованы. 14 модулей в `extensions/fan-super-orchestrator/`. 457 тестов + 57 e2e-проверок (phase-gates A 11/11, B 26/26, C 20/20). Изменения ядра: `seedNodeToken` в api-gateway + сидинг env в main.ts. Коммиты f01f7d0..3a95da8. Точка возобновления: этап 3 (`depth-and-dashboard-3`, F-36..F-47).
+- **2026-08-14** — 📝 **Docs-сессия этапа 2:** обновлены `http-hierarchy-2/roadmap.md` (все чекбоксы ✅), `fan-super-orchestrator/README.md` (модули, тесты, что дальше), `pipeline-report.md` (этап 2 ✅, прогресс 37/48, точка возобновления → этап 3, бэклог #16–#21). Коммиты НЕ делаются (по инструкции).
 
 ## Бэклог (follow-ups, не блокеры)
 
@@ -155,4 +180,10 @@
 12. **Production runAgent захват ответа** — ✅ ЗАКРЫТО (`f120db5`, fan-mission 0.2.0): новый default-run-agent.ts дожидается agent_end, коррелирует по prompt (последний matching), извлекает последний assistant-текст + Σ usage (totalTokens/cost.total); timeout/settle/error → `<promise>FAILED</promise>` (никогда пустой ответ — иначе ложный COMPLETE). Promise-теги агента теперь попадают в контур в production.
 13. **Виджет ui-заглушка** — ✅ ЗАКРЫТО (`f94669b`, fan-mission 0.1.3): widgetUi.render подключён к ctx.ui.setWidget, handler захватывает ctx. Виджет реально рисуется по F9.
 14. **Auto-tick loop** — ✅ ЗАКРЫТО (`3a32fb4`, fan-scheduler 0.2.0 + fan-mission 0.3.0): мост EventBus — scheduler эмитит `mission_tick` (только при активной миссии), fan-mission подписан и вызывает loop.tick() программно (guards: replay/dedupe/чужой dir/Lock-is-busy). Холостые тики без миссии устранены ранее (`cf45deb`).
-15. **Этап 2 (http-hierarchy-2, F-23..F-35):** process-manager, node-auth, depth-width-guard, message-sanitizer, work-package, node-report, child-node-client, budget-aggregator, budget-coordinator, tree-journal, startup-reconciliation, MVP глубины 2, тесты. Это следующий большой блок для полноценного супер-оркестратора.
+15. **Этап 2 (http-hierarchy-2, F-23..F-35):** ✅ ЗАВЕРШЁН. 14 модулей, 457 тестов + 57 e2e, phase-gates A/B/C зелёные. Коммиты f01f7d0..3a95da8.
+16. **#16 F-23 minor:** PID-файл коллизия при id отличающихся только «/»/«-» санитизацией; health-fetch без таймаута в дефолте; nodes-Map не очищается от stopped.
+17. **#17 F-24/F-31:** TOCTOU seedNodeToken (concurrent seed → P2002); межпроцессная гонка записи mission-budget.json (last-writer-wins).
+18. **#18 F-26:** surrogate-разрыв на границе обрезки; обходы инъекций вариациями пробелов.
+19. **#19 F-29:** event-gap при reconnect (agent_end в окне обрыва → ложный timeout; нужен JSONL-fallback дочернего).
+20. **#20 F-34:** health-check: depth2-integration не вызывает health-checker напрямую (критерий roadmap покрыт e2e, но модуль не интегрирован в контур).
+21. **#21 F-35:** reconnect-восстановление и deadline-timeout против реального mock-узла покрыты только unit-уровнем.
