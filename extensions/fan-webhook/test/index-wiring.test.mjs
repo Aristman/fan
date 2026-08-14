@@ -195,26 +195,22 @@ describe("F-14 / index-wiring: wireWebhook — реальный сервер", (
 });
 
 // ────────────────────────────────────────────────────────────────────────────
-// TC-6: wireWebhook без opts — дефолтный порт 9090 передаётся в startWebhookServer
-// (проверяется через port, возвращённый start()). Если 9090 занят внешним
-// процессом — тест пропускается gracefully.
+// TC-6: wireWebhook без opts — авто-подбор: скан от 9090.
+// Без явного порта (opts/env) → ctx.port = undefined → авто-подбор (9090–9110).
+// Если 9090 свободен → порт 9090; если занят → следующий свободный.
 // ────────────────────────────────────────────────────────────────────────────
 
-describe("F-14 / index-wiring: дефолтный порт 9090", () => {
-	it("wireWebhook(fan) без opts → start() возвращает port === 9090", async () => {
+describe("F-14 / index-wiring: авто-подбор (без явного порта)", () => {
+	it("wireWebhook(fan) без opts → start() возвращает port >= 9090 (авто-подбор)", async () => {
 		const fan = makeMockFan();
-		const wiring = wireWebhook(fan); // без opts → дефолт 9090
+		const wiring = wireWebhook(fan); // без opts → авто-подбор
 		liveWirings.push(wiring);
 
-		let handle;
-		try {
-			handle = await wiring.start();
-		} catch {
-			// Порт 9090 занят внешним процессом — пропускаем gracefully.
-			return;
-		}
+		const handle = await wiring.start();
 
-		expect(handle.port).toBe(9090);
+		// Порт из диапазона авто-подбора (9090–9110).
+		expect(handle.port).toBeGreaterThanOrEqual(9090);
+		expect(handle.port).toBeLessThanOrEqual(9110);
 	});
 });
 
@@ -223,6 +219,70 @@ describe("F-14 / index-wiring: дефолтный порт 9090", () => {
 // Сценарий: factory(fan) → emit session_start (старт на 9090) → POST работает →
 // emit session_shutdown (стоп) → POST не проходит. Если 9090 занят — skip.
 // ────────────────────────────────────────────────────────────────────────────
+
+describe("F-14 / index-wiring: env FAN_WEBHOOK_PORT пробрасывается как явный порт", () => {
+	it("env FAN_WEBHOOK_PORT=\"abc\" → fallback на авто-скан (не NaN)", async () => {
+		process.env.FAN_WEBHOOK_PORT = "abc";
+		try {
+			const fan = makeMockFan();
+			const wiring = wireWebhook(fan);
+			liveWirings.push(wiring);
+
+			const handle = await wiring.start();
+			expect(handle).toBeDefined();
+			// Порт НЕ NaN и в диапазоне авто-подбора (9090–9110)
+			expect(Number.isNaN(handle.port)).toBe(false);
+			expect(handle.port).toBeGreaterThanOrEqual(9090);
+			expect(handle.port).toBeLessThanOrEqual(9110);
+		} finally {
+			delete process.env.FAN_WEBHOOK_PORT;
+		}
+	});
+
+	it("env FAN_WEBHOOK_PORT=\"-5\" → fallback на авто-скан (не NaN)", async () => {
+		process.env.FAN_WEBHOOK_PORT = "-5";
+		try {
+			const fan = makeMockFan();
+			const wiring = wireWebhook(fan);
+			liveWirings.push(wiring);
+
+			const handle = await wiring.start();
+			expect(handle).toBeDefined();
+			expect(Number.isNaN(handle.port)).toBe(false);
+			expect(handle.port).toBeGreaterThanOrEqual(9090);
+			expect(handle.port).toBeLessThanOrEqual(9110);
+		} finally {
+			delete process.env.FAN_WEBHOOK_PORT;
+		}
+	});
+
+	it("env FAN_WEBHOOK_PORT=0 → port проброшен как 0 (ephemeral)", async () => {
+		process.env.FAN_WEBHOOK_PORT = "0";
+		try {
+			const fan = makeMockFan();
+			const wiring = wireWebhook(fan);
+			liveWirings.push(wiring);
+
+			const handle = await wiring.start();
+			// port=0 → ephemeral (реальный порт > 0)
+			expect(handle.port).toBeGreaterThan(0);
+		} finally {
+			delete process.env.FAN_WEBHOOK_PORT;
+		}
+	});
+
+	it("без env и без opts → port undefined → авто-подбор (скан 9090+)", async () => {
+		delete process.env.FAN_WEBHOOK_PORT;
+		const fan = makeMockFan();
+		const wiring = wireWebhook(fan);
+		liveWirings.push(wiring);
+
+		const handle = await wiring.start();
+		// Авто-подбор: порт из диапазона 9090–9110
+		expect(handle.port).toBeGreaterThanOrEqual(9090);
+		expect(handle.port).toBeLessThanOrEqual(9110);
+	});
+});
 
 describe("F-14 / index-wiring: lifecycle через хуки factory", () => {
 	it("session_shutdown хук вызывает stop — сервер останавливается", async () => {

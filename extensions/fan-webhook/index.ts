@@ -11,14 +11,19 @@
 //     start() → startWebhookServer (actions.sendMessage → fan.sendUserMessage
 //     с deliverAs), возвращает handle { port } (фактически занятый порт).
 //     stop() идемпотентен, безопасен без start().
+//
+// Авто-подбор порта:
+//   opts.port задан → передаётся в startWebhookServer как ctx.port (число).
+//   env FAN_WEBHOOK_PORT задан → Number(env) передаётся как ctx.port.
+//   Ни opts, ни env → ctx.port = undefined → авто-подбор (скан 9090–9110).
 
 import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
 
 import type { WebhookServerHandle } from "./types.js";
-import { DEFAULT_WEBHOOK_PORT, startWebhookServer } from "./webhook-server.js";
+import { startWebhookServer } from "./webhook-server.js";
 
 export interface WebhookWireOptions {
-	/** Порт для bind. Дефолт 9090; 0 → ephemeral (OS назначает сама). */
+	/** Порт для bind. Число → явный порт (EADDRINUSE → reject). Не задан → авто-подбор (скан 9090–9110). */
 	port?: number;
 }
 
@@ -32,6 +37,16 @@ export interface WebhookWiring {
 export function wireWebhook(fan: ExtensionAPI, opts?: WebhookWireOptions): WebhookWiring {
 	let handle: WebhookServerHandle | null = null;
 
+	// Определяем, был ли порт задан явно (opts или env).
+	// Валидация env: не-число / NaN / вне диапазона 0–65535 → fallback на авто-скан.
+	const envPortRaw = process.env.FAN_WEBHOOK_PORT;
+	const envPort = envPortRaw !== undefined && envPortRaw !== "" ? Number(envPortRaw) : undefined;
+	const envPortValid = envPort !== undefined && Number.isFinite(envPort) && envPort >= 0 && envPort <= 65535;
+	if (envPortRaw && !envPortValid) {
+		console.warn(`[fan-webhook] invalid FAN_WEBHOOK_PORT "${envPortRaw}", falling back to auto-scan`);
+	}
+	const explicitPort = opts?.port ?? (envPortValid ? envPort : undefined);
+
 	const start = async (): Promise<WebhookServerHandle | null> => {
 		if (handle) {
 			return handle;
@@ -40,8 +55,8 @@ export function wireWebhook(fan: ExtensionAPI, opts?: WebhookWireOptions): Webho
 			actions: {
 				sendMessage: (text, behavior) => fan.sendUserMessage(text, { deliverAs: behavior }),
 			},
-			port:
-				opts?.port ?? (process.env.FAN_WEBHOOK_PORT ? Number(process.env.FAN_WEBHOOK_PORT) : DEFAULT_WEBHOOK_PORT),
+			// explicitPort === undefined → авто-подбор; число → одна попытка.
+			port: explicitPort,
 		});
 		return handle;
 	};
@@ -65,6 +80,8 @@ export default function webhookExtension(fan: ExtensionAPI): WebhookWiring {
 			await wiring.start();
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);
+			// Hint про FAN_WEBHOOK_PORT показываем только при явно заданном порте
+			// (авто-подбор сам решает проблему EADDRINUSE сканом диапазона).
 			const hint = /EADDRINUSE|in use/i.test(msg)
 				? " Port занят — освободите его или задайте другой через FAN_WEBHOOK_PORT=<порт>."
 				: "";

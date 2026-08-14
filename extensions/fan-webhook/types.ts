@@ -14,8 +14,17 @@ export interface WebhookActions {
 /** Контекст для запуска webhook-сервера. */
 export interface WebhookCtx {
 	actions: WebhookActions;
-	/** Порт для bind. Не задан → дефолт 9090; 0 → ephemeral (OS назначает сама). */
+	/** Порт для bind.
+	 *  - Число (включая 0) → ровно одна попытка (EADDRINUSE → reject).
+	 *  - undefined → авто-подбор: скан DEFAULT_WEBHOOK_PORT .. +_scanMax.
+	 */
 	port?: number;
+
+	// ── Внутренние параметры для тестов (не публичный API) ──────────────
+	/** Начальный порт диапазона авто-подбора (дефолт DEFAULT_WEBHOOK_PORT). */
+	_scanStart?: number;
+	/** Максимальное количество попыток в диапазоне (дефолт 21). */
+	_scanMax?: number;
 }
 
 /** Handle запущенного webhook-сервера. */

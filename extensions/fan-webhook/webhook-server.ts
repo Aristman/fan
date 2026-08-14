@@ -10,6 +10,13 @@
 //     500 — actions.sendMessage throws/rejects.
 //   GET /health → 200 { status: "ok" }.
 //
+// Авто-подбор порта (множество экземпляров fan):
+//   ctx.port === undefined → скан: _scanStart (дефолт 9090), +1, +2, ... до
+//     +_scanMax-1 (дефолт 21 попытка, 9090–9110). EADDRINUSE → следующая попытка;
+//     все заняты → reject. Прочие ошибки bind → reject сразу.
+//   ctx.port задан (число, включая 0) → ровно одна попытка bind (как раньше).
+//   handle.port всегда = фактический порт (server.address().port).
+//
 // Жизненный цикл: onSessionStart → startWebhookServer(ctx) → порт слушается;
 // onSessionShutdown → handle.stop() → порт освобождён. stop() идемпотентен.
 
@@ -30,6 +37,9 @@ export type {
 } from "./types.js";
 
 export const DEFAULT_WEBHOOK_PORT = 9090;
+
+/** Максимальное количество попыток авто-подбора (9090..9110 = 21 порт). */
+const DEFAULT_SCAN_MAX = 21;
 
 // ─── Hono-приложение ─────────────────────────────────────────────────────────
 
@@ -84,44 +94,48 @@ function createWebhookApp(actions: WebhookActions): Hono {
 	return app;
 }
 
-// ─── Запуск/остановка сервера ────────────────────────────────────────────────
+// ─── Внутренний хелпер: bind сервера на конкретном порту ─────────────────────
+
+interface BindResult {
+	server: Server;
+	port: number;
+}
 
 /**
- * Запуск webhook-сервера на указанном порту.
- *
- * - port не задан → дефолт 9090; port=0 → ephemeral (handle.port вернёт реальный).
- * - Порт занят → Promise reject (EADDRINUSE).
- * - Возвращаемый stop() идемпотентен и освобождает порт.
+ * Пытается bind-ить Hono-сервер на указанный порт.
+ * - Успех → resolve { server, port (фактический из server.address()) }.
+ * - Ошибка → reject (EADDRINUSE и прочие — без различия, решение принимает
+ *   вызывающий код).
  */
-export async function startWebhookServer(ctx: WebhookCtx): Promise<WebhookServerHandle> {
-	const port = ctx.port ?? DEFAULT_WEBHOOK_PORT;
-	const app = createWebhookApp(ctx.actions);
+function bindServer(app: Hono, port: number): Promise<BindResult> {
+	return new Promise<BindResult>((resolve, reject) => {
+		const server: Server = serve({ fetch: app.fetch, port, hostname: "127.0.0.1" });
 
-	const server: Server = serve({ fetch: app.fetch, port, hostname: "127.0.0.1" });
-
-	// Ждём реального bind: при конфликте порта Node эмитит 'error' (EADDRINUSE).
-	await new Promise<void>((resolve, reject) => {
 		const cleanup = () => {
 			server.removeListener("listening", onListening);
 			server.removeListener("error", onError);
 		};
 		const onListening = () => {
 			cleanup();
-			resolve();
+			const address = server.address();
+			const actualPort = typeof address === "object" && address !== null ? address.port : port;
+			resolve({ server, port: actualPort });
 		};
 		const onError = (err: Error) => {
 			cleanup();
+			// server.close() не нужен — bind не удался, сервер не слушает.
 			reject(err);
 		};
 		server.on("listening", onListening);
 		server.on("error", onError);
 	});
+}
 
-	const address = server.address();
-	const actualPort = typeof address === "object" && address !== null ? address.port : port;
+// ─── Stop-хелпер ──────────────────────────────────────────────────────────────
 
+function makeStop(server: Server): () => Promise<void> {
 	let stopped = false;
-	const stop = (): Promise<void> => {
+	return (): Promise<void> => {
 		if (stopped) {
 			return Promise.resolve();
 		}
@@ -139,6 +153,64 @@ export async function startWebhookServer(ctx: WebhookCtx): Promise<WebhookServer
 			server.closeIdleConnections?.();
 		});
 	};
+}
 
-	return { stop, port: actualPort };
+// ─── Запуск/остановка сервера ────────────────────────────────────────────────
+
+/**
+ * Запуск webhook-сервера.
+ *
+ * - ctx.port задан (число, включая 0) → одна попытка bind; EADDRINUSE → reject.
+ * - ctx.port === undefined → авто-подбор: скан от _scanStart (дефолт 9090)
+ *   до _scanStart + _scanMax - 1 (дефолт 21 попытка). EADDRINUSE → следующий;
+ *   все заняты → reject с понятным сообщением. Прочие ошибки → reject сразу.
+ *   Если выбран порт ≠ _scanStart → console.log.
+ * - handle.port = фактический порт (server.address().port).
+ * - stop() идемпотентен и освобождает порт.
+ */
+export async function startWebhookServer(ctx: WebhookCtx): Promise<WebhookServerHandle> {
+	const app = createWebhookApp(ctx.actions);
+
+	// ── Explicit port (число, включая 0) — одна попытка ──────────────────
+	if (ctx.port !== undefined) {
+		const { server, port } = await bindServer(app, ctx.port);
+		return { stop: makeStop(server), port };
+	}
+
+	// ── Авто-подбор (port === undefined) — скан диапазона ────────────────
+	const scanStart = ctx._scanStart ?? DEFAULT_WEBHOOK_PORT;
+	const scanMax = ctx._scanMax ?? DEFAULT_SCAN_MAX;
+
+	let lastError: Error | null = null;
+
+	for (let i = 0; i < scanMax; i++) {
+		const candidate = scanStart + i;
+		try {
+			const { server, port } = await bindServer(app, candidate);
+			if (port !== scanStart) {
+				console.log(`[fan-webhook] port ${scanStart} busy, listening on ${port}`);
+			}
+			return { stop: makeStop(server), port };
+		} catch (err) {
+			const isAddrInUse = err instanceof Error && (err as NodeJS.ErrnoException).code === "EADDRINUSE";
+			if (!isAddrInUse) {
+				// Прочие ошибки (EACCES, etc.) — reject сразу.
+				throw err;
+			}
+			lastError = err as Error;
+			// EADDRINUSE → пробуем следующий порт.
+		}
+	}
+
+	// Все порты диапазона заняты.
+	const rangeEnd = scanStart + scanMax - 1;
+	const msg =
+		`[fan-webhook] all ports ${scanStart}–${rangeEnd} are in use. ` +
+		"Free a port or set an explicit one via FAN_WEBHOOK_PORT=<port>.";
+	const err = new Error(msg);
+	(err as NodeJS.ErrnoException).code = "EADDRINUSE";
+	if (lastError) {
+		err.cause = lastError;
+	}
+	throw err;
 }
