@@ -27,6 +27,21 @@ export async function generateToken(name: string): Promise<ClientTokenData> {
 	return mapToClientToken(record);
 }
 
+/** Seed a token into the ClientToken store (idempotent).
+ *  Used by super-orchestrator child nodes to register FAN_NODE_TOKEN
+ *  from the environment before the server starts. Returns the existing
+ *  record if the token is already present — no duplicate is created. */
+export async function seedNodeToken(token: string, name?: string): Promise<ClientTokenData> {
+	const existing = await getPrismaClient().clientToken.findUnique({ where: { token } });
+	if (existing) {
+		return mapToClientToken(existing);
+	}
+	const record = await getPrismaClient().clientToken.create({
+		data: { name: name ?? "fan-node", token },
+	});
+	return mapToClientToken(record);
+}
+
 /** Validate a token string, returns the token data or null */
 export async function validateToken(token: string): Promise<ClientTokenData | null> {
 	try {

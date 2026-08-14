@@ -23,6 +23,7 @@ import { spawn as cpSpawn } from "node:child_process";
 import { existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { HealthChecker, type HealthFetchFn } from "./health-checker.js";
+import { buildSpawnEnv } from "./node-auth.js";
 import { PortPool } from "./port-pool.js";
 
 export type { HealthFetchFn } from "./health-checker.js";
@@ -31,6 +32,10 @@ export interface SpawnOptions {
 	id: string;
 	args?: string[];
 	env?: Record<string, string>;
+	/** Токен узла (FAN_NODE_TOKEN); если задан — сидится при старте дочернего процесса. */
+	token?: string;
+	/** Имя узла (FAN_NODE_NAME); передаётся в seedNodeToken для уникальности в глобальной БД. */
+	nodeName?: string;
 }
 
 export interface SpawnResult {
@@ -54,6 +59,14 @@ export interface SpawnCommandOptions {
 
 export type SpawnFn = (command: string, args: string[], options: SpawnCommandOptions) => ChildLike;
 
+/** Информация, передаваемая в revokeHook перед остановкой узла. */
+export interface RevokeHookInfo {
+	id: string;
+	port: number;
+	token?: string;
+	nodeName?: string;
+}
+
 export interface ProcessManagerOptions {
 	portsFile: string;
 	pidDir: string;
@@ -73,6 +86,8 @@ export interface ProcessManagerOptions {
 	killGraceMs?: number;
 	/** Эскалация: узел нездоров (после порога провалов). */
 	onUnhealthy?: (id: string, reason: string) => void;
+	/** Хук отзыва токена узла; вызывается ПЕРЕД SIGTERM. Ошибка хука не блокирует kill. */
+	revokeHook?: (info: RevokeHookInfo) => Promise<void> | void;
 }
 
 export type NodeStatus = "running" | "unhealthy" | "stopped";
@@ -92,6 +107,8 @@ interface ManagedNode {
 	port: number;
 	extraArgs: string[];
 	extraEnv: Record<string, string>;
+	token?: string;
+	nodeName?: string;
 	child: ChildLike;
 	status: NodeStatus;
 	exitPromise: Promise<void>;
@@ -151,12 +168,27 @@ export function createProcessManager(options: ProcessManagerOptions): ProcessMan
 
 	// ─── порождение процесса ────────────────────────────────────────────────
 
-	function launch(port: number, extraArgs: string[], extraEnv: Record<string, string>): ChildLike {
+	function launch(
+		port: number,
+		extraArgs: string[],
+		extraEnv: Record<string, string>,
+		token?: string,
+		nodeName?: string,
+	): ChildLike {
 		const args = ["server", "start", "--port", String(port), "--host", "127.0.0.1", ...extraArgs];
+		// buildSpawnEnv формирует базу (FAN_NODE_TOKEN + FAN_NO_AUTH=0),
+		// extraEnv мержится поверх, FAN_NO_AUTH="0" пинится последним —
+		// вызывающий не может включить no-auth на дочернем узле (F-3).
+		const authBase = token ? buildSpawnEnv(token, extraEnv) : extraEnv;
 		const child = spawnFn("fan", args, {
 			detached: true,
 			stdio: "ignore",
-			env: { ...process.env, FAN_NO_AUTH: "0", ...extraEnv },
+			env: {
+				...process.env,
+				...authBase,
+				FAN_NO_AUTH: "0",
+				...(nodeName !== undefined ? { FAN_NODE_NAME: nodeName } : {}),
+			},
 		});
 		// FakeChild в тестах unref() не имеет — вызываем только при наличии.
 		if (typeof child.unref === "function") {
@@ -179,12 +211,14 @@ export function createProcessManager(options: ProcessManagerOptions): ProcessMan
 		const port = portPool.allocate(opts.id); // исчерпание пула → явная ошибка
 		const extraArgs = opts.args ?? [];
 		const extraEnv = opts.env ?? {};
-		const child = launch(port, extraArgs, extraEnv);
+		const child = launch(port, extraArgs, extraEnv, opts.token, opts.nodeName);
 		const node: ManagedNode = {
 			id: opts.id,
 			port,
 			extraArgs,
 			extraEnv,
+			token: opts.token,
+			nodeName: opts.nodeName,
 			child,
 			status: "running",
 			exitPromise: wireExit(child),
@@ -219,6 +253,20 @@ export function createProcessManager(options: ProcessManagerOptions): ProcessMan
 	}
 
 	async function killNode(node: ManagedNode): Promise<void> {
+		// Revoke-hook: отзыв токена ПЕРЕД SIGTERM (F-2).
+		// Ошибка хука не блокирует остановку — SIGTERM отправляется в любом случае.
+		if (node.token && options.revokeHook) {
+			try {
+				await options.revokeHook({
+					id: node.id,
+					port: node.port,
+					token: node.token,
+					nodeName: node.nodeName,
+				});
+			} catch (err) {
+				console.warn(`[super-orchestrator] revokeHook failed for "${node.id}":`, err);
+			}
+		}
 		// SIGTERM отправляется синхронно, до первого await.
 		node.child.kill("SIGTERM");
 		let graceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -269,7 +317,7 @@ export function createProcessManager(options: ProcessManagerOptions): ProcessMan
 		// Рестарт на ТОМ ЖЕ id и порту: portsFile не трогаем (порт уже
 		// заблокирован за этим id), PID-файл перезаписываем новым PID.
 		// Статус остаётся "unhealthy" до первого успешного health-check.
-		const child = launch(node.port, node.extraArgs, node.extraEnv);
+		const child = launch(node.port, node.extraArgs, node.extraEnv, node.token, node.nodeName);
 		node.child = child;
 		node.exitPromise = wireExit(child);
 		node.killPromise = null;

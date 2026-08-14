@@ -1330,6 +1330,15 @@ export async function main(args: string[]) {
 		bindPromise.catch((err) => {
 			console.error("[fan] Extension binding failed (server continues):", err);
 		});
+		// F-24: дочерний узел сверх-оркестратора — сидим FAN_NODE_TOKEN в ClientToken store
+		if (process.env.FAN_NODE_TOKEN) {
+			try {
+				const { seedNodeToken } = await import("@fan/api-gateway");
+				await seedNodeToken(process.env.FAN_NODE_TOKEN, process.env.FAN_NODE_NAME);
+			} catch (err) {
+				console.error("[fan] Failed to seed FAN_NODE_TOKEN:", err);
+			}
+		}
 		const { startServer } = await import("@fan/api-gateway");
 		const { port, stop } = await startServer(modelManager, adapter, {
 			port: parsed.port || 3456,

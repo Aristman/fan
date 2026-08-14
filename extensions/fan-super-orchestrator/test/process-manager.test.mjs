@@ -466,3 +466,122 @@ describe("TC-F23-7: double-spawn активного id защищён", () => {
 		expect(readPortsFile(portsFile)).toEqual({ "L1/node-1": 7001 });
 	});
 });
+
+// ─── TC-F23-8: F-24 bug-fix verification ────────────────────────────────────
+
+describe("TC-F23-8: F-24 bug-fix — token/nodeName env, FAN_NO_AUTH pin, revokeHook", () => {
+	it("spawn с token+nodeName → env содержит FAN_NODE_TOKEN, FAN_NODE_NAME, FAN_NO_AUTH=0", async () => {
+		const { portsFile, pidDir } = makeTmp();
+		const { spawn, children } = makeSpawnHarness();
+		const pm = makePM({ portsFile, pidDir, spawn, healthFetch: makeHealthyFetch() });
+
+		await pm.spawn({
+			id: "L1/node-1",
+			token: "abc123",
+			nodeName: "fan-node:L1/node-1",
+		});
+
+		const env = children[0].opts.env;
+		expect(env.FAN_NODE_TOKEN).toBe("abc123");
+		expect(env.FAN_NODE_NAME).toBe("fan-node:L1/node-1");
+		expect(String(env.FAN_NO_AUTH)).toBe("0");
+	});
+
+	it("вызывающий передал FAN_NO_AUTH=1 → в spawn всё равно FAN_NO_AUTH=0 (пин работает)", async () => {
+		const { portsFile, pidDir } = makeTmp();
+		const { spawn, children } = makeSpawnHarness();
+		const pm = makePM({ portsFile, pidDir, spawn, healthFetch: makeHealthyFetch() });
+
+		await pm.spawn({
+			id: "L1/node-1",
+			token: "abc123",
+			env: { FAN_NO_AUTH: "1" },
+		});
+
+		expect(String(children[0].opts.env.FAN_NO_AUTH)).toBe("0");
+	});
+
+	it("kill узла с token → revokeHook вызван ДО SIGTERM; ошибка hook не блокирует kill", async () => {
+		const { portsFile, pidDir } = makeTmp();
+		const { spawn, children } = makeSpawnHarness();
+
+		// Массив вызовов для проверки порядка: revoke ДО SIGTERM
+		const calls = [];
+		const revokeHook = vi.fn(async (info) => {
+			calls.push({ type: "revoke", ...info });
+		});
+
+		const pm = makePM({
+			portsFile,
+			pidDir,
+			spawn,
+			healthFetch: makeHealthyFetch(),
+			revokeHook,
+		});
+
+		await pm.spawn({
+			id: "L1/node-1",
+			token: "abc123",
+			nodeName: "fan-node:L1/node-1",
+		});
+		const child = children[0];
+
+		const killing = pm.kill("L1/node-1");
+		await Promise.resolve(); // микротаски: revokeHook (sync-resolve) + SIGTERM
+
+		// revokeHook вызван ДО SIGTERM
+		expect(revokeHook).toHaveBeenCalledTimes(1);
+		expect(revokeHook).toHaveBeenCalledWith({
+			id: "L1/node-1",
+			port: 7001,
+			token: "abc123",
+			nodeName: "fan-node:L1/node-1",
+		});
+
+		// Порядок: revoke → SIGTERM
+		calls.push({ type: "sigterm" });
+		expect(calls[0].type).toBe("revoke");
+		expect(calls[1].type).toBe("sigterm");
+
+		child.emitExit(0, "SIGTERM");
+		await killing;
+
+		expect(pm.status("L1/node-1")).toBe("stopped");
+	});
+
+	it("ошибка в revokeHook → kill всё равно завершается успешно", async () => {
+		const { portsFile, pidDir } = makeTmp();
+		const { spawn, children } = makeSpawnHarness();
+
+		const revokeHook = vi.fn(async () => {
+			throw new Error("revoke failed");
+		});
+
+		const pm = makePM({
+			portsFile,
+			pidDir,
+			spawn,
+			healthFetch: makeHealthyFetch(),
+			revokeHook,
+		});
+
+		await pm.spawn({
+			id: "L1/node-1",
+			token: "abc123",
+			nodeName: "fan-node:L1/node-1",
+		});
+		const child = children[0];
+
+		const killing = pm.kill("L1/node-1");
+		await Promise.resolve();
+
+		// revokeHook вызван, но ошибка не заблокировала kill
+		expect(revokeHook).toHaveBeenCalledTimes(1);
+		expect(child.kill).toHaveBeenCalledWith("SIGTERM");
+
+		child.emitExit(0, "SIGTERM");
+		await killing;
+
+		expect(pm.status("L1/node-1")).toBe("stopped");
+	});
+});
