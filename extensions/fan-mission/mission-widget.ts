@@ -150,7 +150,7 @@ async function renderWidget(args: MissionWidgetArgs, opts: RenderOptions): Promi
 }
 
 /**
- * Регистрирует виджет миссии: подписывается на `mission_iteration_end` и шорткат `alt+m`.
+ * Регистрирует виджет миссии: подписывается на `mission_iteration_end` и шорткат `alt+shift+m`.
  */
 export function registerMissionWidget(args: MissionWidgetArgs): void {
 	// По умолчанию виджет виден при активной миссии (согласно спеке)
@@ -185,7 +185,7 @@ export function registerMissionWidget(args: MissionWidgetArgs): void {
 	};
 
 	try {
-		args.registerShortcut("alt+m", {
+		args.registerShortcut("alt+shift+m", {
 			description: "Toggle mission status widget (виджет миссии)",
 			handler: shortcutHandler,
 		});

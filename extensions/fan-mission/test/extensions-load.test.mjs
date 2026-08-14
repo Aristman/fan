@@ -10,7 +10,7 @@
 //   • хуки session_start/session_shutdown регистрируются всеми тремя
 //     (множественная подписка на одно событие допустима);
 //   • команды /mission:* уникальны (нет дублей имён);
-//   • shortcut alt+m зарегистрирован;
+//   • shortcut alt+shift+m зарегистрирован;
 //   • полный lifecycle (session_start → session_shutdown) не падает и чистит
 //     ресурсы (scheduler interval, webhook-сервер, mission loop).
 //
@@ -256,14 +256,14 @@ describe("F-LOAD / TC-4: команды /mission:* — ≥7, без дублей
 	});
 });
 
-// ─── TC-5: shortcut alt+m (виджет миссии) ─────────────────────────────────────
+// ─── TC-5: shortcut alt+shift+m (виджет миссии) ─────────────────────────────────────
 
-describe("F-LOAD / TC-5: shortcut alt+m", () => {
-	it("TC-5: зарегистрирован shortcut 'alt+m' с handler и description", () => {
-		expect(fan.registerShortcut).toHaveBeenCalledWith("alt+m", expect.any(Object));
-		expect(fan._shortcuts.has("alt+m")).toBe(true);
+describe("F-LOAD / TC-5: shortcut alt+shift+m", () => {
+	it("TC-5: зарегистрирован shortcut 'alt+shift+m' с handler и description", () => {
+		expect(fan.registerShortcut).toHaveBeenCalledWith("alt+shift+m", expect.any(Object));
+		expect(fan._shortcuts.has("alt+shift+m")).toBe(true);
 
-		const def = fan._shortcuts.get("alt+m");
+		const def = fan._shortcuts.get("alt+shift+m");
 		expect(typeof def.handler).toBe("function");
 		expect(def.description).toBeTruthy();
 		expect(def.description).toMatch(/toggle|widget|виджет|миссия|status/i);

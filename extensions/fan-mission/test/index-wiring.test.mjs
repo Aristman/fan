@@ -34,7 +34,7 @@
 //       uiEvents: { on(name, handler): void; off(name, handler): void };
 //       getStatusSnapshot?: () => Promise<MissionStatusSnapshot>;
 //     }
-//   • Регистрирует шорткат "alt+m" (description: "Toggle mission status widget (виджет миссии)")
+//   • Регистрирует шорткат "alt+shift+m" (description: "Toggle mission status widget (виджет миссии)")
 //
 // new MissionLoop(opts): MissionLoop
 //   (extensions/fan-mission/mission-loop.ts)
@@ -291,18 +291,18 @@ describe("F-MISSION-INDEX / TC-1: фабрика (default export) — регис
 });
 
 // ────────────────────────────────────────────────────────────────────────────
-// TC-2: factory(fan) регистрирует виджет-shortcut "alt+m" через fan.registerShortcut.
+// TC-2: factory(fan) регистрирует виджет-shortcut "alt+shift+m" через fan.registerShortcut.
 // ────────────────────────────────────────────────────────────────────────────
 
 describe("F-MISSION-INDEX / TC-2: фабрика регистрирует виджет-shortcut", () => {
-	it("TC-2: factory регистрирует shortcut 'alt+m' через fan.registerShortcut", () => {
+	it("TC-2: factory регистрирует shortcut 'alt+shift+m' через fan.registerShortcut", () => {
 		const fan = makeMockFan();
 		factory(fan);
 
-		expect(fan.registerShortcut).toHaveBeenCalledWith("alt+m", expect.any(Object));
-		expect(fan._shortcuts.has("alt+m")).toBe(true);
+		expect(fan.registerShortcut).toHaveBeenCalledWith("alt+shift+m", expect.any(Object));
+		expect(fan._shortcuts.has("alt+shift+m")).toBe(true);
 
-		const def = fan._shortcuts.get("alt+m");
+		const def = fan._shortcuts.get("alt+shift+m");
 		expect(typeof def.handler).toBe("function");
 		expect(def.description).toBeTruthy();
 		expect(def.description).toMatch(/toggle|widget|виджет|миссия|status/i);

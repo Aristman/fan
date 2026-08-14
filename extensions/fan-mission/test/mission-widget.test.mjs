@@ -26,14 +26,14 @@
 //     }
 //
 // Поведение (TC-F12-1..3 + критерии приёмки):
-//   - При активной миссии + Alt+M → render(lines) содержит
+//   - При активной миссии + Alt+Shift+M → render(lines) содержит
 //       «Статус: ● активна │ Итерация: N │ Расход: $X.XX / $Y.YY»
 //     (поля могут быть в одной строке или на нескольких —
 //      контракт покрывает оба варианта через contains-ассерты).
 //   - При отсутствии активной миссии → render([]) (auto-hide).
 //   - Событие `mission_iteration_end` → render обновляется (счётчик итерации++,
 //     расход обновляется).
-//   - Alt+M переключает видимость; toggle-состояние персистится внутри модуля.
+//   - Alt+Shift+M переключает видимость; toggle-состояние персистится внутри модуля.
 //
 // Этап 0: skip реальный fan.registerShortcut — только DI-контракт (как slash-commands).
 
@@ -237,7 +237,7 @@ describe("F-12 / TC-F12-module: registerMissionWidget API contract", () => {
 });
 
 // ────────────────────────────────────────────────────────────────────────────
-// TC-F12-1: виджет отображается при активной миссии (Alt+M toggles)
+// TC-F12-1: виджет отображается при активной миссии (Alt+Shift+M toggles)
 // ────────────────────────────────────────────────────────────────────────────
 
 describe("F-12 / TC-F12-1: виджет отображается при активной миссии", () => {
@@ -251,18 +251,18 @@ describe("F-12 / TC-F12-1: виджет отображается при акти
 		ctx = widgetCtx;
 	});
 
-	it("TC-F12-1: зарегистрирован шорткат 'alt+m'", () => {
-		expect(ctx._registerShortcut.shortcuts.has("alt+m")).toBe(true);
+	it("TC-F12-1: зарегистрирован шорткат 'alt+shift+m'", () => {
+		expect(ctx._registerShortcut.shortcuts.has("alt+shift+m")).toBe(true);
 	});
 
-	it("TC-F12-1: описание шортката 'alt+m' содержит 'toggle' / 'widget' / 'миссия'", () => {
-		const def = ctx._registerShortcut.shortcuts.get("alt+m");
+	it("TC-F12-1: описание шортката 'alt+shift+m' содержит 'toggle' / 'widget' / 'миссия'", () => {
+		const def = ctx._registerShortcut.shortcuts.get("alt+shift+m");
 		expect(def.description).toBeTruthy();
 		expect(def.description).toMatch(/toggle|widget|виджет|миссия|status/i);
 	});
 
-	it("TC-F12-1: handler шортката 'alt+m' — функция", () => {
-		const def = ctx._registerShortcut.shortcuts.get("alt+m");
+	it("TC-F12-1: handler шортката 'alt+shift+m' — функция", () => {
+		const def = ctx._registerShortcut.shortcuts.get("alt+shift+m");
 		expect(typeof def.handler).toBe("function");
 	});
 
@@ -271,14 +271,14 @@ describe("F-12 / TC-F12-1: виджет отображается при акти
 		expect(subs.length).toBeGreaterThanOrEqual(1);
 	});
 
-	it("TC-F12-1: при активной миссии render вызван хотя бы один раз (после Alt+M)", async () => {
-		const handler = ctx._registerShortcut.shortcuts.get("alt+m").handler;
-		await handler(ctx.ui); // вызов Alt+M handler с UI
+	it("TC-F12-1: при активной миссии render вызван хотя бы один раз (после Alt+Shift+M)", async () => {
+		const handler = ctx._registerShortcut.shortcuts.get("alt+shift+m").handler;
+		await handler(ctx.ui); // вызов Alt+Shift+M handler с UI
 		expect(ctx._ui.calls.render.length).toBeGreaterThan(0);
 	});
 
 	it("TC-F12-1: render содержит 'Статус:' с активной иконкой '●'", async () => {
-		const handler = ctx._registerShortcut.shortcuts.get("alt+m").handler;
+		const handler = ctx._registerShortcut.shortcuts.get("alt+shift+m").handler;
 		await handler(ctx.ui); // 1st: render(empty), toggle→visible
 		await handler(ctx.ui); // 2nd: render(data), toggle→hidden
 		const text = flatten(ctx._ui.calls.render.at(-1));
@@ -287,7 +287,7 @@ describe("F-12 / TC-F12-1: виджет отображается при акти
 	});
 
 	it("TC-F12-1: render содержит 'Итерация: 5' (5-я итерация из snapshot)", async () => {
-		const handler = ctx._registerShortcut.shortcuts.get("alt+m").handler;
+		const handler = ctx._registerShortcut.shortcuts.get("alt+shift+m").handler;
 		await handler(ctx.ui); // 1st: render(empty), toggle→visible
 		await handler(ctx.ui); // 2nd: render(data), toggle→hidden
 		const text = flatten(ctx._ui.calls.render.at(-1));
@@ -295,7 +295,7 @@ describe("F-12 / TC-F12-1: виджет отображается при акти
 	});
 
 	it("TC-F12-1: render содержит 'Расход: $3.45 / $10.00'", async () => {
-		const handler = ctx._registerShortcut.shortcuts.get("alt+m").handler;
+		const handler = ctx._registerShortcut.shortcuts.get("alt+shift+m").handler;
 		await handler(ctx.ui); // 1st: render(empty), toggle→visible
 		await handler(ctx.ui); // 2nd: render(data), toggle→hidden
 		const text = flatten(ctx._ui.calls.render.at(-1));
@@ -307,7 +307,7 @@ describe("F-12 / TC-F12-1: виджет отображается при акти
 	});
 
 	it("TC-F12-1: render содержит объединённую compact-строку со всеми полями (одна из строк)", async () => {
-		const handler = ctx._registerShortcut.shortcuts.get("alt+m").handler;
+		const handler = ctx._registerShortcut.shortcuts.get("alt+shift+m").handler;
 		await handler(ctx.ui); // 1st: render(empty), toggle→visible
 		await handler(ctx.ui); // 2nd: render(data), toggle→hidden
 		const lines = ctx._ui.calls.render.at(-1);
@@ -346,18 +346,18 @@ describe("F-12 / TC-F12-2: виджет авто-скрыт при отсутс�
 		ctx = widgetCtx;
 	}
 
-	it("TC-F12-2: Alt+M при статус 'completed' → render([]) (auto-hide)", async () => {
+	it("TC-F12-2: Alt+Shift+M при статус 'completed' → render([]) (auto-hide)", async () => {
 		setupNoActive({ getStatusSnapshot: vi.fn(async () => makeSnapshot({ status: "completed" })) });
-		const handler = ctx._registerShortcut.shortcuts.get("alt+m").handler;
+		const handler = ctx._registerShortcut.shortcuts.get("alt+shift+m").handler;
 		await handler(ctx.ui);
 		expect(ctx._ui.calls.render.length).toBeGreaterThan(0);
 		const last = ctx._ui.calls.render.at(-1);
 		expect(last).toEqual([]);
 	});
 
-	it("TC-F12-2: Alt+M при статус 'aborted' → render([]) (auto-hide)", async () => {
+	it("TC-F12-2: Alt+Shift+M при статус 'aborted' → render([]) (auto-hide)", async () => {
 		setupNoActive({ getStatusSnapshot: vi.fn(async () => makeSnapshot({ status: "aborted" })) });
-		const handler = ctx._registerShortcut.shortcuts.get("alt+m").handler;
+		const handler = ctx._registerShortcut.shortcuts.get("alt+shift+m").handler;
 		await handler(ctx.ui);
 		const last = ctx._ui.calls.render.at(-1);
 		expect(last).toEqual([]);
@@ -365,7 +365,7 @@ describe("F-12 / TC-F12-2: виджет авто-скрыт при отсутс�
 
 	it("TC-F12-2: render не содержит '● активна' при paused/aborted/completed", async () => {
 		setupNoActive({ getStatusSnapshot: vi.fn(async () => makeSnapshot({ status: "paused" })) });
-		const handler = ctx._registerShortcut.shortcuts.get("alt+m").handler;
+		const handler = ctx._registerShortcut.shortcuts.get("alt+shift+m").handler;
 		await handler(ctx.ui);
 		const text = flatten(ctx._ui.calls.render.at(-1));
 		expect(text).not.toMatch(/●\s*активна/i);
@@ -384,7 +384,7 @@ describe("F-12 / TC-F12-2: виджет авто-скрыт при отсутс�
 		});
 		expect(() => {
 			// Поиск handler возможен только если зарегистрирован
-			const def = registerShortcut.shortcuts.get("alt+m");
+			const def = registerShortcut.shortcuts.get("alt+shift+m");
 			if (def) def.handler(ui);
 		}).not.toThrow();
 	});
@@ -406,8 +406,8 @@ describe("F-12 / TC-F12-3: виджет обновляется по событи
 	});
 
 	it("TC-F12-3: emit('mission_iteration_end', payload) → render вызван с обновлённой итерацией", async () => {
-		// Alt+M → toggle visible (visible=true → visible=false → hidden)
-		const handler = ctx._registerShortcut.shortcuts.get("alt+m").handler;
+		// Alt+Shift+M → toggle visible (visible=true → visible=false → hidden)
+		const handler = ctx._registerShortcut.shortcuts.get("alt+shift+m").handler;
 		await handler(ctx.ui); // visible=false
 		await handler(ctx.ui); // visible=true (widget visible)
 
@@ -440,10 +440,10 @@ describe("F-12 / TC-F12-3: виджет обновляется по событи
 });
 
 // ────────────────────────────────────────────────────────────────────────────
-// Alt+M toggle: переключение видимости и ui.toggle('M')
+// Alt+Shift+M toggle: переключение видимости и ui.toggle('M')
 // ────────────────────────────────────────────────────────────────────────────
 
-describe("F-12 / TC-F12-toggle: Alt+M toggle (ui.toggle)", () => {
+describe("F-12 / TC-F12-toggle: Alt+Shift+M toggle (ui.toggle)", () => {
 	let ctx;
 	let widgetCtx;
 
@@ -454,15 +454,15 @@ describe("F-12 / TC-F12-toggle: Alt+M toggle (ui.toggle)", () => {
 		ctx = widgetCtx;
 	});
 
-	it("TC-F12-toggle: handler 'alt+m' вызывает ui.toggle('M')", async () => {
-		const handler = ctx._registerShortcut.shortcuts.get("alt+m").handler;
+	it("TC-F12-toggle: handler 'alt+shift+m' вызывает ui.toggle('M')", async () => {
+		const handler = ctx._registerShortcut.shortcuts.get("alt+shift+m").handler;
 		await handler(ctx.ui);
 		expect(ctx._ui.calls.toggle.length).toBeGreaterThanOrEqual(1);
 		expect(ctx._ui.calls.toggle.at(-1)).toBe("M");
 	});
 
-	it("TC-F12-toggle: Alt+M дважды → ui.toggle вызван дважды", async () => {
-		const handler = ctx._registerShortcut.shortcuts.get("alt+m").handler;
+	it("TC-F12-toggle: Alt+Shift+M дважды → ui.toggle вызван дважды", async () => {
+		const handler = ctx._registerShortcut.shortcuts.get("alt+shift+m").handler;
 		await handler(ctx.ui);
 		await handler(ctx.ui);
 		expect(ctx._ui.calls.toggle.length).toBeGreaterThanOrEqual(2);
@@ -472,7 +472,7 @@ describe("F-12 / TC-F12-toggle: Alt+M toggle (ui.toggle)", () => {
 		let snapshotIter = 5;
 		widgetCtx.getStatusSnapshot = vi.fn(async () => makeSnapshot({ iteration: snapshotIter }));
 
-		const handler = ctx._registerShortcut.shortcuts.get("alt+m").handler;
+		const handler = ctx._registerShortcut.shortcuts.get("alt+shift+m").handler;
 
 		// First call: widget hidden by default → render пуст
 		await handler(ctx.ui);
@@ -485,7 +485,7 @@ describe("F-12 / TC-F12-toggle: Alt+M toggle (ui.toggle)", () => {
 	});
 
 	it("TC-F12-toggle: после toggle off render снова пустой", async () => {
-		const handler = ctx._registerShortcut.shortcuts.get("alt+m").handler;
+		const handler = ctx._registerShortcut.shortcuts.get("alt+shift+m").handler;
 		// 1) visible=true → visible=false (hidden)
 		await handler(ctx.ui);
 		// 2) visible=false → visible=true (visible)
@@ -516,7 +516,7 @@ describe("F-12 / TC-F12-persist: persist toggle state", () => {
 		if (baseDir) rmSync(baseDir, { recursive: true, force: true });
 	});
 
-	it("TC-F12-persist: после Alt+M=off, событие mission_iteration_end → render (виджет скрыт)", async () => {
+	it("TC-F12-persist: после Alt+Shift+M=off, событие mission_iteration_end → render (виджет скрыт)", async () => {
 		baseDir = freshBaseDir();
 		missionDir = await initMission("widget-mission", { baseDir });
 		writeFileSync(join(missionDir, "ROADMAP.md"), "# Roadmap\n\n- [ ] step\n", "utf8");
@@ -524,7 +524,7 @@ describe("F-12 / TC-F12-persist: persist toggle state", () => {
 		const widgetCtx = makeWidgetCtx({ missionDir });
 		registerMissionWidget(widgetCtx);
 
-		const handler = widgetCtx._registerShortcut.shortcuts.get("alt+m").handler;
+		const handler = widgetCtx._registerShortcut.shortcuts.get("alt+shift+m").handler;
 		await handler(widgetCtx.ui); // 1st click → HIDDEN (toggle from visible)
 		await handler(widgetCtx.ui); // 2nd click → VISIBLE (toggle back)
 		await handler(widgetCtx.ui); // 3rd click → HIDDEN
@@ -543,7 +543,7 @@ describe("F-12 / TC-F12-persist: persist toggle state", () => {
 		const widgetCtx = makeWidgetCtx();
 		registerMissionWidget(widgetCtx);
 
-		const handler = widgetCtx._registerShortcut.shortcuts.get("alt+m").handler;
+		const handler = widgetCtx._registerShortcut.shortcuts.get("alt+shift+m").handler;
 
 		// After 1 call: toggle to hidden
 		await handler(widgetCtx.ui);
@@ -586,7 +586,7 @@ describe("F-12 / TC-F12-edge: edge cases", () => {
 		});
 		registerMissionWidget(widgetCtx);
 
-		const handler = widgetCtx._registerShortcut.shortcuts.get("alt+m").handler;
+		const handler = widgetCtx._registerShortcut.shortcuts.get("alt+shift+m").handler;
 		await expect(handler(widgetCtx.ui)).resolves.not.toThrow();
 		// Render либо пустой, либо без crash
 		expect(widgetCtx._ui.calls.render.length).toBeGreaterThan(0);
@@ -598,7 +598,7 @@ describe("F-12 / TC-F12-edge: edge cases", () => {
 		});
 		registerMissionWidget(widgetCtx);
 
-		const handler = widgetCtx._registerShortcut.shortcuts.get("alt+m").handler;
+		const handler = widgetCtx._registerShortcut.shortcuts.get("alt+shift+m").handler;
 		await handler(widgetCtx.ui);
 		await handler(widgetCtx.ui); // toggle on
 		const text = flatten(widgetCtx._ui.calls.render.at(-1));
@@ -613,7 +613,7 @@ describe("F-12 / TC-F12-edge: edge cases", () => {
 		});
 		registerMissionWidget(widgetCtx);
 
-		const handler = widgetCtx._registerShortcut.shortcuts.get("alt+m").handler;
+		const handler = widgetCtx._registerShortcut.shortcuts.get("alt+shift+m").handler;
 		await handler(widgetCtx.ui);
 		await handler(widgetCtx.ui);
 		const text = flatten(widgetCtx._ui.calls.render.at(-1));
@@ -625,7 +625,7 @@ describe("F-12 / TC-F12-edge: edge cases", () => {
 		const widgetCtx = makeWidgetCtx({ missionDir: undefined });
 		registerMissionWidget(widgetCtx);
 
-		const handler = widgetCtx._registerShortcut.shortcuts.get("alt+m").handler;
+		const handler = widgetCtx._registerShortcut.shortcuts.get("alt+shift+m").handler;
 		await handler(widgetCtx.ui);
 		await handler(widgetCtx.ui);
 
@@ -662,7 +662,7 @@ describe("F-12 / TC-F12-edge: edge cases", () => {
 		});
 		registerMissionWidget(widgetCtx);
 
-		const handler = widgetCtx._registerShortcut.shortcuts.get("alt+m").handler;
+		const handler = widgetCtx._registerShortcut.shortcuts.get("alt+shift+m").handler;
 		await handler(widgetCtx.ui);
 		await handler(widgetCtx.ui);
 		const text = flatten(widgetCtx._ui.calls.render.at(-1));
@@ -704,7 +704,7 @@ describe("F-12 / TC-F12-regression: fetchSnapshot via file-state-manager (no get
 			missionDir,
 		});
 
-		const handler = registerShortcut.shortcuts.get("alt+m").handler;
+		const handler = registerShortcut.shortcuts.get("alt+shift+m").handler;
 		// Не должно упасть — раньше здесь был crash: getFileStateManager is not a function
 		await expect(handler(ui)).resolves.not.toThrow();
 		// render вызван хотя бы один раз
@@ -726,7 +726,7 @@ describe("F-12 / TC-F12-regression: fetchSnapshot via file-state-manager (no get
 			missionDir,
 		});
 
-		const handler = registerShortcut.shortcuts.get("alt+m").handler;
+		const handler = registerShortcut.shortcuts.get("alt+shift+m").handler;
 		// 1st: toggle visible→hidden
 		await handler(ui);
 		// 2nd: toggle hidden→visible, теперь fetchSnapshot читает с диска
