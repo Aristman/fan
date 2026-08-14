@@ -1,0 +1,15 @@
+{
+	"missions": {
+		"mission-fixture": {
+			"budgetTotal": { "tokens": 100000, "usd": 10 },
+			"allocated": { "tokens": 53332, "usd": 5.3334 },
+			"consumed": { "tokens": 30000, "usd": 3 },
+			"peak": { "tokens": 30000, "usd": 3 },
+			"byBranch": {
+				"L1/node-1": { "tokens": 30000, "usd": 3 },
+				"L1/node-2": { "tokens": 0, "usd": 0 },
+				"L1/node-3": { "tokens": 0, "usd": 0 }
+			}
+		}
+	}
+}
