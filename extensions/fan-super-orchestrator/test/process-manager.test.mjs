@@ -165,6 +165,10 @@ describe("TC-F23-1: spawn узла и успешный health-check", () => {
 		expect(opts.detached).toBe(true);
 		expect(String(opts.env.FAN_NO_AUTH)).toBe("0");
 
+		// FOREGROUND-режим: `fan server --port N --host 127.0.0.1` (БЕЗ "start")
+		expect(children[0].cmd).toBe("fan");
+		expect(children[0].args).toEqual(["server", "--port", "7001", "--host", "127.0.0.1"]);
+
 		expect(pm.status("L1/node-1")).toBe("running");
 	});
 });
@@ -411,6 +415,58 @@ describe("TC-F23-6: killAll останавливает все узлы", () => {
 		// PID-файлы удалены
 		expect(existsSync(join(pidDir, "child-L1-node-1.pid"))).toBe(false);
 		expect(existsSync(join(pidDir, "child-L2-node-3.pid"))).toBe(false);
+	});
+});
+
+// ─── Доп.: serverCommand DI ─────────────────────────────────────────────
+
+describe("F-23 доп.: serverCommand DI (команда запуска дочернего сервера)", () => {
+	it("serverCommand.command и baseArgs пробрасываются в spawn", async () => {
+		const { portsFile, pidDir } = makeTmp();
+		const { spawn, children } = makeSpawnHarness();
+		const pm = makePM({
+			portsFile,
+			pidDir,
+			spawn,
+			healthFetch: makeHealthyFetch(),
+			serverCommand: { command: "/usr/bin/node", baseArgs: ["/opt/fan/cli.js"] },
+		});
+
+		await pm.spawn({ id: "L1/node-1" });
+
+		expect(children[0].cmd).toBe("/usr/bin/node");
+		expect(children[0].args).toEqual([
+			"/opt/fan/cli.js",
+			"server",
+			"--port",
+			"7001",
+			"--host",
+			"127.0.0.1",
+		]);
+	});
+
+	it("extraArgs (opts.args) добавляются после host при кастомном serverCommand", async () => {
+		const { portsFile, pidDir } = makeTmp();
+		const { spawn, children } = makeSpawnHarness();
+		const pm = makePM({
+			portsFile,
+			pidDir,
+			spawn,
+			healthFetch: makeHealthyFetch(),
+			serverCommand: { command: "node", baseArgs: ["cli.js"] },
+		});
+
+		await pm.spawn({ id: "L1/node-1", args: ["--extra-flag"] });
+
+		expect(children[0].args).toEqual([
+			"cli.js",
+			"server",
+			"--port",
+			"7001",
+			"--host",
+			"127.0.0.1",
+			"--extra-flag",
+		]);
 	});
 });
 

@@ -76,6 +76,12 @@ export interface ProcessManagerOptions {
 	portRangeEnd?: number;
 	/** DI вместо child_process.spawn (default — реальный spawn). */
 	spawn?: SpawnFn;
+	/** Команда запуска дочернего сервера (default { command: "fan", baseArgs: [] }).
+	 *  Итоговая команда: `<command> [...baseArgs, "server", "--port", N, "--host", "127.0.0.1", ...]`.
+	 *  ВАЖНО: режим FOREGROUND (`server`, не `server start`) — launcher остаётся
+	 *  живым процессом, поэтому PID-трекинг и SIGTERM работают корректно.
+	 *  Для e2e на local build: { command: process.execPath, baseArgs: ["<path>/cli.js"] }. */
+	serverCommand?: { command: string; baseArgs: string[] };
 	/** DI вместо fetch (default — реальный fetch). */
 	healthFetch?: HealthFetchFn;
 	/** Интервал health-check, мс (default 5000). */
@@ -120,6 +126,7 @@ export function createProcessManager(options: ProcessManagerOptions): ProcessMan
 	const healthFailThreshold = options.healthFailThreshold ?? 3;
 	const killGraceMs = options.killGraceMs ?? 5000;
 	const spawnFn: SpawnFn = options.spawn ?? ((cmd, args, opts) => cpSpawn(cmd, args, opts));
+	const serverCommand = options.serverCommand ?? { command: "fan", baseArgs: [] };
 	const healthFetch: HealthFetchFn = options.healthFetch ?? ((url) => fetch(url));
 
 	const portPool = new PortPool(options.portsFile, {
@@ -175,12 +182,16 @@ export function createProcessManager(options: ProcessManagerOptions): ProcessMan
 		token?: string,
 		nodeName?: string,
 	): ChildLike {
-		const args = ["server", "start", "--port", String(port), "--host", "127.0.0.1", ...extraArgs];
+		// FOREGROUND-режим `fan server` (без "start"): процесс-сервер и есть
+		// прямой child — PID-трекинг, exitPromise и SIGTERM работают как надо.
+		// `server start` — daemon-режим: launcher выходит сразу после запуска
+		// демона и для process-менеджмента непригоден.
+		const args = [...serverCommand.baseArgs, "server", "--port", String(port), "--host", "127.0.0.1", ...extraArgs];
 		// buildSpawnEnv формирует базу (FAN_NODE_TOKEN + FAN_NO_AUTH=0),
 		// extraEnv мержится поверх, FAN_NO_AUTH="0" пинится последним —
 		// вызывающий не может включить no-auth на дочернем узле (F-3).
 		const authBase = token ? buildSpawnEnv(token, extraEnv) : extraEnv;
-		const child = spawnFn("fan", args, {
+		const child = spawnFn(serverCommand.command, args, {
 			detached: true,
 			stdio: "ignore",
 			env: {
