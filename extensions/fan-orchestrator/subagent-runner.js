@@ -14,6 +14,7 @@ import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { brokerHandler } from "./broker-handler.js";
+import { formatContextBlock } from "./context-builder.js";
 export const MAX_PARALLEL_TASKS = 8;
 export const MAX_CONCURRENCY = 4;
 export function getFinalOutput(messages) {
@@ -542,9 +543,14 @@ export function runWorker(model, temperature, agentPrompt, tools, task, stallTim
 
         // Initial 500ms delay before sending prompt
         setTimeout(() => {
+            // Optional context block goes BETWEEN the agent prompt and the task.
+            // Without appendSystemPrompt the message is bit-for-bit identical to the legacy format.
+            const append = options?.appendSystemPrompt;
             send({
                 type: "prompt",
-                message: `${agentPrompt}\n\n## Task\n${task}`,
+                message: append
+                    ? `${agentPrompt}\n\n${append}\n\n## Task\n${task}`
+                    : `${agentPrompt}\n\n## Task\n${task}`,
                 id: PROMPT_ID,
             });
         }, 500);
@@ -595,7 +601,7 @@ function buildWorkerContent(agentName, task, model, progress, startTime) {
     }
     return lines.join("\n");
 }
-export async function runSingleAgent(defaultCwd, agents, agentName, task, temperature, cwd, step, signal, onUpdate, stallTimeout = 300_000) {
+export async function runSingleAgent(defaultCwd, agents, agentName, task, temperature, cwd, step, signal, onUpdate, stallTimeout = 300_000, context = undefined) {
     const agent = agents.find((a) => a.name === agentName);
     if (!agent) {
         const available = agents.map((a) => `"${a.name}"`).join(", ") || "none";
@@ -649,6 +655,9 @@ export async function runSingleAgent(defaultCwd, agents, agentName, task, temper
         },
         signal,
         cwd: cwd || defaultCwd,
+        // Inject formatted worker context between agentPrompt and "## Task".
+        // undefined → runWorker keeps the legacy prompt format exactly.
+        appendSystemPrompt: context ? formatContextBlock(context) : undefined,
     };
 
     // Hook signal to track wasAborted for the outer caller

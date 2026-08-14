@@ -65,6 +65,16 @@ export interface OrchestratorConfig {
   agentTimeouts: AgentTimeoutMap;
   /** Default temperature for all workers (0.0-1.0) */
   temperature: number;
+  /**
+   * Worker context enrichment settings.
+   * When enabled, git state and project tree are auto-collected and merged
+   * into the worker context (explicit coordinator context takes priority).
+   */
+  contextEnrichment: {
+    enabled: boolean;
+    includeGitState: boolean;
+    includeProjectTree: boolean;
+  };
   /** Per-agent temperature overrides */
   agentTemperature: AgentTemperatureMap;
   dangerousCommands: string[];
@@ -193,3 +203,38 @@ export interface OrchestratorState {
 
 /** Execution mode for delegate_task */
 export type ExecutionMode = "single" | "chain" | "parallel";
+
+/**
+ * Relevant file entry for worker context: a plain path or a structured descriptor.
+ * Forward-compatible contract with super-orchestrator v3 work_package.context
+ * (spec_super-orchestrator_v3_2026-08-10.md §3.3.2).
+ */
+export type RelevantFile =
+  | string
+  | {
+      path: string;
+      lines?: string;
+      purpose?: string;
+    };
+
+/**
+ * Context injected into a worker's prompt between the agent system prompt and the task.
+ *
+ * parentSummary / relevantFiles / constraints form the forward-compatible contract
+ * with super-orchestrator v3 work_package.context (spec_super-orchestrator_v3_2026-08-10.md §3.3.2).
+ * previousFindings / gitState / projectTree are an optional FAN-specific superset.
+ */
+export interface WorkerContext {
+  /** Forward-compatible contract with super-orchestrator v3 work_package.context. */
+  parentSummary?: string;
+  /** Forward-compatible contract with super-orchestrator v3 work_package.context. */
+  relevantFiles?: RelevantFile[];
+  /** Forward-compatible contract with super-orchestrator v3 work_package.context. */
+  constraints?: string[];
+  /** Optional superset: condensed findings from previous workers. */
+  previousFindings?: string;
+  /** Optional superset: git status/recent commits (auto-collected when omitted). */
+  gitState?: string;
+  /** Optional superset: project directory tree (auto-collected when omitted). */
+  projectTree?: string;
+}

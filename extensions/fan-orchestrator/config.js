@@ -30,6 +30,11 @@ export const DEFAULTS = {
         verify: 600,
     },
     temperature: 0.1,
+    contextEnrichment: {
+        enabled: true,
+        includeGitState: true,
+        includeProjectTree: true,
+    },
     agentTemperature: {
         explore: 0.3,
         plan: 0.1,
