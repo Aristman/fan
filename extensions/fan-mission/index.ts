@@ -9,6 +9,11 @@
 //     attachMission создаёт MissionLoop с production-deps (executor из
 //     opts.runAgent ?? дефолт, git = createGitAdapter(), clock = { now })
 //     и идемпотентен для того же missionDir.
+//     Дефолтный runAgent (без opts.runAgent) — createDefaultRunAgent из
+//     ./default-run-agent.js: prompt → sendUserMessage(followUp) → ожидание
+//     agent_end → последний assistant-текст + Σ usage (single-flight,
+//     timeout = opts.runAgentTimeoutMs ?? 30 мин). shutdown() осаживает
+//     активный waiter дефолтного runAgent FAILED-тегом ДО abort loop.
 //   export default missionExtension(fan) — фабрика расширения: регистрирует
 //     7 slash-команд /mission:* (DI через fan.registerCommand), виджет
 //     (f9, uiEvents = fan.events), хуки session_start (скан
@@ -22,6 +27,7 @@ import { join } from "node:path";
 import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
 import type { KeyId } from "@seaagents/fan-tui";
 
+import { createDefaultRunAgent } from "./default-run-agent.js";
 import { readMission } from "./file-state-manager.js";
 import { createGitAdapter } from "./git-adapter.js";
 import { MissionLoop, readMissionLoopState, setDrainSignal } from "./mission-loop.js";
@@ -53,6 +59,8 @@ export interface MissionWireOptions {
 	runAgent?: RunAgent;
 	/** Дефолтный deliverAs для actions.sendMessage (по умолчанию "steer"). */
 	streamingBehavior?: "steer" | "followUp";
+	/** Таймаут дефолтного runAgent (мс; по умолчанию 1_800_000 = 30 мин). */
+	runAgentTimeoutMs?: number;
 }
 
 export interface MissionWiring {
@@ -64,29 +72,13 @@ export interface MissionWiring {
 	shutdown(): Promise<void>;
 }
 
-// ─── Default runAgent ───────────────────────────────────────────────────────
-
-/**
- * Дефолтный runAgent (без opts.runAgent): доставляет prompt в сессию через
- * fan.sendUserMessage. Захват фактического ответа агента через событие
- * agent_end — доработка; пока возвращается пустой результат (mission-loop
- * трактует ответ без тега <promise> как COMPLETE с эскалацией I3).
- */
-function createDefaultRunAgent(fan: ExtensionAPI): RunAgent {
-	return async (prompt) => {
-		try {
-			fan.sendUserMessage(prompt, { deliverAs: "followUp" });
-		} catch {
-			// сессия может быть недоступна — для контура не критично
-		}
-		return { response: "", costTokens: 0, costUsd: 0 };
-	};
-}
-
 // ─── Wiring ─────────────────────────────────────────────────────────────────
 
 export function wireMission(fan: ExtensionAPI, opts?: MissionWireOptions): MissionWiring {
-	const runAgent: RunAgent = opts?.runAgent ?? createDefaultRunAgent(fan);
+	// Дефолтный runAgent создаётся только при отсутствии DI-варианта (не нужно
+	// подписываться на agent_end в тестах с mock runAgent).
+	const defaultHandle = opts?.runAgent ? null : createDefaultRunAgent(fan, { timeoutMs: opts?.runAgentTimeoutMs });
+	const runAgent: RunAgent = defaultHandle ? defaultHandle.runAgent : (opts?.runAgent as RunAgent);
 
 	let loop: MissionLoop | null = null;
 	let attachedDir: string | null = null;
@@ -113,6 +105,9 @@ export function wireMission(fan: ExtensionAPI, opts?: MissionWireOptions): Missi
 	const getMissionLoop = (): MissionLoop | null => loop;
 
 	const shutdown = async (): Promise<void> => {
+		// Осадить waiter дефолтного runAgent ДО abort loop: mission-loop при
+		// abort получит FAILED-тег вместо зависшего/пустого результата.
+		defaultHandle?.settle("mission shutdown");
 		const current = loop;
 		loop = null;
 		attachedDir = null;
