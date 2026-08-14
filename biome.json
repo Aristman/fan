@@ -33,6 +33,7 @@
 			"extensions/fan-mission/**/*.ts",
 			"extensions/fan-scheduler/**/*.ts",
 			"extensions/fan-webhook/**/*.ts",
+			"extensions/fan-super-orchestrator/**/*.ts",
 			"!**/node_modules/**/*",
 			"!**/models.generated.ts",
 			"!packages/web-ui/src/app.css",
