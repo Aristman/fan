@@ -255,17 +255,23 @@ export default function missionExtension(fan: ExtensionAPI): MissionWiring {
 		});
 	}, slashCtx);
 
-	// 2. Виджет (f9). UI-фасад — заглушка: ctx.ui недоступен в момент
-	//    фабрики, виджет рендерится когда TUI вызывает handler шортката.
+	// 2. Виджет (f9). ctx.ui захватывается в shortcut-handler и session_start
+	//    (последний wins), чтобы widgetUi.render мог вызвать ctx.ui.setWidget.
+	let lastUiCtx: { ui: { setWidget(key: string, content: string[] | undefined, options?: unknown): void } } | null =
+		null;
 	const widgetUi = {
-		render: (_lines: string[]): void => {},
+		render: (lines: string[]): void => {
+			if (!lastUiCtx) return;
+			lastUiCtx.ui.setWidget("mission", lines.length > 0 ? lines : undefined);
+		},
 		toggle: (_key: string): void => {},
 	};
 	registerMissionWidget({
 		registerShortcut: (key, def) => {
 			fan.registerShortcut(key as KeyId, {
 				description: def.description,
-				handler: async () => {
+				handler: async (ctx) => {
+					lastUiCtx = ctx as unknown as typeof lastUiCtx;
 					await def.handler(widgetUi);
 				},
 			});
@@ -284,6 +290,7 @@ export default function missionExtension(fan: ExtensionAPI): MissionWiring {
 	// 3. Хуки жизненного цикла.
 	fan.on("session_start", async (event, ctx) => {
 		try {
+			lastUiCtx = ctx as unknown as typeof lastUiCtx;
 			const cwd = ctx?.cwd ?? (event as unknown as { cwd?: string }).cwd;
 			if (!cwd) {
 				return;
