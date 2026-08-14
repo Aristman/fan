@@ -9,13 +9,14 @@
 // Behaviour:
 //   1. Parses --port (required) and --tools (optional) from argv.
 //   2. Reads token from FAN_NODE_TOKEN env var.
-//   3. Writes full argv to `<cwd>/argv-<port>.txt` for test-side verification.
+//   3. Writes full argv to `<FAN_ARGV_DUMP_DIR || cwd>/argv-<port>.txt` for test-side verification.
 //   4. Starts mock-node-server (imported from mock-node-server.mjs) on the
 //      given port with configurable delayMs (env MOCK_DELAY_MS, default 500).
 //   5. Prints "READY <port>" to stdout (single line, flushed).
 //   6. Runs until SIGTERM / SIGINT → graceful stop + exit 0.
 
 import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { startMockNode } from "./mock-node-server.mjs";
 
 // ── argv parsing ────────────────────────────────────────────────────────────
@@ -45,7 +46,7 @@ if (!port || !token) {
 // ── persist argv for e2e verification ───────────────────────────────────────
 
 try {
-	writeFileSync(`argv-${port}.txt`, JSON.stringify(process.argv.slice(2)), "utf8");
+	writeFileSync(join(process.env.FAN_ARGV_DUMP_DIR || ".", `argv-${port}.txt`), JSON.stringify(process.argv.slice(2)), "utf8");
 } catch {
 	/* best-effort */
 }

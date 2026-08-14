@@ -142,7 +142,7 @@ async function main() {
 			const child = cpSpawn(process.execPath, [MOCK_NODE_MAIN, "--port", String(port), ...args], {
 				detached: true,
 				stdio: ["ignore", "pipe", "pipe"],
-				env: { ...process.env, FAN_NODE_TOKEN: token, MOCK_DELAY_MS: String(mockDelayMs) },
+				env: { ...process.env, FAN_NODE_TOKEN: token, MOCK_DELAY_MS: String(mockDelayMs), FAN_ARGV_DUMP_DIR: tmp },
 				cwd: EXT_DIR,
 			});
 			tokensByNode[id] = token;
@@ -299,7 +299,7 @@ async function main() {
 	// ── argv verification (--tools) ──
 	await sleep(300); // small delay for argv files to be written
 	const argvVerified = pids1.every((p) => {
-		const argvFile = join(EXT_DIR, `argv-${p.port}.txt`);
+		const argvFile = join(tmp, `argv-${p.port}.txt`);
 		if (!existsSync(argvFile)) return false;
 		const args = JSON.parse(readFileSync(argvFile, "utf8"));
 		const toolsIdx = args.indexOf("--tools");
@@ -414,7 +414,7 @@ async function main() {
 	// cleanup argv files
 	for (const p of pids1) {
 		try {
-			const f = join(EXT_DIR, `argv-${p.port}.txt`);
+			const f = join(tmp, `argv-${p.port}.txt`);
 			if (existsSync(f)) rmSync(f);
 		} catch {
 			/* ignore */
@@ -562,7 +562,7 @@ async function main() {
 	// cleanup argv files for kill-switch
 	for (const p of ksPids) {
 		try {
-			const f = join(EXT_DIR, `argv-${p.port}.txt`);
+			const f = join(tmp, `argv-${p.port}.txt`);
 			if (existsSync(f)) rmSync(f);
 		} catch {
 			/* ignore */
