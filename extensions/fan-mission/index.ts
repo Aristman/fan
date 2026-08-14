@@ -11,7 +11,7 @@
 //     и идемпотентен для того же missionDir.
 //   export default missionExtension(fan) — фабрика расширения: регистрирует
 //     7 slash-команд /mission:* (DI через fan.registerCommand), виджет
-//     (alt+shift+m, uiEvents = fan.events), хуки session_start (скан
+//     (f9, uiEvents = fan.events), хуки session_start (скан
 //     <cwd>/docs/missions/*/MISSION.md → attach первого не-терминального)
 //     и session_shutdown (shutdown). ВОЗВРАЩАЕТ wiring-handle (разумное
 //     отклонение от `: void` — единственный способ наблюдать session_start
@@ -255,7 +255,7 @@ export default function missionExtension(fan: ExtensionAPI): MissionWiring {
 		});
 	}, slashCtx);
 
-	// 2. Виджет (alt+shift+m). UI-фасад — заглушка: ctx.ui недоступен в момент
+	// 2. Виджет (f9). UI-фасад — заглушка: ctx.ui недоступен в момент
 	//    фабрики, виджет рендерится когда TUI вызывает handler шортката.
 	const widgetUi = {
 		render: (_lines: string[]): void => {},
