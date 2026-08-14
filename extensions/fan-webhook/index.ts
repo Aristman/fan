@@ -64,7 +64,11 @@ export default function webhookExtension(fan: ExtensionAPI): WebhookWiring {
 		try {
 			await wiring.start();
 		} catch (err) {
-			console.warn("[fan-webhook] failed to start webhook server:", err);
+			const msg = err instanceof Error ? err.message : String(err);
+			const hint = /EADDRINUSE|in use/i.test(msg)
+				? " Port занят — освободите его или задайте другой через FAN_WEBHOOK_PORT=<порт>."
+				: "";
+			console.warn(`[fan-webhook] failed to start webhook server:${hint}`, err);
 		}
 	});
 
