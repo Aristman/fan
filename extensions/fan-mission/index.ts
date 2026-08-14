@@ -34,6 +34,7 @@ import { MissionLoop, readMissionLoopState, setDrainSignal } from "./mission-loo
 import { registerMissionWidget } from "./mission-widget.js";
 import { createSessionExecutor, type RunAgent } from "./session-executor.js";
 import { registerMissionSlashCommands, type SlashCtx } from "./slash-commands.js";
+import { createMissionTickHandler } from "./tick-bridge.js";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -203,7 +204,20 @@ export default function missionExtension(fan: ExtensionAPI): MissionWiring {
 		return loop;
 	};
 
+	// ТИКЕТ-14: auto-tick мост — fan-scheduler эмитит "mission_tick" в
+	// fan.events, handler вызывает loop.tick() программно (без LLM-промпта).
+	// Guard для mock fan без events (тесты): подписка просто не создаётся.
+	const bridge = createMissionTickHandler({
+		getLoop: () => wiring.getMissionLoop(),
+		getMissionDir: () => slashCtx.missionDir,
+	});
+	const unsubTick = fan.events?.on ? fan.events.on("mission_tick", bridge.handler) : undefined;
+
 	const detach = async (): Promise<void> => {
+		if (typeof unsubTick === "function") {
+			unsubTick();
+		}
+		bridge.dispose();
 		await wiring.shutdown();
 		slashCtx.missionLoop = null;
 		slashCtx.missionDir = undefined;

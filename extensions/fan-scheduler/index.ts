@@ -13,13 +13,23 @@
 //   export wireScheduler(fan, opts?) — тестируемый wiring: { start, stop }.
 //     start() → startScheduler (actions.sendMessage → fan.sendUserMessage с
 //     deliverAs), идемпотентен. stop() идемпотентен, безопасен без start().
+//     opts.onTick — опциональный программный мост (ТИКЕТ-14): пробрасывается
+//     в actions.onTick и приоритетнее sendMessage.
+//   ТИКЕТ-14 (auto-tick мост): в проде фабрика при наличии fan.events эмитит
+//     событие "mission_tick" ({ missionDir, ts, tickId }) — его слушает
+//     fan-mission и вызывает loop.tick() программно, без LLM-промпта.
+//     Fallback (fan без events, например mock в тестах) — старый путь:
+//     tick-промпт через fan.sendUserMessage. Feature-detection обязателен.
 
+import { randomUUID } from "node:crypto";
 import { type Dirent, existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
 
-import type { MissionStatus, SchedulerHandle } from "./scheduler.js";
+import type { MissionStatus, SchedulerHandle, TickPayload } from "./scheduler.js";
 import { startScheduler } from "./scheduler.js";
+
+export type { TickPayload } from "./scheduler.js";
 
 export interface SchedulerWireOptions {
 	intervalMs?: number;
@@ -27,6 +37,8 @@ export interface SchedulerWireOptions {
 	tickPrompt?: string;
 	getStatus?: () => MissionStatus | Promise<MissionStatus>;
 	getMissionDir?: () => string;
+	/** ТИКЕТ-14: программный мост тика (приоритетнее sendMessage). */
+	onTick?: (payload: TickPayload) => void | Promise<void>;
 }
 
 export interface SchedulerWiring {
@@ -87,6 +99,7 @@ export function wireScheduler(fan: ExtensionAPI, opts?: SchedulerWireOptions): S
 		handle = startScheduler({
 			actions: {
 				sendMessage: (text, behavior) => fan.sendUserMessage(text, { deliverAs: behavior }),
+				...(opts?.onTick ? { onTick: opts.onTick } : {}),
 			},
 			getStatus: opts?.getStatus ?? (() => "active"),
 			getMissionDir: opts?.getMissionDir,
@@ -112,7 +125,18 @@ export default function schedulerExtension(fan: ExtensionAPI): void {
 	// cwd захватывается из ctx session_start (до него миссий не ищем → тиков нет).
 	let cwdRef: string | null = null;
 
+	// ТИКЕТ-14: feature-detection EventBus — mock fan без events (тесты) идёт
+	// legacy-путём (sendUserMessage), прод — эмитит mission_tick для fan-mission.
+	const canBridge = typeof fan.events?.emit === "function";
+
 	const wiring = wireScheduler(fan, {
+		...(canBridge
+			? {
+					onTick: (p) => {
+						fan.events.emit("mission_tick", { missionDir: p.missionDir, ts: Date.now(), tickId: randomUUID() });
+					},
+				}
+			: {}),
 		getStatus: () => {
 			if (!cwdRef) return "completed";
 			const m = findActiveMission(cwdRef);

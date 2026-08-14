@@ -14,8 +14,20 @@ export type MissionStatus = "active" | "paused" | "completed" | "aborted" | "fai
 // режима deliverAs ("nextTurn" исключён — планировщик всегда шлёт "followUp").
 export type StreamingBehavior = "steer" | "followUp";
 
+/** Пейлоад тика для программного моста (ТИКЕТ-14: EventBus вместо LLM-промпта). */
+export interface TickPayload {
+	missionDir: string;
+	date: string;
+	prompt: string;
+}
+
 export interface SchedulerActions {
 	sendMessage(text: string, streamingBehavior: StreamingBehavior): void | Promise<void>;
+	/**
+	 * Опциональный программный мост (ТИКЕТ-14): если задан — вызывается вместо
+	 * sendMessage (LLM-промпт не отправляется). sendMessage остаётся обязательным.
+	 */
+	onTick?(payload: TickPayload): void | Promise<void>;
 }
 
 export interface SchedulerCtx {
@@ -81,11 +93,15 @@ export function startScheduler(ctx: SchedulerCtx): SchedulerHandle {
 		if (status !== "active") {
 			return; // paused / терминальные статусы → тик не доставляется
 		}
-		const text = renderTickPrompt(template, {
-			missionDir: ctx.getMissionDir ? ctx.getMissionDir() : "",
-			date: new Date().toISOString(),
-		});
-		await ctx.actions.sendMessage(text, "followUp");
+		const missionDir = ctx.getMissionDir ? ctx.getMissionDir() : "";
+		const date = new Date().toISOString();
+		const text = renderTickPrompt(template, { missionDir, date });
+		if (ctx.actions.onTick) {
+			// ТИКЕТ-14: программный мост (EventBus) приоритетнее LLM-промпта.
+			await ctx.actions.onTick({ missionDir, date, prompt: text });
+		} else {
+			await ctx.actions.sendMessage(text, "followUp");
+		}
 	};
 
 	if (ctx.cronExpression !== undefined) {
