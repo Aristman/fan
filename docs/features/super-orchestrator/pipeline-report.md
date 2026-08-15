@@ -231,7 +231,7 @@
 23. **#23 clean() bare-tag regex:** `/<\/?promise>/gi` — attribute-form `<promise type=x>` проходит L1 (покрыто L2; привести к паритету).
 24. **#24 e2e gates standalone:** phase-gate скрипты не в vitest include — добавить test:e2e скрипт/CI-шаг.
 25. **#25 flaky agent-session-concurrent:** падает детерминированно в изоляции (2/2) — карантин/фикс.
-26. **#26 F-10 missionStart tautology:** canTransition dead-check, обе ветки throw — pre-existing.
+26. **#26 F-10 missionStart tautology — ЗАКРЫТО (3033133, coding-agent 2.7.3):** инвертированная проверка canTransition (обе ветки throw) — start не работал ни из одного статуса; исправлено по каноническому паттерну + 4 теста. Укусил вживую при ручном тестировании.
 27. **#27 F-45:** non-ASCII cwd basename → slug fallback sessionId (чекпоинты нестабильны для кириллических каталогов).
 28. **#28 api-gateway tsc/biome deviations:** в phase-gate-b3.e2e.test.ts + dashboard mission-tree isConnected (dom-lib drift, pre-existing с b24122d) — починить tsconfig/lib.
 29. **#29 store_search/store_install не в allTools ядра:** CLI --tools их отклонит (найдено в F-37 контракт-тесте).
