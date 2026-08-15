@@ -541,6 +541,168 @@ describe("F-11 / TC-F11-extra: /mission:decide <answer> → followUp-очере�
 // Регистрация: все 7 команд зарегистрированы за один вызов
 // ────────────────────────────────────────────────────────────────────────────
 
+// ────────────────────────────────────────────────────────────────────────────────
+// Lazy-attach (0.6.0): /mission:start|resume|status подхватывают контур в
+// запущенной сессии, если session_start не аттачил loop (миссию остановили или
+// активировали через CLI после старта fan). DI: ctx.findAttachableMission /
+// ctx.attach / ctx.writeStatus (в проде заполняются index.ts).
+// ────────────────────────────────────────────────────────────────────────────────
+
+describe("F-11 / TC-F11-lazy: lazy-attach контура в запущенной сессии", () => {
+	let baseDir;
+	let missionDir;
+	let reg;
+
+	beforeEach(async () => {
+		baseDir = freshBaseDir();
+		missionDir = await initMission("lazy-mission", { baseDir });
+		writeRoadmap(missionDir, ["# Roadmap", "", "- [ ] lazy step", ""]);
+		reg = makeMockRegister();
+	});
+
+	afterEach(() => {
+		rmSync(baseDir, { recursive: true, force: true });
+	});
+
+	/**
+	 * ctx БЕЗ аттаченного loop, но с DI lazy-attach.
+	 * foundStatus — статус, который "находит" скан; null — миссий нет.
+	 */
+	function makeLazyCtx(foundStatus, overrides = {}) {
+		const attachCalls = [];
+		const writeStatusCalls = [];
+		const attachedLoop = makeMockMissionLoop();
+		const ctx = makeCtx({
+			missionLoop: null,
+			missionDir: undefined,
+			cwd: baseDir,
+			findAttachableMission: async () => (foundStatus ? { missionDir, status: foundStatus } : null),
+			attach: (dir) => {
+				attachCalls.push(dir);
+				ctx.missionLoop = attachedLoop;
+				ctx.missionDir = dir;
+				return attachedLoop;
+			},
+			writeStatus: async (dir, status) => {
+				writeStatusCalls.push({ dir, status });
+			},
+			...overrides,
+		});
+		ctx.attachCalls = attachCalls;
+		ctx.writeStatusCalls = writeStatusCalls;
+		ctx.attachedLoop = attachedLoop;
+		return ctx;
+	}
+
+	it("TC-F11-lazy-1: /mission:start без аттача, миссия aborted → writeStatus(active) + attach + tick", async () => {
+		const ctx = makeLazyCtx("aborted");
+		registerMissionSlashCommands(reg.register, ctx);
+		await reg.dispatch("/mission:start", ctx);
+
+		expect(ctx.writeStatusCalls).toEqual([{ dir: missionDir, status: "active" }]);
+		expect(ctx.attachCalls).toEqual([missionDir]);
+		expect(ctx.missionLoop).toBe(ctx.attachedLoop);
+		expect(ctx.missionDir).toBe(missionDir);
+		expect(ctx.attachedLoop._calls.tick.length).toBe(1);
+	});
+
+	it("TC-F11-lazy-2: /mission:start без аттача, миссии нет → 'No mission found', attach НЕ вызван", async () => {
+		const ctx = makeLazyCtx(null);
+		registerMissionSlashCommands(reg.register, ctx);
+		await reg.dispatch("/mission:start", ctx);
+
+		expect(ctx.attachCalls.length).toBe(0);
+		expect(ctx.writeStatusCalls.length).toBe(0);
+		expect(ctx.missionLoop).toBeNull();
+		const text = ctx.output.lines.join("\n");
+		expect(text).toContain("No mission found");
+		expect(text).toContain(baseDir); // "No mission found in <cwd>"
+		expect(text).toContain("fan mission init");
+	});
+
+	it("TC-F11-lazy-3: /mission:status без аттача, миссия active → attach + статус показан", async () => {
+		const ctx = makeLazyCtx("active");
+		registerMissionSlashCommands(reg.register, ctx);
+		await reg.dispatch("/mission:status", ctx);
+
+		expect(ctx.attachCalls).toEqual([missionDir]);
+		expect(ctx.writeStatusCalls.length).toBe(0); // read-only: статус не меняем
+		const text = ctx.output.lines.join("\n");
+		expect(text).toMatch(/status/i);
+		expect(text).toMatch(/active/);
+		expect(text).toMatch(/iteration/i);
+	});
+
+	it("TC-F11-lazy-4: /mission:resume без аттача, миссия paused → transition active + attach", async () => {
+		const ctx = makeLazyCtx("paused");
+		registerMissionSlashCommands(reg.register, ctx);
+		await reg.dispatch("/mission:resume", ctx);
+
+		expect(ctx.writeStatusCalls.some((c) => c.dir === missionDir && c.status === "active")).toBe(true);
+		expect(ctx.attachCalls).toEqual([missionDir]);
+		const text = ctx.output.lines.join("\n");
+		expect(text).toMatch(/resumed/i);
+	});
+
+	it("TC-F11-lazy-5: /mission:start без аттача, миссия completed → отказ, attach НЕ вызван", async () => {
+		const ctx = makeLazyCtx("completed");
+		registerMissionSlashCommands(reg.register, ctx);
+		await reg.dispatch("/mission:start", ctx);
+
+		expect(ctx.attachCalls.length).toBe(0);
+		expect(ctx.writeStatusCalls.length).toBe(0);
+		expect(ctx.missionLoop).toBeNull();
+		const text = ctx.output.lines.join("\n");
+		expect(text).toMatch(/completed/i);
+		expect(text).toContain("fan mission init");
+	});
+
+	it("TC-F11-lazy-6: /mission:resume без аттача, миссия не paused → понятный отказ, attach НЕ вызван", async () => {
+		const ctx = makeLazyCtx("aborted");
+		registerMissionSlashCommands(reg.register, ctx);
+		await reg.dispatch("/mission:resume", ctx);
+
+		expect(ctx.attachCalls.length).toBe(0);
+		expect(ctx.writeStatusCalls.length).toBe(0);
+		const text = ctx.output.lines.join("\n");
+		expect(text).toMatch(/not paused/i);
+	});
+
+	it("TC-F11-lazy-7: /mission:status без аттача и без миссии → 'No active mission' (прежнее сообщение)", async () => {
+		const ctx = makeLazyCtx(null);
+		registerMissionSlashCommands(reg.register, ctx);
+		await reg.dispatch("/mission:status", ctx);
+
+		expect(ctx.attachCalls.length).toBe(0);
+		expect(ctx.output.lines.join("\n")).toContain("No active mission");
+	});
+
+	it("TC-F11-lazy-8: /mission:start без DI lazy-attach (нет findAttachableMission) → прежний no-op", async () => {
+		const ctx = makeCtx({ missionLoop: null });
+		registerMissionSlashCommands(reg.register, ctx);
+		await expect(reg.dispatch("/mission:start", ctx)).resolves.toBeUndefined();
+		expect(ctx.output.lines.length).toBe(0); // no-op без сообщений
+	});
+
+	it("TC-F11-lazy-9: /mission:start c аттаченным loop → scan НЕ вызывается (прежнее поведение)", async () => {
+		let scanCalls = 0;
+		const existingLoop = makeMockMissionLoop();
+		const ctx = makeLazyCtx("aborted", {
+			missionLoop: existingLoop,
+			findAttachableMission: async () => {
+				scanCalls += 1;
+				return null;
+			},
+		});
+		registerMissionSlashCommands(reg.register, ctx);
+		await reg.dispatch("/mission:start", ctx);
+
+		expect(scanCalls).toBe(0);
+		expect(ctx.attachCalls.length).toBe(0);
+		expect(existingLoop._calls.tick.length).toBe(1);
+	});
+});
+
 describe("F-11 / TC-F11-registry: registerMissionSlashCommands регистрирует все 7 команд", () => {
 	it("TC-F11-registry: после registerMissionSlashCommands зарегистрированы все 7 команд", () => {
 		const ctx = makeCtx();

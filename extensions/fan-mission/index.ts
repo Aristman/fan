@@ -18,17 +18,21 @@
 //     7 slash-команд /mission:* (DI через fan.registerCommand), виджет
 //     (f9, uiEvents = fan.events), хуки session_start (скан
 //     <cwd>/docs/missions/*/MISSION.md → attach первого не-терминального)
-//     и session_shutdown (shutdown). ВОЗВРАЩАЕТ wiring-handle (разумное
-//     отклонение от `: void` — единственный способ наблюдать session_start
-//     через getMissionLoop()).
+//     и session_shutdown (shutdown). Slash-команды start/resume/status
+//     поддерживают lazy-attach: если loop не аттачен в session_start,
+//     они находят миссию через findAttachableMission(cwd) и аттачат её
+//     в запущенной сессии (без рестарта fan). ВОЗВРАЩАЕТ wiring-handle
+//     (разумное отклонение от `: void` — единственный способ наблюдать
+//     session_start через getMissionLoop()).
 
 import { type Dirent, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import process from "node:process";
 import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
 import type { KeyId } from "@seaagents/fan-tui";
 
 import { createDefaultRunAgent } from "./default-run-agent.js";
-import { readMission } from "./file-state-manager.js";
+import { readMission, writeMissionStatus } from "./file-state-manager.js";
 import { createGitAdapter } from "./git-adapter.js";
 import { MissionLoop, readMissionLoopState, setDrainSignal } from "./mission-loop.js";
 import { registerMissionWidget } from "./mission-widget.js";
@@ -127,14 +131,21 @@ export function wireMission(fan: ExtensionAPI, opts?: MissionWireOptions): Missi
 	return { attachMission, getMissionLoop, shutdown };
 }
 
-// ─── session_start scan ─────────────────────────────────────────────────────
+// ─── Скан миссий (session_start + lazy-attach) ──────────────────────────────
 
 /**
- * Ищет первую миссию не-терминального статуса в <cwd>/docs/missions/*.
- * Возвращает missionDir либо null (миссии нет / каталог отсутствует).
+ * Ищет первую миссию в <cwd>/docs/missions/*, чей статус проходит `accept`.
+ * Возвращает { missionDir, status } либо null (миссий нет / каталог отсутствует).
  * Никаких файлов не создаёт.
+ *
+ * - session_start: accept = не-терминальные статусы (active/paused/awaiting_decision);
+ * - lazy-attach (/mission:start|resume|status): дефолтный accept — любой статус
+ *   кроме completed (команды start/resume сами делают переход в active).
  */
-async function findActiveMissionDir(cwd: string): Promise<string | null> {
+export async function findAttachableMission(
+	cwd: string,
+	accept: (status: string) => boolean = (status) => status !== "completed",
+): Promise<{ missionDir: string; status: string } | null> {
 	const missionsRoot = join(cwd, "docs", "missions");
 	if (!existsSync(missionsRoot)) {
 		return null;
@@ -153,8 +164,9 @@ async function findActiveMissionDir(cwd: string): Promise<string | null> {
 		const missionDir = join(missionsRoot, entry.name);
 		try {
 			const mission = await readMission(missionDir);
-			if (NON_TERMINAL_STATUSES.has(String(mission.frontmatter.status))) {
-				return missionDir;
+			const status = String(mission.frontmatter.status);
+			if (accept(status)) {
+				return { missionDir, status };
 			}
 		} catch {
 			// каталог без валидного MISSION.md — пропускаем
@@ -210,6 +222,16 @@ export default function missionExtension(fan: ExtensionAPI): MissionWiring {
 		slashCtx.missionDir = missionDir;
 		return loop;
 	};
+
+	// Lazy-attach (0.6.0): /mission:start|resume|status подхватывают контур
+	// в запущенной сессии, если session_start его не аттачил (миссию остановили
+	// или активировали через CLI после старта fan). Скан берёт любой статус
+	// кроме completed — FSM-переход в active делают сами команды. ТИКЕТ-14 мост
+	// (scheduler → tick) и виджет f9 подхватываются автоматически: они читают
+	// loop из wiring/slashCtx через замыкания, обновлённые в attach().
+	slashCtx.findAttachableMission = () => findAttachableMission(slashCtx.cwd ?? process.cwd());
+	slashCtx.attach = attach;
+	slashCtx.writeStatus = writeMissionStatus;
 
 	// ТИКЕТ-14: auto-tick мост — fan-scheduler эмитит "mission_tick" в
 	// fan.events, handler вызывает loop.tick() программно (без LLM-промпта).
@@ -311,9 +333,10 @@ export default function missionExtension(fan: ExtensionAPI): MissionWiring {
 			if (!cwd) {
 				return;
 			}
-			const missionDir = await findActiveMissionDir(cwd);
-			if (missionDir) {
-				attach(missionDir);
+			slashCtx.cwd = cwd; // для lazy-attach: скан и диагностика "No mission found in <cwd>"
+			const found = await findAttachableMission(cwd, (status) => NON_TERMINAL_STATUSES.has(status));
+			if (found) {
+				attach(found.missionDir);
 			}
 		} catch (err) {
 			console.warn("[fan-mission] session_start hook failed:", err);

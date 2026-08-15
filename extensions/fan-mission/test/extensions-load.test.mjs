@@ -28,9 +28,11 @@
 // ../../fan-webhook/index.js (Vite резолвит .js → .ts).
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+import { initMission } from "../file-state-manager.js";
 
 // ─── Динамический импорт трёх entry-points (как делает loader: default export) ──
 
@@ -339,5 +341,43 @@ describe("F-LOAD / TC-7: отсутствие конфликтов (двойна
 			fan._emit("session_start", { type: "session_start", cwd: tempDir }, ctx),
 		).resolves.toBeUndefined();
 		await expect(fan._emit("session_shutdown", { type: "session_shutdown" })).resolves.toBeUndefined();
+	});
+});
+
+// ─── TC-8: lazy-attach (0.6.0) — миссия появилась после session_start ────────────
+//
+// session_start не аттачил контур (миссии не было); затем в cwd появляется миссия
+// (fan mission init / CLI). /mission:status аттачит loop лениво — без рестарта fan.
+// Команда read-only (tick не запускается) — безопасно на общем mock fan трёх фабрик.
+
+describe("F-LOAD / TC-8: lazy-attach — миссия появилась после session_start", () => {
+	it("TC-8: session_start без миссии → init → /mission:status → loop аттачен (без рестарта)", async () => {
+		const ctx = {
+			cwd: tempDir,
+			hasUI: true,
+			ui: { notify: vi.fn(), setWidget: vi.fn() },
+		};
+		await fan._emit("session_start", { type: "session_start", cwd: tempDir }, ctx);
+		expect(missionHandle.getMissionLoop()).toBeNull();
+
+		// Миссия появляется в cwd после session_start.
+		const missionDir = await initMission("load-lazy", { baseDir: join(tempDir, "docs", "missions") });
+		writeFileSync(join(missionDir, "ROADMAP.md"), "# Roadmap\n\n- [ ] step\n", "utf8");
+
+		// /mission:status — ленивый аттач (read-only, без tick).
+		const statusCmd = fan._commands.get("mission:status");
+		expect(statusCmd).toBeDefined();
+		const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+		let statusCalls;
+		try {
+			await statusCmd.handler("");
+			statusCalls = [...logSpy.mock.calls]; // снять ДО mockRestore (он чистит mock.calls)
+		} finally {
+			logSpy.mockRestore();
+		}
+
+		expect(missionHandle.getMissionLoop()).not.toBeNull();
+		const text = statusCalls.map((c) => c.join(" ")).join("\n");
+		expect(text).toMatch(/status/i);
 	});
 });

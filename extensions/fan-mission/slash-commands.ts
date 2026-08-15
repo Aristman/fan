@@ -7,7 +7,7 @@
 // DI-колбэк `register` (в проде это тонкая обёртка над fan.registerCommand),
 // вся маршрутизация тестируется на моках (test/slash-commands.test.mjs).
 
-import { readMission, writeMissionStatus } from "./file-state-manager.js";
+import { canTransition, readMission, writeMissionStatus } from "./file-state-manager.js";
 import type { MissionLoop } from "./mission-loop.js";
 import { readMissionLoopState } from "./mission-loop.js";
 
@@ -33,6 +33,17 @@ export interface SlashCtx {
 	output: (line: string) => void;
 	missionDir?: string;
 	getStatusSnapshot?: () => Promise<MissionStatusSnapshot>;
+	// --- Lazy-attach (0.6.0): подхват контура в запущенной сессии. ---
+	// Заполняются при регистрации (index.ts); без них команды сохраняют
+	// прежнее поведение (start — no-op, status — "No active mission").
+	/** cwd сессии — для скана миссий и сообщения "No mission found in <cwd>". */
+	cwd?: string;
+	/** Скан <cwd>/docs/missions: первая аттачабельная миссия (любой статус кроме completed). */
+	findAttachableMission?: () => Promise<{ missionDir: string; status: string } | null>;
+	/** Аттач контура: создаёт MissionLoop и обновляет ctx.missionLoop/missionDir. */
+	attach?: (missionDir: string) => MissionLoop;
+	/** FSM-переход статуса миссии (обёртка writeMissionStatus). */
+	writeStatus?: (missionDir: string, status: string) => Promise<void>;
 }
 
 export interface SlashCommandDef {
@@ -64,6 +75,93 @@ function guarded(output: (line: string) => void, body: () => Promise<void>): Pro
 	});
 }
 
+// ─── Lazy-attach (0.6.0) ────────────────────────────────────────────────────
+// Контур аттачился только в session_start; если миссию остановили (aborted)
+// или она стала active после старта сессии (через CLI), запущенная сессия
+// оставалась без контура. /mission:start|resume|status лениво находят миссию
+// (ctx.findAttachableMission) и аттачат её (ctx.attach) без рестарта fan.
+// stop/pause/steer/decide по-прежнему требуют аттаченный loop.
+
+/** Разрешить функцию записи статуса: DI-override либо реальный writeMissionStatus. */
+function resolveWriteStatus(ctx: SlashCtx): (missionDir: string, status: string) => Promise<void> {
+	return ctx.writeStatus ?? writeMissionStatus;
+}
+
+/** Сообщение "миссия не найдена" с подсказкой init (используется в start/resume). */
+function outputNoMissionFound(ctx: SlashCtx): void {
+	const where = ctx.cwd ?? "current directory";
+	ctx.output(`No mission found in ${where} — run \`fan mission init <slug>\` first`);
+}
+
+/**
+ * Lazy-attach для /mission:start. Нашёл миссию → при необходимости FSM-переход
+ * в active (completed → отказ; невозможный переход → отказ) → attach.
+ * Возвращает true, если loop аттачен и можно тикать.
+ */
+async function lazyAttachForStart(ctx: SlashCtx): Promise<boolean> {
+	if (!ctx.findAttachableMission || !ctx.attach) {
+		return false; // DI не предоставлен — прежнее поведение (no-op)
+	}
+	const found = await ctx.findAttachableMission();
+	if (!found) {
+		outputNoMissionFound(ctx);
+		return false;
+	}
+	if (found.status === "completed") {
+		ctx.output("Mission is completed — run `fan mission init <slug>` to start a new one");
+		return false;
+	}
+	if (found.status !== "active") {
+		if (!canTransition(found.status, "active")) {
+			ctx.output(`Cannot start mission in status "${found.status}" (FSM forbids transition to active)`);
+			return false;
+		}
+		await resolveWriteStatus(ctx)(found.missionDir, "active");
+	}
+	ctx.attach(found.missionDir);
+	return true;
+}
+
+/**
+ * Lazy-attach для /mission:resume: аттачит только paused-миссию
+ * (переход paused → active); прочие статусы/отсутствие миссии — сообщение.
+ * Возвращает true, если loop аттачен.
+ */
+async function lazyAttachForResume(ctx: SlashCtx): Promise<boolean> {
+	if (!ctx.findAttachableMission || !ctx.attach) {
+		return false;
+	}
+	const found = await ctx.findAttachableMission();
+	if (!found) {
+		outputNoMissionFound(ctx);
+		return false;
+	}
+	if (found.status !== "paused") {
+		ctx.output(`Mission is not paused (status: ${found.status}) — nothing to resume`);
+		return false;
+	}
+	await resolveWriteStatus(ctx)(found.missionDir, "active");
+	ctx.attach(found.missionDir);
+	ctx.output("Mission resumed — loop attached");
+	return true;
+}
+
+/**
+ * Lazy-attach для /mission:status (read-only, безопасно): аттачит первую
+ * не-completed миссию, чтобы показать её статус. Ничего не найдено (либо
+ * только completed) → без аттача, команда выведет "No active mission".
+ */
+async function lazyAttachForStatus(ctx: SlashCtx): Promise<void> {
+	if (!ctx.findAttachableMission || !ctx.attach) {
+		return;
+	}
+	const found = await ctx.findAttachableMission();
+	if (!found || found.status === "completed") {
+		return;
+	}
+	ctx.attach(found.missionDir);
+}
+
 /** Mission-loop step names by journal lastStep (0 = idle / no tick yet). */
 const STEP_NAMES: Record<number, string> = {
 	0: "idle",
@@ -93,8 +191,11 @@ export function registerMissionSlashCommands(register: SlashCommandRegister, reg
 		description: "Start the mission loop (runs one tick)",
 		handler: (_args, ctx = registrationCtx) =>
 			guarded(ctx.output, async () => {
-				if (!ctx.missionLoop) return; // no-op without an attached loop
-				await ctx.missionLoop.tick();
+				// Lazy-attach: loop не аттачен — найти миссию и аттачить (сообщения внутри).
+				if (!ctx.missionLoop && !(await lazyAttachForStart(ctx))) {
+					return;
+				}
+				await ctx.missionLoop?.tick();
 			}),
 	});
 
@@ -121,9 +222,13 @@ export function registerMissionSlashCommands(register: SlashCommandRegister, reg
 		description: "Resume the mission after pause",
 		handler: (_args, ctx = registrationCtx) =>
 			guarded(ctx.output, async () => {
+				// Lazy-attach: loop не аттачен — аттачить только paused-миссию.
+				if (!ctx.missionLoop && !(await lazyAttachForResume(ctx))) {
+					return;
+				}
 				ctx.actions.resume();
 				ctx.actions.setDrainAfterCurrentTurn(false);
-				if (ctx.missionDir) await writeMissionStatus(ctx.missionDir, "active");
+				if (ctx.missionDir) await resolveWriteStatus(ctx)(ctx.missionDir, "active");
 			}),
 	});
 
@@ -131,7 +236,13 @@ export function registerMissionSlashCommands(register: SlashCommandRegister, reg
 		description: "Show mission status, iteration, budget usage and current step",
 		handler: (_args, ctx = registrationCtx) =>
 			guarded(ctx.output, async () => {
-				if (ctx.getStatusSnapshot) {
+				// Lazy-attach (read-only, безопасно): loop не аттачен — попробовать
+				// найти и аттачить не-completed миссию, чтобы показать её статус.
+				if (!ctx.missionLoop) {
+					await lazyAttachForStatus(ctx);
+				}
+
+				if (ctx.getStatusSnapshot && ctx.missionLoop) {
 					const snap = await ctx.getStatusSnapshot();
 					ctx.output(`Status:    ${snap.status}`);
 					ctx.output(`Iteration: ${snap.iteration}`);

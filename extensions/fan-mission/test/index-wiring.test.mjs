@@ -113,7 +113,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { initMission } from "../file-state-manager.js";
+import { initMission, readMission, writeMissionStatus } from "../file-state-manager.js";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Динамический import SUT (index.ts → index.js через Vite-резолв .js→.ts).
@@ -122,12 +122,14 @@ import { initMission } from "../file-state-manager.js";
 
 let wireMission;
 let factory;
+let findAttachableMission;
 
 beforeAll(async () => {
 	try {
 		const mod = await import("../index.js");
 		wireMission = mod.wireMission;
 		factory = mod.default;
+		findAttachableMission = mod.findAttachableMission;
 	} catch {
 		// Red: index.ts ещё не реализован.
 	}
@@ -627,5 +629,159 @@ describe("F-MISSION-INDEX / TC-9: lifecycle через хуки factory", () => 
 		await expect(
 			fan._emit("session_shutdown", { type: "session_shutdown" }),
 		).resolves.toBeUndefined();
+	});
+});
+
+// ────────────────────────────────────────────────────────────────────────────────
+// TC-10 (lazy-attach 0.6.0): session_start не аттачил loop (миссии не было или
+// статус терминальный для session_start) — /mission:status|start лениво аттачат
+// контур без рестарта fan. Скан — реальный findAttachableMission, FSM — реальный
+// writeMissionStatus, attach — реальный wiring.attachMission (тот же мост ТИКЕТ-14).
+// ────────────────────────────────────────────────────────────────────────────────
+
+describe("F-MISSION-INDEX / TC-10: lazy-attach в запущенной сессии", () => {
+	it("TC-10a: /mission:status — миссия появилась после session_start → lazy-attach + статус", async () => {
+		const emptyDir = makeEmptyTempDir();
+		liveTempDirs.push(emptyDir);
+
+		const fan = makeMockFan();
+		const handle = factory(fan);
+		liveWirings.push(handle);
+
+		// session_start: миссии ещё нет → loop не аттачен.
+		await fan._emit(
+			"session_start",
+			{ type: "session_start", cwd: emptyDir },
+			{ cwd: emptyDir, hasUI: true, ui: {} },
+		);
+		expect(handle.getMissionLoop()).toBeNull();
+
+		// Миссия "появляется" в cwd (например, fan mission init в другом терминале).
+		const missionDir = await initMission("lazy-status", { baseDir: join(emptyDir, "docs", "missions") });
+		writeFileSync(join(missionDir, "ROADMAP.md"), "# Roadmap\n\n- [ ] lazy step\n", "utf8");
+
+		// /mission:status лениво аттачит loop (read-only) и показывает статус.
+		const statusCmd = fan._commands.get("mission:status");
+		expect(statusCmd).toBeDefined();
+		const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+		let statusCalls;
+		try {
+			await statusCmd.handler("");
+			statusCalls = [...logSpy.mock.calls]; // снять ДО mockRestore (он чистит mock.calls)
+		} finally {
+			logSpy.mockRestore();
+		}
+
+		expect(handle.getMissionLoop()).not.toBeNull();
+		const text = statusCalls.map((c) => c.join(" ")).join("\n");
+		expect(text).toMatch(/status/i);
+		expect(text).toMatch(/active/);
+		expect(text).toMatch(/iteration/i);
+	});
+
+	it("TC-10b: /mission:start — миссия aborted на момент session_start → FSM-переход + attach + tick", async () => {
+		const { baseDir, missionDir } = await makeTempMission("lazy-start");
+		liveTempDirs.push(baseDir);
+		// Миссия остановлена ДО старта fan (например, /mission:stop в прошлой сессии).
+		await writeMissionStatus(missionDir, "aborted");
+
+		const fan = makeMockFan();
+		const handle = factory(fan);
+		liveWirings.push(handle);
+
+		// session_start: aborted не не-терминальный → НЕ аттачится (прежнее поведение).
+		await fan._emit(
+			"session_start",
+			{ type: "session_start", cwd: baseDir },
+			{ cwd: baseDir, hasUI: true, ui: {} },
+		);
+		expect(handle.getMissionLoop()).toBeNull();
+
+		// /mission:start → scan → aborted → writeMissionStatus(active) → attach → tick.
+		// tick внутри ждёт дефолтный runAgent (mock fan без agent_end) — проверяем
+		// побочные эффекты асинхронно, затем осаживаем через shutdown.
+		const startCmd = fan._commands.get("mission:start");
+		expect(startCmd).toBeDefined();
+		const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+		const tickPromise = startCmd.handler("");
+		try {
+			for (let i = 0; i < 200 && handle.getMissionLoop() === null; i += 1) {
+				await new Promise((resolve) => setTimeout(resolve, 10));
+			}
+			expect(handle.getMissionLoop()).not.toBeNull();
+			const mission = await readMission(missionDir);
+			expect(String(mission.frontmatter.status)).toBe("active");
+		} finally {
+			logSpy.mockRestore();
+		}
+
+		// Осадить контур: shutdown() settle-ит waiter дефолтного runAgent (FAILED-тег)
+		// и abort-ит loop → незавершённый tick разворачивается, guarded глотает ошибку.
+		await handle.shutdown();
+		await tickPromise;
+		expect(handle.getMissionLoop()).toBeNull();
+	});
+
+	it("TC-10c: /mission:start без миссий в cwd → 'No mission found', loop не создаётся", async () => {
+		const emptyDir = makeEmptyTempDir();
+		liveTempDirs.push(emptyDir);
+
+		const fan = makeMockFan();
+		const handle = factory(fan);
+		liveWirings.push(handle);
+
+		await fan._emit(
+			"session_start",
+			{ type: "session_start", cwd: emptyDir },
+			{ cwd: emptyDir, hasUI: true, ui: {} },
+		);
+
+		const startCmd = fan._commands.get("mission:start");
+		const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+		let startCalls;
+		try {
+			await startCmd.handler("");
+			startCalls = [...logSpy.mock.calls]; // снять ДО mockRestore (он чистит mock.calls)
+		} finally {
+			logSpy.mockRestore();
+		}
+
+		expect(handle.getMissionLoop()).toBeNull();
+		const text = startCalls.map((c) => c.join(" ")).join("\n");
+		expect(text).toContain("No mission found");
+		expect(text).toContain(emptyDir);
+		expect(text).toContain("fan mission init");
+	});
+
+	it("TC-10d: findAttachableMission — пустой cwd → null; aborted находит; completed пропускает", async () => {
+		expect(typeof findAttachableMission).toBe("function");
+
+		const emptyDir = makeEmptyTempDir();
+		liveTempDirs.push(emptyDir);
+		expect(await findAttachableMission(emptyDir)).toBeNull();
+
+		const { baseDir, missionDir } = await makeTempMission("scan-mission");
+		liveTempDirs.push(baseDir);
+
+		// active — найдена (дефолтный accept)
+		let found = await findAttachableMission(baseDir);
+		expect(found).not.toBeNull();
+		expect(found.missionDir).toBe(missionDir);
+		expect(found.status).toBe("active");
+
+		// aborted — тоже найдена (lazy-attach: start/resume сами делают переход)
+		await writeMissionStatus(missionDir, "aborted");
+		found = await findAttachableMission(baseDir);
+		expect(found).not.toBeNull();
+		expect(found.status).toBe("aborted");
+
+		// completed — дефолтный accept пропускает (аттачить нечего)
+		await writeMissionStatus(missionDir, "active");
+		await writeMissionStatus(missionDir, "completed");
+		expect(await findAttachableMission(baseDir)).toBeNull();
+
+		// фильтр session_start (не-терминальные) — completed тоже не проходит
+		const nonTerminal = (s) => ["active", "paused", "awaiting_decision"].includes(s);
+		expect(await findAttachableMission(baseDir, nonTerminal)).toBeNull();
 	});
 });

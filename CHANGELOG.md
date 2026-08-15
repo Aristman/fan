@@ -4,6 +4,28 @@
 
 ### Fixed
 
+- **lazy-attach: `/mission:start|resume|status` подхватывают контур в запущенной сессии без рестарта fan.**
+  Миссионный контур аттачился только в `session_start`: если миссию остановили
+  (`status: aborted`) или она стала active после старта сессии (через CLI
+  `fan mission`), запущенный TUI оставался без контура — `/mission:status`
+  выводил "No active mission (mission loop is not attached)", виджет F9 был
+  пуст, единственным выходом был рестарт fan. Скан миссий извлечён из
+  `session_start` в переиспользуемый `findAttachableMission(cwd, accept?)`
+  (extensions/fan-mission/index.ts), и команды аттачат контур лениво:
+  `/mission:start` находит миссию (любой статус кроме `completed`), при
+  необходимости делает разрешённый FSM-переход в `active`, аттачит loop и
+  выполняет tick (для `completed` — отказ с подсказкой `fan mission init`,
+  без миссии — "No mission found in <cwd> — run `fan mission init <slug>`
+  first"); `/mission:resume` возобновляет `paused`-миссию; `/mission:status`
+  аттачит любую не-completed миссию read-only. stop/pause/steer/decide без
+  изменений (требуют аттаченный loop). ТИКЕТ-14 мост (scheduler → tick) и
+  виджет F9 подхватываются автоматически — они читают loop через замыкания.
+  `SlashCtx` расширен полями `cwd`/`findAttachableMission`/`attach`/
+  `writeStatus` (slash-commands.ts). Тесты — блок `TC-F11-lazy` в
+  `extensions/fan-mission/test/slash-commands.test.mjs`, `TC-10` в
+  `index-wiring.test.mjs`, `TC-8` в `extensions-load.test.mjs`.
+  fan-mission 0.5.0 → 0.6.0.
+
 - **CLI `fan mission start` не работал ни из одного статуса (бэклог #26).**
   В `missionStart` проверка `canTransition` была инвертирована: переход,
   разрешённый FSM, бросал `InvalidTransitionError`, а недоступная ветка
