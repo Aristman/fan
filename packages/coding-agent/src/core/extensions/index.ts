@@ -80,6 +80,7 @@ export type {
 	InputEvent,
 	InputEventResult,
 	InputSource,
+	IterationBudgetExceededEvent,
 	KeybindingsManager,
 	LoadExtensionsResult,
 	LsToolCallEvent,

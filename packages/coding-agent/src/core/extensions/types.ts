@@ -560,6 +560,19 @@ export interface AgentEndEvent {
 	messages: AgentMessage[];
 }
 
+/**
+ * F-46: fired when the per-iteration budget ceiling is exceeded.
+ * The run is stopped before the next API call (I1 drain semantics);
+ * the session stays usable — the next prompt starts a fresh iteration window.
+ */
+export interface IterationBudgetExceededEvent {
+	type: "iteration_budget_exceeded";
+	tokensUsed: number;
+	costUsed: number;
+	remaining: number;
+	message: string;
+}
+
 /** Fired at the start of each turn */
 export interface TurnStartEvent {
 	type: "turn_start";
@@ -864,6 +877,7 @@ export type ExtensionEvent =
 	| BeforeAgentStartEvent
 	| AgentStartEvent
 	| AgentEndEvent
+	| IterationBudgetExceededEvent
 	| TurnStartEvent
 	| TurnEndEvent
 	| MessageStartEvent
@@ -1011,6 +1025,7 @@ export interface ExtensionAPI {
 	on(event: "before_agent_start", handler: ExtensionHandler<BeforeAgentStartEvent, BeforeAgentStartEventResult>): void;
 	on(event: "agent_start", handler: ExtensionHandler<AgentStartEvent>): void;
 	on(event: "agent_end", handler: ExtensionHandler<AgentEndEvent>): void;
+	on(event: "iteration_budget_exceeded", handler: ExtensionHandler<IterationBudgetExceededEvent>): void;
 	on(event: "turn_start", handler: ExtensionHandler<TurnStartEvent>): void;
 	on(event: "turn_end", handler: ExtensionHandler<TurnEndEvent>): void;
 	on(event: "message_start", handler: ExtensionHandler<MessageStartEvent>): void;

@@ -24,7 +24,7 @@
 //      НИКОГДА пустую строку (пустая → ложный COMPLETE → коммит
 //      невыполненного item).
 
-import type { AgentEndEvent, ExtensionAPI } from "@seaagents/fan-coding-agent";
+import type { AgentEndEvent, ExtensionAPI, IterationBudgetExceededEvent } from "@seaagents/fan-coding-agent";
 import { parsePromise } from "./promise-parser.js";
 import type { RunAgent } from "./session-executor.js";
 
@@ -118,7 +118,10 @@ export function createDefaultRunAgent(fan: ExtensionAPI, opts?: DefaultRunAgentO
 	const timeoutMs = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 	const now = opts?.now ?? Date.now;
 
-	const state: { pending: Pending | null } = { pending: null };
+	const state: { pending: Pending | null; budgetExceeded: { tokensUsed: number; costUsed: number } | null } = {
+		pending: null,
+		budgetExceeded: null,
+	};
 
 	const clearPending = (pending: Pending): void => {
 		if (state.pending === pending) {
@@ -182,7 +185,15 @@ export function createDefaultRunAgent(fan: ExtensionAPI, opts?: DefaultRunAgentO
 		// stopReason error/aborted без валидного <promise>-тега → FAILED-тег.
 		const stopReason = lastAssistant?.stopReason;
 		if ((stopReason === "error" || stopReason === "aborted") && parsePromise(response) === null) {
-			response = `<promise>FAILED: agent ${stopReason}: ${sanitizeReason(lastAssistant?.errorMessage)}</promise>`;
+			const budget = state.budgetExceeded;
+			if (budget !== null) {
+				// F-46: abort вызван превышением iteration-бюджета — отдельная
+				// диагностика (иначе кейс неотличим от generic abort).
+				state.budgetExceeded = null;
+				response = `<promise>FAILED: iteration budget exceeded (tokensUsed=${budget.tokensUsed}, costUsed=$${budget.costUsed})</promise>`;
+			} else {
+				response = `<promise>FAILED: agent ${stopReason}: ${sanitizeReason(lastAssistant?.errorMessage)}</promise>`;
+			}
 		}
 
 		// Пустой ответ (нет assistant-текста) → FAILED, не ложный COMPLETE.
@@ -194,6 +205,22 @@ export function createDefaultRunAgent(fan: ExtensionAPI, opts?: DefaultRunAgentO
 		pending.resolve({ response, costTokens, costUsd });
 	};
 	fan.on("agent_end", onAgentEnd);
+
+	// ── iteration_budget_exceeded handler (F-46, персистентный) ─────────────
+	// Событие приходит ДО agent_end того же прогона; флаг потребляется в
+	// onAgentEnd и сбрасывается на новый прогон (runAgent).
+	const onIterationBudgetExceeded = (event: IterationBudgetExceededEvent): void => {
+		if (state.pending === null) {
+			return; // нет активного waiter — чужой прогон
+		}
+		const tokensUsed = Number(event?.tokensUsed);
+		const costUsed = Number(event?.costUsed);
+		state.budgetExceeded = {
+			tokensUsed: Number.isFinite(tokensUsed) ? tokensUsed : 0,
+			costUsed: Number.isFinite(costUsed) ? costUsed : 0,
+		};
+	};
+	fan.on("iteration_budget_exceeded", onIterationBudgetExceeded);
 
 	// ── runAgent (single-flight) ──────────────────────────────────────────────
 	const runAgent: RunAgent = (prompt) => {
@@ -217,6 +244,8 @@ export function createDefaultRunAgent(fan: ExtensionAPI, opts?: DefaultRunAgentO
 			pending.timer = timer;
 			// pending устанавливается ДО sendUserMessage (race-guard: agent_end
 			// может прийти синхронно/мгновенно в некоторых runtime-конфигурациях).
+			// Флаг iteration_budget_exceeded сбрасывается на новый прогон.
+			state.budgetExceeded = null;
 			state.pending = pending;
 			try {
 				fan.sendUserMessage(prompt, { deliverAs: "followUp" });

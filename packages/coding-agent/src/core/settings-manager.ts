@@ -119,6 +119,10 @@ export interface Settings {
 		dailyCostLimit?: number;
 		monthlyTokenLimit?: number;
 		monthlyCostLimit?: number;
+		/** F-46: per-iteration token ceiling (0 = unlimited; default applied by SDK) */
+		iterationTokenLimit?: number;
+		/** F-46: per-iteration USD ceiling (0 = unlimited; default applied by SDK) */
+		iterationCostLimit?: number;
 	};
 
 	terminal?: TerminalSettings;
@@ -1110,6 +1114,8 @@ export class SettingsManager {
 		dailyCostLimit?: number;
 		monthlyTokenLimit?: number;
 		monthlyCostLimit?: number;
+		iterationTokenLimit?: number;
+		iterationCostLimit?: number;
 	} {
 		return this.settings.budget ?? {};
 	}
@@ -1119,6 +1125,8 @@ export class SettingsManager {
 		dailyCostLimit?: number;
 		monthlyTokenLimit?: number;
 		monthlyCostLimit?: number;
+		iterationTokenLimit?: number;
+		iterationCostLimit?: number;
 	}): void {
 		this.globalSettings.budget = config;
 		this.markModified("budget");

@@ -173,7 +173,16 @@ export type AgentSessionEvent =
 	| { type: "drain_started" }
 	| { type: "drain_completed" }
 	| { type: "drain_cancelled" }
-	| { type: "drain_resumed" };
+	| { type: "drain_resumed" }
+	// F-46: per-iteration budget ceiling exceeded. The run is stopped before the
+	// next API call (I1 drain semantics); the session stays usable.
+	| {
+			type: "iteration_budget_exceeded";
+			tokensUsed: number;
+			costUsed: number;
+			remaining: number;
+			message: string;
+	  };
 
 /** Listener function for agent session events */
 export type AgentSessionEventListener = (event: AgentSessionEvent) => void;
@@ -549,6 +558,45 @@ export class AgentSession {
 			this.agent.abort();
 		}
 
+		// F-46 iteration budget: synchronous hooks. They MUST run here (not in the
+		// queued _processAgentEvent) for the same reason as the F-05 drain abort:
+		// the agent-loop checks the abort signal right after emitting turn_end, so
+		// the exceedance decision has to be made before the next microtask hop.
+		//
+		// Iteration model: one agent-loop turn == one iteration of the loop.
+		// Usage is aggregated per assistant message (every API call of the turn)
+		// and checked at the iteration boundaries:
+		//   agent_start / turn_start → check leftovers, then reset (fresh window)
+		//   message_end (assistant)  → trackIterationUsage(tokens, cost)
+		//   turn_end                 → check this turn's usage
+		//
+		// Behavior on exceed (roadmap §F-46, I1 drain): emit
+		// `iteration_budget_exceeded` (log/event for tree-journal / I2 steer
+		// escalation), resetIteration() and abort — the loop ends cleanly via
+		// agent_end BEFORE the next API call. The session is NOT crashed: the
+		// next prompt() starts fresh (counters already reset). Global and
+		// iteration budgets are independent; whichever fires first wins.
+		if (this._modelManager) {
+			if (event.type === "agent_start" || event.type === "turn_start") {
+				if (!this._modelManager.checkIterationBudget().allowed) {
+					this._onIterationBudgetExceeded();
+				} else {
+					this._modelManager.resetIteration();
+				}
+			} else if (event.type === "message_end" && event.message.role === "assistant") {
+				const assistantMsg = event.message as AssistantMessage;
+				const totalTokens = assistantMsg.usage?.totalTokens ?? 0;
+				const totalCost = assistantMsg.usage?.cost?.total ?? 0;
+				if (totalTokens > 0 || totalCost > 0) {
+					this._modelManager.trackIterationUsage(totalTokens, totalCost);
+				}
+			} else if (event.type === "turn_end" && !this._drainStopPending) {
+				if (!this._modelManager.checkIterationBudget().allowed) {
+					this._onIterationBudgetExceeded();
+				}
+			}
+		}
+
 		this._agentEventQueue = this._agentEventQueue.then(
 			() => this._processAgentEvent(event),
 			() => this._processAgentEvent(event),
@@ -882,6 +930,58 @@ export class AgentSession {
 
 		// Abort the in-flight agent run so the hung tool is interrupted.
 		this.agent.abort();
+	}
+
+	// =========================================================================
+	// Iteration budget (F-46)
+	// =========================================================================
+
+	/**
+	 * F-46: iteration budget exceeded — emit the diagnostic event, reset the
+	 * per-iteration counters and abort the run so the agent-loop stops BEFORE
+	 * the next API call (I1 drain semantics, same abort pattern as F-05 drain
+	 * and the loop detector). The run ends cleanly via agent_end; the session
+	 * stays usable — the next prompt() starts a fresh iteration window.
+	 */
+	private _onIterationBudgetExceeded(): void {
+		const modelManager = this._modelManager;
+		if (!modelManager) return;
+
+		const { remaining } = modelManager.checkIterationBudget();
+		const usage = modelManager.getIterationUsage();
+		modelManager.resetIteration();
+
+		const message = `Iteration budget exceeded: ${usage.tokensUsed} / ${usage.tokenLimit || "∞"} tokens, $${usage.costUsed.toFixed(2)} / $${usage.usdLimit ? usage.usdLimit.toFixed(2) : "∞"} — stopping before the next API call (F-46)`;
+
+		this._emit({
+			type: "iteration_budget_exceeded",
+			tokensUsed: usage.tokensUsed,
+			costUsed: usage.costUsed,
+			remaining,
+			message,
+		});
+
+		// Forward to extensions (F-46 consumers, e.g. fan-mission
+		// default-run-agent, distinguish a budget abort from a generic one).
+		// Fire-and-forget: this hook is synchronous — it runs inside
+		// _handleAgentEvent before the agent-loop's next microtask hop.
+		if (this._extensionRunner) {
+			void this._extensionRunner
+				.emit({
+					type: "iteration_budget_exceeded",
+					tokensUsed: usage.tokensUsed,
+					costUsed: usage.costUsed,
+					remaining,
+					message,
+				})
+				.catch(() => {});
+		}
+
+		try {
+			this.agent.abort();
+		} catch {
+			/* agent may already be disposed */
+		}
 	}
 
 	// =========================================================================

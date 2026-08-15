@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { ModelManager } from "@fan/model-manager";
+import { DEFAULT_ITERATION_BUDGET_TOKENS, DEFAULT_ITERATION_BUDGET_USD, ModelManager } from "@fan/model-manager";
 import { Agent, type AgentMessage, type ThinkingLevel } from "@seaagents/fan-agent-core";
 import { type Message, type Model, streamSimple } from "@seaagents/fan-ai";
 import { getAgentDir, getDocsPath } from "../config.js";
@@ -248,8 +248,20 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		thinkingLevel = "off";
 	}
 
-	// Create or use provided ModelManager
-	const modelManager = options.modelManager ?? new ModelManager();
+	// Create or use provided ModelManager.
+	// F-46: apply the roadmap per-iteration budget defaults (100k tokens /
+	// $5.00 per iteration) unless the caller supplies their own ModelManager.
+	// settings.json `budget.iterationTokenLimit` / `budget.iterationCostLimit`
+	// override the defaults (0 = unlimited).
+	const budgetSettings = settingsManager?.getBudgetConfig() ?? {};
+	const modelManager =
+		options.modelManager ??
+		new ModelManager({
+			budget: {
+				iterationBudgetTokens: budgetSettings.iterationTokenLimit ?? DEFAULT_ITERATION_BUDGET_TOKENS,
+				iterationBudgetUsd: budgetSettings.iterationCostLimit ?? DEFAULT_ITERATION_BUDGET_USD,
+			},
+		});
 
 	// Sync settings to DB if settingsManager is available
 	if (settingsManager && options.modelManager === undefined) {

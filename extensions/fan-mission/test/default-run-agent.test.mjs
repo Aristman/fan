@@ -469,6 +469,93 @@ describe("DEFAULT-RUN-AGENT / TC-14: agent_end без активного waiter"
 	});
 });
 
+// ─── TC-16: iteration_budget_exceeded (F-46) → бюджетная диагностика ──────
+
+describe("DEFAULT-RUN-AGENT / TC-16: iteration_budget_exceeded (F-46)", () => {
+	const budgetExceeded = (tokensUsed, costUsed) => ({
+		type: "iteration_budget_exceeded",
+		tokensUsed,
+		costUsed,
+		remaining: -1,
+		message: "Iteration budget exceeded",
+	});
+
+	it("TC-16: exceeded + agent_end aborted без promise-тега → FAILED с бюджетной диагностикой", async () => {
+		const fan = makeMockFan();
+		const { runAgent } = createDefaultRunAgent(fan);
+
+		const promise = runAgent("p");
+		// Событие приходит ДО agent_end того же прогона
+		await fan._emit("iteration_budget_exceeded", budgetExceeded(12345, 1.5));
+		await fan._emit(
+			"agent_end",
+			agentEnd([userMsg("p"), assistantMsg({ text: "partial", stopReason: "aborted" })]),
+		);
+
+		const result = await promise;
+		expect(result.response).toBe("<promise>FAILED: iteration budget exceeded (tokensUsed=12345, costUsed=$1.5)</promise>");
+	});
+
+	it("TC-16: обычный abort без флага → прежний generic текст", async () => {
+		const fan = makeMockFan();
+		const { runAgent } = createDefaultRunAgent(fan);
+
+		const promise = runAgent("p");
+		await fan._emit(
+			"agent_end",
+			agentEnd([userMsg("p"), assistantMsg({ text: "", stopReason: "aborted" })]),
+		);
+
+		const result = await promise;
+		expect(result.response).toBe("<promise>FAILED: agent aborted: unknown</promise>");
+	});
+
+	it("TC-16: флаг сбрасывается на новый прогон (не протекает в следующий runAgent)", async () => {
+		const fan = makeMockFan();
+		const { runAgent } = createDefaultRunAgent(fan);
+
+		// Прогон 1: бюджетное превышение
+		const first = runAgent("p1");
+		await fan._emit("iteration_budget_exceeded", budgetExceeded(500, 0.05));
+		await fan._emit("agent_end", agentEnd([userMsg("p1"), assistantMsg({ text: "", stopReason: "aborted" })]));
+		expect((await first).response).toBe(
+			"<promise>FAILED: iteration budget exceeded (tokensUsed=500, costUsed=$0.05)</promise>",
+		);
+
+		// Прогон 2: обычный abort БЕЗ budget-события → generic текст
+		const second = runAgent("p2");
+		await fan._emit("agent_end", agentEnd([userMsg("p2"), assistantMsg({ text: "", stopReason: "aborted" })]));
+		expect((await second).response).toBe("<promise>FAILED: agent aborted: unknown</promise>");
+	});
+
+	it("TC-16: exceeded, НО response с валидным <promise>-тегом → response без изменений", async () => {
+		const fan = makeMockFan();
+		const { runAgent } = createDefaultRunAgent(fan);
+
+		const original = "partial work <promise>BLOCKED: need access</promise>";
+		const promise = runAgent("p");
+		await fan._emit("iteration_budget_exceeded", budgetExceeded(777, 0.7));
+		await fan._emit(
+			"agent_end",
+			agentEnd([userMsg("p"), assistantMsg({ text: original, stopReason: "aborted" })]),
+		);
+
+		expect((await promise).response).toBe(original);
+	});
+
+	it("TC-16: iteration_budget_exceeded без активного waiter → no-op (флаг не ставится)", async () => {
+		const fan = makeMockFan();
+		const { runAgent } = createDefaultRunAgent(fan);
+
+		// Событие до runAgent — не должно повлиять на будущий прогон
+		await fan._emit("iteration_budget_exceeded", budgetExceeded(999, 9.9));
+
+		const promise = runAgent("p");
+		await fan._emit("agent_end", agentEnd([userMsg("p"), assistantMsg({ text: "", stopReason: "aborted" })]));
+		expect((await promise).response).toBe("<promise>FAILED: agent aborted: unknown</promise>");
+	});
+});
+
 // ─── TC-15: дефолтный timeout 30 мин; агент успевает раньше ────────────────
 
 describe("DEFAULT-RUN-AGENT / TC-15: дефолтный таймаут", () => {
