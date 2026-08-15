@@ -43,10 +43,20 @@ if (!port || !token) {
 	process.exit(1);
 }
 
-// ── persist argv for e2e verification ───────────────────────────────────────
+// ── persist argv/env for e2e verification ───────────────────────────────────
 
 try {
-	writeFileSync(join(process.env.FAN_ARGV_DUMP_DIR || ".", `argv-${port}.txt`), JSON.stringify(process.argv.slice(2)), "utf8");
+	const dumpDir = process.env.FAN_ARGV_DUMP_DIR || ".";
+	writeFileSync(join(dumpDir, `argv-${port}.txt`), JSON.stringify(process.argv.slice(2)), "utf8");
+	// F-36: дамп depth/width env — проверка проброса FAN_ORCHESTRATOR_DEPTH при spawn.
+	writeFileSync(
+		join(dumpDir, `env-${port}.txt`),
+		JSON.stringify({
+			FAN_ORCHESTRATOR_DEPTH: process.env.FAN_ORCHESTRATOR_DEPTH ?? null,
+			FAN_ORCHESTRATOR_WIDTH: process.env.FAN_ORCHESTRATOR_WIDTH ?? null,
+		}),
+		"utf8",
+	);
 } catch {
 	/* best-effort */
 }

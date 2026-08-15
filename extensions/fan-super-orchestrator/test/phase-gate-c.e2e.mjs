@@ -251,7 +251,6 @@ async function main() {
 	// ═══════════════════════════════════════════════════════════════════════
 	console.log("\n── Сценарий 1: Happy Path (3 узла, toolManifest) ──");
 
-	const client1 = createChildNodeClient({ wsFactory });
 	const pids1 = [];
 	const tokensByNode = {};
 
@@ -260,8 +259,15 @@ async function main() {
 		missionId: "gate-c",
 		budgetTotal: { tokens: BUDGET_TOKENS, usd: BUDGET_USD },
 		spawnNode: makeSpawnNode(pids1, 500),
-		sendPackage: async ({ port, token, workPackage }) => {
-			return client1.sendWorkPackage({ port, token, workPackage });
+		sendPackage: async ({ port, token, workPackage, onValidationFailed }) => {
+			// F-38: колбэк граничной валидации пробрасывается в клиент (клиент
+			// создаётся на вызов — onValidationFailed задаётся при создании).
+			const client = createChildNodeClient({ wsFactory, onValidationFailed });
+			try {
+				return await client.sendWorkPackage({ port, token, workPackage });
+			} finally {
+				client.close();
+			}
 		},
 		killNode: makeKillNode(pids1),
 	});
@@ -443,15 +449,20 @@ async function main() {
 	}
 
 	const ksPids = [];
-	const client2 = createChildNodeClient({ wsFactory });
 
 	const depth2KS = createDepth2Integration({
 		missionDir: tmp,
 		missionId: "gate-c-ks",
 		budgetTotal: { tokens: BUDGET_TOKENS, usd: BUDGET_USD },
 		spawnNode: makeSpawnNode(ksPids, 15000),
-		sendPackage: async ({ port, token, workPackage }) => {
-			return client2.sendWorkPackage({ port, token, workPackage });
+		sendPackage: async ({ port, token, workPackage, onValidationFailed }) => {
+			// F-38: проброс onValidationFailed (см. сценарий 1).
+			const client = createChildNodeClient({ wsFactory, onValidationFailed });
+			try {
+				return await client.sendWorkPackage({ port, token, workPackage });
+			} finally {
+				client.close();
+			}
 		},
 		killNode: makeKillNode(ksPids),
 	});
@@ -572,8 +583,6 @@ async function main() {
 	// ═══════════════════════════════════════════════════════════════════════
 	// Cleanup
 	// ═══════════════════════════════════════════════════════════════════════
-	client1.close();
-	client2.close();
 	// Убить все оставшиеся процессы (страховка)
 	for (const p of [...pids1, ...ksPids]) {
 		try {
