@@ -1,5 +1,5 @@
 # Documentation Manifest
-> Last updated: 2026-08-15
+> Last updated: 2026-08-15 (этап 3 завершён)
 > Comprehensive index of all project documentation.
 > Maintainer: docs-impl agent
 
@@ -86,9 +86,11 @@
 | `docs/develop/tests/orchestrator-phase4.md` | ✅ | Orchestrator Phase 4 (18 ✅) |
 | `docs/develop/tests/orchestrator-phase5.md` | ✅ | Orchestrator Phase 5 — Hardening |
 | `docs/develop/tests/dashboard-phase6.md` | ✅ | Dashboard Phase 6 (26/30 ✅) |
-| `docs/features/super-orchestrator/pipeline-report.md` | ✅ | Pipeline отчёт сверх-оркестратора FAN — Этапы 0+1 завершены (24/48 фич, phase-gate A/B/C PASS, verify final 2085+ тестов, точка возобновления → этап 2 F-23) |
+| `docs/features/super-orchestrator/pipeline-report.md` | ✅ | Pipeline отчёт сверх-оркестратора FAN — все 4 этапа завершены (48/48 + F-48.5, phase-gates A3/B3/C3 PASS, 716 тестов super-orch, точка: бэклог/мерж/релиз) |
 | `docs/features/super-orchestrator/mission-loop-0/roadmap.md` | ✅ | Этап 0 roadmap — все 15 фич ✅, добавлена секция «Этап 0 завершён» (2026-08-12) |
 | `docs/features/super-orchestrator/mission-validation-1/roadmap.md` | ✅ | Этап 1 roadmap — все 8 фич (F-16..F-22, F-48) ✅, добавлена секция «Этап 1 завершён» (2026-08-13) |
+| `docs/features/super-orchestrator/depth-and-dashboard-3/roadmap.md` | ✅ | Этап 3 roadmap — все 12 фич (F-36..F-47) ✅, + F-48.5 EPIC-делегирование (2026-08-15) |
+| `extensions/fan-super-orchestrator/README.md` | ✅ | Этап 3 ✅: 17 модулей, 716 тестов, EPIC-делегирование, phase-gates A3/B3/C3 |
 
 ## Backlogs
 | File | Status | Description |
@@ -123,4 +125,4 @@
 
 All 5 package READMEs have been created — status updated to ✅.
 
-Total: **59 tracked documents** (55 ✅, 4 ⚠️, 0 ❌)
+Total: **61 tracked documents** (57 ✅, 4 ⚠️, 0 ❌)

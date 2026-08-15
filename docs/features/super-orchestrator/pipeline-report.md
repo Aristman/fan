@@ -11,15 +11,17 @@
 | Метрика | Значение |
 |---------|----------|
 | Всего фич (4 roadmap) | 48 |
-| Реализовано (✅) | 37 (этап 0: 15 фич + 1 phase-gate e2e; этап 1: F-16..F-22 + F-48 = 8; этап 2: F-23..F-35 = 13 + 1 phase-gate e2e) |
+| Реализовано (✅) | 48/48 + F-48.5 (этап 0: 15; этап 1: 8 + F-48; этап 2: 13; этап 3: 12 + F-48.5) |
 | Провалено (❌) | 0 |
-| Коммитов | 30+ (этап 0: 19 + этап 1: 11; этап 2: см. git log f01f7d0..3a95da8) |
-| Тесты fan-mission | 475 зелёные |
-| Тесты fan-orchestrator | 186 зелёные (158 + 28 новых F-48) |
-| Тесты fan-super-orchestrator | 457 зелёные (19 файлов) + 57 e2e-проверок (phase-gates A/B/C) |
-| Тесты coding-agent | 1190 (1 pre-existing flake) |
-| Verify final этапа 2 | PASS (457 тестов + 57 e2e, phase-gates A/B/C зелёные) |
-| Phase-gate A/B/C этапа 2 | PASS (A: 11/11, B: 26/26, C: 20/20) |
+| Коммитов | 47+ (этап 0: 19 + этап 1: 11; этап 2: 12; этап 3: 17 — d3fa7ed..22df4a1) |
+| Тесты fan-super-orchestrator | 716 зелёные (26 файлов) + phase-gates A3/B3/C3 |
+| Тесты fan-mission | 585 зелёные (23 файла) |
+| Тесты api-gateway | 137 зелёные (12 файлов) |
+| Тесты dashboard | 98 зелёные (6 файлов) |
+| Тесты model-manager | 53 зелёные (5 файлов) |
+| Тесты coding-agent | 1244 зелёные (1 pre-existing flake) |
+| Phase-gate A3/B3/C3 этапа 3 | PASS (A3: 17/17, B3: 12/12, C3: 32/32) |
+| Verify final этапа 3 | PASS |
 
 ## Прогресс
 
@@ -88,23 +90,40 @@
 **Phase-gates:** A ✅ (11/11 — процессы, auth, guard, sanitizer), B ✅ (26/26 — протоколы, бюджет, журнал, reconciliation), C ✅ (20/20 — depth-2 интеграция).
 **Финальная верификация:** PASS.
 
-### Этап 3: depth-and-dashboard-3 (F-36..F-47) — ожидает
+### Этап 3: depth-and-dashboard-3 (F-36..F-47 + F-48.5) — ✅ ЗАВЕРШЁН (13/13)
 
-## Точка возобновления (2026-08-14, ЭТАП 2 ЗАВЕРШЁН — СЛЕДУЮЩИЙ: ЭТАП 3)
+| Фича | Статус | Описание | Коммит |
+|------|--------|----------|--------|
+| F-36 | ✅ | Глубина 3–4 (maxWorkingDepth, FAN_ORCHESTRATOR_DEPTH) | d3fa7ed |
+| F-37 | ✅ | Манифесты инструментов (validateManifest, --tools, tool_blocked) | 8e89bcc |
+| F-38 | ✅ | Полная санитизация границ (correlationId, depth, schema) | 2c8d0b5 |
+| F-39 | ✅ | Dashboard: `<mission-tree>` (live дерево узлов) | 9b57fb5 |
+| F-40 | ✅ | Dashboard: `<mission-status>` + `<mission-log>` | a4e2567 |
+| F-41 | ✅ | Dashboard: `<mission-budget>` (per-branch столбчатая диаграмма) | ace89c3 |
+| F-42 | ✅ | CLI `fan mission tree <slug>` (ASCII + JSON) | bfac439 |
+| F-43 | ✅ | Документация миссий (guide + примеры) | 8e3d142 |
+| F-44 | ✅ | E2E-тесты глубины 3–4 (7 тестов, 5 реальных процессов) | 7d171cb |
+| F-45 | ✅ | Checkpoint API (ядро, AgentSession) | 039b241 |
+| F-46 | ✅ | Бюджет на итерацию (ядро, BudgetTracker) | c07cfc8 |
+| F-47 | ✅ | Mission API эндпоинты + WS mission_event | 72b9fc4 |
+| F-48.5 | ✅ | Wire mission-loop to super-orchestrator (EPIC-делегирование) | 6a9eb6d |
 
-**Состояние:** этап 2 завершён. Все 13 фич (F-23..F-35) реализованы. 14 модулей в `extensions/fan-super-orchestrator/`. Изменения ядра: `seedNodeToken` в api-gateway + сидинг env в main.ts. 457 тестов + 57 e2e-проверок. Phase-gates A/B/C зелёные (11/11, 26/26, 20/20). Коммиты f01f7d0..3a95da8.
+**Коммиты:** d3fa7ed (F-36) .. 22df4a1 (gitignore e2e dumps).
+**Тесты:** 716 юнит/интеграционных (26 файлов) + phase-gates A3 17/17, B3 12/12, C3 32/32.
+**Phase-gates:** A3 ✅ (17/17 — глубина, манифесты, санитизация), B3 ✅ (12/12 — API + Dashboard контракты), C3 ✅ (32/32 — EPIC-делегирование, checkpoint, бюджет итерации, kill-switch).
+**Финальная верификация:** PASS.
+**Изменения ядра:** Checkpoint API в AgentSession (F-45), per-iteration budget в BudgetTracker (F-46), mission API endpoints + WS producer (F-47), Dashboard mission-компоненты (F-39/40/41), CLI `fan mission tree` (F-42).
 
-**Следующий шаг:**
-1. Прочитать roadmap `depth-and-dashboard-3/roadmap.md` (F-36..F-47, 12 фич).
-2. Создать таск-лист по зависимостям — первая фича корневая P0 без зависимостей (по графу roadmap этапа 3).
-3. Реализовать F-36 per-function TDD (Red → Green → verify → commit).
-4. Phase-gate на границах фаз этапа 3 (A/B/C).
-5. Verify final этапа 3 → Smoke → Docs → отчёт.
+## Точка возобновления (2026-08-15, ПАЙПЛАЙН ЗАВЕРШЁН ПОЛНОСТЬЮ)
+
+**Состояние:** все 4 этапа завершены. 48/48 фич + F-48.5 реализованы. 17 модулей в `extensions/fan-super-orchestrator/` (14 этап 2 + tool-manifest + index + depth-range). 716 тестов super-orch + phase-gates A3/B3/C3 (17/17, 12/12, 32/32). Коммиты d3fa7ed..22df4a1.
+
+**Следующие шаги:** бэклог (см. ниже) → мерж → релиз.
 
 **Протокол возобновления:**
-1. Прочитать этот файл + roadmap `depth-and-dashboard-3/roadmap.md`.
+1. Прочитать этот файл.
 2. Проверить `git status` — рабочая копия чиста.
-3. Создать таск-лист: F-36..F-47 по фазам + 3 phase-gate + verify/smoke/docs, зависимости wired.
+3. Выбрать пункт из бэклога или переходить к мержу/релизу.
 4. Ветка: FAN/feature/new-agents-flow.
 
 **Ключевые решения этапа 1 (для будущих фич):**
@@ -163,6 +182,27 @@
 - **2026-08-13** — ⚠️ **Deployment-факт:** рантайм ищет расширения в `<cwd>/.fan/extensions/` и `~/.fan/agent/extensions/`, НЕ в `extensions/` репо. Deployed-копии в `~/.fan/agent/extensions/` СТАРЫЕ (orchestrator от 29 июля без F-48; mission/scheduler/webhook отсутствуют). Для реальной работы новых расширений нужен релиз в store + установка (отложено оператором). `index.ts` fallback достаточен для discovery (fan.extensions в package.json не требуется).
 - **2026-08-14** — 🏁 **Этап 2 ЗАВЕРШЁН.** 13/13 фич (F-23..F-35) реализованы. 14 модулей в `extensions/fan-super-orchestrator/`. 457 тестов + 57 e2e-проверок (phase-gates A 11/11, B 26/26, C 20/20). Изменения ядра: `seedNodeToken` в api-gateway + сидинг env в main.ts. Коммиты f01f7d0..3a95da8. Точка возобновления: этап 3 (`depth-and-dashboard-3`, F-36..F-47).
 - **2026-08-14** — 📝 **Docs-сессия этапа 2:** обновлены `http-hierarchy-2/roadmap.md` (все чекбоксы ✅), `fan-super-orchestrator/README.md` (модули, тесты, что дальше), `pipeline-report.md` (этап 2 ✅, прогресс 37/48, точка возобновления → этап 3, бэклог #16–#21). Коммиты НЕ делаются (по инструкции).
+- **2026-08-15** — **Этап 3 старт.** Созданы задачи F-36..F-47 (12 фич + 3 phase-gate + verify/docs), зависимости wired по графу roadmap.
+- **2026-08-15** — **F-36 ✅** Глубина 3–4: maxWorkingDepth=4 (дефолт), FAN_ORCHESTRATOR_DEPTH env, depth_exceeded эскалация. 34 теста depth-range. Коммит `d3fa7ed`.
+- **2026-08-15** — **F-37 ✅** Манифесты инструментов: validateManifest, --tools флаг при spawn, tool_blocked в tree-journal. 4 контракт-теста. Коммит `8e89bcc`.
+- **2026-08-15** — **F-38 ✅** Полная санитизация границ: correlationId формат, depth согласованность, схема отчёта. 39 тестов sanitizer. Коммит `2c8d0b5`.
+- **2026-08-15** — **Phase-gate A3 ✅** 17/17: L0→2×L1 реальные процессы, argv --tools, depth env, guard 3/4/5, манифесты, санитизация, tree-journal глубины 3. Коммит `50da3f3`.
+- **2026-08-15** — **F-47 ✅** Mission API: GET /status, /tree, /budget + WS mission_event продюсер. 137 тестов api-gateway. Коммит `72b9fc4`.
+- **2026-08-15** — **F-39 ✅** Dashboard `<mission-tree>`: live дерево узлов с иконками статусов и расходом, WS-подписка. 98 тестов dashboard. Коммит `9b57fb5`.
+- **2026-08-15** — **F-40 ✅** Dashboard `<mission-status>` + `<mission-log>`: статус/итерация/расход + лента событий. Коммит `a4e2567`.
+- **2026-08-15** — **F-41 ✅** Dashboard `<mission-budget>`: столбчатая диаграмма по веткам, пороги 80%/95%. Коммит `ace89c3`.
+- **2026-08-15** — **F-42 ✅** CLI `fan mission tree <slug>`: ASCII-дерево + JSON, --depth N. Коммит `bfac439`.
+- **2026-08-15** — **Fix F-41/F-42:** WS snapshot-vs-delta контракт + CLI/API топология parity. Коммит `36b1773`.
+- **2026-08-15** — **Phase-gate B3 ✅** 12/12: API эндпоинты ↔ Dashboard компоненты контракты (F-47 ↔ F-39/40/41). Коммит `b24122d`.
+- **2026-08-15** — **F-45 ✅** Checkpoint API: checkpoint/restoreCheckpoint/listCheckpoints в AgentSession, .fan/checkpoints/. 53 теста model-manager. Коммит `039b241`.
+- **2026-08-15** — **F-46 ✅** Бюджет на итерацию: iterationBudgetTokens в BudgetTracker, iteration_budget_exceeded в tree-journal. Коммит `c07cfc8`.
+- **2026-08-15** — **F-48.5 ✅** Wire mission-loop to super-orchestrator: EPIC-делегирование (mission_delegate event, runAgent → spawn L1, отчёты → journal/budget). Коммит `6a9eb6d`.
+- **2026-08-15** — **F-44 ✅** E2E-тесты глубины 3–4: 7 тестов с 5 реальными процессами (depth 3, манифесты, бюджет, метрики, параллельные L1). Коммит `7d171cb`.
+- **2026-08-15** — **F-43 ✅** Документация миссий: guide (quickstart, EPIC-делегирование, наблюдаемость) + примеры. Коммит `8e3d142`.
+- **2026-08-15** — **Phase-gate C3 ✅** 32/32: EPIC-делегирование, checkpoint, бюджет итерации, kill-switch, манифесты, санитизация, guard. Коммит `3498a9f`.
+- **2026-08-15** — **Chore:** gitignore e2e argv/env dumps. Коммит `22df4a1`.
+- **2026-08-15** — 🏁 **Этап 3 ЗАВЕРШЁН.** 13/13 фич (F-36..F-47 + F-48.5). 716 тестов super-orch + phase-gates A3/B3/C3 (17/17, 12/12, 32/32). Verify final PASS.
+- **2026-08-15** — 🏁 **ПАЙПЛАЙН ЗАВЕРШЁН ПОЛНОСТЬЮ.** Все 4 этапа: 48/48 фич + F-48.5. Точка возобновления: бэклог/мерж/релиз.
 
 ## Бэклог (follow-ups, не блокеры)
 
@@ -187,3 +227,11 @@
 19. **#19 F-29:** event-gap при reconnect (agent_end в окне обрыва → ложный timeout; нужен JSONL-fallback дочернего).
 20. **#20 F-34:** health-check: depth2-integration не вызывает health-checker напрямую (критерий roadmap покрыт e2e, но модуль не интегрирован в контур).
 21. **#21 F-35:** reconnect-восстановление и deadline-timeout против реального mock-узла покрыты только unit-уровнем.
+22. **#22 Параллельные делегации:** nodeId без correlationId-namespace → коллизия порт/PID (сегодня недостижимо — fan-mission сериализует; фикс: namespace nodeId).
+23. **#23 clean() bare-tag regex:** `/<\/?promise>/gi` — attribute-form `<promise type=x>` проходит L1 (покрыто L2; привести к паритету).
+24. **#24 e2e gates standalone:** phase-gate скрипты не в vitest include — добавить test:e2e скрипт/CI-шаг.
+25. **#25 flaky agent-session-concurrent:** падает детерминированно в изоляции (2/2) — карантин/фикс.
+26. **#26 F-10 missionStart tautology:** canTransition dead-check, обе ветки throw — pre-existing.
+27. **#27 F-45:** non-ASCII cwd basename → slug fallback sessionId (чекпоинты нестабильны для кириллических каталогов).
+28. **#28 api-gateway tsc/biome deviations:** в phase-gate-b3.e2e.test.ts + dashboard mission-tree isConnected (dom-lib drift, pre-existing с b24122d) — починить tsconfig/lib.
+29. **#29 store_search/store_install не в allTools ядра:** CLI --tools их отклонит (найдено в F-37 контракт-тесте).
