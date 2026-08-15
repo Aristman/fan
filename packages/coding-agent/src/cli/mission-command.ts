@@ -8,19 +8,21 @@
 // чтобы не ломать rootDir сборки coding-agent и не падать, когда расширение
 // отсутствует (в этом случае бросается MissionExtensionMissingError).
 //
-// Субкоманды: init, start, stop, status, pause, resume.
+// Субкоманды: init, start, stop, status, pause, resume, tree.
 // start/stop/pause/resume — проверки + FSM-переходы через file-state-manager;
 // реальный executor подключается на этапе 1 через F-09 (сейчас start — no-op).
+// tree (F-42) — ASCII/JSON-дерево миссии из tree-journal.jsonl (локальная
+// реконструкция формата F-32; coding-agent не импортирует из extensions/).
 
-import { existsSync, readdirSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { basename, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
 export const MISSION_FILES = ["MISSION.md", "ROADMAP.md", "STATE.md", "BACKLOG.md", "DECISIONS.md"] as const;
 
-const SUBCOMMANDS = ["init", "start", "stop", "status", "pause", "resume"] as const;
+const SUBCOMMANDS = ["init", "start", "stop", "status", "pause", "resume", "tree"] as const;
 
 // ─── Errors ─────────────────────────────────────────────────────────────────
 
@@ -266,6 +268,321 @@ export async function missionResume(missionDir?: string, ctx?: MissionContext): 
 	console.log(`Mission resumed at ${dir}`);
 }
 
+// ─── F-42: mission tree (tree-journal.jsonl → ASCII/JSON) ───────────────────
+
+/** Запись журнала (минимальный контракт: event + nodeId). */
+interface TreeJournalEntry {
+	event: string;
+	nodeId: string;
+	parentId?: string;
+	usage?: { tokens?: number; usd?: number };
+}
+
+/** Узел, восстановленный из журнала (локальный формат F-32). */
+interface RawMissionTreeNode {
+	parentId: string | null;
+	status: string;
+	costUsd: number;
+	childIds: string[];
+}
+
+interface ReconstructedCliTree {
+	nodes: Map<string, RawMissionTreeNode>;
+	/** Порядок появления nodeId в журнале. */
+	order: string[];
+	/** Узлы без parentId, в порядке появления. */
+	roots: string[];
+}
+
+/** Иконки статусов: ✓ completed, ● active, ✗ failed, ○ pending/unknown. */
+const NODE_STATUS_ICONS: Record<string, string> = {
+	complete: "✓",
+	completed: "✓",
+	spawn: "●",
+	active: "●",
+	fail: "✗",
+	failed: "✗",
+};
+
+function nodeStatusIcon(status: string): string {
+	return NODE_STATUS_ICONS[status] ?? "○";
+}
+
+/** Удаляет инлайн-комментарий (# ...) из значения YAML с учётом кавычек. */
+function stripInlineComment(value: string): string {
+	let inSingle = false;
+	let inDouble = false;
+	for (let i = 0; i < value.length; i++) {
+		const ch = value[i];
+		if (ch === "'" && !inDouble) inSingle = !inSingle;
+		else if (ch === '"' && !inSingle) inDouble = !inDouble;
+		else if (ch === "#" && !inSingle && !inDouble) {
+			return value.slice(0, i).trim();
+		}
+	}
+	return value;
+}
+
+/** Простой YAML-подобный парсер frontmatter (формат fan-mission):
+ *  кавычки снимаются, инлайн-комментарии удаляются, числа типизируются. */
+function parseSimpleYaml(block: string): Record<string, unknown> {
+	const result: Record<string, unknown> = {};
+	for (const rawLine of block.split("\n")) {
+		const line = rawLine.trim();
+		if (!line || line.startsWith("#")) continue;
+		const colonIdx = line.indexOf(":");
+		if (colonIdx < 1) continue;
+		const key = line.slice(0, colonIdx).trim();
+		let rawVal = line.slice(colonIdx + 1).trim();
+		rawVal = stripInlineComment(rawVal);
+		if ((rawVal.startsWith('"') && rawVal.endsWith('"')) || (rawVal.startsWith("'") && rawVal.endsWith("'"))) {
+			rawVal = rawVal.slice(1, -1);
+		}
+		let val: unknown = rawVal;
+		const s = String(val);
+		if (/^-?\d+$/.test(s)) val = Number.parseInt(s, 10);
+		else if (/^-?\d+\.\d+$/.test(s)) val = Number.parseFloat(s);
+		result[key] = val;
+	}
+	return result;
+}
+
+/** Читает frontmatter MISSION.md. Отсутствующий/невалидный файл → {}. */
+function readMissionFrontmatter(missionDir: string): Record<string, unknown> {
+	const missionPath = join(missionDir, "MISSION.md");
+	if (!existsSync(missionPath)) return {};
+	let raw: string;
+	try {
+		raw = readFileSync(missionPath, "utf8").replace(/\r\n/g, "\n");
+	} catch {
+		return {};
+	}
+	if (!raw.startsWith("---\n")) return {};
+	const endIdx = raw.indexOf("\n---\n", 4);
+	if (endIdx < 0) return {};
+	return parseSimpleYaml(raw.slice(4, endIdx));
+}
+
+/** Минимальная валидация записи журнала: объект со строковыми event/nodeId. */
+function isTreeJournalEntry(value: unknown): value is TreeJournalEntry {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+	const candidate = value as Partial<TreeJournalEntry>;
+	return typeof candidate.event === "string" && typeof candidate.nodeId === "string";
+}
+
+/** Разбирает JSONL-содержимое журнала; повреждённые строки пропускаются. */
+function parseTreeJournal(content: string): TreeJournalEntry[] {
+	const entries: TreeJournalEntry[] = [];
+	for (const line of content.split("\n")) {
+		if (line.trim() === "") continue;
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(line);
+		} catch {
+			continue; // повреждённая строка — пропускаем
+		}
+		if (isTreeJournalEntry(parsed)) entries.push(parsed);
+	}
+	return entries;
+}
+
+/** Восстанавливает топологию дерева по записям журнала (семантика F-32):
+ *  любая запись создаёт/обновляет узел (status = event, последняя wins);
+ *  запись с parentId привязывает ребёнка к родителю (implicit-родитель,
+ *  упомянутый только как parentId, получает status "unknown"). */
+function reconstructCliTree(entries: TreeJournalEntry[]): ReconstructedCliTree {
+	const nodes = new Map<string, RawMissionTreeNode>();
+	const order: string[] = [];
+
+	const ensureNode = (id: string): RawMissionTreeNode => {
+		let node = nodes.get(id);
+		if (!node) {
+			node = { parentId: null, status: "unknown", costUsd: 0, childIds: [] };
+			nodes.set(id, node);
+			order.push(id);
+		}
+		return node;
+	};
+
+	for (const entry of entries) {
+		const node = ensureNode(entry.nodeId);
+		node.status = entry.event;
+		if (entry.usage !== undefined && typeof entry.usage.usd === "number") {
+			node.costUsd = entry.usage.usd;
+		}
+		if (entry.parentId !== undefined) {
+			node.parentId = entry.parentId;
+			const parent = ensureNode(entry.parentId);
+			if (!parent.childIds.includes(entry.nodeId)) {
+				parent.childIds.push(entry.nodeId);
+			}
+		}
+	}
+
+	return { nodes, order, roots: order.filter((id) => nodes.get(id)?.parentId === null) };
+}
+
+/** Рендер ASCII-дерева. visited-защита от циклов; depth обрезает уровни
+ *  (1 = только корни). Узлы, недостижимые из корней (циклы в журнале),
+ *  выводятся отдельными верхнеуровневыми записями. */
+function renderCliTree(tree: ReconstructedCliTree, depth: number | undefined): string[] {
+	const { nodes, order, roots } = tree;
+	const lines: string[] = [];
+
+	// Сначала помечаем все узлы, достижимые из корней (без учёта depth),
+	// чтобы depth-обрезка не приводила к повторному выводу на верхнем уровне.
+	const reachable = new Set<string>();
+	const markReachable = (id: string): void => {
+		if (reachable.has(id)) return;
+		reachable.add(id);
+		const node = nodes.get(id);
+		if (!node) return;
+		for (const childId of node.childIds) markReachable(childId);
+	};
+	for (const rootId of roots) markReachable(rootId);
+
+	const visited = new Set<string>();
+	const renderNode = (id: string, prefix: string, childPrefix: string, level: number): void => {
+		if (visited.has(id)) return;
+		visited.add(id);
+		const node = nodes.get(id);
+		if (!node) return;
+		let line = `${prefix}${id}${node.parentId === null ? " (root)" : ""} ${nodeStatusIcon(node.status)}`;
+		if (node.costUsd > 0) line += ` $${node.costUsd.toFixed(2)}`;
+		lines.push(line);
+		if (depth !== undefined && level >= depth) return;
+		const kids = node.childIds.filter((childId) => nodes.has(childId));
+		kids.forEach((childId, index) => {
+			const last = index === kids.length - 1;
+			renderNode(
+				childId,
+				`${childPrefix}${last ? "└── " : "├── "}`,
+				`${childPrefix}${last ? "    " : "│   "}`,
+				level + 1,
+			);
+		});
+	};
+
+	for (const rootId of roots) renderNode(rootId, "├── ", "│   ", 1);
+	for (const id of order) {
+		if (!reachable.has(id)) renderNode(id, "├── ", "│   ", 1);
+	}
+	return lines;
+}
+
+/** Сериализация узла для --format json (с visited-защитой и depth-обрезкой). */
+function serializeCliNode(
+	tree: ReconstructedCliTree,
+	id: string,
+	level: number,
+	depth: number | undefined,
+	visited: Set<string>,
+): Record<string, unknown> | null {
+	if (visited.has(id)) return null;
+	visited.add(id);
+	const node = tree.nodes.get(id);
+	if (!node) return null;
+	const children: Record<string, unknown>[] = [];
+	if (depth === undefined || level < depth) {
+		for (const childId of node.childIds) {
+			const child = serializeCliNode(tree, childId, level + 1, depth, visited);
+			if (child) children.push(child);
+		}
+	}
+	return {
+		nodeId: id,
+		parentId: node.parentId,
+		status: node.status,
+		costUsd: Math.round(node.costUsd * 100) / 100,
+		children,
+	};
+}
+
+function formatTotalLine(totalCostUsd: number, budgetUsd: number | undefined): string {
+	const total = `$${totalCostUsd.toFixed(2)}`;
+	if (budgetUsd !== undefined && budgetUsd > 0) {
+		const pct = Math.round((totalCostUsd / budgetUsd) * 100);
+		return `└── Total: ${total} / $${budgetUsd.toFixed(2)} (${pct}%)`;
+	}
+	return `└── Total: ${total}`;
+}
+
+/**
+ * F-42: вывести дерево миссии из `<missionDir>/tree-journal.jsonl`.
+ * Читает frontmatter MISSION.md (статус, budget_usd), восстанавливает
+ * топологию (локальная реконструкция формата F-32) и печатает ASCII-дерево
+ * (✓ completed, ● active, ✗ failed, ○ pending/unknown) либо JSON
+ * при opts.format === "json". opts.depth ограничивает глубину вывода.
+ * Отсутствующая миссия (нет MISSION.md) → MissionNotInitializedError.
+ */
+export async function missionTree(missionDir: string, opts?: { format?: string; depth?: number }): Promise<void> {
+	const dir = resolve(missionDir);
+	if (!existsSync(join(dir, "MISSION.md"))) {
+		throw new MissionNotInitializedError(dir);
+	}
+	const slug = basename(dir);
+	const frontmatter = readMissionFrontmatter(dir);
+	const status = typeof frontmatter.status === "string" ? frontmatter.status : "active";
+	const budgetUsd = typeof frontmatter.budget_usd === "number" ? frontmatter.budget_usd : undefined;
+
+	const journalPath = join(dir, "tree-journal.jsonl");
+	let entries: TreeJournalEntry[] = [];
+	if (existsSync(journalPath)) {
+		try {
+			entries = parseTreeJournal(readFileSync(journalPath, "utf8").replace(/\r\n/g, "\n"));
+		} catch {
+			entries = [];
+		}
+	}
+	const tree = reconstructCliTree(entries);
+	let totalCostUsd = 0;
+	for (const node of tree.nodes.values()) totalCostUsd += node.costUsd;
+
+	if (opts?.format === "json") {
+		// Достижимые из корней узлы (без учёта depth) — как в ASCII-рендере.
+		const reachable = new Set<string>();
+		const markReachable = (id: string): void => {
+			if (reachable.has(id)) return;
+			reachable.add(id);
+			const node = tree.nodes.get(id);
+			if (!node) return;
+			for (const childId of node.childIds) markReachable(childId);
+		};
+		for (const rootId of tree.roots) markReachable(rootId);
+		const visited = new Set<string>();
+		const rootTrees: Record<string, unknown>[] = [];
+		for (const rootId of tree.roots) {
+			const serialized = serializeCliNode(tree, rootId, 1, opts.depth, visited);
+			if (serialized) rootTrees.push(serialized);
+		}
+		for (const id of tree.order) {
+			if (reachable.has(id)) continue;
+			const serialized = serializeCliNode(tree, id, 1, opts.depth, visited);
+			if (serialized) rootTrees.push(serialized);
+		}
+		const payload = {
+			mission: slug,
+			status,
+			budgetUsd: budgetUsd ?? null,
+			root: rootTrees[0] ?? null,
+			roots: rootTrees,
+			total: { costUsd: Math.round(totalCostUsd * 100) / 100, nodeCount: tree.nodes.size },
+		};
+		console.log(JSON.stringify(payload, null, 2));
+		return;
+	}
+
+	console.log(`Mission: ${slug}`);
+	console.log(`Status:  ${status}`);
+	if (tree.nodes.size === 0) {
+		console.log("(no nodes in tree journal)");
+	}
+	for (const line of renderCliTree(tree, opts?.depth)) {
+		console.log(line);
+	}
+	console.log(formatTotalLine(totalCostUsd, budgetUsd));
+}
+
 // ─── CLI dispatcher ─────────────────────────────────────────────────────────
 
 /**
@@ -282,6 +599,20 @@ function parseTemplateFlag(args: string[]): string | undefined {
 		}
 		if (arg.startsWith("--template=")) {
 			return arg.slice("--template=".length);
+		}
+	}
+	return undefined;
+}
+
+/** Generic `--name <value>` / `--name=<value>` parser. Undefined if absent. */
+function parseNamedFlag(args: string[], name: string): string | undefined {
+	for (let i = 0; i < args.length; i++) {
+		const arg = args[i];
+		if (arg === name && i + 1 < args.length) {
+			return args[i + 1];
+		}
+		if (arg.startsWith(`${name}=`)) {
+			return arg.slice(name.length + 1);
 		}
 	}
 	return undefined;
@@ -331,6 +662,34 @@ export async function handleMissionCommand(args: string[], ctx?: MissionContext)
 				if (template) initOpts.template = template;
 				const dir = await missionInit(slug, Object.keys(initOpts).length > 0 ? initOpts : undefined);
 				console.log(`Mission initialized: ${dir}`);
+				return true;
+			}
+			case "tree": {
+				const treeArgs = args.slice(2);
+				let slug: string | undefined;
+				for (let i = 0; i < treeArgs.length; i++) {
+					const a = treeArgs[i];
+					if (a === "--format" || a === "--depth") {
+						i++;
+						continue;
+					}
+					if (a.startsWith("--")) continue;
+					slug = a;
+					break;
+				}
+				if (!slug) {
+					console.error("Usage: fan mission tree <slug> [--format json] [--depth <n>]");
+					process.exit(1);
+					return false;
+				}
+				const format = parseNamedFlag(treeArgs, "--format");
+				const depthRaw = parseNamedFlag(treeArgs, "--depth");
+				const depthValue = depthRaw === undefined ? Number.NaN : Number.parseInt(depthRaw, 10);
+				const base = resolve(ctx?.baseDir ?? join("docs", "missions"));
+				await missionTree(resolve(base, slug), {
+					format,
+					depth: Number.isFinite(depthValue) ? depthValue : undefined,
+				});
 				return true;
 			}
 			case "start":

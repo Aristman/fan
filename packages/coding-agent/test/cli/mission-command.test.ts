@@ -269,8 +269,8 @@ describe("F-10 / регистрация подкоманд", () => {
 		expect(subs).toContain("resume");
 	});
 
-	it("listMissionSubcommands возвращает 6 субкоманд (init + 5 операторов)", () => {
-		expect(listMissionSubcommands().length).toBe(6);
+	it("listMissionSubcommands возвращает 7 субкоманд (init + 5 операторов + tree)", () => {
+		expect(listMissionSubcommands().length).toBe(7);
 	});
 });
 
