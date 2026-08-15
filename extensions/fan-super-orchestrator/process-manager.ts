@@ -22,6 +22,7 @@
 import { spawn as cpSpawn } from "node:child_process";
 import { existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { currentDepthFromEnv } from "./depth-width-guard.js";
 import { HealthChecker, type HealthFetchFn } from "./health-checker.js";
 import { buildSpawnEnv } from "./node-auth.js";
 import { PortPool } from "./port-pool.js";
@@ -196,6 +197,9 @@ export function createProcessManager(options: ProcessManagerOptions): ProcessMan
 			stdio: "ignore",
 			env: {
 				...process.env,
+				// F-36: дочерний узел знает свою глубину = глубина родителя + 1.
+				// Вызывающий может переопределить через extraEnv (поверх authBase).
+				FAN_ORCHESTRATOR_DEPTH: String(currentDepthFromEnv() + 1),
 				...authBase,
 				FAN_NO_AUTH: "0",
 				...(nodeName !== undefined ? { FAN_NODE_NAME: nodeName } : {}),

@@ -102,8 +102,10 @@ describe("TC-F25-3: в пределах лимитов → allowed", () => {
 // ─── Граничные значения ─────────────────────────────────────────────────────
 
 describe("границы: последний разрешённый шаг", () => {
-	it("depth=11 при maxDepth=12 → allowed (граница глубины)", () => {
-		const decision = canSpawn(11, 0);
+	// F-36: дефолт maxWorkingDepth=4 — глубина 11 вне рабочего диапазона.
+	// Граница infra-предохранителя проверяется с явным maxWorkingDepth=12.
+	it("depth=11 при maxWorkingDepth=12 → allowed (граница глубины)", () => {
+		const decision = canSpawn(11, 0, { maxWorkingDepth: 12 });
 		expect(decision.allowed).toBe(true);
 	});
 
@@ -113,7 +115,7 @@ describe("границы: последний разрешённый шаг", () 
 	});
 
 	it("depth=11 и currentChildren=3 одновременно → allowed (обе границы)", () => {
-		const decision = canSpawn(11, 3);
+		const decision = canSpawn(11, 3, { maxWorkingDepth: 12 }); // F-36: см. выше
 		expect(decision.allowed).toBe(true);
 	});
 });
