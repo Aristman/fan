@@ -599,6 +599,14 @@ describe("F-09 / TC-F09-6: lock предотвращает двойной кон
 		// Пока t1 не завершён — lock занят, второй tick должен отказаться
 		await expect(loop.tick()).rejects.toThrow(/lock|busy|concurrent/);
 
+		// Дожидаемся, пока первый tick реально войдёт в executor (шаг 4):
+		// сборка промпта (prompt-builder) асинхронна, поэтому вызов executor
+		// происходит позже отказа второго tick. Без ожидания resolveIter ещё
+		// не присвоен (гонка микротасков, а не semantics lock'а).
+		while (slowExecutor.calls.length === 0) {
+			await new Promise((r) => setTimeout(r, 1));
+		}
+
 		// Завершаем первую итерацию
 		resolveIter();
 		await t1;

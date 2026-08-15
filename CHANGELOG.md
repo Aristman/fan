@@ -40,6 +40,24 @@
   Регрессионные тесты — `extensions/fan-mission/test/mission-loop-star-marker.test.mjs`.
   fan-mission 0.4.0 → 0.4.1.
 
+### Improved
+
+- **Обогащение промпта исполнения миссионного пункта контекстом (prompt-builder).**
+  Промпт шага 4 (iterate) mission-loop был просто `Execute mission item: <text>`
+  (+ steer): агент получал задание без контекста миссии и тратил итерацию на
+  rediscovery (memory_search → find → чтение всех файлов миссии → исследование
+  проекта), а также не знал протокол отчёта `<promise>`. Новый модуль
+  `extensions/fan-mission/prompt-builder.ts` (`buildExecutionPrompt`) собирает
+  контекстный промпт: агенту передаются MISSION.md (body без frontmatter),
+  ROADMAP (текущий пункт помечен `▶ `), STATE.md, BACKLOG.md (если непустой),
+  протокол отчёта `<promise>COMPLETE|BLOCKED|DECIDE|FAILED</promise>` и guidance
+  («не перечитывай предоставленные файлы, работай напрямую»). Защита от
+  разросшегося состояния: каждая секция ≤ 4000 символов, общий промпт ≤ 20000
+  (обрезка с `...[truncated]`). Первая строка `Execute mission item: <text>`
+  сохранена для совместимости. EPIC-путь делегирования не затронут.
+  Тесты — `extensions/fan-mission/test/prompt-builder.test.mjs`.
+  fan-mission 0.4.1 → 0.5.0.
+
 ## [2.8.0] — 2026-08-15
 
 ### Сверх-оркестратор FAN — Этап 1 «Валидация миссионного контура» завершён

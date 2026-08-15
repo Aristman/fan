@@ -24,6 +24,7 @@ import {
 	checkStateFileSize,
 	InvalidTransitionError,
 	MAX_STATE_BYTES,
+	type MissionState,
 	readBacklog,
 	readMission,
 	readRoadmap,
@@ -34,6 +35,7 @@ import {
 	writeState,
 } from "./file-state-manager.js";
 import { type PromiseParseResult, parsePromise } from "./promise-parser.js";
+import { buildExecutionPrompt } from "./prompt-builder.js";
 import type { VerificationLadder, VerificationLadderResult } from "./verification-ladder.js";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -556,9 +558,11 @@ export class MissionLoop {
 				stateSize = checkStateFileSize(this.missionDir);
 			}
 
-			// Validate STATE.md exists and parse it (may throw for schema issues)
+			// Validate STATE.md exists and parse it (may throw for schema issues).
+			// The parsed state is reused in step 4 to build the execution prompt.
+			let missionState: MissionState;
 			try {
-				await readState(this.missionDir);
+				missionState = await readState(this.missionDir);
 			} catch (e) {
 				if (e instanceof StateFileTooLarge && stateSize < MAX_STATE_BYTES) {
 					// Shouldn't happen, but handle gracefully
@@ -576,7 +580,7 @@ export class MissionLoop {
 							item: "STATE.md overflow — archiving impossible",
 						};
 					}
-					await readState(this.missionDir); // re-read after archive
+					missionState = await readState(this.missionDir); // re-read after archive
 				} else {
 					throw e;
 				}
@@ -719,10 +723,17 @@ export class MissionLoop {
 					steer = steer ? `${steer}\n${answerLine}` : answerLine;
 					loopState.pendingOperatorAnswer = undefined;
 				}
-				let prompt = `Execute mission item: ${nextItem.text}`;
-				if (steer) {
-					prompt += `\n\nOperator steer: ${steer}`;
-				}
+				// Prompt enriched with mission context (MISSION/ROADMAP/STATE/BACKLOG,
+				// `<promise>` reporting protocol, guidance and steer) — the executor
+				// must not waste the iteration on rediscovering mission files.
+				const prompt = await buildExecutionPrompt({
+					missionDir: this.missionDir,
+					itemText: nextItem.text,
+					index: nextItem.index,
+					roadmapRaw,
+					state: missionState,
+					...(steer ? { steer } : {}),
+				});
 				const runLocalIteration = (): Promise<IterationResult> =>
 					this.deps.executor.runIteration({
 						missionDir: this.missionDir,
