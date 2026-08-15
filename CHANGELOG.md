@@ -2,6 +2,18 @@
 
 ## [2.8.0] — 2026-08-15
 
+### Fixed (post-release)
+
+- **Регрессия F-46: дефолтный per-iteration budget ломал интерактивные сессии.**
+  `createAgentSession` применял roadmap-дефолты (100k токенов / $5.00 на
+  итерацию), если в settings.json не заданы `budget.iterationTokenLimit` /
+  `budget.iterationCostLimit`: в длинных сессиях один turn с большим контекстом
+  превышал 100k totalTokens → хук `turn_end` вызывал `agent.abort()` и ход
+  обрывался после первого же tool call. Лимиты стали opt-in: без явных
+  настроек — 0 (безлимит), бюджетом основного агента является контекстное окно
+  модели; миссионный контур задаёт лимиты через settings.json.
+  Регрессионный тест — `packages/coding-agent/test/sdk-iteration-budget-defaults.test.ts`.
+
 ### Сверх-оркестратор FAN — Этап 1 «Валидация миссионного контура» завершён
 
 Закрытие roadmap `docs/features/super-orchestrator/mission-validation-1/roadmap.md`:

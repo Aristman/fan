@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { DEFAULT_ITERATION_BUDGET_TOKENS, DEFAULT_ITERATION_BUDGET_USD, ModelManager } from "@fan/model-manager";
+import { ModelManager } from "@fan/model-manager";
 import { Agent, type AgentMessage, type ThinkingLevel } from "@seaagents/fan-agent-core";
 import { type Message, type Model, streamSimple } from "@seaagents/fan-ai";
 import { getAgentDir, getDocsPath } from "../config.js";
@@ -249,17 +249,17 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	}
 
 	// Create or use provided ModelManager.
-	// F-46: apply the roadmap per-iteration budget defaults (100k tokens /
-	// $5.00 per iteration) unless the caller supplies their own ModelManager.
-	// settings.json `budget.iterationTokenLimit` / `budget.iterationCostLimit`
-	// override the defaults (0 = unlimited).
+	// F-46: the per-iteration budget is OPT-IN. When settings.json has no
+	// `budget.iterationTokenLimit` / `budget.iterationCostLimit`, limits are 0
+	// (unlimited) — for the main agent the model context window is the
+	// effective budget; the mission loop opts in via settings.json when needed.
 	const budgetSettings = settingsManager?.getBudgetConfig() ?? {};
 	const modelManager =
 		options.modelManager ??
 		new ModelManager({
 			budget: {
-				iterationBudgetTokens: budgetSettings.iterationTokenLimit ?? DEFAULT_ITERATION_BUDGET_TOKENS,
-				iterationBudgetUsd: budgetSettings.iterationCostLimit ?? DEFAULT_ITERATION_BUDGET_USD,
+				iterationBudgetTokens: budgetSettings.iterationTokenLimit ?? 0,
+				iterationBudgetUsd: budgetSettings.iterationCostLimit ?? 0,
 			},
 		});
 

@@ -119,9 +119,9 @@ export interface Settings {
 		dailyCostLimit?: number;
 		monthlyTokenLimit?: number;
 		monthlyCostLimit?: number;
-		/** F-46: per-iteration token ceiling (0 = unlimited; default applied by SDK) */
+		/** F-46: per-iteration token ceiling (0/unset = unlimited; opt-in) */
 		iterationTokenLimit?: number;
-		/** F-46: per-iteration USD ceiling (0 = unlimited; default applied by SDK) */
+		/** F-46: per-iteration USD ceiling (0/unset = unlimited; opt-in) */
 		iterationCostLimit?: number;
 	};
 
