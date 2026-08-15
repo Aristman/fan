@@ -1,5 +1,5 @@
 # Documentation Manifest
-> Last updated: 2026-08-13
+> Last updated: 2026-08-15
 > Comprehensive index of all project documentation.
 > Maintainer: docs-impl agent
 
@@ -16,6 +16,9 @@
 | `docs/guides/quick-start.md` | ✅ | Quick start stub — redirects to QUICK-START.md |
 | `docs/guides/configuration.md` | ✅ | Full settings reference |
 | `docs/guides/orchestrator.md` | ✅ | Orchestrator user guide (v7.10.0: `/orchestrator models`, named presets, permission approval, slot pools, Pipeline Mode v3.1.0) |
+| `docs/guides/missions.md` | ✅ | Mission guide: миссионный контур, EPIC-делегирование, дерево узлов, бюджеты, наблюдаемость, troubleshooting |
+| `docs/guides/examples/mission-refactor.md` | ✅ | Пример миссии рефакторинга с EPIC-делегированием |
+| `docs/guides/examples/mission-tree-hierarchy.md` | ✅ | Пример иерархии дерева L0 → 3×L1 с манифестами |
 | `docs/guides/dashboard.md` | ✅ | Dashboard user guide |
 | `docs/guides/api-reference.md` | ✅ | REST API + WebSocket protocol reference |
 | `docs/guides/mcp.md` | ✅ | MCP integration guide (Russian) — transports, config, OAuth, Worker Proxy, security |
@@ -120,4 +123,4 @@
 
 All 5 package READMEs have been created — status updated to ✅.
 
-Total: **56 tracked documents** (52 ✅, 4 ⚠️, 0 ❌)
+Total: **59 tracked documents** (55 ✅, 4 ⚠️, 0 ❌)

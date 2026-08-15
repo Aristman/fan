@@ -17,6 +17,19 @@
 | [`docs/extensions/README.md`](./extensions/README.md) | **Расширения** — 9 установленных расширений в `extensions/`: оркестратор, память, веб-поиск, душа, диалоги, Confluence, loop, SOFA, голос. Инфраструктура загрузки и lifecycle. |
 | [`docs/skills/README.md`](./skills/README.md) | **Скилы** — 12 предустановленных скилов в `skills/`: автотесты, баг-фикс, code-research, deep-dive, dev-docs-pack, fan-forge, idea-lab, feature-pipeline, feature-roadmap, repo-explorer, research-spec-generator, SOFA-скил. |
 
+## Руководства (guides)
+
+| Файл | Описание |
+|------|----------|
+| [`docs/guides/quick-start.md`](./guides/quick-start.md) | Быстрый старт |
+| [`docs/guides/configuration.md`](./guides/configuration.md) | Справочник настроек |
+| [`docs/guides/orchestrator.md`](./guides/orchestrator.md) | Оркестратор (координатор, воркеры, pipeline) |
+| [`docs/guides/missions.md`](./guides/missions.md) | **Миссии** — миссионный контур, EPIC-делегирование, дерево узлов, бюджеты |
+| [`docs/guides/dashboard.md`](./guides/dashboard.md) | Dashboard (веб-интерфейс) |
+| [`docs/guides/api-reference.md`](./guides/api-reference.md) | REST API + WebSocket |
+| [`docs/guides/mcp.md`](./guides/mcp.md) | MCP-интеграция |
+| [`docs/guides/rpc-mode.md`](./guides/rpc-mode.md) | RPC-режим |
+
 ## Быстрая навигация
 
 - [`ARCHITECTURE.md`](../ARCHITECTURE.md) — архитектура проекта
