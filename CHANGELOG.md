@@ -15,6 +15,17 @@
   Регрессионный тест — `packages/coding-agent/test/sdk-iteration-budget-defaults.test.ts`.
   fan-coding-agent 2.7.0 → 2.7.1.
 
+- **CLI `fan mission` не находил file-state-manager вне монорепо.**
+  `loadFileStateManager()` искал модуль только по `FAN_MISSION_DIR` и
+  монорепо-путям (`<root>/extensions/fan-mission`): у deployed-бинаря в
+  произвольном проекте ни один кандидат не существовал →
+  `MissionExtensionMissingError("file-state-manager module not found")`.
+  Добавлены runtime discovery paths (как в `core/extensions/loader.ts`):
+  project-local `<cwd>/.fan/extensions/fan-mission/` и global
+  `<agentDir>/extensions/fan-mission/` — с приоритетом выше монорепо-путей.
+  Регрессионный тест — `packages/coding-agent/test/cli/mission-command-deployed.test.ts`.
+  fan-coding-agent 2.7.1 → 2.7.2.
+
 ## [2.8.0] — 2026-08-15
 
 ### Сверх-оркестратор FAN — Этап 1 «Валидация миссионного контура» завершён

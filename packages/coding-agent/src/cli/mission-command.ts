@@ -17,6 +17,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { getAgentDir } from "../config.js";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -91,6 +92,17 @@ async function loadFileStateManager(): Promise<FileStateManagerModule> {
 		// P-4: try .js first, then .ts fallback for dev with tsx-loader.
 		candidates.push(resolve(process.env.FAN_MISSION_DIR, "file-state-manager.js"));
 		candidates.push(resolve(process.env.FAN_MISSION_DIR, "file-state-manager.ts"));
+	}
+	// Deployed-окружение: runtime extension discovery (как в
+	// core/extensions/loader.ts) — project-local и global каталоги.
+	// Приоритет выше монорепо-путей: у deployed-бинаря в произвольном
+	// проекте монорепо-кандидатов не существует.
+	for (const ext of ["js", "ts"]) {
+		// P-4: try .js first, then .ts fallback for dev with tsx-loader.
+		candidates.push(resolve(process.cwd(), ".fan", "extensions", "fan-mission", `file-state-manager.${ext}`));
+	}
+	for (const ext of ["js", "ts"]) {
+		candidates.push(join(getAgentDir(), "extensions", "fan-mission", `file-state-manager.${ext}`));
 	}
 	for (const ext of ["js", "ts"]) {
 		// Монорепо: <root>/packages/coding-agent/src/cli → <root>/extensions/fan-mission
