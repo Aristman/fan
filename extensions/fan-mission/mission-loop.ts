@@ -300,7 +300,7 @@ function clearAbortSignal(missionDir: string): void {
 function parseFirstUnchecked(raw: string): { index: number; text: string } | null {
 	const lines = raw.split("\n");
 	for (let i = 0; i < lines.length; i++) {
-		const m = /^- \[ \] (.+)$/.exec(lines[i].trim());
+		const m = /^[-*] \[ \] (.+)$/.exec(lines[i].trim());
 		if (m) return { index: i, text: m[1] };
 	}
 	return null;
@@ -309,7 +309,9 @@ function parseFirstUnchecked(raw: string): { index: number; text: string } | nul
 function markRoadmapDone(raw: string, lineIndex: number): string {
 	const lines = raw.split("\n");
 	if (lineIndex >= 0 && lineIndex < lines.length) {
-		lines[lineIndex] = lines[lineIndex].replace("- [ ] ", "- [x] ");
+		// Replace only the checkbox state, preserving the original list marker
+		// (`-` or `*` — both are valid markdown).
+		lines[lineIndex] = lines[lineIndex].replace("[ ] ", "[x] ");
 	}
 	return lines.join("\n");
 }
@@ -317,7 +319,19 @@ function markRoadmapDone(raw: string, lineIndex: number): string {
 function isRoadmapItemChecked(raw: string, lineIndex: number): boolean {
 	const lines = raw.split("\n");
 	if (lineIndex < 0 || lineIndex >= lines.length) return false;
-	return /^- \[x\] /.test(lines[lineIndex].trim());
+	return /^[-*] \[x\] /.test(lines[lineIndex].trim());
+}
+
+/**
+ * True if the ROADMAP contains at least one checklist item (checked or not).
+ * Used to distinguish "all items done" from "no parseable checklist at all"
+ * — the latter must NOT be treated as mission completion.
+ */
+function hasAnyChecklistItem(raw: string): boolean {
+	for (const line of raw.split("\n")) {
+		if (/^[-*] \[[x ]\] /.test(line.trim())) return true;
+	}
+	return false;
 }
 
 // ─── File lock (P1-6) ───────────────────────────────────────────────────────
@@ -580,6 +594,28 @@ export class MissionLoop {
 
 			// All items done → completed
 			if (!nextItem) {
+				// Guard against false completion: a ROADMAP without ANY parseable
+				// checklist items (checked or unchecked) is suspicious — the mission
+				// never had work items, so "all done" is a fabrication. Fail loudly
+				// instead of silently completing with zero work done.
+				if (!hasAnyChecklistItem(roadmapRaw)) {
+					if (canTransition(resultStatus, "failed")) {
+						resultStatus = "failed";
+						await writeMissionStatus(this.missionDir, "failed");
+					}
+					this.journalStep(loopState, 3);
+					loopState.interrupted = false;
+					loopState.iterationResult = undefined;
+					loopState.pendingItem = undefined;
+					loopState.committed = false;
+					writeLoopStateSync(this.missionDir, loopState);
+					return {
+						iteration: currentIteration,
+						steps,
+						status: resultStatus,
+						item: "ROADMAP contains no parseable checklist items",
+					};
+				}
 				if (canTransition(resultStatus, "completed")) {
 					resultStatus = "completed";
 					await writeMissionStatus(this.missionDir, "completed");

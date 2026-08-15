@@ -26,6 +26,20 @@
   Регрессионный тест — `packages/coding-agent/test/cli/mission-command-deployed.test.ts`.
   fan-coding-agent 2.7.1 → 2.7.2.
 
+- **Ложный `completed` миссии при `*`-маркерах ROADMAP.**
+  `parseFirstUnchecked` / `markRoadmapDone` / `isRoadmapItemChecked`
+  (extensions/fan-mission/mission-loop.ts) принимали только `-`-маркер:
+  ROADMAP с пунктами `* [ ] Задача` (валидный markdown, пользовательский файл)
+  → `parseFirstUnchecked` возвращал `null` → шаг 3 контура решал «All items
+  done» → миссия завершалась `completed` с iteration 0, пустым журналом и
+  нулевой работой (фабрикация результата). Все три функции принимают оба
+  маркера `-` и `*`; `markRoadmapDone` сохраняет исходный маркер списка.
+  Дополнительная защита: ROADMAP вообще без парсящихся чеклист-пунктов
+  (ни checked, ни unchecked) → статус `failed` с диагностикой
+  "ROADMAP contains no parseable checklist items" вместо ложного `completed`.
+  Регрессионные тесты — `extensions/fan-mission/test/mission-loop-star-marker.test.mjs`.
+  fan-mission 0.4.0 → 0.4.1.
+
 ## [2.8.0] — 2026-08-15
 
 ### Сверх-оркестратор FAN — Этап 1 «Валидация миссионного контура» завершён
