@@ -13,8 +13,8 @@
  * Modes use this class and add their own I/O layer on top.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { ModelManager } from "@fan/model-manager";
 import {
 	type Agent,
@@ -69,6 +69,7 @@ import {
 	type TurnStartEvent,
 	wrapRegisteredTools,
 } from "./extensions/index.js";
+import { ensureGitExcludes, gitCheckoutCommit, gitCommitAll, isInsideGitWorkTree } from "./git-checkpoint-helper.js";
 import { LoopDetector, normalizeErrorText } from "./loop-detector.js";
 import type { BashExecutionMessage, CustomMessage } from "./messages.js";
 import type { ModelRegistry } from "./model-registry.js";
@@ -95,6 +96,25 @@ export interface ParsedSkillBlock {
 	location: string;
 	content: string;
 	userMessage: string | undefined;
+}
+
+// ============================================================================
+// Checkpoint API types (F-45)
+// ============================================================================
+
+/** Summary entry returned by listCheckpoints() */
+export interface CheckpointInfo {
+	label: string;
+	timestamp: string;
+	gitCommit?: string;
+	iteration?: number;
+}
+
+/** Full checkpoint state persisted at .fan/checkpoints/<slug>/<label>.json */
+export interface CheckpointState extends CheckpointInfo {
+	sessionId: string;
+	treeLeafId?: string;
+	messages: AgentMessage[];
 }
 
 /**
@@ -2952,6 +2972,163 @@ export class AgentSession {
 	 */
 	setSessionName(name: string): void {
 		this.sessionManager.appendSessionInfo(name);
+	}
+
+	// =========================================================================
+	// Checkpoint API (F-45)
+	// =========================================================================
+
+	/**
+	 * Create an explicit checkpoint (roadmap §F-45).
+	 *
+	 * Creates a git commit with message `checkpoint:<label>` (when inside a git
+	 * work tree) and persists the session state to
+	 * `.fan/checkpoints/<slug>/<label>.json`. Works without git — `gitCommit`
+	 * is then undefined.
+	 *
+	 * @throws if the label is empty, already exists, or the git commit fails
+	 */
+	async checkpoint(label: string): Promise<{ label: string; gitCommit?: string }> {
+		const trimmedLabel = label?.trim() ?? "";
+		if (trimmedLabel.length === 0) {
+			throw new Error("Checkpoint label must not be empty");
+		}
+
+		const dir = this._checkpointsDir();
+		const file = join(dir, `${trimmedLabel}.json`);
+		if (existsSync(file)) {
+			throw new Error(`Checkpoint "${trimmedLabel}" already exists`);
+		}
+
+		// Git commit (skipped when not inside a git work tree)
+		let gitCommit: string | undefined;
+		if (await isInsideGitWorkTree(this._cwd)) {
+			await ensureGitExcludes(this._cwd, this._checkpointGitExcludes());
+			gitCommit = await gitCommitAll(this._cwd, `checkpoint:${trimmedLabel}`);
+		}
+
+		const iterationMatch = /^iteration-(\d+)$/.exec(trimmedLabel);
+		const state: CheckpointState = {
+			label: trimmedLabel,
+			sessionId: this.sessionId,
+			iteration: iterationMatch ? Number.parseInt(iterationMatch[1]!, 10) : undefined,
+			timestamp: new Date().toISOString(),
+			gitCommit,
+			treeLeafId: this.sessionManager.getLeafId() ?? undefined,
+			messages: [...this.messages],
+		};
+
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(file, JSON.stringify(state, null, 2), "utf-8");
+
+		return { label: trimmedLabel, gitCommit };
+	}
+
+	/**
+	 * Restore a checkpoint created by checkpoint() (roadmap §F-45).
+	 *
+	 * Rolls git back to the checkpoint commit (`git checkout <commit>`, plain
+	 * checkout — never a forced reset) and restores the session state: when the
+	 * recorded tree leaf still exists in the current session file the session
+	 * tree is branched back to it; otherwise the messages snapshot from the
+	 * checkpoint file is applied directly.
+	 *
+	 * @throws if the checkpoint does not exist, is corrupted, or git refuses the checkout
+	 */
+	async restoreCheckpoint(label: string): Promise<void> {
+		const trimmedLabel = label?.trim() ?? "";
+		const file = join(this._checkpointsDir(), `${trimmedLabel}.json`);
+		if (trimmedLabel.length === 0 || !existsSync(file)) {
+			throw new Error(`Checkpoint "${label}" not found`);
+		}
+
+		let state: CheckpointState;
+		try {
+			state = JSON.parse(readFileSync(file, "utf-8")) as CheckpointState;
+		} catch (err) {
+			throw new Error(
+				`Checkpoint "${trimmedLabel}" is corrupted: ${err instanceof Error ? err.message : String(err)}`,
+			);
+		}
+
+		// 1. Git rollback (only when the checkpoint recorded a commit)
+		if (state.gitCommit && (await isInsideGitWorkTree(this._cwd))) {
+			await gitCheckoutCommit(this._cwd, state.gitCommit);
+		}
+
+		// 2. Session state restore
+		if (state.treeLeafId && this.sessionManager.getEntry(state.treeLeafId)) {
+			this.sessionManager.branch(state.treeLeafId);
+			this.agent.state.messages = this.sessionManager.buildSessionContext().messages;
+		} else if (Array.isArray(state.messages)) {
+			this.agent.state.messages = [...state.messages];
+		}
+	}
+
+	/**
+	 * List available checkpoints for the current working directory,
+	 * sorted by timestamp (newest first). Survives AgentSession re-creation
+	 * because checkpoints are persisted on disk.
+	 */
+	async listCheckpoints(): Promise<CheckpointInfo[]> {
+		const dir = this._checkpointsDir();
+		if (!existsSync(dir)) {
+			return [];
+		}
+
+		const checkpoints: CheckpointInfo[] = [];
+		for (const name of readdirSync(dir)) {
+			if (!name.endsWith(".json")) continue;
+			try {
+				const parsed = JSON.parse(readFileSync(join(dir, name), "utf-8")) as Partial<CheckpointState>;
+				checkpoints.push({
+					label: typeof parsed.label === "string" ? parsed.label : name.slice(0, -".json".length),
+					timestamp: typeof parsed.timestamp === "string" ? parsed.timestamp : "",
+					gitCommit: typeof parsed.gitCommit === "string" ? parsed.gitCommit : undefined,
+					iteration: typeof parsed.iteration === "number" ? parsed.iteration : undefined,
+				});
+			} catch {
+				// Skip corrupted checkpoint files
+			}
+		}
+
+		checkpoints.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+		return checkpoints;
+	}
+
+	/** Checkpoint storage directory: .fan/checkpoints/<slug> under the session cwd. */
+	private _checkpointsDir(): string {
+		return join(this._cwd, ".fan", "checkpoints", this._checkpointSlug());
+	}
+
+	/**
+	 * Slug for the checkpoint subdirectory, derived from the working directory
+	 * (mission scope). Falls back to the session id when cwd has no usable name.
+	 */
+	private _checkpointSlug(): string {
+		const sanitized = basename(this._cwd)
+			.trim()
+			.replace(/[^\w.-]+/g, "-")
+			.replace(/^\.+|\.+$/g, "")
+			.replace(/^-+|-+$/g, "");
+		return sanitized.length > 0 ? sanitized : this.sessionId;
+	}
+
+	/**
+	 * Patterns excluded from git tracking for checkpoint commits. Keeps FAN
+	 * state files (checkpoint store + session JSONL) out of commits so git
+	 * checkout during restore never conflicts with internal bookkeeping.
+	 */
+	private _checkpointGitExcludes(): string[] {
+		const excludes = [".fan/"];
+		const sessionFile = this.sessionManager.getSessionFile();
+		if (sessionFile) {
+			const rel = relative(this._cwd, sessionFile);
+			if (rel.length > 0 && !rel.startsWith("..") && !isAbsolute(rel)) {
+				excludes.push(rel);
+			}
+		}
+		return excludes;
 	}
 
 	// =========================================================================
