@@ -17,8 +17,9 @@
 import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
 import { dirname } from "node:path";
 
-/** Тип события журнала дерева (orphan_cleanup — для startup-reconciliation, F-33). */
-export type TreeJournalEventType = "spawn" | "complete" | "fail" | "abort" | "orphan_cleanup";
+/** Тип события журнала дерева (orphan_cleanup — startup-reconciliation, F-33;
+ * tool_blocked — зарезервирован для отказов манифеста инструментов, F-37). */
+export type TreeJournalEventType = "spawn" | "complete" | "fail" | "abort" | "orphan_cleanup" | "tool_blocked";
 
 /** Потреблённые ресурсы в записи журнала. */
 export interface TreeJournalUsage {
@@ -39,6 +40,9 @@ export interface TreeJournalEntry {
 	port?: number;
 	pid?: number;
 	usage?: TreeJournalUsage;
+	/** Диагностика отказа (tool_blocked, F-37): "tool '<name>' not in manifest" /
+	 *  причина валидации манифеста. */
+	diag?: string;
 }
 
 /** Узел восстановленного дерева. */
@@ -97,6 +101,7 @@ export function createTreeJournal(filePath: string): TreeJournal {
 			if (entry.port !== undefined) full.port = entry.port;
 			if (entry.pid !== undefined) full.pid = entry.pid;
 			if (entry.usage !== undefined) full.usage = entry.usage;
+			if (entry.diag !== undefined) full.diag = entry.diag;
 
 			const fd = openSync(filePath, "a");
 			try {

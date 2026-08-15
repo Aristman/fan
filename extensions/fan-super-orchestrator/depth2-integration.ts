@@ -43,6 +43,7 @@ import { generateNodeToken } from "./node-auth.js";
 import { type NodeReport, totalUsage } from "./node-report.js";
 import { PortPool } from "./port-pool.js";
 import { reconcile } from "./startup-reconciliation.js";
+import { InvalidToolManifestError, validateManifest } from "./tool-manifest.js";
 import { createTreeJournal, type TreeJournal } from "./tree-journal.js";
 import { buildToolArgs, createWorkPackage, makeCorrelationId, type WorkPackage } from "./work-package.js";
 
@@ -54,7 +55,7 @@ export interface Depth2RunOptions {
 	children: number;
 	/** Переопределение задач детей (по индексу). */
 	childTasks?: string[];
-	/** Манифест инструментов → buildToolArgs → --tools в argv spawn. */
+	/** Манифест инструментов → валидация (F-37) → buildToolArgs → --tools в argv spawn. */
 	toolManifest?: string[];
 	/** ISO-8601 deadline, общий для всех пакетов. */
 	deadline: string;
@@ -145,7 +146,27 @@ export function createDepth2Integration(opts: Depth2Options): Depth2Handle {
 
 		// 2. Единообразная аллокация: от состояния на старт, plannedChildren = children.
 		const allocation = computeChildAllocation(aggregator.state(), runOpts.children, opts.perHopCeiling);
-		const manifest = runOpts.toolManifest ?? [];
+		// F-37: fail-fast валидация манифеста до allocate/spawn; []/undefined =
+		// «не ограничен» (все инструменты родителя, --tools не добавляется).
+		// При невалидном манифесте — событие tool_blocked в журнал (diag =
+		// причина валидации) и throw ДО порождения любого дочернего процесса.
+		const rawManifest = runOpts.toolManifest ?? [];
+		let manifest: string[] = [];
+		if (rawManifest.length > 0) {
+			try {
+				manifest = validateManifest(rawManifest);
+			} catch (error) {
+				if (error instanceof InvalidToolManifestError) {
+					journal.write({
+						event: "tool_blocked",
+						nodeId: ROOT_NODE_ID,
+						depth: 0,
+						diag: error.message,
+					});
+				}
+				throw error;
+			}
+		}
 		const spawnArgs = buildToolArgs(manifest);
 		const reports: Array<{ nodeId: string; report: NodeReport }> = [];
 

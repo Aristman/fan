@@ -92,6 +92,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 // F-31/F-32 уже реализованы (GREEN) — статические импорты для проверки
 // артефактов на диске (как в budget-coordinator.test.mjs).
 import { readMissionBudgetFile } from "../budget-coordinator.js";
+import { InvalidToolManifestError } from "../tool-manifest.js";
 import { createTreeJournal } from "../tree-journal.js";
 
 let createDepth2Integration;
@@ -210,6 +211,66 @@ function readPorts(mission) {
 	}
 	return JSON.parse(readFileSync(mission.portsFile, "utf8"));
 }
+
+// ─── F-37: fail-fast валидация toolManifest + tool_blocked в журнале ──────
+
+describe("F-37: невалидный toolManifest → run rejects ДО spawn, tool_blocked в журнале", () => {
+	it("невалидное имя → InvalidToolManifestError; spawnNode/sendPackage НЕ вызваны (0 процессов)", async () => {
+		const mission = makeMission();
+		const spawnNode = makeSpawnMock();
+		const sendPackage = makeSendMock();
+		const killNode = vi.fn(async () => {});
+		const handle = makeHandle(mission, { spawnNode, sendPackage, killNode });
+
+		await expect(
+			handle.run({ task: "Эпик", children: 2, toolManifest: ["read", "rm"], deadline: DEADLINE }),
+		).rejects.toThrow(InvalidToolManifestError);
+
+		// Fail-fast: ни один дочерний процесс не порождён.
+		expect(spawnNode).not.toHaveBeenCalled();
+		expect(sendPackage).not.toHaveBeenCalled();
+		expect(killNode).not.toHaveBeenCalled();
+
+		// Нет spawn/complete записей; аллокаций нет (бюджет-файл может
+		// отсутствовать — save происходит только при allocate).
+		const entries = readJournal(mission);
+		expect(entries.filter((e) => e.event === "spawn")).toHaveLength(0);
+		expect(entries.filter((e) => e.event === "complete")).toHaveLength(0);
+		expect(readBudgetState(mission)?.allocated?.tokens ?? 0).toBe(0);
+	});
+
+	it("пустой-массив-обход невозможен: [42] (не-строка) → rejects, 0 spawn", async () => {
+		const mission = makeMission();
+		const spawnNode = makeSpawnMock();
+		const handle = makeHandle(mission, { spawnNode });
+
+		await expect(
+			handle.run({ task: "Эпик", children: 1, toolManifest: [42], deadline: DEADLINE }),
+		).rejects.toThrow(InvalidToolManifestError);
+		expect(spawnNode).not.toHaveBeenCalled();
+	});
+
+	it("журнал содержит tool_blocked с diag (причина валидации) — ПЕРЕД throw", async () => {
+		const mission = makeMission();
+		const spawnNode = makeSpawnMock();
+		const handle = makeHandle(mission, { spawnNode });
+
+		await expect(
+			handle.run({ task: "Эпик", children: 2, toolManifest: ["read", "delete_all"], deadline: DEADLINE }),
+		).rejects.toThrow(InvalidToolManifestError);
+
+		const entries = readJournal(mission);
+		const blocked = entries.filter((e) => e.event === "tool_blocked");
+		expect(blocked).toHaveLength(1);
+		expect(blocked[0].nodeId).toBe("L0");
+		expect(typeof blocked[0].diag).toBe("string");
+		// diag = причина валидации (формат validateManifest), содержит имя инструмента.
+		expect(blocked[0].diag).toContain("delete_all");
+		// tool_blocked — последняя запись; после него ничего не порождено.
+		expect(entries.at(-1).event).toBe("tool_blocked");
+		expect(spawnNode).not.toHaveBeenCalled();
+	});
+});
 
 // ─── TC-F34-1: run 3×L1 — spawn, пакеты, журнал, отчёты ────────────────────
 

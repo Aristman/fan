@@ -8,6 +8,8 @@
 // streamingBehavior = "followUp"). Пакет несёт все лимиты и контекст,
 // необходимые дочернему узлу для автономной работы.
 
+import { validateManifest } from "./tool-manifest.js";
+
 /** Необязательный контекст, передаваемый дочернему узлу. */
 export interface WorkPackageContext {
 	parentSummary?: string;
@@ -80,6 +82,26 @@ const isValidNonNegativeNumber = (value: unknown): boolean =>
 	typeof value === "number" && Number.isFinite(value) && value >= 0;
 
 /**
+ * Проверка toolManifest (F-37): undefined/[] означает «не ограничен»
+ * (дефолт — все инструменты родителя) и валидно; непустые манифесты
+ * проверяются validateManifest из tool-manifest (имена из допустимого набора).
+ */
+const isValidToolManifest = (value: unknown): boolean => {
+	if (value === undefined) {
+		return true;
+	}
+	if (Array.isArray(value) && value.length === 0) {
+		return true; // [] = «не ограничен» (дефолт)
+	}
+	try {
+		validateManifest(value);
+		return true;
+	} catch {
+		return false;
+	}
+};
+
+/**
  * Внутренняя валидация полей пакета (используется createWorkPackage и parseWorkPackage).
  * Возвращает { missingFields, invalidFields }.
  */
@@ -131,6 +153,11 @@ function validateWorkPackageFields(data: Record<string, unknown>): {
 	// Формат correlationId.
 	if (typeof data.correlationId === "string" && !CORRELATION_ID_PATTERN.test(data.correlationId)) {
 		invalidFields.push("correlationId");
+	}
+
+	// toolManifest (F-37): [] — «не ограничен» (дефолт), иначе валидация имён.
+	if (!isValidToolManifest(data.toolManifest)) {
+		invalidFields.push("toolManifest");
 	}
 
 	return { missingFields, invalidFields };
