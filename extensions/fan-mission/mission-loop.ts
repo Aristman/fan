@@ -9,6 +9,13 @@ import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+	DEFAULT_DELEGATION_TIMEOUT_MS,
+	type EpicEventBus,
+	type EpicRunAgent,
+	isEpicItem,
+	runEpicDelegation,
+} from "./epic-delegation.js";
+import {
 	ARCHIVE_KEEP_COUNT,
 	appendDecision,
 	archiveOldDoneItems,
@@ -389,6 +396,13 @@ export class MissionLoop {
 	private ideaGenerator?: MissionIdeaGenerator;
 	private ideaScorer?: MissionIdeaScorer;
 	private metricsCollector?: MissionMetricsHook;
+	// F-48.5: EPIC delegation deps (runAgent декомпозиции + EventBus мост).
+	// Без инъекции [EPIC]-пункты исполняются локально (как обычные).
+	private epicRunAgent?: EpicRunAgent;
+	private epicEventBus?: EpicEventBus;
+	private delegationTimeoutMs: number;
+	// F-48.5: cleanup pending-делегирования (отписка reply при abort/shutdown).
+	private pendingDelegationCleanup?: (() => void) | null;
 
 	constructor(opts: {
 		missionDir: string;
@@ -400,6 +414,12 @@ export class MissionLoop {
 		ideaGenerator?: MissionIdeaGenerator;
 		ideaScorer?: MissionIdeaScorer;
 		metricsCollector?: MissionMetricsHook;
+		/** F-48.5: runAgent декомпозиции [EPIC]-пунктов (делегирование). */
+		runAgent?: EpicRunAgent;
+		/** F-48.5: EventBus для моста mission_delegate (делегирование). */
+		eventBus?: EpicEventBus;
+		/** F-48.5: таймаут ожидания ответа делегирования (default 30 мин). */
+		delegationTimeoutMs?: number;
 	}) {
 		this.missionDir = opts.missionDir;
 		this.deps = opts.deps;
@@ -410,6 +430,10 @@ export class MissionLoop {
 		this.ideaGenerator = opts.ideaGenerator;
 		this.ideaScorer = opts.ideaScorer;
 		this.metricsCollector = opts.metricsCollector;
+		// F-48.5: EPIC delegation wiring (оба deps обязательны для делегирования)
+		this.epicRunAgent = opts.runAgent;
+		this.epicEventBus = opts.eventBus;
+		this.delegationTimeoutMs = opts.delegationTimeoutMs ?? DEFAULT_DELEGATION_TIMEOUT_MS;
 		// P1-6: use provided lock or default file-lock
 		this.lock = opts.deps.lock ?? createFileLock(opts.missionDir);
 	}
@@ -663,12 +687,39 @@ export class MissionLoop {
 				if (steer) {
 					prompt += `\n\nOperator steer: ${steer}`;
 				}
-				iterResult = await this.deps.executor.runIteration({
-					missionDir: this.missionDir,
-					prompt,
-					cwd: this.missionDir,
-					...(steer ? { steer } : {}),
-				});
+				const runLocalIteration = (): Promise<IterationResult> =>
+					this.deps.executor.runIteration({
+						missionDir: this.missionDir,
+						prompt,
+						cwd: this.missionDir,
+						...(steer ? { steer } : {}),
+					});
+				// F-48.5: [EPIC]-пункт → delegation path (декомпозиция → EventBus →
+				// super-orchestrator). Любая неудача делегирования → безопасный
+				// fallback на локальный executor.runIteration.
+				if (isEpicItem(nextItem.text) && this.epicRunAgent && this.epicEventBus) {
+					let delegated: IterationResult | null = null;
+					try {
+						delegated = await runEpicDelegation({
+							missionDir: this.missionDir,
+							itemText: nextItem.text,
+							runAgent: this.epicRunAgent,
+							eventBus: this.epicEventBus,
+							timeoutMs: this.delegationTimeoutMs,
+							cwd: this.missionDir,
+							...(steer ? { steer } : {}),
+							onPendingChange: (cleanup) => {
+								this.pendingDelegationCleanup = cleanup;
+							},
+						});
+					} catch {
+						delegated = null; // непредвиденная ошибка → локальный fallback
+					}
+					this.pendingDelegationCleanup = null;
+					iterResult = delegated ?? (await runLocalIteration());
+				} else {
+					iterResult = await runLocalIteration();
+				}
 
 				// P0-1: persist result immediately after step 4
 				loopState.iterationResult = iterResult;
@@ -858,6 +909,15 @@ export class MissionLoop {
 	}
 
 	async abort(): Promise<void> {
+		// F-48.5: прервать pending EPIC-делегирование (отписка от replyEvent,
+		// снятие таймаута) — ожидание в tick() разрешится fallback'ом.
+		const delegationCleanup = this.pendingDelegationCleanup;
+		this.pendingDelegationCleanup = null;
+		try {
+			delegationCleanup?.();
+		} catch {
+			// best-effort
+		}
 		// P0-2: write abort signal file (lock-free, atomic)
 		writeAbortSignal(this.missionDir);
 		// Also update journal for persistence across restarts

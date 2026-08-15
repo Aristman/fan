@@ -62,6 +62,8 @@ export interface MissionWireOptions {
 	streamingBehavior?: "steer" | "followUp";
 	/** Таймаут дефолтного runAgent (мс; по умолчанию 1_800_000 = 30 мин). */
 	runAgentTimeoutMs?: number;
+	/** F-48.5: таймаут ожидания ответа EPIC-делегирования (мс; default 30 мин). */
+	delegationTimeoutMs?: number;
 }
 
 export interface MissionWiring {
@@ -98,6 +100,11 @@ export function wireMission(fan: ExtensionAPI, opts?: MissionWireOptions): Missi
 				git: createGitAdapter(),
 				clock: { now: () => new Date() },
 			},
+			// F-48.5: EPIC delegation — тот же runAgent (декомпозиция) + EventBus
+			// мост mission_delegate → super-orchestrator (fan.events).
+			runAgent,
+			eventBus: fan.events,
+			...(opts?.delegationTimeoutMs !== undefined ? { delegationTimeoutMs: opts.delegationTimeoutMs } : {}),
 		});
 		attachedDir = missionDir;
 		return loop;
