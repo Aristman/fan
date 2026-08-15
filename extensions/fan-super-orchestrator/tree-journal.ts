@@ -13,6 +13,10 @@
 // узлы без parentId — корни. Если в журнале фигурирует узел "root",
 // корневые узлы дополнительно отражаются в его children (parentId при
 // этом остаётся null, они сохраняются в roots).
+//
+// F-47: хук onJournalWrite(listener) — уведомление о каждой успешной записи
+// (после fsync). Механизм для WS-продюсера mission_event в api-gateway
+// (структурно совместим с MissionJournalLike); продакшн-подключение — F-48.5.
 
 import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
 import { dirname } from "node:path";
@@ -70,6 +74,9 @@ export interface ReconstructedTree {
 	roots: string[];
 }
 
+/** F-47: колбэк, вызываемый после каждой успешной записи в журнал. */
+export type JournalWriteListener = (entry: TreeJournalEntry) => void;
+
 /** JSONL-журнал дерева узлов. */
 export interface TreeJournal {
 	/** Добавляет запись (append + fsync) и возвращает её с timestamp. */
@@ -77,6 +84,9 @@ export interface TreeJournal {
 	/** Все валидные записи в порядке записи; повреждённые строки пропускаются. */
 	readAll(): TreeJournalEntry[];
 	path: string;
+	/** F-47: подписка на уведомления о записи (после fsync). Возвращает
+	 *  функцию отписки. Ошибка listener'а не прерывает запись в журнал. */
+	onJournalWrite(listener: JournalWriteListener): () => void;
 }
 
 /** Минимальная валидация записи: JSON-объект со строковыми event и nodeId. */
@@ -94,6 +104,9 @@ export function createTreeJournal(filePath: string): TreeJournal {
 	mkdirSync(dirname(filePath), { recursive: true });
 	const createFd = openSync(filePath, "a");
 	closeSync(createFd);
+
+	// F-47: подписчики уведомлений о записи (WS-продюсеры)
+	const writeListeners = new Set<JournalWriteListener>();
 
 	return {
 		path: filePath,
@@ -119,6 +132,15 @@ export function createTreeJournal(filePath: string): TreeJournal {
 			} finally {
 				closeSync(fd);
 			}
+			// F-47: уведомление после того, как строка на диске (после fsync).
+			// Ошибка listener'а не должна ломать запись в журнал.
+			for (const listener of writeListeners) {
+				try {
+					listener(full);
+				} catch {
+					/* ignore listener errors */
+				}
+			}
 			return full;
 		},
 		readAll() {
@@ -141,6 +163,12 @@ export function createTreeJournal(filePath: string): TreeJournal {
 				}
 			}
 			return entries;
+		},
+		onJournalWrite(listener) {
+			writeListeners.add(listener);
+			return () => {
+				writeListeners.delete(listener);
+			};
 		},
 	};
 }

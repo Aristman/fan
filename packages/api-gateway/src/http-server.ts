@@ -1,9 +1,11 @@
+import { join } from "node:path";
 import type { ModelManager, RoutingRuleData } from "@fan/model-manager";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { generateToken as createToken, listTokens, revokeToken, tokenAuth } from "./auth.js";
+import { getMissionBudget, getMissionStatus, getMissionTree, isValidMissionSlug } from "./mission-api.js";
 import type {
 	AnalyticsReportMeta,
 	ApiError,
@@ -87,6 +89,8 @@ export interface ServerOptions {
 	host?: string;
 	dashboardDir?: string; // Path to dashboard dist directory. If provided, serves the dashboard.
 	version?: string; // Application version (passed from caller to avoid __dirname issues in compiled binaries)
+	/** F-47: Directory containing mission folders <slug>/ (default: <cwd>/docs/missions). */
+	missionsDir?: string;
 }
 
 // ============================================================================
@@ -143,6 +147,7 @@ async function createApp(
 	options: ServerOptions = {},
 ): Promise<Hono> {
 	if (options.version) _version = options.version;
+	const missionsDir = options.missionsDir ?? join(process.cwd(), "docs", "missions");
 	const app = new Hono();
 
 	// Middleware
@@ -361,6 +366,45 @@ async function createApp(
 		}
 		const resp: RevokeTokenResponse = { success: true };
 		return c.json(resp);
+	});
+
+	// --- Missions (F-47) ---
+	// Self-contained reader of docs/missions/<slug>/ artifacts (MISSION.md
+	// frontmatter, tree-journal.jsonl, mission-budget.json) — see mission-api.ts.
+	app.get("/api/missions/:id/status", (c) => {
+		const slug = c.req.param("id");
+		if (!isValidMissionSlug(slug)) {
+			return c.json({ error: `Invalid mission slug: ${slug}`, code: "BAD_REQUEST" } satisfies ApiError, 400);
+		}
+		const status = getMissionStatus(missionsDir, slug);
+		if (!status) {
+			return c.json({ error: `Mission '${slug}' not found`, code: "NOT_FOUND" } satisfies ApiError, 404);
+		}
+		return c.json(status);
+	});
+
+	app.get("/api/missions/:id/tree", (c) => {
+		const slug = c.req.param("id");
+		if (!isValidMissionSlug(slug)) {
+			return c.json({ error: `Invalid mission slug: ${slug}`, code: "BAD_REQUEST" } satisfies ApiError, 400);
+		}
+		const tree = getMissionTree(missionsDir, slug);
+		if (!tree) {
+			return c.json({ error: `Mission '${slug}' not found`, code: "NOT_FOUND" } satisfies ApiError, 404);
+		}
+		return c.json(tree);
+	});
+
+	app.get("/api/missions/:id/budget", (c) => {
+		const slug = c.req.param("id");
+		if (!isValidMissionSlug(slug)) {
+			return c.json({ error: `Invalid mission slug: ${slug}`, code: "BAD_REQUEST" } satisfies ApiError, 400);
+		}
+		const budget = getMissionBudget(missionsDir, slug);
+		if (!budget) {
+			return c.json({ error: `Mission '${slug}' not found`, code: "NOT_FOUND" } satisfies ApiError, 404);
+		}
+		return c.json(budget);
 	});
 
 	// --- Dashboard static serving (optional) ---

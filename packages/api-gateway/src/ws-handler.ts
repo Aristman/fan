@@ -3,7 +3,7 @@ import type { BudgetAlert, BudgetAlertHandler } from "@fan/model-manager";
 import type { WebSocket as WsWebSocket } from "ws";
 import { isAuthDisabled, validateToken } from "./auth.js";
 import type { SessionAdapter } from "./http-server.js";
-import type { WsBudgetAlert, WsIncomingMessage, WsOutgoingMessage } from "./types.js";
+import type { WsBudgetAlert, WsIncomingMessage, WsMissionEvent, WsOutgoingMessage } from "./types.js";
 
 // ============================================================================
 // Types
@@ -14,6 +14,13 @@ export interface BudgetTrackerLike {
 	onAlert(handler: BudgetAlertHandler): () => void;
 }
 
+/** Structural type for mission journal write subscription (F-47).
+ *  Compatible with TreeJournal.onJournalWrite (fan-super-orchestrator, F-32).
+ *  Returns an unsubscribe function. */
+export interface MissionJournalLike {
+	onJournalWrite(callback: (entry: Record<string, unknown>) => void): () => void;
+}
+
 export interface WsHandlerOptions {
 	server: Server;
 	sessionAdapter: SessionAdapter;
@@ -21,6 +28,9 @@ export interface WsHandlerOptions {
 	pathPrefix?: string;
 	/** Budget tracker for broadcasting budget_alert events to WS clients (F-07). */
 	budgetTracker?: BudgetTrackerLike;
+	/** F-47: mission journal hook — every journal write broadcasts mission_event
+	 *  to all connected WS clients. */
+	missionJournal?: MissionJournalLike;
 }
 
 interface ClientConnection {
@@ -34,7 +44,7 @@ interface ClientConnection {
 // ============================================================================
 
 export function attachWebSocketHandler(options: WsHandlerOptions): { close: () => void } {
-	const { server, sessionAdapter, pathPrefix = "/api/ws/", budgetTracker } = options;
+	const { server, sessionAdapter, pathPrefix = "/api/ws/", budgetTracker, missionJournal } = options;
 
 	// Map: sessionId → Set of connected clients
 	const sessionClients = new Map<string, Set<ClientConnection>>();
@@ -57,6 +67,18 @@ export function attachWebSocketHandler(options: WsHandlerOptions): { close: () =
 
 	// F-07: Broadcast budget_alert to ALL connected WS clients (system-wide, not per-session)
 	function broadcastBudgetAlert(message: WsBudgetAlert): void {
+		const data = JSON.stringify(message);
+		for (const [, clients] of sessionClients) {
+			for (const client of clients) {
+				if (client.ws.readyState === 1) {
+					client.ws.send(data);
+				}
+			}
+		}
+	}
+
+	// F-47: Broadcast mission_event to ALL connected WS clients (system-wide)
+	function broadcastMissionEvent(message: WsMissionEvent): void {
 		const data = JSON.stringify(message);
 		for (const [, clients] of sessionClients) {
 			for (const client of clients) {
@@ -98,6 +120,31 @@ export function attachWebSocketHandler(options: WsHandlerOptions): { close: () =
 
 	// Register the session change callback for automatic rebinding
 	sessionAdapter.onSessionChange?.(rebindBudgetAlerts);
+
+	// F-47: WS-producer — subscribe to mission journal writes (if provided).
+	// missionId: entry.missionId field, else first segment of correlationId.
+	let journalUnsub: (() => void) | undefined;
+	if (missionJournal) {
+		journalUnsub = missionJournal.onJournalWrite((entry) => {
+			if (typeof entry !== "object" || entry === null) {
+				return;
+			}
+			const missionId =
+				typeof entry.missionId === "string"
+					? entry.missionId
+					: typeof entry.correlationId === "string"
+						? entry.correlationId.split("/")[0]
+						: "unknown";
+			broadcastMissionEvent({
+				type: "mission_event",
+				missionId,
+				event: typeof entry.event === "string" ? entry.event : "unknown",
+				nodeId: typeof entry.nodeId === "string" ? entry.nodeId : "",
+				timestamp: typeof entry.timestamp === "string" ? entry.timestamp : new Date().toISOString(),
+				entry,
+			});
+		});
+	}
 
 	if (budgetTracker) {
 		registerBudgetHandler((alert: BudgetAlert) => {
@@ -299,6 +346,14 @@ export function attachWebSocketHandler(options: WsHandlerOptions): { close: () =
 			if (budgetUnsub) {
 				try {
 					budgetUnsub();
+				} catch {
+					/* ignore */
+				}
+			}
+			// F-47: Unsubscribe from mission journal
+			if (journalUnsub) {
+				try {
+					journalUnsub();
 				} catch {
 					/* ignore */
 				}

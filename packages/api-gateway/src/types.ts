@@ -244,6 +244,21 @@ export interface WsModelSwitch extends WsMessage {
 	reason: string;
 }
 
+/** Mission journal event broadcast to ALL WebSocket clients (F-47).
+ *  System-wide (no sessionId) — like budget_alert fan-out. */
+export interface WsMissionEvent {
+	type: "mission_event";
+	/** Mission slug: entry.missionId field or first segment of correlationId. */
+	missionId: string;
+	/** Journal event type (spawn, complete, fail, abort, ...). */
+	event: string;
+	/** Node the event refers to. */
+	nodeId: string;
+	timestamp: string;
+	/** Full journal entry that triggered the event. */
+	entry: Record<string, unknown>;
+}
+
 /** WebSocket error message */
 export interface WsError extends WsMessage {
 	type: "error";
@@ -251,7 +266,7 @@ export interface WsError extends WsMessage {
 	message: string;
 }
 
-export type WsOutgoingMessage = WsAgentEvent | WsBudgetAlert | WsModelSwitch | WsError;
+export type WsOutgoingMessage = WsAgentEvent | WsBudgetAlert | WsModelSwitch | WsMissionEvent | WsError;
 
 /** Incoming WebSocket messages from client */
 export type WsIncomingMessage =
