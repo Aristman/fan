@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased] — 2026-08-13
+## [2.8.0] — 2026-08-15
 
 ### Сверх-оркестратор FAN — Этап 1 «Валидация миссионного контура» завершён
 
@@ -104,6 +104,126 @@ coding-agent 1190 (1 pre-existing flake `agent-session-concurrent` steering),
 
 **Следующий шаг:** этап 1 `mission-validation-1` (F-16..F-22) + F-48
 (персистентность таск-листа оркестратора).
+
+### Сверх-оркестратор FAN — развёртывание и автопилот миссий
+
+**Entry-point wiring расширений (E-1..E-6):**
+
+- **`fan-orchestrator`** — git-adapter в [`89d4b0b`](https://github.com/seaagents/fan/commit/89d4b0b),
+  session-executor в [`5fc3590`](https://github.com/seaagents/fan/commit/5fc3590)
+- **`fan-webhook`** — entry-point в [`f94b55f`](https://github.com/seaagents/fan/commit/f94b55f)
+- **`fan-scheduler`** — entry-point в [`2d0d436`](https://github.com/seaagents/fan/commit/2d0d436)
+- **`fan-mission`** — entry-point: MissionLoop + 7 slash-команд + виджет
+  в [`415b3d2`](https://github.com/seaagents/fan/commit/415b3d2);
+  integration load test в [`72882c1`](https://github.com/seaagents/fan/commit/72882c1)
+
+**Доводка:**
+
+- Виджет F9 через `ctx.ui.setWidget` в [`f94669b`](https://github.com/seaagents/fan/commit/f94669b)
+  (fan-mission 0.1.3)
+- Scheduler без холостых тиков в [`cf45deb`](https://github.com/seaagents/fan/commit/cf45deb)
+  (fan-scheduler 0.1.1)
+- Webhook подсказка `FAN_WEBHOOK_PORT` в [`a183566`](https://github.com/seaagents/fan/commit/a183566)
+
+**TICKET-12 production runAgent:** захват реального результата итерации
+(agent_end, usage, FAILED-теги, таймаут 30 мин) в [`f120db5`](https://github.com/seaagents/fan/commit/f120db5)
+(fan-mission 0.2.0)
+
+**TICKET-14 авто-тик:** мост scheduler→missionLoop.tick() через EventBus
+`mission_tick` в [`3a32fb4`](https://github.com/seaagents/fan/commit/3a32fb4)
+(scheduler 0.2.0 + mission 0.3.0)
+
+**fan-webhook multi-instance:** авто-подбор порта 9090–9110 когда порт не задан
+явно в [`ec658d1`](https://github.com/seaagents/fan/commit/ec658d1) (0.1.3)
+
+### Сверх-оркестратор FAN — Этап 2 «HTTP-иерархия узлов» завершён
+
+**Фаза A «Управление процессами и аутентификация»:**
+
+- **`fan-super-orchestrator`** — process-manager
+  ([`be8c75d`](https://github.com/seaagents/fan/commit/be8c75d): spawn/kill/health,
+  PortPool), node-auth
+  ([`60411db`](https://github.com/seaagents/fan/commit/60411db): FAN_NODE_TOKEN +
+  сидинг в api-gateway auth.ts + main.ts), depth-width-guard
+  ([`18de279`](https://github.com/seaagents/fan/commit/18de279)),
+  message-sanitizer ([`02dce72`](https://github.com/seaagents/fan/commit/02dce72))
+- **Phase-gate A** — [`fe1f6d8`](https://github.com/seaagents/fan/commit/fe1f6d8)
+  (11/11 реальный fan server)
+
+**Фаза B «Рабочие пакеты и бюджет»:**
+
+- **`fan-super-orchestrator`** — work-package
+  ([`34192ab`](https://github.com/seaagents/fan/commit/34192ab)),
+  node-report ([`5bd41c9`](https://github.com/seaagents/fan/commit/5bd41c9)),
+  child-node-client ([`0a90f49`](https://github.com/seaagents/fan/commit/0a90f49):
+  REST+WS reconnect), budget-aggregator
+  ([`5a78656`](https://github.com/seaagents/fan/commit/5a78656)),
+  budget-coordinator ([`c1fce7a`](https://github.com/seaagents/fan/commit/c1fce7a):
+  mission-budget.json, min(0.8×remaining/n, ceiling), инвариант
+  Σallocated ≤ budget_total), tree-journal
+  ([`6af95ac`](https://github.com/seaagents/fan/commit/6af95ac): JSONL+fsync),
+  startup-reconciliation ([`6ab3d96`](https://github.com/seaagents/fan/commit/6ab3d96))
+- **Phase-gate B** — [`571076b`](https://github.com/seaagents/fan/commit/571076b)
+  (26/26)
+
+**Фаза C «Глубина 2»:**
+
+- **`fan-super-orchestrator`** — depth2-integration
+  ([`ebd309f`](https://github.com/seaagents/fan/commit/ebd309f): MVP глубины 2:
+  L0 → 3–4×L1 на реальных процессах, kill-switch 0.3с),
+  иерархические тесты ([`61cd0ee`](https://github.com/seaagents/fan/commit/61cd0ee))
+- **Phase-gate C** — [`060cf82`](https://github.com/seaagents/fan/commit/060cf82)
+  (20/20)
+
+**Итог:** 457 тестов расширения + 57 e2e-проверок; verify final PASS;
+отчёт [`b4a97e1`](https://github.com/seaagents/fan/commit/b4a97e1).
+
+### Сверх-оркестратор FAN — Этап 3 завершён — пайплайн закрыт полностью (48/48 + F-48.5)
+
+**Фаза A «Глубина 3–4, манифесты, санитизация» (F-36..F-38):**
+
+- **F-36** глубина 3–4 в [`d3fa7ed`](https://github.com/seaagents/fan/commit/d3fa7ed)
+  (maxWorkingDepth дефолт 4, предохранитель 12, FAN_ORCHESTRATOR_DEPTH)
+- **F-37** манифесты инструментов в [`8e89bcc`](https://github.com/seaagents/fan/commit/8e89bcc)
+  (--tools enforcement на дочернем, tool_blocked)
+- **F-38** полная санитизация границ в [`2c8d0b5`](https://github.com/seaagents/fan/commit/2c8d0b5)
+  (4 валидатора, cycle-защита, validation_failed)
+- **Phase-gate A** — [`50da3f3`](https://github.com/seaagents/fan/commit/50da3f3) (17/17)
+
+**Фаза B «Mission API и CLI» (F-39..F-42, F-47):**
+
+- **F-47** Mission API в [`72b9fc4`](https://github.com/seaagents/fan/commit/72b9fc4)
+  (GET /api/missions/:id/status|tree|budget + WS mission_event, slug traversal
+  hardening)
+- **F-39** mission-tree в [`9b57fb5`](https://github.com/seaagents/fan/commit/9b57fb5)
+- **F-40** mission-status+log в [`a4e2567`](https://github.com/seaagents/fan/commit/a4e2567)
+- **F-41** mission-budget в [`ace89c3`](https://github.com/seaagents/fan/commit/ace89c3)
+- **F-42** CLI `fan mission tree` в [`bfac439`](https://github.com/seaagents/fan/commit/bfac439)
+- Parity-фикс [`36b1773`](https://github.com/seaagents/fan/commit/36b1773)
+- **Phase-gate B** — [`b24122d`](https://github.com/seaagents/fan/commit/b24122d) (12/12)
+
+**Фаза C «Checkpoint, бюджет на итерацию, wiring» (F-43..F-46, F-48.5):**
+
+- **F-45** Checkpoint API в [`039b241`](https://github.com/seaagents/fan/commit/039b241)
+  (git commit + state-файл, restore без --hard)
+- **F-46** бюджет на итерацию в [`c07cfc8`](https://github.com/seaagents/fan/commit/c07cfc8)
+  (100k/$5 на turn, iteration_budget_exceeded → FAILED-тег в fan-mission)
+- **F-48.5** wiring EPIC-делегирование в [`6a9eb6d`](https://github.com/seaagents/fan/commit/6a9eb6d)
+  ([EPIC] → декомпозиция → mission_delegate → реальные дочерние fan server →
+  синтез; verify поймал и предотвратил ложный COMPLETE)
+- **F-44** e2e в [`7d171cb`](https://github.com/seaagents/fan/commit/7d171cb)
+- **F-43** гайд `docs/guides/missions.md` в [`8e3d142`](https://github.com/seaagents/fan/commit/8e3d142)
+- **Phase-gate C** — [`3498a9f`](https://github.com/seaagents/fan/commit/3498a9f) (32/32)
+
+**Итог:** тесты super-orch 716 / mission 585 / api-gateway 137 / dashboard 98 /
+model-manager 53 / coding-agent 1244; e2e gates 118/118; verify final PASS;
+бэклог #22–#29 (minor) в pipeline-report.
+
+**Версии релиза** [`4d89d81`](https://github.com/seaagents/fan/commit/4d89d81) +
+[`d56a7ed`](https://github.com/seaagents/fan/commit/d56a7ed): FAN 2.8.0,
+fan-coding-agent 2.7.0, @fan/api-gateway 1.5.0, @fan/dashboard 1.1.0,
+@fan/model-manager 1.2.0, fan-mission 0.4.0, fan-super-orchestrator 0.3.0
+(fan-scheduler 0.2.0, fan-webhook 0.1.3 без изменений в этапе 3).
 
 ## [2.5.1] — 2026-08-09
 
