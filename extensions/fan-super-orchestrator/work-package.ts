@@ -64,6 +64,11 @@ export class WorkPackageValidationError extends Error {
 /** Формат correlationId: <mission-id>/L<N>/node-<M> (N, M — целые ≥ 0). */
 const CORRELATION_ID_PATTERN = /^[^/]+\/L\d+\/node-\d+$/;
 
+/** Charset missionId — тот же, что у граничного валидатора validateCorrelationId
+ *  (message-sanitizer, F-38): [A-Za-z0-9._-]+. Синхронизация charset даёт
+ *  fail-fast на старте (makeCorrelationId) вместо отказа на границе. */
+const MISSION_ID_PATTERN = /^[A-Za-z0-9._-]+$/;
+
 /** Обязательные поля пакета (без дефолтов). */
 const REQUIRED_FIELDS = ["task", "correlationId", "depth", "tokenBudget", "deadline"] as const;
 
@@ -294,12 +299,13 @@ export function buildToolArgs(manifest: readonly string[]): string[] {
 /**
  * Собирает correlationId: <missionId>/L<depth>/node-<node>.
  *
- * @throws WorkPackageValidationError — missionId не непустая строка или содержит "/",
+ * @throws WorkPackageValidationError — missionId не строка безопасного charset
+ *   [A-Za-z0-9._-]+ (тот же charset, что у validateCorrelationId на границе),
  *   depth/node не finite integer ≥ 0.
  */
 export function makeCorrelationId(missionId: string, depth: number, node: number): string {
 	const invalidFields: string[] = [];
-	if (typeof missionId !== "string" || missionId.trim().length === 0 || missionId.includes("/")) {
+	if (typeof missionId !== "string" || !MISSION_ID_PATTERN.test(missionId)) {
 		invalidFields.push("missionId");
 	}
 	if (!isValidNonNegativeInteger(depth)) {

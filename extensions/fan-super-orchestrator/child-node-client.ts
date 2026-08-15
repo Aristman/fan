@@ -11,7 +11,24 @@
 // правды — JSONL на диске дочернего узла, пакет повторно не POSTится);
 // при превышении deadline пакета — timeout-отчёт и закрытие WS.
 // Все зависимости (fetch, WebSocket) инъектируются для тестируемости.
+//
+// F-38 «Полная санитизация границ»: клиент пропускает все сообщения через
+// граничные валидаторы (message-sanitizer):
+//   • Исходящий пакет работ — validateWorkPackageSchema ДО WS/POST
+//     (fail-fast: невалидный пакет не покидает узел);
+//   • Входящий текст отчёта — clean() (F-26) перед parseNodeReport;
+//     собранный отчёт — validateReport перед возвратом вызывающему.
+// Невалидное сообщение отклоняется (reject) + вызывается колбэк
+// onValidationFailed с диагностикой, готовой для journal-записи
+// validation_failed. Закреплённое решение (F-38): журналирование через
+// КОЛБЭК, а не прямую запись — tree-journal живёт на уровне миссии
+// (missionDir), недоступен клиенту и инжектится вызывающим контуром.
+// Подключение в контуре depth2-integration (F-34): интеграция передаёт
+// onValidationFailed в опциях sendPackage (Depth2SendOpts.onValidationFailed),
+// DI-реализация пробрасывает его в createChildNodeClient; колбэк пишет
+// journal.write({event: "validation_failed", nodeId, correlationId, diag}).
 
+import { clean, type ValidationIssue, validateReport, validateWorkPackageSchema } from "./message-sanitizer.js";
 import {
 	makeAbortedReport,
 	makeTimeoutReport,
@@ -31,6 +48,19 @@ export interface WsLike {
 	send(data: string): void;
 }
 
+/** Диагностика отказа граничной валидации (F-38) — для колбэка
+ *  onValidationFailed и journal-записи validation_failed. */
+export interface ValidationFailureInfo {
+	/** Какая граница отклонила: исходящий пакет или входящий отчёт. */
+	source: "work_package" | "report";
+	nodeId?: string;
+	correlationId?: string;
+	/** Сводная диагностика ("field: message; ...") — готова для поля diag. */
+	diag: string;
+	/** Исходные ошибки валидации. */
+	errors: readonly ValidationIssue[];
+}
+
 /** Опции клиента (все зависимости инъектируются, дефолты — в скобках). */
 export interface ChildNodeClientOptions {
 	/** HTTP-транспорт (default: global fetch). */
@@ -43,6 +73,10 @@ export interface ChildNodeClientOptions {
 	reconnectDelayMs?: number;
 	/** Максимум reconnect-попыток сверх первого соединения (5). */
 	maxReconnects?: number;
+	/** F-38: вызывается при отклонении невалидного межагентного сообщения.
+	 *  Клиент не имеет доступа к tree-journal (журнал живёт на уровне миссии),
+	 *  поэтому владелец клиента подключает запись validation_failed сам. */
+	onValidationFailed?: (failure: ValidationFailureInfo) => void;
 }
 
 /** Опции отправки пакета работ дочернему узлу. */
@@ -119,6 +153,15 @@ function maskTokenUrl(url: string): string {
 	return url.replace(/([?&]token=)[^&]*/g, "$1***");
 }
 
+/** F-38: charset sessionId. sessionId подставляется в WS/POST URL (path-сегмент);
+ *  значение из REST discovery — недоверенный ввод (path-injection guard). */
+const SESSION_ID_PATTERN = /^[A-Za-z0-9._-]+$/;
+
+/** Сводная диагностика валидации: "field: message; field: message". */
+function formatValidationDiag(errors: readonly ValidationIssue[]): string {
+	return errors.map((issue) => `${issue.field}: ${issue.message}`).join("; ");
+}
+
 /** Клиент дочернего узла: REST-отправка пакета + WS-ожидание отчёта. */
 export function createChildNodeClient(opts: ChildNodeClientOptions = {}): ChildNodeClient {
 	const fetchFn = opts.fetchFn ?? fetch;
@@ -126,6 +169,7 @@ export function createChildNodeClient(opts: ChildNodeClientOptions = {}): ChildN
 	const connectTimeoutMs = opts.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
 	const reconnectDelayMs = opts.reconnectDelayMs ?? DEFAULT_RECONNECT_DELAY_MS;
 	const maxReconnects = opts.maxReconnects ?? DEFAULT_MAX_RECONNECTS;
+	const onValidationFailed = opts.onValidationFailed;
 
 	let closed = false;
 	/** Аборты активных sendWorkPackage (для close()). */
@@ -137,6 +181,21 @@ export function createChildNodeClient(opts: ChildNodeClientOptions = {}): ChildN
 		workPackage,
 		sessionId: sessionIdOpt,
 	}: SendWorkPackageOptions): Promise<NodeReport> {
+		// F-38: fail-fast валидация исходящего пакета ДО любого сетевого
+		// взаимодействия — невалидный пакет не покидает узел.
+		const packageCheck = validateWorkPackageSchema(workPackage);
+		if (!packageCheck.valid) {
+			const diag = formatValidationDiag(packageCheck.errors);
+			const rawCorrelationId = (workPackage as { correlationId?: unknown }).correlationId;
+			onValidationFailed?.({
+				source: "work_package",
+				correlationId: typeof rawCorrelationId === "string" ? rawCorrelationId : undefined,
+				diag,
+				errors: packageCheck.errors,
+			});
+			throw new Error(`Outgoing work package rejected by boundary validation: ${diag}`);
+		}
+
 		const baseUrl = `http://127.0.0.1:${port}`;
 		const authorization = `Bearer ${token}`;
 
@@ -153,6 +212,12 @@ export function createChildNodeClient(opts: ChildNodeClientOptions = {}): ChildN
 				throw new Error("Session discovery failed: child node has no active sessions");
 			}
 			sessionId = firstId;
+		}
+
+		// F-38: sessionId подставляется в URL — charset-проверка до подстановки
+		// (значение из REST discovery недоверенно; path-injection guard).
+		if (!SESSION_ID_PATTERN.test(sessionId)) {
+			throw new Error(`Invalid session id (must match ${SESSION_ID_PATTERN.source}): ${JSON.stringify(sessionId)}`);
 		}
 
 		const correlationId = workPackage.correlationId;
@@ -255,9 +320,30 @@ export function createChildNodeClient(opts: ChildNodeClientOptions = {}): ChildN
 						lastAssistant = message as { content?: unknown; usage?: unknown };
 					}
 				}
-				const text = lastAssistant === null ? "" : extractAssistantText(lastAssistant.content);
+				const rawText = lastAssistant === null ? "" : extractAssistantText(lastAssistant.content);
+				// F-38: входящий текст — недоверенный ввод: clean() (F-26) до парсинга.
+				const text = clean(rawText);
 				const usage = mapUsage(lastAssistant?.usage);
-				settle(parseNodeReport(text, { nodeId: meta.nodeId, correlationId: meta.correlationId, usage }));
+				const report = parseNodeReport(text, {
+					nodeId: meta.nodeId,
+					correlationId: meta.correlationId,
+					usage,
+				});
+				// F-38: валидация схемы собранного отчёта перед возвратом.
+				const reportCheck = validateReport(report);
+				if (!reportCheck.valid) {
+					const diag = formatValidationDiag(reportCheck.errors);
+					onValidationFailed?.({
+						source: "report",
+						nodeId: meta.nodeId,
+						correlationId: meta.correlationId,
+						diag,
+						errors: reportCheck.errors,
+					});
+					fail(new Error(`Incoming node report rejected by boundary validation: ${diag}`));
+					return;
+				}
+				settle(report);
 			};
 
 			// 5. WS-подписка с reconnect при обрыве (переподписка без повторного POST).

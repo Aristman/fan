@@ -38,7 +38,9 @@ import {
 	emptyBudgetState,
 } from "./budget-aggregator.js";
 import { computeChildAllocation, createMissionBudgetStore } from "./budget-coordinator.js";
+import type { ValidationFailureInfo } from "./child-node-client.js";
 import { canSpawn, type DepthWidthGuardOptions } from "./depth-width-guard.js";
+import { validateDepth } from "./message-sanitizer.js";
 import { generateNodeToken } from "./node-auth.js";
 import { type NodeReport, totalUsage } from "./node-report.js";
 import { PortPool } from "./port-pool.js";
@@ -75,6 +77,10 @@ export interface Depth2SendOpts {
 	port: number;
 	token: string;
 	workPackage: WorkPackage;
+	/** F-38: колбэк граничной валидации, подключённый к журналу миссии
+	 *  (validation_failed). DI-реализация, создающая child-node-client внутри,
+	 *  пробрасывает его в createChildNodeClient({ onValidationFailed }). */
+	onValidationFailed?: (failure: ValidationFailureInfo) => void;
 }
 
 /** Опции фабрики интеграции. */
@@ -116,8 +122,20 @@ export interface Depth2Handle {
 
 /** Корень дерева depth-2 (L0). */
 const ROOT_NODE_ID = "L0";
+/** Глубина корня (L0). */
+const ROOT_DEPTH = 0;
 /** Глубина порождаемых детей. */
 const CHILD_DEPTH = 1;
+
+/** Извлекает глубину узла из correlationId (<mission>/L<N>/node-<M>);
+ *  null — correlationId не парсится (глубина неизвестна). */
+function depthFromCorrelationId(correlationId: unknown): number | null {
+	if (typeof correlationId !== "string") {
+		return null;
+	}
+	const match = /\/L(\d+)\/node-\d+$/.exec(correlationId);
+	return match === null ? null : Number(match[1]);
+}
 
 /** Handle depth-2 интеграции поверх модулей фаз A/B. */
 export function createDepth2Integration(opts: Depth2Options): Depth2Handle {
@@ -261,7 +279,50 @@ export function createDepth2Integration(opts: Depth2Options): Depth2Handle {
 			});
 			let report: NodeReport;
 			try {
-				report = await sendPackage({ port, token, workPackage });
+				// F-38: колбэк граничной валидации клиента → журнал миссии
+				// (validation_failed). DI-реализация sendPackage, создающая
+				// child-node-client внутри, пробрасывает колбэк в клиент.
+				const onValidationFailed = (failure: ValidationFailureInfo): void => {
+					journal.write({
+						event: "validation_failed",
+						nodeId: failure.nodeId ?? nodeId,
+						parentId: ROOT_NODE_ID,
+						correlationId: failure.correlationId ?? correlationId,
+						depth: CHILD_DEPTH,
+						diag: failure.diag,
+					});
+				};
+				report = await sendPackage({ port, token, workPackage, onValidationFailed });
+				// F-38: validateDepth на границе приёма отчёта. Зафиксированная точка:
+				// здесь известны обе глубины — ожидаемая (ROOT_DEPTH + 1) и фактическая
+				// (L<N> в correlationId отчёта, присланного транспортом). В клиенте
+				// (child-node-client) проверка была бы мёртвой: отчёт собирается из
+				// meta пакета, поэтому его глубина тривиально совпадает с ожидаемой.
+				const reportDepth = depthFromCorrelationId(report?.correlationId);
+				const depthCheck =
+					reportDepth === null
+						? {
+								valid: false,
+								errors: [
+									{
+										field: "correlationId",
+										message: `cannot parse depth from report correlationId: ${String(report?.correlationId)}`,
+									},
+								],
+							}
+						: validateDepth(ROOT_DEPTH, reportDepth);
+				if (!depthCheck.valid) {
+					const diag = depthCheck.errors.map((issue) => `${issue.field}: ${issue.message}`).join("; ");
+					journal.write({
+						event: "validation_failed",
+						nodeId,
+						parentId: ROOT_NODE_ID,
+						correlationId,
+						depth: CHILD_DEPTH,
+						diag,
+					});
+					throw new Error(`Incoming node report rejected by boundary validation: ${diag}`);
+				}
 			} catch (sendError) {
 				// F2: отказ sendPackage — fail-запись, очистка, возврат аллокации.
 				journal.write({

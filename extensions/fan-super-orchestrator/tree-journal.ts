@@ -18,8 +18,16 @@ import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, wr
 import { dirname } from "node:path";
 
 /** Тип события журнала дерева (orphan_cleanup — startup-reconciliation, F-33;
- * tool_blocked — зарезервирован для отказов манифеста инструментов, F-37). */
-export type TreeJournalEventType = "spawn" | "complete" | "fail" | "abort" | "orphan_cleanup" | "tool_blocked";
+ * tool_blocked — отказы манифеста инструментов, F-37; validation_failed —
+ * отклонение невалидного межагентного сообщения граничной валидацией, F-38). */
+export type TreeJournalEventType =
+	| "spawn"
+	| "complete"
+	| "fail"
+	| "abort"
+	| "orphan_cleanup"
+	| "tool_blocked"
+	| "validation_failed";
 
 /** Потреблённые ресурсы в записи журнала. */
 export interface TreeJournalUsage {
@@ -40,8 +48,9 @@ export interface TreeJournalEntry {
 	port?: number;
 	pid?: number;
 	usage?: TreeJournalUsage;
-	/** Диагностика отказа (tool_blocked, F-37): "tool '<name>' not in manifest" /
-	 *  причина валидации манифеста. */
+	/** Диагностика отказа (tool_blocked, F-37: "tool '<name>' not in manifest" /
+	 *  причина валидации манифеста; validation_failed, F-38: ошибки схемы
+	 *  отклонённого межагентного сообщения). */
 	diag?: string;
 }
 

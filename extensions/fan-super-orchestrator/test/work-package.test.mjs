@@ -645,3 +645,37 @@ describe("протокол L0 → L1 end-to-end (без процессов)", ()
 		expect(received.costBudgetUsd).toBe(0);
 	});
 });
+
+// ─── makeCorrelationId: charset missionId (F-38, синхронизация с границей) ──
+
+describe("makeCorrelationId: charset missionId = [A-Za-z0-9._-]+ (как validateCorrelationId)", () => {
+	it("кириллический missionId → WorkPackageValidationError с диагностикой (fail-fast)", () => {
+		expect(() => makeCorrelationId("миссия-1", 1, 1)).toThrow(WorkPackageValidationError);
+		try {
+			makeCorrelationId("миссия-1", 1, 1);
+			expect.unreachable("должен был бросить");
+		} catch (error) {
+			expect(error).toBeInstanceOf(WorkPackageValidationError);
+			expect(error.invalidFields).toContain("missionId");
+			expect(error.message).toMatch(/missionId/);
+		}
+	});
+
+	it("missionId с пробелом → WorkPackageValidationError", () => {
+		expect(() => makeCorrelationId("my mission", 1, 1)).toThrow(WorkPackageValidationError);
+	});
+
+	it("missionId со служебными скобками ('[FILTERED]') → WorkPackageValidationError", () => {
+		expect(() => makeCorrelationId("[FILTERED]", 1, 1)).toThrow(WorkPackageValidationError);
+	});
+
+	it("валидный charset (точки, дефисы, подчёркивания) → работает", () => {
+		expect(makeCorrelationId("mission_v2.1-alpha", 1, 3)).toBe("mission_v2.1-alpha/L1/node-3");
+	});
+
+	it("результат makeCorrelationId проходит validateCorrelationId границы (самосогласованность charset)", async () => {
+		const { validateCorrelationId } = await import("../message-sanitizer.js");
+		const correlationId = makeCorrelationId("mission_v2.1-alpha", 1, 3);
+		expect(validateCorrelationId(correlationId).valid).toBe(true);
+	});
+});

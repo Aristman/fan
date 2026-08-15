@@ -891,3 +891,157 @@ describe("F2: sendPackage reject — журнал fail, порт освобож�
 		expect(budgetState.allocated.usd).toBe(0);
 	});
 });
+
+// ─── F-38: onValidationFailed подключён к журналу + validateDepth на границе ──
+
+describe("F-38: невалидный входящий отчёт в контуре depth2 → validation_failed в журнале", () => {
+	/** Минимальный WsLike-мок (как в child-node-client.test.mjs). */
+	class FakeWs {
+		constructor(url) {
+			this.url = url;
+			this.closed = false;
+			FakeWs.instances.push(this);
+		}
+		send() {}
+		close() {
+			this.closed = true;
+		}
+		_open() {
+			this.onopen?.();
+		}
+		_message(obj) {
+			this.onmessage?.({ data: JSON.stringify(obj) });
+		}
+	}
+	FakeWs.instances = [];
+
+	/** fetch-мок: discovery + POST 200. */
+	function makeClientFetch() {
+		return async (url) => {
+			const u = String(url);
+			if (u.includes("/messages")) {
+				return { ok: true, status: 200, json: async () => ({ success: true }) };
+			}
+			return { ok: true, status: 200, json: async () => ({ sessions: [{ id: "sess-1" }] }) };
+		};
+	}
+
+	const tick = () => new Promise((resolve) => setImmediate(resolve));
+
+	it("onValidationFailed проброшен в клиент: отрицательный usage → journal validation_failed (diag про usage)", async () => {
+		const mission = makeMission();
+		FakeWs.instances.length = 0;
+		// Реальный child-node-client внутри DI sendPackage: опция
+		// onValidationFailed пробрасывается из Depth2SendOpts в клиент.
+		const { createChildNodeClient } = await import("../child-node-client.js");
+		const sendPackage = vi.fn(async ({ port, token, workPackage, onValidationFailed }) => {
+			const client = createChildNodeClient({
+				fetchFn: makeClientFetch(),
+				wsFactory: (url) => new FakeWs(url),
+				onValidationFailed,
+			});
+			return client.sendWorkPackage({ port, token, workPackage });
+		});
+		const handle = makeHandle(mission, { sendPackage });
+
+		const runPromise = handle.run({ task: "Эпик", children: 1, deadline: new Date(Date.now() + 60_000).toISOString() });
+		runPromise.catch(() => {}); // подавляем unhandled rejection до await
+
+		await vi.waitFor(() => expect(FakeWs.instances).toHaveLength(1), { timeout: 5_000, interval: 10 });
+		const ws = FakeWs.instances[0];
+		ws._open();
+		await tick();
+		// Дочерний узел сообщает отрицательные токены — невалидный usage.
+		ws._message({
+			type: "agent_event",
+			event: {
+				type: "agent_end",
+				messages: [
+					{
+						role: "assistant",
+						content: [{ type: "text", text: "VERDICT: PASS" }],
+						usage: { input: -100, output: 50, cost: { total: 0.05 } },
+					},
+				],
+			},
+		});
+
+		await expect(runPromise).rejects.toThrow(/usage/);
+
+		const entries = readJournal(mission);
+		const failures = entries.filter((e) => e.event === "validation_failed");
+		expect(failures).toHaveLength(1);
+		expect(failures[0].nodeId).toBe("L1/node-1");
+		expect(failures[0].parentId).toBe("L0");
+		expect(failures[0].correlationId).toBe("mission-f34/L1/node-1");
+		expect(failures[0].diag).toMatch(/usage/);
+	}, 10_000);
+
+	it("валидный отчёт в том же контуре → validation_failed НЕ пишется", async () => {
+		const mission = makeMission();
+		FakeWs.instances.length = 0;
+		const { createChildNodeClient } = await import("../child-node-client.js");
+		const sendPackage = vi.fn(async ({ port, token, workPackage, onValidationFailed }) => {
+			const client = createChildNodeClient({
+				fetchFn: makeClientFetch(),
+				wsFactory: (url) => new FakeWs(url),
+				onValidationFailed,
+			});
+			return client.sendWorkPackage({ port, token, workPackage });
+		});
+		const handle = makeHandle(mission, { sendPackage });
+
+		const runPromise = handle.run({ task: "Эпик", children: 1, deadline: new Date(Date.now() + 60_000).toISOString() });
+		await vi.waitFor(() => expect(FakeWs.instances).toHaveLength(1), { timeout: 5_000, interval: 10 });
+		const ws = FakeWs.instances[0];
+		ws._open();
+		await tick();
+		ws._message({
+			type: "agent_event",
+			event: {
+				type: "agent_end",
+				messages: [
+					{
+						role: "assistant",
+						content: [{ type: "text", text: "Готово. VERDICT: PASS" }],
+						usage: { input: 100, output: 50, cost: { total: 0.05 } },
+					},
+				],
+			},
+		});
+
+		const result = await runPromise;
+		expect(result.reports).toHaveLength(1);
+		expect(readJournal(mission).filter((e) => e.event === "validation_failed")).toHaveLength(0);
+	}, 10_000);
+});
+
+describe("F-38: validateDepth на границе приёма отчёта (depth2-integration)", () => {
+	it("отчёт с depth ≠ parent+1 (L3 вместо L1) → run rejects + validation_failed в журнале", async () => {
+		const mission = makeMission();
+		const sendPackage = vi.fn(async () => makeReport("L3/node-1", "mission-f34/L3/node-1"));
+		const handle = makeHandle(mission, { sendPackage });
+
+		await expect(handle.run({ task: "Эпик", children: 1, deadline: DEADLINE })).rejects.toThrow(
+			/boundary validation|depth/i,
+		);
+
+		const entries = readJournal(mission);
+		const failures = entries.filter((e) => e.event === "validation_failed");
+		expect(failures).toHaveLength(1);
+		expect(failures[0].nodeId).toBe("L1/node-1");
+		expect(failures[0].diag).toMatch(/depth/i);
+		// Отказ на границе → узел завершён как fail (F2-путь), complete нет.
+		expect(entries.filter((e) => e.event === "complete")).toHaveLength(0);
+	});
+
+	it("отчёт с depth = parent+1 (L1) → принят, validation_failed нет", async () => {
+		const mission = makeMission();
+		const handle = makeHandle(mission);
+
+		const result = await handle.run({ task: "Эпик", children: 1, deadline: DEADLINE });
+
+		expect(result.reports).toHaveLength(1);
+		expect(readJournal(mission).filter((e) => e.event === "validation_failed")).toHaveLength(0);
+	});
+});
