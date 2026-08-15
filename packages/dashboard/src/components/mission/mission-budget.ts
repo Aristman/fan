@@ -12,6 +12,24 @@
 //           from FanWsClient — same channel as "fan:budget-alert").
 //           A "complete" event updates the branch consumed/cost live.
 //
+// WS reconciliation contract (_applyEvent):
+//   - An event with a numeric entry.consumed is an AUTHORITATIVE branch
+//     snapshot → it REPLACES branch.consumed. If the same event also carries
+//     a cost (entry.cost_usd or entry.usage.costUsd), branch.cost_usd is
+//     REPLACED too; if it carries no cost, cost_usd is left as-is
+//     (documented behavior — the next snapshot with cost will re-sync it).
+//   - A delta event ("complete" WITHOUT entry.consumed) carries only the
+//     incremental cost of the completed node (cost_usd ?? usage.costUsd) →
+//     it is ADDED to branch.consumed and branch.cost_usd. Applied only when
+//     the event has no numeric consumed.
+//   Cross-event outcomes per contract:
+//     absolute {consumed:1.5} → delta {usage:{costUsd:0.3}}  = consumed 1.8
+//       (delta is new consumption AFTER the snapshot — not a double-count);
+//     delta → absolute {consumed:1.5, usage:{costUsd:1.5}}   = consumed 1.5,
+//       cost_usd 1.5 (snapshot replaces, previous delta is NOT re-added);
+//     delta → absolute {consumed:1.5} (no cost)              = consumed 1.5,
+//       cost_usd kept from before (documented).
+//
 // Thresholds: consumed/allocated ≥ 80% → warning (amber), ≥ 95% → critical
 // (red); consumed > allocated → data-over="true". Division by zero is guarded
 // (budget_total=0 / allocated=0 never render NaN or Infinity).
@@ -263,15 +281,18 @@ export class MissionBudgetElement extends LitElement {
 		const branch: BudgetBranch = existing ? { ...existing } : { allocated: 0, consumed: 0, cost_usd: 0 };
 
 		if (consumed !== undefined) {
-			// Absolute consumed value reported by the budget coordinator.
+			// Authoritative snapshot (see header contract): replaces consumed.
+			// If the event also carries a cost (cost_usd or usage.costUsd),
+			// cost_usd is replaced too; otherwise it is left as-is.
 			branch.consumed = consumed;
+			if (delta !== undefined) branch.cost_usd = delta;
 		} else if (delta !== undefined && event.event === "complete") {
-			// Incremental cost of the completed node.
+			// Delta event (complete without consumed): incremental cost of the
+			// completed node, applied only when no absolute consumed is present.
 			branch.consumed += delta;
+			branch.cost_usd += delta;
 		}
 		if (allocated !== undefined) branch.allocated = allocated;
-		if (costUsd !== undefined) branch.cost_usd = costUsd;
-		else if (delta !== undefined) branch.cost_usd += delta;
 
 		byBranch[nodeId] = branch;
 		data.by_branch = byBranch;

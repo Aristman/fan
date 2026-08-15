@@ -749,6 +749,62 @@ describe("F-42 / handleMissionCommand: tree subcommand", () => {
 	});
 });
 
+// ─── F-47 parity: узел "root" агрегирует parentless-узлы ──────────────────
+
+describe("F-42 / F-47 parity: узел 'root' агрегирует parentless-узлы (как mission-api)", () => {
+	let baseDir: string;
+	let missionDir: string;
+
+	beforeEach(() => {
+		baseDir = freshBaseDir();
+		// Фикстура реплицирует семантику reconstructMissionTree (F-47,
+		// packages/api-gateway/src/mission-api.ts): журнал ссылается на узел
+		// "root" и содержит orphan-узлы без parentId.
+		missionDir = setupMissionDir(baseDir, "root-aggregation", {
+			status: "active",
+			budgetUsd: 10,
+			journalEntries: [
+				{ event: "spawn", nodeId: "root", timestamp: "2026-08-14T10:00:00.000Z" },
+				{ event: "spawn", nodeId: "L1/orphan-1", timestamp: "2026-08-14T10:00:01.000Z" },
+				{
+					event: "complete",
+					nodeId: "L1/orphan-2",
+					usage: { usd: 0.3 },
+					timestamp: "2026-08-14T10:00:02.000Z",
+				},
+			],
+		});
+	});
+
+	afterEach(() => {
+		rmSync(baseDir, { recursive: true, force: true });
+		vi.restoreAllMocks();
+	});
+
+	it("CLI-топология совпадает с API: root.children включает orphans, parentId остаётся null", async () => {
+		const output = await captureStdout(() => missionTree(missionDir, { format: "json" }));
+		const parsed = JSON.parse(output) as {
+			root: { nodeId: string; children: Array<{ nodeId: string; parentId: string | null }> } | null;
+			roots: Array<{ nodeId: string }>;
+		};
+
+		// API-семантика (reconstructMissionTree, F-47): root.children агрегирует
+		// все parentless-узлы в порядке появления в журнале.
+		expect(parsed.root).not.toBeNull();
+		expect(parsed.root!.nodeId).toBe("root");
+		expect(parsed.root!.children.map((c) => c.nodeId)).toEqual(["L1/orphan-1", "L1/orphan-2"]);
+
+		// parentId остаётся null — узлы остаются корнями в топологии (как в API).
+		for (const child of parsed.root!.children) {
+			expect(child.parentId).toBeNull();
+		}
+
+		// JSON-сериализация выводит каждый узел ровно один раз (visited-дедуп):
+		// orphans вложены под root и не дублируются верхнеуровневыми записями.
+		expect(parsed.roots.map((r) => r.nodeId)).toEqual(["root"]);
+	});
+});
+
 // ─── listMissionSubcommands включает "tree" ────────────────────────────────
 
 describe("F-42 / listMissionSubcommands включает 'tree'", () => {

@@ -469,6 +469,86 @@ describe("TC-F41-3: WS mission_event → live bar update", { timeout: 15_000 }, 
 });
 
 // ============================================================================
+// TC-F41-4: Cross-event WS reconciliation contract (snapshot vs delta)
+// ============================================================================
+
+/** Wait until the branch text matches the predicate (or the deadline hits). */
+async function waitForBranch(el: HTMLElement, nodeId: string, predicate: (text: string) => boolean): Promise<void> {
+	const deadline = Date.now() + 5_000;
+	while (Date.now() < deadline) {
+		await (el as unknown as { updateComplete: Promise<boolean> }).updateComplete;
+		const branchEl = el.querySelector<HTMLElement>(`[data-branch='${nodeId}']`);
+		if (branchEl && predicate(branchEl.textContent ?? "")) return;
+		await new Promise((r) => setTimeout(r, 50));
+	}
+}
+
+describe("TC-F41-4: cross-event reconciliation contract", { timeout: 15_000 }, () => {
+	it("absolute snapshot then delta: delta applies on top of the snapshot (1.5 + 0.3 = 1.80)", async () => {
+		mockFetchJson(200, BUDGET_FIXTURE);
+		const el = await trackMount({ "mission-id": "auth-refactor" });
+		await (el as unknown as { updateComplete: Promise<boolean> }).updateComplete;
+
+		// L1/node-2 initial: consumed 0.30, cost_usd 0.30, allocated 3.00.
+		// Event 1: authoritative snapshot — replaces consumed, cost not carried → cost_usd kept.
+		dispatchMissionEvent({
+			missionId: "auth-refactor",
+			event: "complete",
+			nodeId: "L1/node-2",
+			entry: { event: "complete", nodeId: "L1/node-2", consumed: 1.5 },
+		});
+		// Event 2: delta (complete without consumed) — new consumption AFTER the snapshot.
+		dispatchMissionEvent({
+			missionId: "auth-refactor",
+			event: "complete",
+			nodeId: "L1/node-2",
+			entry: { event: "complete", nodeId: "L1/node-2", usage: { costUsd: 0.3 } },
+		});
+
+		await waitForBranch(el, "L1/node-2", (text) => text.includes("$1.80"));
+
+		const branchEl = el.querySelector<HTMLElement>("[data-branch='L1/node-2']");
+		const text = branchEl?.textContent ?? "";
+		// Contract: consumed = 1.50 (snapshot) + 0.30 (post-snapshot delta) = 1.80.
+		expect(text).toContain("$1.80");
+		// cost_usd = 0.30 (kept from REST) + 0.30 (delta) = 0.60.
+		expect(text).toContain("$0.60");
+	});
+
+	it("delta then absolute snapshot with cost: snapshot REPLACES consumed and cost_usd (no double-count)", async () => {
+		mockFetchJson(200, BUDGET_FIXTURE);
+		const el = await trackMount({ "mission-id": "auth-refactor" });
+		await (el as unknown as { updateComplete: Promise<boolean> }).updateComplete;
+
+		// L1/node-2 initial: consumed 0.30, cost_usd 0.30.
+		// Event 1: delta → consumed 0.60, cost_usd 0.60.
+		dispatchMissionEvent({
+			missionId: "auth-refactor",
+			event: "complete",
+			nodeId: "L1/node-2",
+			entry: { event: "complete", nodeId: "L1/node-2", usage: { costUsd: 0.3 } },
+		});
+		// Event 2: authoritative snapshot carrying cost via usage.costUsd →
+		// replaces BOTH consumed and cost_usd (1.50 / 1.50), NOT 0.60 + 1.50.
+		dispatchMissionEvent({
+			missionId: "auth-refactor",
+			event: "complete",
+			nodeId: "L1/node-2",
+			entry: { event: "complete", nodeId: "L1/node-2", consumed: 1.5, usage: { costUsd: 1.5 } },
+		});
+
+		await waitForBranch(el, "L1/node-2", (text) => text.includes("$1.50"));
+
+		const branchEl = el.querySelector<HTMLElement>("[data-branch='L1/node-2']");
+		const text = branchEl?.textContent ?? "";
+		// Contract: consumed = 1.50 (snapshot), cost_usd = 1.50 (from event).
+		expect(text).toContain("$1.50");
+		// Double-count would render cost_usd as $2.10 (0.60 + 1.50).
+		expect(text).not.toContain("$2.10");
+	});
+});
+
+// ============================================================================
 // Empty / 404 / error states
 // ============================================================================
 

@@ -419,6 +419,19 @@ function reconstructCliTree(entries: TreeJournalEntry[]): ReconstructedCliTree {
 		}
 	}
 
+	// Если журнал содержит узел "root", все parentless-узлы отражаются и в его
+	// childIds тоже (parentId остаётся null — узлы сохраняются в roots).
+	// Семантика идентична reconstructMissionTree в @fan/api-gateway (F-47):
+	// один журнал → одинаковая топология в CLI и API.
+	const root = nodes.get("root");
+	if (root) {
+		for (const id of order) {
+			if (id !== "root" && nodes.get(id)?.parentId === null && !root.childIds.includes(id)) {
+				root.childIds.push(id);
+			}
+		}
+	}
+
 	return { nodes, order, roots: order.filter((id) => nodes.get(id)?.parentId === null) };
 }
 
