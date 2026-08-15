@@ -203,14 +203,15 @@ export async function missionStart(missionDir?: string, ctx?: MissionContext): P
 	if (status === "active") {
 		const { frontmatter } = await fsm.readMission(dir);
 		console.log(`Mission ${frontmatter.mission_id} is active at ${dir}`);
-		console.log("(executor not attached yet — mission-loop integration lands with F-09)");
+		console.log("(running fan session will attach the loop on restart; in-session: /mission:start)");
 		return;
 	}
-	// Check if FSM allows transitioning to active (aborted, failed, budget_exhausted do).
-	if (fsm.canTransition(status, "active")) {
+	// FSM allows transitioning to active from aborted, failed, budget_exhausted, paused.
+	if (!fsm.canTransition(status, "active")) {
 		throw new InvalidTransitionError(status, "active");
 	}
-	throw new InvalidTransitionError(status, "active");
+	await fsm.writeMissionStatus(dir, "active");
+	console.log(`Mission started at ${dir}`);
 }
 
 /** Остановить миссию (FSM: active/paused → aborted). */

@@ -575,9 +575,11 @@ describe("F-10 / P-2/P-3: --template flag and template selection", () => {
 	});
 });
 
-// ─── P-5: missionStart on aborted → InvalidTransitionError, exit 1 ──────────
+// ─── P-5: missionStart — FSM-переходы в active ─────────────────────────────
+// aborted/failed/budget_exhausted/paused → active разрешены (TRANSITIONS в
+// extensions/fan-mission/file-state-manager.ts); completed — терминальный.
 
-describe("F-10 / P-5: start on aborted mission → exit 1 with clear message", () => {
+describe("F-10 / P-5: missionStart переводит миссию в active по FSM", () => {
 	let baseDir: string;
 	beforeEach(() => {
 		baseDir = freshBaseDir();
@@ -587,18 +589,23 @@ describe("F-10 / P-5: start on aborted mission → exit 1 with clear message", (
 		vi.restoreAllMocks();
 	});
 
-	it("missionStart throws InvalidTransitionError on aborted mission", async () => {
-		// Create a mission, then set it to aborted
+	it("start из aborted → writeMissionStatus('active'), вывод содержит 'started'", async () => {
 		const missionDir = await missionInit("aborted-test", { baseDir });
 		const missionPath = join(missionDir, "MISSION.md");
 		let raw = readFileSync(missionPath, "utf8");
 		raw = raw.replace(/^(status:\s*).*$/m, "$1aborted");
 		writeFileSync(missionPath, raw, "utf8");
 
-		await expect(missionStart(missionDir)).rejects.toBeInstanceOf(InvalidTransitionError);
+		const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+		await missionStart(missionDir);
+
+		const fm = readFrontmatter(readFileSync(missionPath, "utf8"));
+		expect(fm.status).toBe("active");
+		const allLog = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
+		expect(allLog).toContain("started");
 	});
 
-	it("handleMissionCommand exits 1 on start of aborted mission", async () => {
+	it("handleMissionCommand start на aborted → успех без exit", async () => {
 		const missionDir = await missionInit("aborted-dispatch", { baseDir });
 		const missionPath = join(missionDir, "MISSION.md");
 		let raw = readFileSync(missionPath, "utf8");
@@ -608,19 +615,44 @@ describe("F-10 / P-5: start on aborted mission → exit 1 with clear message", (
 		const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {
 			throw new Error("__exit__");
 		}) as never);
-		const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
-		try {
-			await handleMissionCommand(["mission", "start"], {
-				baseDir: missionDir,
-				isExtensionLoaded: () => true,
-			});
-		} catch {
-			// expected __exit__
-		}
-		expect(exitSpy).toHaveBeenCalledWith(1);
-		const allErr = errSpy.mock.calls.map((c) => String(c[0])).join("\n");
-		expect(allErr.toLowerCase()).toMatch(/invalid|transition|mission|cannot/);
+		const handled = await handleMissionCommand(["mission", "start"], {
+			baseDir: missionDir,
+			isExtensionLoaded: () => true,
+		});
+		expect(handled).toBe(true);
+		expect(exitSpy).not.toHaveBeenCalled();
+		const fm = readFrontmatter(readFileSync(missionPath, "utf8"));
+		expect(fm.status).toBe("active");
+		const allLog = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
+		expect(allLog).toContain("started");
+	});
+
+	it("start из completed → InvalidTransitionError (completed терминальный)", async () => {
+		const missionDir = await missionInit("completed-test", { baseDir });
+		const missionPath = join(missionDir, "MISSION.md");
+		let raw = readFileSync(missionPath, "utf8");
+		raw = raw.replace(/^(status:\s*).*$/m, "$1completed");
+		writeFileSync(missionPath, raw, "utf8");
+
+		await expect(missionStart(missionDir)).rejects.toBeInstanceOf(InvalidTransitionError);
+		const fm = readFrontmatter(readFileSync(missionPath, "utf8"));
+		expect(fm.status).toBe("completed");
+	});
+
+	it("start из active → 'is active', writeMissionStatus НЕ вызвана", async () => {
+		const missionDir = await missionInit("active-test", { baseDir });
+		const missionPath = join(missionDir, "MISSION.md");
+		const before = readFileSync(missionPath, "utf8");
+
+		const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+		await missionStart(missionDir);
+
+		const allLog = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
+		expect(allLog).toContain("active");
+		expect(allLog).not.toContain("started");
+		expect(readFileSync(missionPath, "utf8")).toBe(before);
 	});
 });
 

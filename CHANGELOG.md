@@ -4,6 +4,19 @@
 
 ### Fixed
 
+- **CLI `fan mission start` не работал ни из одного статуса (бэклог #26).**
+  В `missionStart` проверка `canTransition` была инвертирована: переход,
+  разрешённый FSM, бросал `InvalidTransitionError`, а недоступная ветка
+  падала на безусловный `throw` ниже — обе ветки бросали, и
+  `writeMissionStatus` не вызывалась никогда. Исправлено на канонический
+  паттерн (`if (!canTransition) throw; writeMissionStatus; log`): start
+  корректно переводит `aborted`/`failed`/`budget_exhausted`/`paused` →
+  `active`, из терминального `completed` — `InvalidTransitionError`, при уже
+  `active` — сообщение без записи. Устаревшая подсказка про F-09 заменена на
+  указание `/mission:start`. Тесты — P-5 блок в
+  `packages/coding-agent/test/cli/mission-command.test.ts`.
+  fan-coding-agent 2.7.2 → 2.7.3.
+
 - **Регрессия F-46: дефолтный per-iteration budget ломал интерактивные сессии.**
   `createAgentSession` применял roadmap-дефолты (100k токенов / $5.00 на
   итерацию), если в settings.json не заданы `budget.iterationTokenLimit` /
