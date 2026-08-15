@@ -15,11 +15,12 @@
 // WS reconciliation contract (_applyEvent):
 //   - An event with a numeric entry.consumed is an AUTHORITATIVE branch
 //     snapshot → it REPLACES branch.consumed. If the same event also carries
-//     a cost (entry.cost_usd or entry.usage.costUsd), branch.cost_usd is
+//     a cost (entry.cost_usd or entry.usage.costUsd/usage.usd), branch.cost_usd is
 //     REPLACED too; if it carries no cost, cost_usd is left as-is
 //     (documented behavior — the next snapshot with cost will re-sync it).
 //   - A delta event ("complete" WITHOUT entry.consumed) carries only the
-//     incremental cost of the completed node (cost_usd ?? usage.costUsd) →
+//     incremental cost of the completed node (cost_usd ?? usage.costUsd ??
+//     usage.usd) →
 //     it is ADDED to branch.consumed and branch.cost_usd. Applied only when
 //     the event has no numeric consumed.
 //   Cross-event outcomes per contract:
@@ -265,8 +266,10 @@ export class MissionBudgetElement extends LitElement {
 		const consumed = finiteNumber(entry.consumed);
 		const allocated = finiteNumber(entry.allocated);
 		const costUsd = finiteNumber(entry.cost_usd);
-		/** Cost delta reported by the completing node (usage.costUsd fallback). */
-		const delta = costUsd ?? finiteNumber(usage.costUsd);
+		/** Cost delta reported by the completing node: usage.costUsd (roadmap
+		 * TC-F41-3 shape) with fallback to usage.usd — the real F-32
+		 * TreeJournalUsage wire format delivered via F-47 mission_event. */
+		const delta = costUsd ?? finiteNumber(usage.costUsd) ?? finiteNumber(usage.usd);
 		const budgetTotal = finiteNumber(entry.budget_total);
 
 		if (consumed === undefined && allocated === undefined && delta === undefined && budgetTotal === undefined) {

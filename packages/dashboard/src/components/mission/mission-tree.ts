@@ -22,21 +22,32 @@ import { customElement, property, state } from "lit/decorators.js";
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Roadmap icon set: ● active, ✓ completed, ✗ failed, ○ pending. */
+/** Roadmap icon set: ● active, ✓ completed, ✗ failed, ○ pending.
+ *  F-47 REST contract: GET /tree returns node status as the journal event name
+ *  (spawn/complete/fail/abort — F-32 last-wins semantics), so event-name
+ *  aliases map onto the same glyphs (parity with EVENT_DEFAULT_STATUS below). */
 const STATUS_GLYPHS: Record<string, string> = {
 	active: "●",
+	spawn: "●",
 	completed: "✓",
+	complete: "✓",
 	failed: "✗",
+	fail: "✗",
 	pending: "○",
 	aborted: "⊘",
+	abort: "⊘",
 };
 
 const STATUS_COLORS: Record<string, string> = {
 	active: "text-blue-500",
+	spawn: "text-blue-500",
 	completed: "text-emerald-500",
+	complete: "text-emerald-500",
 	failed: "text-red-500",
+	fail: "text-red-500",
 	pending: "text-muted-foreground",
 	aborted: "text-amber-500",
+	abort: "text-amber-500",
 };
 
 /** Default node status applied when a journal event carries none. */
