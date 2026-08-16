@@ -32,6 +32,7 @@ import {
 	readRoadmap,
 	readState,
 	StateFileTooLarge,
+	updateBacklogEntry,
 	writeMissionStatus,
 	writeRoadmap,
 	writeState,
@@ -112,6 +113,11 @@ export interface MissionMetricsHook {
 	onIterationEnd(missionDir: string, record: Record<string, unknown>): Promise<void>;
 }
 
+/** F-22: DI idea promoter hook — moves ROADMAP ideas from BACKLOG to ROADMAP.md. */
+export interface MissionIdeaPromoter {
+	promote(missionDir: string): Promise<{ promoted: string[] }>;
+}
+
 /** F-18: escalation payload for promise-tag routing (I3 level). */
 export interface EscalationPayload {
 	tag: string | null;
@@ -157,6 +163,11 @@ interface LoopState {
 	pendingDecision?: { question: string; date: string };
 	// F-17: operator answer to a DECIDE question (consumed by the next tick)
 	pendingOperatorAnswer?: string;
+	// F-22: idea id associated with a pending DECIDE (so resolveDecision can
+	// update the BACKLOG entry to ROADMAP on accept, enabling promoter pickup)
+	pendingDecisionIdeaId?: string;
+	// F-22: number of ideas promoted in the last tick (for observability)
+	lastPromotedCount?: number;
 }
 
 // ─── Loop state persistence (.mission-loop.json) ────────────────────────────
@@ -425,6 +436,7 @@ export class MissionLoop {
 	private ideaGenerator?: MissionIdeaGenerator;
 	private ideaScorer?: MissionIdeaScorer;
 	private metricsCollector?: MissionMetricsHook;
+	private ideaPromoter?: MissionIdeaPromoter;
 	// F-48.5: EPIC delegation deps (runAgent декомпозиции + EventBus мост).
 	// Без инъекции [EPIC]-пункты исполняются локально (как обычные).
 	private epicRunAgent?: EpicRunAgent;
@@ -443,6 +455,8 @@ export class MissionLoop {
 		ideaGenerator?: MissionIdeaGenerator;
 		ideaScorer?: MissionIdeaScorer;
 		metricsCollector?: MissionMetricsHook;
+		/** F-22: DI idea promoter (BACKLOG→ROADMAP promotion after scoring). */
+		ideaPromoter?: MissionIdeaPromoter;
 		/** F-48.5: runAgent декомпозиции [EPIC]-пунктов (делегирование). */
 		runAgent?: EpicRunAgent;
 		/** F-48.5: EventBus для моста mission_delegate (делегирование). */
@@ -459,6 +473,7 @@ export class MissionLoop {
 		this.ideaGenerator = opts.ideaGenerator;
 		this.ideaScorer = opts.ideaScorer;
 		this.metricsCollector = opts.metricsCollector;
+		this.ideaPromoter = opts.ideaPromoter;
 		// F-48.5: EPIC delegation wiring (оба deps обязательны для делегирования)
 		this.epicRunAgent = opts.runAgent;
 		this.epicEventBus = opts.eventBus;
@@ -1039,7 +1054,25 @@ export class MissionLoop {
 
 		this.clearDecideTimer();
 
+		// F-22: if the DECIDE was about an idea and the operator accepts,
+		// update the idea's BACKLOG status from DECIDE to ROADMAP so the
+		// promoter picks it up on the next tick.
+		// F-22: if the DECIDE was about an idea and the operator accepts,
+		// update the idea's BACKLOG status from DECIDE to ROADMAP so the
+		// promoter picks it up on the next tick.
+		// Note: \b doesn't work with Cyrillic (non-ASCII word chars), so we
+		// use (?=[\s,.!?:;]|$) instead to match a word followed by separator/EOL.
+		const ideaId = loopState.pendingDecisionIdeaId;
+		if (ideaId && /^\s*(accept|yes|да|принять|ок|ok)(?=[\s,.!?:;]|$)/i.test(answer)) {
+			try {
+				await updateBacklogEntry(this.missionDir, ideaId, { status: "ROADMAP" });
+			} catch {
+				// best-effort: if the update fails, the idea stays DECIDE in BACKLOG
+			}
+		}
+
 		loopState.pendingDecision = undefined;
+		loopState.pendingDecisionIdeaId = undefined;
 		loopState.pendingOperatorAnswer = answer;
 		writeLoopStateSync(this.missionDir, loopState);
 
@@ -1115,8 +1148,12 @@ export class MissionLoop {
 	 * the step-4 journal (the next tick after resolveDecision() runs a fresh
 	 * iteration), persist pendingDecision (survives restarts) and start the
 	 * decide timeout.
+	 *
+	 * F-22: optional ideaId — when the DECIDE originates from idea scoring,
+	 * the idea id is persisted so resolveDecision() can update the BACKLOG
+	 * entry to ROADMAP on accept (enabling promoter pickup on next tick).
 	 */
-	private async enterAwaitingDecision(loopState: LoopState, question: string): Promise<void> {
+	private async enterAwaitingDecision(loopState: LoopState, question: string, ideaId?: string): Promise<void> {
 		const now = await this.deps.clock.now();
 		const date = now.toISOString();
 
@@ -1142,6 +1179,8 @@ export class MissionLoop {
 		loopState.lastStep = 0;
 		// Persist the question so resolveDecision() can record it after a restart.
 		loopState.pendingDecision = { question, date };
+		// F-22: persist the idea id (if any) for DECIDE→accept→ROADMAP flow.
+		loopState.pendingDecisionIdeaId = ideaId;
 		writeLoopStateSync(this.missionDir, loopState);
 
 		this.startDecideTimer();
@@ -1175,57 +1214,85 @@ export class MissionLoop {
 	}
 
 	/**
-	 * Phase B (F-19/F-20): idea generation + scoring after step 7 (backlog),
-	 * only when injected. Generator errors are swallowed; scorer errors leave
-	 * the idea unscored (status "IDEA") and the loop continues with the next
-	 * idea. A DECIDE verdict transitions the mission to awaiting_decision via
-	 * the F-17 mechanism (first DECIDE wins). Returns the possibly updated
-	 * tick result status.
+	 * Phase B (F-19/F-20) + F-22: idea generation, scoring and promotion after
+	 * step 7 (backlog), only when injected.
+	 *
+	 * Generator errors are swallowed; scorer errors leave the idea unscored
+	 * (status "IDEA") and the loop continues. A DECIDE verdict transitions
+	 * the mission to awaiting_decision via F-17 (first DECIDE wins).
+	 *
+	 * F-22: After scoring, the promoter picks up ROADMAP ideas (from both
+	 * freshly-scored and previously-scored backlog entries) and adds them
+	 * to ROADMAP.md. Promotion only happens on successful iterations
+	 * (COMPLETE — not FAILED/BLOCKED). Returns the possibly updated status.
 	 */
 	private async runIdeaHooks(loopState: LoopState, resultStatus: MissionStatus): Promise<MissionStatus> {
-		if (!this.ideaGenerator || resultStatus !== "active") return resultStatus;
+		if (resultStatus !== "active") return resultStatus;
 
-		let added = 0;
-		try {
-			const genResult = await this.ideaGenerator.generate(this.missionDir);
-			added = genResult?.added ?? 0;
-		} catch {
-			return resultStatus; // generator errors must not crash the loop
-		}
-		if (added <= 0 || !this.ideaScorer) return resultStatus;
-
-		let backlog: BacklogEntry[];
-		try {
-			backlog = await readBacklog(this.missionDir);
-		} catch {
-			return resultStatus;
-		}
-
-		let decide: { idea: string; score: number } | null = null;
-		for (const entry of backlog) {
-			if (entry.status !== "IDEA") continue;
+		// Phase B (F-19/F-20): generate + score new ideas.
+		if (this.ideaGenerator) {
+			let added = 0;
 			try {
-				const result = await this.ideaScorer.scoreIdea(this.missionDir, {
-					id: entry.id,
-					idea: entry.idea,
-					source: entry.source,
-				});
-				if (result?.status === "DECIDE" && decide === null) {
-					decide = { idea: entry.idea, score: result.score };
+				const genResult = await this.ideaGenerator.generate(this.missionDir);
+				added = genResult?.added ?? 0;
+			} catch {
+				// generator errors must not crash the loop
+			}
+
+			if (added > 0 && this.ideaScorer) {
+				// Re-read backlog AFTER generator runs so new entries are visible.
+				let backlog: BacklogEntry[];
+				try {
+					backlog = await readBacklog(this.missionDir);
+				} catch {
+					backlog = [];
+				}
+
+				let decide: { id: string; idea: string; score: number } | null = null;
+				for (const entry of backlog) {
+					if (entry.status !== "IDEA") continue;
+					try {
+						const result = await this.ideaScorer.scoreIdea(this.missionDir, {
+							id: entry.id,
+							idea: entry.idea,
+							source: entry.source,
+						});
+						if (result?.status === "DECIDE" && decide === null) {
+							decide = { id: entry.id, idea: entry.idea, score: result.score };
+						}
+					} catch {
+						// Scorer error: the idea stays unscored ("IDEA"); continue.
+					}
+				}
+
+				if (decide) {
+					try {
+						// F-22: pass ideaId so resolveDecision can update BACKLOG on accept.
+						await this.enterAwaitingDecision(loopState, `${decide.idea} (score: ${decide.score})`, decide.id);
+						return "awaiting_decision";
+					} catch {
+						// A failed transition must not crash the loop.
+					}
+				}
+			}
+		}
+
+		// F-22: promote ROADMAP ideas to ROADMAP.md.
+		// Runs independently of generate/score so that previously-scored
+		// ROADMAP entries (including DECIDE→accept conversions) are picked
+		// up even when the generator added nothing this tick.
+		if (this.ideaPromoter) {
+			try {
+				const promoteResult = await this.ideaPromoter.promote(this.missionDir);
+				if (promoteResult.promoted.length > 0) {
+					loopState.lastPromotedCount = promoteResult.promoted.length;
+					writeLoopStateSync(this.missionDir, loopState);
 				}
 			} catch {
-				// Scorer error: the idea stays unscored ("IDEA"); continue.
+				// Promoter errors must not crash the loop.
 			}
 		}
 
-		if (decide) {
-			try {
-				await this.enterAwaitingDecision(loopState, `${decide.idea} (score: ${decide.score})`);
-				return "awaiting_decision";
-			} catch {
-				// A failed transition must not crash the loop.
-			}
-		}
 		return resultStatus;
 	}
 

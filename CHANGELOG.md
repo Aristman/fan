@@ -34,6 +34,21 @@
   planning-итерация в `mission-loop-planning.test.mjs`.
   fan-mission 0.6.3 → 0.7.0, fan-coding-agent 2.7.4 → 2.7.5.
 
+- **Промоушн одобренных идей BACKLOG→ROADMAP (задача D).**
+  Скорер идей (F-20) ставил идеям статус ROADMAP в BACKLOG.md, но в
+  физический ROADMAP.md они не попадали — одобренные идеи никогда не
+  исполнялись. Новый модуль `extensions/fan-mission/idea-promoter.ts`
+  (шаг 7 контура): идеи со статусом ROADMAP добавляются в ROADMAP.md как
+  unchecked-пункты `- [ ] <текст> (idea:<id>)`, затем получают статус
+  PROMOTED (дедупликация по маркеру `(idea:<id>)`, ≤3 промоушна за тик,
+  ≤50 пунктов в roadmap). DECIDE-идеи: ответ оператора «да» через
+  `/mission:decide` переводит идею DECIDE→ROADMAP, промоушн на следующем
+  тике; сама `/mission:decide` теперь вызывает `loop.resolveDecision()`
+  (раньше — sendMessage followUp без FSM-перехода). Попутно исправлен
+  regex accept-ответа: `\b` не работает с кириллицей → lookahead
+  `(?=[\s,.!?:;]|$)`. Тесты — `idea-promoter.test.mjs` (20).
+  fan-mission 0.7.0 → 0.7.1.
+
 ### Fixed
 
 - **Вывод slash-команд `/mission:*` рендерился в строку ввода TUI.**

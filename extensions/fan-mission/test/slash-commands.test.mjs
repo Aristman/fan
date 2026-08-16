@@ -69,6 +69,7 @@ function makeMockMissionLoop(overrides = {}) {
 		tick: [],
 		abort: [],
 		status: [],
+		resolveDecision: [],
 	};
 	const mock = {
 		_calls: calls,
@@ -89,6 +90,10 @@ function makeMockMissionLoop(overrides = {}) {
 		async status() {
 			calls.status.push(Date.now());
 			return "active";
+		},
+		// F-22: resolveDecision called by /mission:decide.
+		async resolveDecision(answer) {
+			calls.resolveDecision.push({ answer });
 		},
 		...overrides,
 	};
@@ -522,12 +527,13 @@ describe("F-11 / TC-F11-extra: /mission:decide <answer> → followUp-очере�
 		expect(reg.commands.has("mission:decide")).toBe(true);
 	});
 
-	it("TC-F11-extra: /mission:decide \"yes\" → sendMessage с streamingBehavior=followUp", async () => {
+	it("TC-F11-extra: /mission:decide \"yes\" → resolveDecision вызван (F-22: proper F-17 transition)", async () => {
 		await reg.dispatch('/mission:decide "Да, миграции без изменения схемы"', ctx);
-		expect(ctx.actionsCalls.sendMessage.length).toBe(1);
-		const call = ctx.actionsCalls.sendMessage[0];
-		expect(call.opts.streamingBehavior).toBe("followUp");
-		expect(call.message).toMatch(/миграции/);
+		// F-22: /mission:decide now calls resolveDecision instead of sendMessage.
+		expect(ctx.missionLoop._calls.resolveDecision.length).toBe(1);
+		expect(ctx.missionLoop._calls.resolveDecision[0].answer).toMatch(/миграции/);
+		// sendMessage NOT called (old behavior replaced).
+		expect(ctx.actionsCalls.sendMessage.length).toBe(0);
 	});
 
 	it("TC-F11-extra: /mission:decide без аргументов → сообщение об ошибке или пустой followUp", async () => {
@@ -971,9 +977,11 @@ describe("F-11 / TC-F11-routing: маршрутизация по уровням 
 		expect(ctx.actionsCalls.setDrain.length).toBe(0);
 	});
 
-	it("TC-F11-routing: I3 decide — вызывает sendMessage(followUp), НЕ abort/setDrain", async () => {
+	it("TC-F11-routing: I3 decide — вызывает resolveDecision (F-22), НЕ abort/setDrain/sendMessage", async () => {
 		await reg.dispatch('/mission:decide "yes"', ctx);
-		expect(ctx.actionsCalls.sendMessage[0].opts.streamingBehavior).toBe("followUp");
+		// F-22: resolveDecision called instead of sendMessage.
+		expect(ctx.missionLoop._calls.resolveDecision.length).toBe(1);
+		expect(ctx.actionsCalls.sendMessage.length).toBe(0);
 		expect(ctx.actionsCalls.abort.length).toBe(0);
 		expect(ctx.actionsCalls.setDrain.length).toBe(0);
 	});

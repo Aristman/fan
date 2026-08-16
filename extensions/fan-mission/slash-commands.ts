@@ -405,7 +405,19 @@ export function registerMissionSlashCommands(register: SlashCommandRegister, reg
 					ctx.output('Error: usage /mission:decide "<answer>"');
 					return;
 				}
-				await ctx.actions.sendMessage(answer, { streamingBehavior: "followUp" });
+				// F-22: use resolveDecision for proper F-17 state transition
+				// (awaiting_decision → active, records answer in DECISIONS.md,
+				// updates BACKLOG DECIDE→ROADMAP on accept for promoter pickup).
+				if (ctx.missionLoop) {
+					try {
+						await ctx.missionLoop.resolveDecision(answer);
+						ctx.output("Decision recorded — mission resumed.");
+					} catch (err) {
+						ctx.output(`Error: ${err instanceof Error ? err.message : String(err)}`);
+					}
+				} else {
+					await ctx.actions.sendMessage(answer, { streamingBehavior: "followUp" });
+				}
 			}),
 	});
 

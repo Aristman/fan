@@ -34,6 +34,7 @@ import type { KeyId } from "@seaagents/fan-tui";
 import { createDefaultRunAgent } from "./default-run-agent.js";
 import { readMission, writeMissionStatus } from "./file-state-manager.js";
 import { createGitAdapter } from "./git-adapter.js";
+import { promoteAcceptedIdeas } from "./idea-promoter.js";
 import { MissionLoop, readMissionLoopState, setDrainSignal } from "./mission-loop.js";
 import { registerMissionWidget } from "./mission-widget.js";
 import { createSessionExecutor, type RunAgent } from "./session-executor.js";
@@ -108,6 +109,8 @@ export function wireMission(fan: ExtensionAPI, opts?: MissionWireOptions): Missi
 			// мост mission_delegate → super-orchestrator (fan.events).
 			runAgent,
 			eventBus: fan.events,
+			// F-22: промоушн BACKLOG→ROADMAP (идеи со статусом ROADMAP/PROMOTED).
+			ideaPromoter: { promote: (dir) => promoteAcceptedIdeas(dir) },
 			...(opts?.delegationTimeoutMs !== undefined ? { delegationTimeoutMs: opts.delegationTimeoutMs } : {}),
 		});
 		attachedDir = missionDir;

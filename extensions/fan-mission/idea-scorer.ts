@@ -24,7 +24,7 @@ export interface IdeaScores {
 	cost: number;
 }
 
-export type IdeaStatus = "ROADMAP" | "DECIDE" | "REJECTED";
+export type IdeaStatus = "ROADMAP" | "DECIDE" | "REJECTED" | "PROMOTED";
 
 export interface IdeaInput {
 	id: string;
