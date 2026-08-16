@@ -174,6 +174,22 @@ describe("F-10 / TC-F10-1: mission init <slug> создаёт 5 файлов", (
 	it("TC-F10-1.edge: пустой slug → InvalidSlug", async () => {
 		await expect(missionInit("", { baseDir })).rejects.toThrow(/Invalid slug/i);
 	});
+
+	it("TC-F10-1.desc: missionInit с описанием → текст в ## Goal MISSION.md", async () => {
+		const missionDir = await missionInit("desc-mission", {
+			baseDir,
+			description: "Automate the release pipeline",
+		});
+		const raw = readFileSync(join(missionDir, "MISSION.md"), "utf8");
+		expect(raw).toContain("## Goal");
+		expect(raw).toContain("Automate the release pipeline");
+	});
+
+	it("TC-F10-1.desc: missionInit без описания → Goal пустой (как раньше)", async () => {
+		const missionDir = await missionInit("plain-mission", { baseDir });
+		const raw = readFileSync(join(missionDir, "MISSION.md"), "utf8");
+		expect(raw).toContain("## Goal\n\n## Scope");
+	});
 });
 
 // ─── TC-F10-2: повторный init с тем же slug → ошибка ────────────────────────
@@ -308,6 +324,40 @@ describe("F-10 / handleMissionCommand(args) — диспетчер CLI", () => {
 		for (const file of MISSION_FILES) {
 			expect(existsSync(join(missionDir, file))).toBe(true);
 		}
+	});
+
+	// ── 0.7.0: описание миссии позициональными аргументами ─────────────────
+
+	it("'fan mission init <slug> <описание...>' склеивает остаток слов в описание → ## Goal", async () => {
+		const handled = await handleMissionCommand(["mission", "init", "desc-cli", "Build", "a", "REST", "API"], {
+			baseDir,
+			isExtensionLoaded: () => true,
+		});
+		expect(handled).toBe(true);
+		const raw = readFileSync(join(baseDir, "desc-cli", "MISSION.md"), "utf8");
+		expect(raw).toContain("## Goal");
+		expect(raw).toContain("Build a REST API");
+	});
+
+	it("'fan mission init <slug>' без описания → Goal пустой (обратная совместимость)", async () => {
+		const handled = await handleMissionCommand(["mission", "init", "no-desc-cli"], {
+			baseDir,
+			isExtensionLoaded: () => true,
+		});
+		expect(handled).toBe(true);
+		const raw = readFileSync(join(baseDir, "no-desc-cli", "MISSION.md"), "utf8");
+		expect(raw).toContain("## Goal\n\n## Scope");
+	});
+
+	it("описание не захватывает значение флага --template", async () => {
+		const handled = await handleMissionCommand(
+			["mission", "init", "--template", "default", "tmpl-desc", "Ship", "it"],
+			{ baseDir, isExtensionLoaded: () => true },
+		);
+		expect(handled).toBe(true);
+		const raw = readFileSync(join(baseDir, "tmpl-desc", "MISSION.md"), "utf8");
+		expect(raw).toContain("Ship it");
+		expect(raw).not.toContain("default Ship");
 	});
 
 	it("'fan mission start' без init → process.exit(1)", async () => {
@@ -555,10 +605,10 @@ describe("F-10 / P-2/P-3: --template flag and template selection", () => {
 	});
 
 	it("P-2: handleMissionCommand parses --template <name>", async () => {
-		const handled = await handleMissionCommand(
-			["mission", "init", "my-slug", "--template", "refactor"],
-			{ baseDir, isExtensionLoaded: () => true },
-		);
+		const handled = await handleMissionCommand(["mission", "init", "my-slug", "--template", "refactor"], {
+			baseDir,
+			isExtensionLoaded: () => true,
+		});
 		expect(handled).toBe(true);
 		const missionDir = join(baseDir, "my-slug");
 		expect(existsSync(missionDir)).toBe(true);
@@ -567,10 +617,10 @@ describe("F-10 / P-2/P-3: --template flag and template selection", () => {
 	});
 
 	it("P-2: handleMissionCommand parses --template=<name>", async () => {
-		const handled = await handleMissionCommand(
-			["mission", "init", "my-slug", "--template=refactor"],
-			{ baseDir, isExtensionLoaded: () => true },
-		);
+		const handled = await handleMissionCommand(["mission", "init", "my-slug", "--template=refactor"], {
+			baseDir,
+			isExtensionLoaded: () => true,
+		});
 		expect(handled).toBe(true);
 		const missionDir = join(baseDir, "my-slug");
 		const fm = readFrontmatter(readFileSync(join(missionDir, "MISSION.md"), "utf8"));

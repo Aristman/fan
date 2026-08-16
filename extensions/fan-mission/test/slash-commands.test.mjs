@@ -28,7 +28,8 @@
 //         currentStep: string,
 //       }
 //
-//   Регистрируются 7 команд (спека §6.3 таблица):
+//   Регистрируются 8 команд (спека §6.3 таблица + /mission:init из 0.7.0):
+//     /mission:init    — создание миссии (описание позиционально или диалогами)
 //     /mission:start   — запуск контура (MissionLoop.tick() или no-op)
 //     /mission:stop    — I0 abort
 //     /mission:pause   — I1 drain (setDrainAfterCurrentTurn(true))
@@ -41,7 +42,7 @@
 // тестировать логику маршрутизации (I0/I1/I2/I3) без зависимости от TUI.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -538,7 +539,7 @@ describe("F-11 / TC-F11-extra: /mission:decide <answer> → followUp-очере�
 });
 
 // ────────────────────────────────────────────────────────────────────────────
-// Регистрация: все 7 команд зарегистрированы за один вызов
+// Регистрация: все 8 команд зарегистрированы за один вызов
 // ────────────────────────────────────────────────────────────────────────────
 
 // ────────────────────────────────────────────────────────────────────────────────
@@ -887,13 +888,14 @@ describe("F-11 / TC-F11-terminal-ux: терминальный UX completed-ми�
 	});
 });
 
-describe("F-11 / TC-F11-registry: registerMissionSlashCommands регистрирует все 7 команд", () => {
-	it("TC-F11-registry: после registerMissionSlashCommands зарегистрированы все 7 команд", () => {
+describe("F-11 / TC-F11-registry: registerMissionSlashCommands регистрирует все 8 команд", () => {
+	it("TC-F11-registry: после registerMissionSlashCommands зарегистрированы все 8 команд", () => {
 		const ctx = makeCtx();
 		const reg = makeMockRegister();
 		registerMissionSlashCommands(reg.register, ctx);
 
 		const expected = [
+			"mission:init",
 			"mission:start",
 			"mission:stop",
 			"mission:pause",
@@ -908,7 +910,7 @@ describe("F-11 / TC-F11-registry: registerMissionSlashCommands регистри�
 			expect(typeof cmd.handler, `command ${name} handler not a function`).toBe("function");
 			expect(cmd.description, `command ${name} description empty`).toBeTruthy();
 		}
-		expect(reg.commands.size).toBe(7);
+		expect(reg.commands.size).toBe(8);
 	});
 
 	it("TC-F11-registry: handler каждой команды принимает args + ctx (async или sync)", async () => {
@@ -925,14 +927,14 @@ describe("F-11 / TC-F11-registry: registerMissionSlashCommands регистри�
 		await expect(steerCmd.handler("test msg", ctx)).resolves.toBeUndefined();
 	});
 
-	it("TC-F11-registry: register вызывается ровно 7 раз", () => {
+	it("TC-F11-registry: register вызывается ровно 8 раз", () => {
 		const ctx = makeCtx();
 		const calls = [];
 		const registerSpy = (name, opts) => {
 			calls.push(name);
 		};
 		registerMissionSlashCommands(registerSpy, ctx);
-		expect(calls.length).toBe(7);
+		expect(calls.length).toBe(8);
 	});
 });
 
@@ -982,5 +984,100 @@ describe("F-11 / TC-F11-routing: маршрутизация по уровням 
 		expect(ctx.actionsCalls.abort.length).toBe(0);
 		expect(ctx.actionsCalls.sendMessage.length).toBe(0);
 		expect(ctx.actionsCalls.setDrain.length).toBe(0);
+	});
+});
+
+// ──────────────────────────────────────────────────────────────────────────────────
+// 0.7.0: /mission:init <slug> [описание] — создание миссии из сессии.
+// Описание позиционально; без него при наличии ctx.ui.input — диалоги
+// Goal/Scope/Constraints; без UI (RPC/headless) — миссия без описания.
+// ──────────────────────────────────────────────────────────────────────────────────
+
+describe("F-11 / TC-F11-init: /mission:init <slug> [описание]", () => {
+	let baseDir;
+	let ctx;
+	let reg;
+
+	const missionDirOf = (slug) => join(baseDir, "docs", "missions", slug);
+
+	beforeEach(() => {
+		baseDir = freshBaseDir();
+		ctx = makeCtx({ cwd: baseDir });
+		reg = makeMockRegister();
+		registerMissionSlashCommands(reg.register, ctx);
+	});
+
+	afterEach(() => {
+		rmSync(baseDir, { recursive: true, force: true });
+	});
+
+	it("команда 'mission:init' зарегистрирована с handler", () => {
+		expect(reg.commands.has("mission:init")).toBe(true);
+		const cmd = reg.commands.get("mission:init");
+		expect(typeof cmd.handler).toBe("function");
+		expect(cmd.description).toBeTruthy();
+	});
+
+	it("с описанием: миссия создаётся, описание в ## Goal, сообщение про /mission:start", async () => {
+		await reg.dispatch("/mission:init my-mission Build the REST API", ctx);
+		const missionDir = missionDirOf("my-mission");
+		expect(existsSync(join(missionDir, "MISSION.md"))).toBe(true);
+		const raw = readFileSync(join(missionDir, "MISSION.md"), "utf8");
+		expect(raw).toContain("## Goal");
+		expect(raw).toContain("Build the REST API");
+		expect(ctx.output.lines).toContain(
+			`Mission my-mission initialized at ${missionDir}. Start with /mission:start.`,
+		);
+	});
+
+	it("описание в кавычках снимается", async () => {
+		await reg.dispatch('/mission:init qm "Quoted description text"', ctx);
+		const raw = readFileSync(join(missionDirOf("qm"), "MISSION.md"), "utf8");
+		expect(raw).toContain("Quoted description text");
+		expect(raw).not.toContain('"Quoted description text"');
+	});
+
+	it("без описания + ctx.ui.input → диалоги Goal/Scope/Constraints", async () => {
+		const titles = [];
+		ctx.ui = {
+			input: async (title) => {
+				titles.push(title);
+				if (/goal/i.test(title)) return "Ship feature X";
+				if (/scope/i.test(title)) return "backend only";
+				return ""; // Constraints — пусто
+			},
+		};
+		await reg.dispatch("/mission:init dlg-mission", ctx);
+		// Три диалога: Goal, Scope, Constraints
+		expect(titles.length).toBe(3);
+		const raw = readFileSync(join(missionDirOf("dlg-mission"), "MISSION.md"), "utf8");
+		expect(raw).toContain("Ship feature X");
+		expect(raw).toContain("Scope: backend only");
+		expect(ctx.output.lines.some((l) => l.includes("initialized"))).toBe(true);
+	});
+
+	it("отмена диалога Goal → init отменён, миссия не создана", async () => {
+		ctx.ui = { input: async () => undefined };
+		await reg.dispatch("/mission:init cancel-mission", ctx);
+		expect(existsSync(missionDirOf("cancel-mission"))).toBe(false);
+		expect(ctx.output.lines.some((l) => /cancelled/i.test(l))).toBe(true);
+	});
+
+	it("без описания и без UI → миссия создаётся с пустым Goal (RPC-совместимость)", async () => {
+		await reg.dispatch("/mission:init plain-mission", ctx);
+		const raw = readFileSync(join(missionDirOf("plain-mission"), "MISSION.md"), "utf8");
+		expect(raw).toContain("## Goal\n\n## Scope");
+		expect(ctx.output.lines.some((l) => l.includes("initialized"))).toBe(true);
+	});
+
+	it("существующая миссия → ошибка через output (already exists)", async () => {
+		await initMission("dup-mission", { baseDir: join(baseDir, "docs", "missions") });
+		await reg.dispatch("/mission:init dup-mission some description", ctx);
+		expect(ctx.output.lines.some((l) => l.startsWith("Error:") && /already exists/.test(l))).toBe(true);
+	});
+
+	it("без аргументов → usage-ошибка", async () => {
+		await reg.dispatch("/mission:init", ctx);
+		expect(ctx.output.lines.some((l) => /usage \/mission:init <slug>/.test(l))).toBe(true);
 	});
 });

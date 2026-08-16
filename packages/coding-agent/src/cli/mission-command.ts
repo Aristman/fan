@@ -73,7 +73,7 @@ export interface MissionContext {
 interface FileStateManagerModule {
 	MISSION_FILES: readonly string[];
 	validateSlug(slug: string): void;
-	initMission(slug: string, opts?: { baseDir?: string; template?: string }): Promise<string>;
+	initMission(slug: string, opts?: { baseDir?: string; template?: string; description?: string }): Promise<string>;
 	readMission(missionDir: string): Promise<{ frontmatter: Record<string, unknown>; body: string }>;
 	readState(missionDir: string): Promise<{ done: string[]; blockers: string[]; nextSteps: string[] }>;
 	writeMissionStatus(missionDir: string, newStatus: string): Promise<void>;
@@ -180,8 +180,13 @@ export function listMissionSubcommands(): string[] {
 /**
  * Создать миссию: `<baseDir>/<slug>/` с 5 файлами-шаблонами.
  * Делегирует создание и валидацию slug в file-state-manager (F-08).
+ * 0.7.0: `description` подставляется в секцию `## Goal` шаблона MISSION.md
+ * (весь текст, без эвристического разбора).
  */
-export async function missionInit(slug: string, opts?: { baseDir?: string; template?: string }): Promise<string> {
+export async function missionInit(
+	slug: string,
+	opts?: { baseDir?: string; template?: string; description?: string },
+): Promise<string> {
 	const fsm = await loadFileStateManager();
 	fsm.validateSlug(slug);
 	const baseDir = opts?.baseDir ?? join("docs", "missions");
@@ -189,7 +194,7 @@ export async function missionInit(slug: string, opts?: { baseDir?: string; templ
 	if (existsSync(missionDir)) {
 		throw new MissionAlreadyExistsError(slug, missionDir);
 	}
-	return fsm.initMission(slug, { baseDir, template: opts?.template });
+	return fsm.initMission(slug, { baseDir, template: opts?.template, description: opts?.description });
 }
 
 /**
@@ -682,9 +687,11 @@ export async function handleMissionCommand(args: string[], ctx?: MissionContext)
 	try {
 		switch (subcommand) {
 			case "init": {
-				// Extract slug: first non-flag arg after "init", skipping known flags.
+				// 0.7.0: `fan mission init <slug> [description]` — первый
+				// позициональный аргумент (после флагов) = slug, остальные
+				// позициональные склеиваются в описание миссии (→ ## Goal).
 				const initArgs = args.slice(2);
-				let slug: string | undefined;
+				const positionals: string[] = [];
 				for (let i = 0; i < initArgs.length; i++) {
 					const a = initArgs[i];
 					if (a === "--template") {
@@ -692,18 +699,20 @@ export async function handleMissionCommand(args: string[], ctx?: MissionContext)
 						continue;
 					} // skip flag + value
 					if (a.startsWith("--")) continue; // skip other flags
-					slug = a;
-					break;
+					positionals.push(a);
 				}
+				const slug = positionals[0];
 				if (!slug) {
-					console.error("Usage: fan mission init <slug> [--template <name>]");
+					console.error("Usage: fan mission init <slug> [description] [--template <name>]");
 					process.exit(1);
 					return false;
 				}
+				const description = positionals.slice(1).join(" ") || undefined;
 				const template = parseTemplateFlag(initArgs);
-				const initOpts: { baseDir?: string; template?: string } = {};
+				const initOpts: { baseDir?: string; template?: string; description?: string } = {};
 				if (ctx?.baseDir) initOpts.baseDir = ctx.baseDir;
 				if (template) initOpts.template = template;
+				if (description) initOpts.description = description;
 				const dir = await missionInit(slug, Object.keys(initOpts).length > 0 ? initOpts : undefined);
 				console.log(`Mission initialized: ${dir}`);
 				return true;

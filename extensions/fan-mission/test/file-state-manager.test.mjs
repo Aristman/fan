@@ -57,6 +57,7 @@ import {
 	appendDecision,
 	canTransition,
 	DuplicateSection,
+	extractGoal,
 	hasUncheckedRoadmapItems,
 	initMission,
 	InvalidSlug,
@@ -168,6 +169,76 @@ describe("F-08 / initMission(slug)", () => {
 		await initMission("auth-refactor", { baseDir }).catch(() => {});
 		const after = readFileSync(join(missionDir, "MISSION.md"), "utf8");
 		expect(after).toBe(before);
+	});
+
+	// ── 0.7.0: описание миссии при init → {{description}} → ## Goal ──────
+
+	it("TC: init с описанием → секция ## Goal содержит текст описания", async () => {
+		const missionDir = await initMission("desc-mission", {
+			baseDir,
+			description: "Build a REST API for user profiles with tests",
+		});
+		const raw = readFileSync(join(missionDir, "MISSION.md"), "utf8");
+		expect(raw).toContain("## Goal");
+		expect(raw).toContain("Build a REST API for user profiles with tests");
+		// Описание не попало в шапку/frontmatter
+		expect(raw.indexOf("Build a REST API")).toBeGreaterThan(raw.indexOf("## Goal"));
+		// readMission видит описание в body
+		const { body } = await readMission(missionDir);
+		expect(extractGoal(body)).toBe("Build a REST API for user profiles with tests");
+	});
+
+	it("TC: init с многострочным описанием → Goal сохраняет строки", async () => {
+		const missionDir = await initMission("multiline-desc", {
+			baseDir,
+			description: "Ship the dashboard.\n\nScope: charts only",
+		});
+		const { body } = await readMission(missionDir);
+		expect(extractGoal(body)).toBe("Ship the dashboard.\n\nScope: charts only");
+	});
+
+	it("TC: init без описания → Goal пустой (обратная совместимость)", async () => {
+		const missionDir = await initMission("no-desc", { baseDir });
+		const raw = readFileSync(join(missionDir, "MISSION.md"), "utf8");
+		expect(raw).toContain("## Goal");
+		const { body } = await readMission(missionDir);
+		expect(extractGoal(body)).toBe("");
+		// Прежний layout секций сохранён: между ## Goal и ## Scope только пустая строка
+		expect(raw).toContain("## Goal\n\n## Scope");
+	});
+
+	it("TC: init с пустой строкой в описании → Goal пустой", async () => {
+		const missionDir = await initMission("blank-desc", { baseDir, description: "   " });
+		const { body } = await readMission(missionDir);
+		expect(extractGoal(body)).toBe("");
+	});
+});
+
+// ──────────────────────────────────────────────────────────────────────────────────
+// 0.7.0: extractGoal — извлечение секции ## Goal из body MISSION.md
+// ──────────────────────────────────────────────────────────────────────────────────
+
+describe("F-08 / extractGoal(body)", () => {
+	it("извлекает текст между ## Goal и следующим ## заголовком", () => {
+		const body = "# Mission: x\n\n## Goal\nDo the thing\n\n## Scope\nout of scope\n";
+		expect(extractGoal(body)).toBe("Do the thing");
+	});
+
+	it("многострочный Goal обрезается по следующему заголовку", () => {
+		const body = "## Goal\nline1\nline2\n## Unbreakable Metric\ntests";
+		expect(extractGoal(body)).toBe("line1\nline2");
+	});
+
+	it("пустая секция → пустая строка", () => {
+		expect(extractGoal("## Goal\n\n## Scope\n")).toBe("");
+	});
+
+	it("нет секции Goal → пустая строка", () => {
+		expect(extractGoal("# Mission\n## Scope\nstuff")).toBe("");
+	});
+
+	it("Goal — последний раздел (нет следующего заголовка)", () => {
+		expect(extractGoal("## Goal\nfinal goal text")).toBe("final goal text");
 	});
 });
 

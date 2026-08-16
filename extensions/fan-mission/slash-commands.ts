@@ -7,8 +7,15 @@
 // DI-колбэк `register` (в проде это тонкая обёртка над fan.registerCommand),
 // вся маршрутизация тестируется на моках (test/slash-commands.test.mjs).
 
-import { basename } from "node:path";
-import { canTransition, hasUncheckedRoadmapItems, readMission, writeMissionStatus } from "./file-state-manager.js";
+import { existsSync } from "node:fs";
+import { basename, join } from "node:path";
+import {
+	canTransition,
+	hasUncheckedRoadmapItems,
+	initMission,
+	readMission,
+	writeMissionStatus,
+} from "./file-state-manager.js";
 import type { MissionLoop } from "./mission-loop.js";
 import { readMissionLoopState } from "./mission-loop.js";
 
@@ -45,6 +52,13 @@ export interface SlashCtx {
 	attach?: (missionDir: string) => MissionLoop;
 	/** FSM-переход статуса миссии (обёртка writeMissionStatus). */
 	writeStatus?: (missionDir: string, status: string) => Promise<void>;
+	// --- /mission:init (0.7.0): диалоги в интерактивном режиме. ---
+	// Заполняется обёрткой fan.registerCommand (index.ts) из ctx.ui; без него
+	// (RPC/headless, тесты) /mission:init работает без диалогов.
+	/** Dialog UI: input() запрашивает строку у оператора (undefined = отмена). */
+	ui?: {
+		input?(title: string, placeholder?: string): Promise<string | undefined>;
+	};
 }
 
 export interface SlashCommandDef {
@@ -195,7 +209,7 @@ const STEP_NAMES: Record<number, string> = {
 // ─── Registration ───────────────────────────────────────────────────────────
 
 /**
- * Зарегистрировать 7 slash-команд /mission:* (спека §6.3).
+ * Зарегистрировать 8 slash-команд /mission:* (спека §6.3 + init из 0.7.0).
  *
  * Маршрутизация по уровням прерываний (§3.2.2):
  *   /mission:stop   — I0 abort (actions.abort + missionLoop.abort + status=aborted)
@@ -203,6 +217,7 @@ const STEP_NAMES: Record<number, string> = {
  *   /mission:steer  — I2 steer (sendMessage(..., { streamingBehavior: "steer" }))
  *   /mission:decide — I3 followUp (sendMessage(..., { streamingBehavior: "followUp" }))
  *   /mission:start|resume|status — управляющие команды.
+ *   /mission:init   — создание миссии (описание позиционально или диалогами).
  */
 export function registerMissionSlashCommands(register: SlashCommandRegister, registrationCtx: SlashCtx): void {
 	register("mission:start", {
@@ -391,6 +406,76 @@ export function registerMissionSlashCommands(register: SlashCommandRegister, reg
 					return;
 				}
 				await ctx.actions.sendMessage(answer, { streamingBehavior: "followUp" });
+			}),
+	});
+
+	// 0.7.0: /mission:init <slug> [description] — создать миссию, не выходя из
+	// сессии. Описание опционально: без него и при наличии ctx.ui.input Goal
+	// запрашивается диалогами (Goal обязателен, Scope/Constraints — нет);
+	// без UI (RPC/headless) миссия создаётся без описания (пустой Goal), как
+	// раньше. Существующая миссия → ошибка через output.
+	register("mission:init", {
+		description: "Initialize a new mission: /mission:init <slug> [description]",
+		handler: (args, ctx = registrationCtx) =>
+			guarded(ctx.output, async () => {
+				const trimmed = args.trim();
+				if (!trimmed) {
+					ctx.output("Error: usage /mission:init <slug> [description]");
+					return;
+				}
+
+				// slug = первый токен (возможен в кавычках), description = остаток.
+				let slug: string;
+				let description = "";
+				const firstChar = trimmed[0];
+				if (firstChar === '"' || firstChar === "'") {
+					const closing = trimmed.indexOf(firstChar, 1);
+					if (closing > 0) {
+						slug = trimmed.slice(1, closing);
+						description = trimmed.slice(closing + 1).trim();
+					} else {
+						slug = trimmed.slice(1); // незакрытая кавычка — весь остаток это slug
+					}
+				} else {
+					const spaceIdx = trimmed.search(/\s/);
+					if (spaceIdx === -1) {
+						slug = trimmed;
+					} else {
+						slug = trimmed.slice(0, spaceIdx);
+						description = trimmed.slice(spaceIdx + 1).trim();
+					}
+				}
+				description = parseQuotedArg(description);
+
+				if (!slug) {
+					ctx.output("Error: usage /mission:init <slug> [description]");
+					return;
+				}
+
+				// Интерактивные диалоги (только TUI; RPC/headless — без них).
+				if (!description && typeof ctx.ui?.input === "function") {
+					const input = ctx.ui.input.bind(ctx.ui);
+					const goal = await input("Mission Goal", "What should this mission achieve?");
+					if (!goal || !goal.trim()) {
+						ctx.output("Mission init cancelled — Goal is required.");
+						return;
+					}
+					const parts = [goal.trim()];
+					const scope = await input("Mission Scope (optional)", "Leave empty to skip");
+					if (scope?.trim()) parts.push(`Scope: ${scope.trim()}`);
+					const constraints = await input("Mission Constraints (optional)", "Leave empty to skip");
+					if (constraints?.trim()) parts.push(`Constraints: ${constraints.trim()}`);
+					description = parts.join("\n\n");
+				}
+
+				const baseDir = join(ctx.cwd ?? process.cwd(), "docs", "missions");
+				const missionDir = join(baseDir, slug);
+				if (existsSync(join(missionDir, "MISSION.md"))) {
+					// MissionAlreadyExistsError (аналог CLI missionInit)
+					throw new Error(`Mission "${slug}" already exists at ${missionDir}`);
+				}
+				const dir = await initMission(slug, { baseDir, ...(description ? { description } : {}) });
+				ctx.output(`Mission ${slug} initialized at ${dir}. Start with /mission:start.`);
 			}),
 	});
 }

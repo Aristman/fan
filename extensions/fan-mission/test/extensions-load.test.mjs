@@ -186,11 +186,11 @@ describe("F-LOAD / TC-1: default export каждой — функция (Extensi
 describe("F-LOAD / TC-2: три фабрики на одном mock fan — совместимость", () => {
 	it("TC-2a: вызов всех трёх фабрик подряд не бросает и каждая что-то регистрирует", () => {
 		// beforeEach уже вызвал все три; если бы бросили — beforeEach упал бы до теста.
-		// Проверяем побочные эффекты: fan.on (6 хуков = 2×3), ≥7 команд, ≥1 shortcut,
+		// Проверяем побочные эффекты: fan.on (6 хуков = 2×3), ≥8 команд, ≥1 shortcut,
 		// fan.events.on (mission-widget подписывается на mission_iteration_end).
 		expect(fan.on).toHaveBeenCalled();
 		expect(fan.on.mock.calls.length).toBeGreaterThanOrEqual(6); // 2 хука × 3 фабрики
-		expect(fan.registerCommand.mock.calls.length).toBeGreaterThanOrEqual(7);
+		expect(fan.registerCommand.mock.calls.length).toBeGreaterThanOrEqual(8);
 		expect(fan.registerShortcut.mock.calls.length).toBeGreaterThanOrEqual(1);
 		expect(fan.events.on).toHaveBeenCalled(); // mission-widget uiEvents
 	});
@@ -225,10 +225,11 @@ describe("F-LOAD / TC-3: хуки lifecycle — множественная по�
 	});
 });
 
-// ─── TC-4: ≥7 команд /mission:* (от fan-mission), все имена уникальны ──────────
+// ─── TC-4: ≥8 команд /mission:* (от fan-mission), все имена уникальны ──────────
 
-describe("F-LOAD / TC-4: команды /mission:* — ≥7, без дублей", () => {
+describe("F-LOAD / TC-4: команды /mission:* — ≥8, без дублей", () => {
 	const EXPECTED_COMMANDS = [
+		"mission:init",
 		"mission:start",
 		"mission:stop",
 		"mission:status",
@@ -238,23 +239,23 @@ describe("F-LOAD / TC-4: команды /mission:* — ≥7, без дублей
 		"mission:decide",
 	];
 
-	it("TC-4a: зарегистрированы все 7 команд /mission:* с handler+description", () => {
+	it("TC-4a: зарегистрированы все 8 команд /mission:* с handler+description", () => {
 		for (const name of EXPECTED_COMMANDS) {
 			expect(fan._commands.has(name), `command ${name} not registered`).toBe(true);
 			const cmd = fan._commands.get(name);
 			expect(typeof cmd.handler, `${name} handler not a function`).toBe("function");
 			expect(cmd.description, `${name} description empty`).toBeTruthy();
 		}
-		// Суммарно ≥7 команд /mission:* (по контракту задачи).
+		// Суммарно ≥8 команд /mission:* (по контракту задачи).
 		const missionCmds = [...fan._commands.keys()].filter((n) => n.startsWith("mission:"));
-		expect(missionCmds.length).toBeGreaterThanOrEqual(7);
+		expect(missionCmds.length).toBeGreaterThanOrEqual(8);
 	});
 
 	it("TC-4b: нет дублей команд — каждое имя registerCommand уникально", () => {
 		const names = fan.registerCommand.mock.calls.map((c) => c[0]);
 		const unique = new Set(names);
 		expect(unique.size).toBe(names.length); // ни одно имя не перезаписало другое
-		expect(names.length).toBe(7); // ровно 7 — все от fan-mission (scheduler/webhook команд не регистрируют)
+		expect(names.length).toBe(8); // ровно 8 — все от fan-mission (scheduler/webhook команд не регистрируют)
 	});
 });
 
@@ -321,7 +322,7 @@ describe("F-LOAD / TC-7: отсутствие конфликтов (двойна
 		// Проверяем: размер Map === числу вызовов registerCommand (никто не перезаписан).
 		const calls = fan.registerCommand.mock.calls.length;
 		expect(fan._commands.size).toBe(calls);
-		expect(calls).toBe(7);
+		expect(calls).toBe(8);
 	});
 
 	it("TC-7b: повторный session_start + session_shutdown не падает (идемпотентность, нет конфликта подписок)", async () => {

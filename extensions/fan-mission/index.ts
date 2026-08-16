@@ -302,10 +302,16 @@ export default function missionExtension(fan: ExtensionAPI): MissionWiring {
 				slashCtx.output = (line) => {
 					lines.push(line);
 				};
+				// 0.7.0: /mission:init использует ctx.ui.input для диалогов
+				// Goal/Scope/Constraints — прокидываем UI команды в slashCtx
+				// (RPC/headless: ui отсутствует → команда работает без диалогов).
+				const prevUi = slashCtx.ui;
+				slashCtx.ui = cmdCtx?.ui;
 				try {
 					await def.handler(args, slashCtx);
 				} finally {
 					slashCtx.output = prevOutput;
+					slashCtx.ui = prevUi;
 				}
 				if (lines.length === 0) {
 					return;

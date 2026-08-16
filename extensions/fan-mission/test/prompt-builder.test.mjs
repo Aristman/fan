@@ -9,7 +9,14 @@ import { join } from "node:path";
 
 import { initMission } from "../file-state-manager.js";
 import { MissionLoop } from "../mission-loop.js";
-import { buildExecutionPrompt, MAX_PROMPT_CHARS, MAX_SECTION_CHARS } from "../prompt-builder.js";
+import {
+	BOOTSTRAP_PLANNING_GUIDANCE,
+	buildExecutionPrompt,
+	isBootstrapItem,
+	MAX_PROMPT_CHARS,
+	MAX_SECTION_CHARS,
+	PLANNING_ITEM_TEXT,
+} from "../prompt-builder.js";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -223,5 +230,75 @@ describe("prompt-builder: buildExecutionPrompt", () => {
 		// steer не задан → секции Operator steer нет, но opts.steer пробрасывается как раньше
 		expect(prompt).not.toContain("## Operator steer");
 		expect(executor.calls[0].steer).toBeUndefined();
+	});
+});
+
+// ─── 0.7.0: bootstrap-planning guidance ───────────────────────────────────
+
+describe("prompt-builder: bootstrap planning guidance (0.7.0)", () => {
+	const BOOTSTRAP_ROADMAP = "# Roadmap\n\n- [ ] Bootstrap mission: context-mission\n- [ ] item b\n";
+	const BOOTSTRAP_INDEX = 2; // строка "- [ ] Bootstrap mission: …"
+
+	it("isBootstrapItem: первый пункт 'Bootstrap mission:…' → true", () => {
+		expect(isBootstrapItem(BOOTSTRAP_ROADMAP, BOOTSTRAP_INDEX, "Bootstrap mission: context-mission")).toBe(true);
+	});
+
+	it("isBootstrapItem: не первый пункт → false", () => {
+		const raw = "# Roadmap\n\n- [ ] item a\n- [ ] Bootstrap mission: x\n";
+		expect(isBootstrapItem(raw, 3, "Bootstrap mission: x")).toBe(false);
+	});
+
+	it("isBootstrapItem: другой текст → false", () => {
+		expect(isBootstrapItem(BOOTSTRAP_ROADMAP, BOOTSTRAP_INDEX, "item b")).toBe(false);
+	});
+
+	it("bootstrap-пункт + непустой Goal → в Guidance строка про декомпозицию Goal", async () => {
+		// beforeEach уже записал body с ## Goal (GOAL_MARKER_123)
+		writeFileSync(join(missionDir, "ROADMAP.md"), BOOTSTRAP_ROADMAP, "utf8");
+		const prompt = await buildExecutionPrompt({
+			missionDir,
+			itemText: "Bootstrap mission: context-mission",
+			index: BOOTSTRAP_INDEX,
+			roadmapRaw: BOOTSTRAP_ROADMAP,
+			state: { done: [], blockers: [], nextSteps: [] },
+		});
+		expect(prompt).toContain(BOOTSTRAP_PLANNING_GUIDANCE);
+		expect(prompt).toContain("decompose the mission Goal");
+	});
+
+	it("bootstrap-пункт + пустой Goal → guidance НЕТ", async () => {
+		writeMissionBody(missionDir, "\n# Mission: context-mission\n\n## Goal\n\n## Scope\n");
+		writeFileSync(join(missionDir, "ROADMAP.md"), BOOTSTRAP_ROADMAP, "utf8");
+		const prompt = await buildExecutionPrompt({
+			missionDir,
+			itemText: "Bootstrap mission: context-mission",
+			index: BOOTSTRAP_INDEX,
+			roadmapRaw: BOOTSTRAP_ROADMAP,
+			state: { done: [], blockers: [], nextSteps: [] },
+		});
+		expect(prompt).not.toContain(BOOTSTRAP_PLANNING_GUIDANCE);
+	});
+
+	it("обычный пункт + непустой Goal → guidance НЕТ", async () => {
+		const prompt = await buildExecutionPrompt({
+			missionDir,
+			itemText: "item a",
+			index: ITEM_A_INDEX,
+			roadmapRaw: ROADMAP_RAW,
+			state: { done: [], blockers: [], nextSteps: [] },
+		});
+		expect(prompt).not.toContain(BOOTSTRAP_PLANNING_GUIDANCE);
+	});
+
+	it("синтетический planning-пункт + непустой Goal → guidance есть", async () => {
+		const prompt = await buildExecutionPrompt({
+			missionDir,
+			itemText: PLANNING_ITEM_TEXT,
+			index: -1,
+			roadmapRaw: "# Roadmap\n\n- [x] Bootstrap mission: context-mission\n",
+			state: { done: ["Bootstrap mission: context-mission"], blockers: [], nextSteps: [] },
+		});
+		expect(prompt.split("\n")[0]).toBe(`Execute mission item: ${PLANNING_ITEM_TEXT}`);
+		expect(prompt).toContain(BOOTSTRAP_PLANNING_GUIDANCE);
 	});
 });

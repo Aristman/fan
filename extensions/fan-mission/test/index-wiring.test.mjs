@@ -21,7 +21,7 @@
 //       resume(): void;                                       // resume
 //     }
 //   • SlashCommandRegister = (name: string, cmd: { description: string; handler: (args, ctx) => Promise<void> }) => void
-//   • Регистрирует ровно 7 команд: mission:start, mission:stop, mission:status,
+//   • Регистрирует ровно 8 команд: mission:init, mission:start, mission:stop, mission:status,
 //     mission:pause, mission:resume, mission:steer, mission:decide
 //
 // registerMissionWidget(args: MissionWidgetArgs): void
@@ -243,7 +243,7 @@ afterEach(async () => {
 
 // ────────────────────────────────────────────────────────────────────────────
 // TC-1: factory(fan) — фабрика не бросает, регистрирует хуки session_start /
-// session_shutdown и ≥7 slash-команд /mission:* через fan.registerCommand.
+// session_shutdown и ≥8 slash-команд /mission:* через fan.registerCommand.
 // ────────────────────────────────────────────────────────────────────────────
 
 describe("F-MISSION-INDEX / TC-1: фабрика (default export) — регистрация", () => {
@@ -260,11 +260,12 @@ describe("F-MISSION-INDEX / TC-1: фабрика (default export) — регис
 		expect(fan.on).toHaveBeenCalledWith("session_shutdown", expect.any(Function));
 	});
 
-	it("TC-1c: factory регистрирует ровно 7 slash-команд /mission:* через fan.registerCommand", () => {
+	it("TC-1c: factory регистрирует ровно 8 slash-команд /mission:* через fan.registerCommand", () => {
 		const fan = makeMockFan();
 		factory(fan);
 
 		const expected = [
+			"mission:init",
 			"mission:start",
 			"mission:stop",
 			"mission:status",
@@ -279,7 +280,7 @@ describe("F-MISSION-INDEX / TC-1: фабрика (default export) — регис
 			expect(typeof cmd.handler, `command ${name} handler not a function`).toBe("function");
 			expect(cmd.description, `command ${name} description empty`).toBeTruthy();
 		}
-		expect(fan.registerCommand.mock.calls.length).toBeGreaterThanOrEqual(7);
+		expect(fan.registerCommand.mock.calls.length).toBeGreaterThanOrEqual(8);
 	});
 
 	it("TC-1c: каждая зарегистрированная /mission:* команда имеет handler(args, ctx) → Promise<void>", async () => {

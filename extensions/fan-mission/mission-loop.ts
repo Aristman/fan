@@ -22,6 +22,7 @@ import {
 	type BacklogEntry,
 	canTransition,
 	checkStateFileSize,
+	extractGoal,
 	InvalidTransitionError,
 	MAX_STATE_BYTES,
 	type MissionState,
@@ -36,7 +37,7 @@ import {
 	writeState,
 } from "./file-state-manager.js";
 import { type PromiseParseResult, parsePromise } from "./promise-parser.js";
-import { buildExecutionPrompt } from "./prompt-builder.js";
+import { buildExecutionPrompt, PLANNING_ITEM_TEXT } from "./prompt-builder.js";
 import type { VerificationLadder, VerificationLadderResult } from "./verification-ladder.js";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -300,12 +301,32 @@ function clearAbortSignal(missionDir: string): void {
 
 // ─── ROADMAP helpers ────────────────────────────────────────────────────────
 
-function markRoadmapDone(raw: string, lineIndex: number): string {
+function markRoadmapDone(raw: string, lineIndex: number, itemText?: string): string {
 	const lines = raw.split("\n");
-	if (lineIndex >= 0 && lineIndex < lines.length) {
+	const uncheckedTextAt = (i: number): string | null => {
+		if (i < 0 || i >= lines.length) return null;
+		const m = /^[-*] \[ \] (.+)$/.exec(lines[i].trim());
+		return m ? m[1] : null;
+	};
+	let target = -1;
+	const textAtIndex = uncheckedTextAt(lineIndex);
+	if (textAtIndex !== null && (itemText === undefined || textAtIndex === itemText)) {
+		target = lineIndex;
+	} else if (itemText !== undefined) {
+		// 0.7.0: the executor may have edited ROADMAP.md during the iteration
+		// (bootstrap planning appends items) — lines can shift, so fall back
+		// to locating the item by its text.
+		for (let i = 0; i < lines.length; i++) {
+			if (uncheckedTextAt(i) === itemText) {
+				target = i;
+				break;
+			}
+		}
+	}
+	if (target >= 0) {
 		// Replace only the checkbox state, preserving the original list marker
 		// (`-` or `*` — both are valid markdown).
-		lines[lineIndex] = lines[lineIndex].replace("[ ] ", "[x] ");
+		lines[target] = lines[target].replace("[ ] ", "[x] ");
 	}
 	return lines.join("\n");
 }
@@ -586,7 +607,7 @@ export class MissionLoop {
 
 			// ── Step 3: Decide ─────────────────────────────────────────────
 			steps.decide = true;
-			const nextItem = parseFirstUnchecked(roadmapRaw);
+			let nextItem = parseFirstUnchecked(roadmapRaw);
 
 			// All items done → completed
 			if (!nextItem) {
@@ -612,17 +633,28 @@ export class MissionLoop {
 						item: "ROADMAP contains no parseable checklist items",
 					};
 				}
-				if (canTransition(resultStatus, "completed")) {
-					resultStatus = "completed";
-					await writeMissionStatus(this.missionDir, "completed");
+				// 0.7.0 bootstrap planning: a valid ROADMAP (has checked items) with
+				// no unchecked items left AND a non-empty mission Goal → the mission
+				// still has work to decompose. Do NOT complete: run a planning
+				// iteration on a synthetic item — the executor must decompose the
+				// Goal into unchecked ROADMAP items (prompt-builder adds guidance).
+				// Empty Goal → completed as before (nothing left to plan).
+				if (!extractGoal(mission.body)) {
+					if (canTransition(resultStatus, "completed")) {
+						resultStatus = "completed";
+						await writeMissionStatus(this.missionDir, "completed");
+					}
+					this.journalStep(loopState, 3);
+					loopState.interrupted = false;
+					loopState.iterationResult = undefined;
+					loopState.pendingItem = undefined;
+					loopState.committed = false;
+					writeLoopStateSync(this.missionDir, loopState);
+					return { iteration: currentIteration, steps, status: resultStatus };
 				}
-				this.journalStep(loopState, 3);
-				loopState.interrupted = false;
-				loopState.iterationResult = undefined;
-				loopState.pendingItem = undefined;
-				loopState.committed = false;
-				writeLoopStateSync(this.missionDir, loopState);
-				return { iteration: currentIteration, steps, status: resultStatus };
+				// Synthetic planning item: index -1 marks it as not present in the
+				// ROADMAP (markRoadmapDone/prompt marking are no-ops for it).
+				nextItem = { index: -1, text: PLANNING_ITEM_TEXT };
 			}
 
 			// Recovery: determine resume point (use ORIGINAL values from disk)
@@ -1369,6 +1401,13 @@ export class MissionLoop {
 	/**
 	 * Step 6: Commit — writeState → writeRoadmap → git.commit → journal.
 	 * P0-3: Idempotent — checks for duplicate done-entries and already-checked roadmap.
+	 *
+	 * 0.7.0: ROADMAP is re-read from disk before marking the item done — the
+	 * executor may have edited it during the iteration (bootstrap planning
+	 * appends unchecked items; writing the stale step-2 snapshot would erase
+	 * those edits). Writes/commit are skipped entirely when nothing changed
+	 * (repeated planning iterations on an unchanged roadmap must not fail the
+	 * loop on an empty git commit).
 	 */
 	private async doStep6Commit(
 		loopState: LoopState,
@@ -1411,16 +1450,34 @@ export class MissionLoop {
 			);
 		}
 
-		// P0-3: order — writeState → writeRoadmap → git.commit → lastStep=6
-		await writeState(this.missionDir, {
-			done: newDone,
-			blockers: newBlockers,
-			nextSteps: newNextSteps,
-		});
+		const stateChanged =
+			JSON.stringify([newDone, newBlockers, newNextSteps]) !==
+			JSON.stringify([currentState.done, currentState.blockers, currentState.nextSteps]);
 
-		if (shouldGitCommit) {
+		// 0.7.0: re-read ROADMAP from disk — the executor may have edited it
+		// during step 4 (bootstrap planning); the step-2 snapshot is stale.
+		let freshRoadmap = roadmapRaw;
+		try {
+			freshRoadmap = await readRoadmap(this.missionDir);
+		} catch {
+			freshRoadmap = roadmapRaw; // file vanished mid-tick — use the snapshot
+		}
+		const updatedRoadmap = shouldGitCommit
+			? markRoadmapDone(freshRoadmap, nextItem.index, nextItem.text)
+			: freshRoadmap;
+		const roadmapChanged = updatedRoadmap !== roadmapRaw;
+
+		// P0-3: order — writeState → writeRoadmap → git.commit → lastStep=6
+		if (stateChanged) {
+			await writeState(this.missionDir, {
+				done: newDone,
+				blockers: newBlockers,
+				nextSteps: newNextSteps,
+			});
+		}
+
+		if (shouldGitCommit && roadmapChanged) {
 			// Mark roadmap checkbox BEFORE git commit (so commit includes both)
-			const updatedRoadmap = markRoadmapDone(roadmapRaw, nextItem.index);
 			await writeRoadmap(this.missionDir, updatedRoadmap);
 
 			const msg = `mission: ${nextItem.text}`;

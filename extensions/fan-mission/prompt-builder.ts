@@ -9,7 +9,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import { type MissionState, readMission } from "./file-state-manager.js";
+import { extractGoal, type MissionState, readMission } from "./file-state-manager.js";
 
 // ─── Limits (protection against bloated STATE/BACKLOG/ROADMAP) ──────────────
 
@@ -17,6 +17,18 @@ import { type MissionState, readMission } from "./file-state-manager.js";
 export const MAX_SECTION_CHARS = 4000;
 /** The whole assembled prompt is capped at this many characters. */
 export const MAX_PROMPT_CHARS = 20000;
+
+/**
+ * 0.7.0 bootstrap planning: synthetic roadmap item the mission-loop feeds to
+ * the executor when the ROADMAP has only checked items but the mission Goal
+ * is not empty yet (bootstrap did not produce unchecked items). The guidance
+ * line instructs the agent to decompose the Goal into ROADMAP items.
+ */
+export const PLANNING_ITEM_TEXT = "Plan: decompose mission Goal into ROADMAP items";
+
+/** Guidance line appended for bootstrap/planning iterations. */
+export const BOOTSTRAP_PLANNING_GUIDANCE =
+	"- This is the bootstrap iteration: decompose the mission Goal into concrete unchecked ROADMAP.md items (- [ ] ...) and replace/extend the roadmap. Keep items atomic and verifiable.";
 
 const TRUNCATION_MARKER = "...[truncated]";
 
@@ -57,6 +69,20 @@ function markCurrentItem(roadmapRaw: string, index: number): string {
 		lines[index] = `${m[1]}▶ ${m[2]}`;
 	}
 	return lines.join("\n");
+}
+
+/**
+ * True when the current item is the bootstrap item: its text starts with
+ * "Bootstrap mission:" (case-insensitive, default template wording) AND it
+ * is the FIRST checklist item in the roadmap.
+ */
+export function isBootstrapItem(roadmapRaw: string, index: number, itemText: string): boolean {
+	if (!/^bootstrap mission:/i.test(itemText)) return false;
+	const lines = roadmapRaw.split("\n");
+	for (let i = 0; i < lines.length; i++) {
+		if (/^[-*] \[[x ]\] /.test(lines[i].trim())) return i === index;
+	}
+	return false;
 }
 
 /** Render parsed STATE.md as simple lists; empty state → placeholder. */
@@ -116,6 +142,13 @@ export async function buildExecutionPrompt(opts: ExecutionPromptOptions): Promis
 	const stateContent = renderState(opts.state);
 	const roadmapContent = markCurrentItem(opts.roadmapRaw, opts.index);
 	let backlogContent = readBacklogContent(opts.missionDir);
+	// 0.7.0 bootstrap planning: the Goal→ROADMAP decomposition guidance is
+	// added for the bootstrap item (first roadmap item, "Bootstrap mission:")
+	// and for the synthetic planning item — only when the Goal is non-empty.
+	const goalText = extractGoal(mission.body);
+	const isPlanningIteration =
+		goalText.length > 0 &&
+		(opts.itemText === PLANNING_ITEM_TEXT || isBootstrapItem(opts.roadmapRaw, opts.index, opts.itemText));
 
 	const assemble = (): string => {
 		const parts: string[] = [];
@@ -154,6 +187,9 @@ export async function buildExecutionPrompt(opts: ExecutionPromptOptions): Promis
 		parts.push("- Mission files above are already provided — do not re-read them.");
 		parts.push("- Work directly on small items; only delegate genuinely multi-file/multi-module work.");
 		parts.push("- Commit meaningful results with clear messages.");
+		if (isPlanningIteration) {
+			parts.push(BOOTSTRAP_PLANNING_GUIDANCE);
+		}
 		return parts.join("\n");
 	};
 

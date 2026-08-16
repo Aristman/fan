@@ -52,10 +52,25 @@ export async function loadTemplate(name: string): Promise<MissionTemplateFiles> 
 }
 
 /**
- * Render a template string by replacing {{slug}}, {{mission_id}}, {{now}}.
+ * Render a template string by replacing {{description}}, {{slug}},
+ * {{mission_id}}, {{now}}. {{description}} is handled FIRST so a
+ * description containing template-like text is not re-processed.
+ * Empty/missing description → the placeholder LINE is dropped entirely,
+ * keeping the rendered file byte-identical to the pre-0.7.0 layout.
  */
-export function renderTemplate(raw: string, vars: { slug: string; missionId: string; now: string }): string {
-	return raw
+export function renderTemplate(
+	raw: string,
+	vars: { slug: string; missionId: string; now: string; description?: string },
+): string {
+	let out = raw;
+	if (vars.description) {
+		out = out.replace(/\{\{description\}\}/g, vars.description);
+	} else {
+		// Drop lines containing only the placeholder (no stray blank line).
+		out = out.replace(/^[ \t]*\{\{description\}\}[ \t]*\r?\n/gm, "");
+		out = out.replace(/\{\{description\}\}/g, "");
+	}
+	return out
 		.replace(/\{\{slug\}\}/g, vars.slug)
 		.replace(/\{\{mission_id\}\}/g, vars.missionId)
 		.replace(/\{\{now\}\}/g, vars.now);

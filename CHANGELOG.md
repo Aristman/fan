@@ -2,6 +2,38 @@
 
 ## [2.8.1] — 2026-08-15
 
+### Added
+
+- **Описание миссии при init + bootstrap-планирование Goal→ROADMAP.**
+  Раньше `fan mission init` создавал шаблон с пустым `## Goal`, и оператору
+  приходилось править MISSION.md/ROADMAP.md руками; bootstrap-пункт выполнялся
+  и миссия молча становилась `completed`. Теперь описание задаётся при init:
+  CLI принимает позициональные аргументы (`fan mission init <slug>
+  [описание...]` — остаток слов склеивается в описание), новая slash-команда
+  `/mission:init <slug> [описание]` (extensions/fan-mission/slash-commands.ts)
+  при отсутствии описания и наличии TUI запрашивает диалоги Goal
+  (обязательный) / Scope / Constraints; без UI (RPC/headless) создаёт миссию
+  без описания. Описание подставляется в секцию `## Goal` шаблона MISSION.md
+  (новая переменная `{{description}}`; init без описания работает как раньше).
+  Bootstrap-планирование (extensions/fan-mission/prompt-builder.ts,
+  mission-loop.ts): если текущий пункт — bootstrap («Bootstrap mission:…»,
+  первый пункт ROADMAP) и Goal непустой, в Guidance промпта добавляется
+  указание декомпозировать Goal в unchecked-пункты ROADMAP.md; если после
+  этого в ROADMAP не осталось unchecked-пунктов, Goal непуст и ROADMAP валиден
+  (есть checked-пункты) — тик не завершает миссию `completed`, а запускает
+  planning-итерацию на синтетическом пункте «Plan: decompose mission Goal
+  into ROADMAP items» (пустой Goal → `completed` как раньше; ROADMAP без
+  парсящихся пунктов → `failed` как в 0.4.1). Шаг 6 перечитывает ROADMAP с
+  диска перед отметкой пункта (правки executor'а — новые пункты — больше не
+  затираются снапшотом шага 2) и пропускает git-commit, если менять нечего.
+  Существующая миссия в `/mission:init` → ошибка через output (аналог
+  MissionAlreadyExistsError из CLI). Тесты — init с описанием в
+  `file-state-manager.test.mjs`, CLI-склейка в
+  `packages/coding-agent/test/cli/mission-command.test.ts`, `/mission:init`
+  в `slash-commands.test.mjs`, guidance в `prompt-builder.test.mjs`,
+  planning-итерация в `mission-loop-planning.test.mjs`.
+  fan-mission 0.6.3 → 0.7.0, fan-coding-agent 2.7.4 → 2.7.5.
+
 ### Fixed
 
 - **Вывод slash-команд `/mission:*` рендерился в строку ввода TUI.**

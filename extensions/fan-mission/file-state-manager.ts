@@ -24,7 +24,7 @@ interface MissionTemplateFiles {
 
 interface TemplateModule {
 	loadTemplate(name: string): Promise<MissionTemplateFiles>;
-	renderTemplate(raw: string, vars: { slug: string; missionId: string; now: string }): string;
+	renderTemplate(raw: string, vars: { slug: string; missionId: string; now: string; description?: string }): string;
 }
 
 let templateModuleCache: TemplateModule | undefined;
@@ -241,7 +241,10 @@ function atomicWriteFileSync(filePath: string, content: string): void {
 
 // ─── Mission init ───────────────────────────────────────────────────────────
 
-export async function initMission(slug: string, opts?: { baseDir?: string; template?: string }): Promise<string> {
+export async function initMission(
+	slug: string,
+	opts?: { baseDir?: string; template?: string; description?: string },
+): Promise<string> {
 	validateSlug(slug);
 	const baseDir = opts?.baseDir ?? join("docs", "missions");
 	const missionDir = resolve(baseDir, slug);
@@ -260,7 +263,11 @@ export async function initMission(slug: string, opts?: { baseDir?: string; templ
 
 	const now = new Date().toISOString();
 	const missionId = `mission-${randomUUID()}`;
-	const vars = { slug, missionId, now };
+	// 0.7.0: operator-provided mission description → {{description}} → ## Goal.
+	// The whole text goes into Goal (no heuristic parsing); newlines are
+	// preserved so multi-line dialog input stays readable.
+	const description = (opts?.description ?? "").trim();
+	const vars = { slug, missionId, now, description };
 
 	for (const [fileName, raw] of Object.entries(templates) as [keyof MissionTemplateFiles, string][]) {
 		writeFileSync(join(missionDir, fileName), tmpl.renderTemplate(raw, vars), "utf8");
@@ -615,6 +622,29 @@ export function parseFirstUnchecked(raw: string): { index: number; text: string 
 export async function hasUncheckedRoadmapItems(missionDir: string): Promise<boolean> {
 	const raw = readFileSync(join(missionDir, "ROADMAP.md"), "utf8");
 	return parseFirstUnchecked(raw) !== null;
+}
+
+/**
+ * Extract the trimmed content of the `## Goal` section from a MISSION.md
+ * body (frontmatter already stripped). Returns an empty string when the
+ * section is missing or empty. Used by bootstrap planning (0.7.0): a
+ * non-empty Goal means the mission has something to decompose into ROADMAP
+ * items.
+ */
+export function extractGoal(body: string): string {
+	const lines = body.split("\n");
+	let inGoal = false;
+	const out: string[] = [];
+	for (const line of lines) {
+		const trimmed = line.trim();
+		if (/^#{2,}\s/.test(trimmed) || /^#{2,}$/.test(trimmed)) {
+			if (inGoal) break;
+			inGoal = /^#{2,}\s*Goal\s*$/i.test(trimmed);
+			continue;
+		}
+		if (inGoal) out.push(line);
+	}
+	return out.join("\n").trim();
 }
 
 // ─── FSM: mission status transitions ────────────────────────────────────────

@@ -1,5 +1,7 @@
 // Default MISSION.md template for fan-mission init.
-// Fields {{slug}}, {{mission_id}}, {{now}} are replaced at init time.
+// Fields {{slug}}, {{mission_id}}, {{now}}, {{description}} are replaced at
+// init time ({{description}} → operator-provided mission Goal; empty string
+// when init runs without a description — backward compatible).
 
 export const MISSION_MD = `---
 mission_id: {{mission_id}}
@@ -16,6 +18,7 @@ max_width: 4
 # Mission: {{slug}}
 
 ## Goal
+{{description}}
 
 ## Scope
 

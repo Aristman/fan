@@ -52,16 +52,31 @@
    BACKLOG.md, DECISIONS.md, tree-journal.jsonl.
    ❌ Повторный init той же миссии → «Mission already exists» (ожидаемо).
 
+   **0.7.0 — описание при init:**
+   ```
+   fan mission init test-mission Сделать REST API для профилей пользователей с тестами
+   ```
+   ✅ Всё после slug склеивается в описание и попадает в `## Goal` в MISSION.md
+   (весь текст, без разбора). Без описания — пустой Goal, как раньше.
+   Альтернатива из сессии: `/mission:init test-mission Сделать REST API…` —
+   без описания TUI спросит диалогами Goal (обязательный) / Scope / Constraints;
+   существующая миссия → ошибка через output.
+
 2. **Запуск:** `fan` (TUI) → `/mission:start`
 
    ⚠️ **Перед запуском добавьте в ROADMAP.md 2–3 своих пункта** — шаблон default
    содержит только bootstrap: после его выполнения миссия легитимно станет
    `completed` (все пункты [x]), и stop/pause будут отвечать «Mission already
    completed». Для теста жизненного цикла нужен roadmap с запасом пунктов.
+   Исключение (0.7.0): миссия, созданная **с описанием** (Goal непуст), после
+   bootstrap не завершается — контур запускает planning-итерацию и ожидает
+   декомпозицию Goal в unchecked-пункты ROADMAP.
    ✅ Первый тик: контур берёт пункт «Bootstrap mission: test-mission».
    ✅ **Ключевое (фикс 0.5.0):** агент НЕ занимается раскопками — не ищет файлы
    миссии и не перечитывает их (контекст уже в промпте: MISSION/ROADMAP/STATE +
    протокол `<promise>` + guidance).
+   ✅ **0.7.0:** для bootstrap-пункта при непустом Goal в промпте есть guidance
+   «decompose the mission Goal into concrete unchecked ROADMAP.md items…».
 
 3. **Результат итерации:**
    ✅ `STATE.md` — итерация 1, секция «Сделано» заполнена.
