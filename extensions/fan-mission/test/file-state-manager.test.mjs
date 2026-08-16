@@ -57,6 +57,7 @@ import {
 	appendDecision,
 	canTransition,
 	DuplicateSection,
+	hasUncheckedRoadmapItems,
 	initMission,
 	InvalidSlug,
 	InvalidStateSchema,
@@ -66,6 +67,7 @@ import {
 	MAX_STATE_BYTES,
 	MissionFileImmutable,
 	MissionNotFound,
+	parseFirstUnchecked,
 	readBacklog,
 	readDecisions,
 	readMission,
@@ -579,7 +581,7 @@ describe("F-08 / TC-F08-2: FSM переходов статусов миссии"
 			budget_exhausted: false,
 		},
 		completed: {
-			active: false,        // терминальный
+			active: true,         // реактивация при unchecked ROADMAP-пунктах
 			paused: false,
 			completed: false,
 			aborted: false,
@@ -624,10 +626,14 @@ describe("F-08 / TC-F08-2: FSM переходов статусов миссии"
 		}
 	}
 
-	it("TC-F08-2.invariant: completed — терминальный (любой переход из completed запрещён)", () => {
+	it("TC-F08-2.invariant: completed — разрешён только переход в active (реактивация)", () => {
 		for (const to of STATUSES) {
 			if (to === "completed") continue;
-			expect(canTransition("completed", to)).toBe(false);
+			if (to === "active") {
+				expect(canTransition("completed", to)).toBe(true);
+			} else {
+				expect(canTransition("completed", to)).toBe(false);
+			}
 		}
 	});
 
@@ -1064,5 +1070,102 @@ describe("F-08 / P-5/P-6: InvalidTransitionError from writeMissionStatus", () =>
 		expect(err.to).toBe("paused");
 		expect(err.message).toContain("completed");
 		expect(err.message).toContain("paused");
+	});
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// parseFirstUnchecked — single source of truth for ROADMAP checkbox parsing
+// ────────────────────────────────────────────────────────────────────────────
+
+describe("F-08 / parseFirstUnchecked: shared ROADMAP checkbox parser", () => {
+	it("returns null for empty string", () => {
+		expect(parseFirstUnchecked("")).toBeNull();
+	});
+
+	it("returns null when all items are checked", () => {
+		const raw = "# Roadmap\n\n- [x] step 1\n- [x] step 2\n";
+		expect(parseFirstUnchecked(raw)).toBeNull();
+	});
+
+	it("returns first unchecked item with dash marker", () => {
+		const raw = "# Roadmap\n\n- [x] step 1\n- [ ] step 2\n- [ ] step 3\n";
+		const result = parseFirstUnchecked(raw);
+		expect(result).not.toBeNull();
+		expect(result.text).toBe("step 2");
+		expect(result.index).toBe(3);
+	});
+
+	it("returns first unchecked item with asterisk marker", () => {
+		const raw = "# Roadmap\n\n* [x] step 1\n* [ ] step 2\n";
+		const result = parseFirstUnchecked(raw);
+		expect(result).not.toBeNull();
+		expect(result.text).toBe("step 2");
+	});
+
+	it("skips non-checkbox lines", () => {
+		const raw = "# Roadmap\n\nSome text\n- Not a checkbox\n- [ ] real item\n";
+		const result = parseFirstUnchecked(raw);
+		expect(result).not.toBeNull();
+		expect(result.text).toBe("real item");
+	});
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// hasUncheckedRoadmapItems — async ROADMAP checker
+// ────────────────────────────────────────────────────────────────────────────
+
+describe("F-08 / hasUncheckedRoadmapItems: async ROADMAP checker", () => {
+	let baseDir;
+	beforeEach(() => {
+		baseDir = freshBaseDir();
+	});
+	afterEach(() => {
+		rmSync(baseDir, { recursive: true, force: true });
+	});
+
+	it("returns true when ROADMAP has unchecked items", async () => {
+		const missionDir = await initMission("unchecked-yes", { baseDir });
+		await writeRoadmap(missionDir, "# Roadmap\n\n- [x] done\n- [ ] todo\n");
+		expect(await hasUncheckedRoadmapItems(missionDir)).toBe(true);
+	});
+
+	it("returns false when all items are checked", async () => {
+		const missionDir = await initMission("unchecked-no", { baseDir });
+		await writeRoadmap(missionDir, "# Roadmap\n\n- [x] done 1\n- [x] done 2\n");
+		expect(await hasUncheckedRoadmapItems(missionDir)).toBe(false);
+	});
+
+	it("returns false when ROADMAP has no checklist items", async () => {
+		const missionDir = await initMission("unchecked-empty", { baseDir });
+		await writeRoadmap(missionDir, "# Roadmap\n\nNo items here.\n");
+		expect(await hasUncheckedRoadmapItems(missionDir)).toBe(false);
+	});
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// completed → active transition (reactivation)
+// ────────────────────────────────────────────────────────────────────────────
+
+describe("F-08 / canTransition: completed → active (reactivation)", () => {
+	it("completed → active is allowed", () => {
+		expect(canTransition("completed", "active")).toBe(true);
+	});
+
+	it("completed → paused is still forbidden", () => {
+		expect(canTransition("completed", "paused")).toBe(false);
+	});
+
+	it("completed → aborted is still forbidden", () => {
+		expect(canTransition("completed", "aborted")).toBe(false);
+	});
+
+	it("writeMissionStatus allows completed → active", async () => {
+		const baseDir = freshBaseDir();
+		const missionDir = await initMission("reactivate-test", { baseDir });
+		await writeMissionStatus(missionDir, "completed");
+		await expect(writeMissionStatus(missionDir, "active")).resolves.toBeUndefined();
+		const { frontmatter } = await readMission(missionDir);
+		expect(String(frontmatter.status)).toBe("active");
+		rmSync(baseDir, { recursive: true, force: true });
 	});
 });

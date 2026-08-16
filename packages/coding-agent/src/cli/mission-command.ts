@@ -78,6 +78,8 @@ interface FileStateManagerModule {
 	readState(missionDir: string): Promise<{ done: string[]; blockers: string[]; nextSteps: string[] }>;
 	writeMissionStatus(missionDir: string, newStatus: string): Promise<void>;
 	canTransition(from: string, to: string): boolean;
+	parseFirstUnchecked(raw: string): { index: number; text: string } | null;
+	hasUncheckedRoadmapItems(missionDir: string): Promise<boolean>;
 	InvalidTransitionError: typeof InvalidTransitionError;
 }
 
@@ -194,7 +196,8 @@ export async function missionInit(slug: string, opts?: { baseDir?: string; templ
  * Запустить миссию. Заглушка: реальный executor подключается через F-09
  * (этап 1). Сейчас — проверка наличия миссии и статуса active.
  * P-5: использует FSM-переходы; для aborted/failed/budget_exhausted
- * предлагает resume.
+ * предлагает resume. Completed миссия реактивируется при наличии
+ * unchecked-пунктов в ROADMAP.md.
  */
 export async function missionStart(missionDir?: string, ctx?: MissionContext): Promise<void> {
 	const fsm = await loadFileStateManager();
@@ -204,6 +207,21 @@ export async function missionStart(missionDir?: string, ctx?: MissionContext): P
 		const { frontmatter } = await fsm.readMission(dir);
 		console.log(`Mission ${frontmatter.mission_id} is active at ${dir}`);
 		console.log("(running fan session will attach the loop on restart; in-session: /mission:start)");
+		return;
+	}
+	// Completed mission: reactivate only if ROADMAP has unchecked items
+	if (status === "completed") {
+		const hasUnchecked = await fsm.hasUncheckedRoadmapItems(dir);
+		if (hasUnchecked) {
+			await fsm.writeMissionStatus(dir, "active");
+			console.log(`Mission reactivated — new unchecked items found at ${dir}`);
+			return;
+		}
+		const { frontmatter } = await fsm.readMission(dir);
+		const slug = frontmatter.mission_id ? String(frontmatter.mission_id) : dir;
+		console.log(
+			`Mission ${slug} is completed. Add new unchecked items to ROADMAP.md and run fan mission start, or create a new mission.`,
+		);
 		return;
 	}
 	// FSM allows transitioning to active from aborted, failed, budget_exhausted, paused.

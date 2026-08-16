@@ -25,6 +25,7 @@ import {
 	InvalidTransitionError,
 	MAX_STATE_BYTES,
 	type MissionState,
+	parseFirstUnchecked,
 	readBacklog,
 	readMission,
 	readRoadmap,
@@ -298,15 +299,6 @@ function clearAbortSignal(missionDir: string): void {
 }
 
 // ─── ROADMAP helpers ────────────────────────────────────────────────────────
-
-function parseFirstUnchecked(raw: string): { index: number; text: string } | null {
-	const lines = raw.split("\n");
-	for (let i = 0; i < lines.length; i++) {
-		const m = /^[-*] \[ \] (.+)$/.exec(lines[i].trim());
-		if (m) return { index: i, text: m[1] };
-	}
-	return null;
-}
 
 function markRoadmapDone(raw: string, lineIndex: number): string {
 	const lines = raw.split("\n");

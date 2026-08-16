@@ -8,7 +8,7 @@
 // вся маршрутизация тестируется на моках (test/slash-commands.test.mjs).
 
 import { basename } from "node:path";
-import { canTransition, readMission, writeMissionStatus } from "./file-state-manager.js";
+import { canTransition, hasUncheckedRoadmapItems, readMission, writeMissionStatus } from "./file-state-manager.js";
 import type { MissionLoop } from "./mission-loop.js";
 import { readMissionLoopState } from "./mission-loop.js";
 
@@ -104,7 +104,8 @@ function outputNoMissionFound(ctx: SlashCtx): void {
 
 /**
  * Lazy-attach для /mission:start. Нашёл миссию → при необходимости FSM-переход
- * в active (completed → отказ; невозможный переход → отказ) → attach.
+ * в active (completed → отказ или реактивация при unchecked-пунктах;
+ * невозможный переход → отказ) → attach.
  * Возвращает true, если loop аттачен и можно тикать.
  */
 async function lazyAttachForStart(ctx: SlashCtx): Promise<boolean> {
@@ -117,6 +118,13 @@ async function lazyAttachForStart(ctx: SlashCtx): Promise<boolean> {
 		return false;
 	}
 	if (found.status === "completed") {
+		const hasUnchecked = await hasUncheckedRoadmapItems(found.missionDir);
+		if (hasUnchecked) {
+			await resolveWriteStatus(ctx)(found.missionDir, "active");
+			ctx.attach(found.missionDir);
+			ctx.output("Mission reactivated — new unchecked items found.");
+			return true;
+		}
 		ctx.output(completedMissionHint(basename(found.missionDir)));
 		return false;
 	}
@@ -202,12 +210,21 @@ export function registerMissionSlashCommands(register: SlashCommandRegister, reg
 		handler: (_args, ctx = registrationCtx) =>
 			guarded(ctx.output, async () => {
 				// Lazy-attach: loop не аттачен — найти миссию и аттачить (сообщения внутри).
-				if (!ctx.missionLoop && !(await lazyAttachForStart(ctx))) {
-					return;
+				// Если lazyAttachForStart отработал — он уже вывел сообщение и (при
+				// реактивации) перевёл статус в active; терминальный чек ниже не нужен.
+				let justLazyAttached = false;
+				if (!ctx.missionLoop) {
+					if (!(await lazyAttachForStart(ctx))) {
+						return;
+					}
+					justLazyAttached = true;
 				}
 				// Терминальный статус → tick в mission-loop — silent no-op:
-				// явный фидбек вместо молчания (completed — с подсказкой ROADMAP/init).
-				if (ctx.missionLoop) {
+				// явный фидбек вместо молчания (completed — с подсказкой ROADMAP/init
+				// или реактивация при unchecked-пунктах).
+				// Пропускаем для только что аттаченного через lazyAttachForStart —
+				// он уже обработал реактивацию/подсказку.
+				if (ctx.missionLoop && !justLazyAttached) {
 					let status: string | null = null;
 					try {
 						status = String(await ctx.missionLoop.status());
@@ -215,6 +232,16 @@ export function registerMissionSlashCommands(register: SlashCommandRegister, reg
 						status = null; // статус не прочитался — tick разберётся сам
 					}
 					if (status && TERMINAL_STATUSES.has(status)) {
+						if (status === "completed" && ctx.missionDir) {
+							const hasUnchecked = await hasUncheckedRoadmapItems(ctx.missionDir);
+							if (hasUnchecked) {
+								const ws = resolveWriteStatus(ctx);
+								await ws(ctx.missionDir, "active");
+								ctx.output("Mission reactivated — new unchecked items found.");
+								await ctx.missionLoop.tick();
+								return;
+							}
+						}
 						ctx.output(`Mission is ${status} — tick skipped.`);
 						if (status === "completed") {
 							ctx.output(completedMissionHint(ctx.missionDir ? basename(ctx.missionDir) : "<slug>"));

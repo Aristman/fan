@@ -644,7 +644,23 @@ describe("F-11 / TC-F11-lazy: lazy-attach контура в запущенной
 		expect(text).toMatch(/resumed/i);
 	});
 
-	it("TC-F11-lazy-5: /mission:start без аттача, миссия completed → отказ, attach НЕ вызван", async () => {
+	it("TC-F11-lazy-5: /mission:start без аттача, миссия completed + unchecked → writeStatus(active) + attach + tick + reactivated message", async () => {
+		const ctx = makeLazyCtx("completed");
+		registerMissionSlashCommands(reg.register, ctx);
+		await reg.dispatch("/mission:start", ctx);
+
+		expect(ctx.writeStatusCalls).toEqual([{ dir: missionDir, status: "active" }]);
+		expect(ctx.attachCalls).toEqual([missionDir]);
+		expect(ctx.missionLoop).toBe(ctx.attachedLoop);
+		expect(ctx.missionDir).toBe(missionDir);
+		expect(ctx.attachedLoop._calls.tick.length).toBe(1);
+		const text = ctx.output.lines.join("\n");
+		expect(text).toContain("Mission reactivated — new unchecked items found.");
+	});
+
+	it("TC-F11-lazy-5b: /mission:start без аттача, миссия completed без unchecked → подсказка ROADMAP/init, attach НЕ вызван", async () => {
+		// ROADMAP with all items checked → no unchecked items
+		writeFileSync(join(missionDir, "ROADMAP.md"), "# Roadmap\n\n- [x] done item\n", "utf8");
 		const ctx = makeLazyCtx("completed");
 		registerMissionSlashCommands(reg.register, ctx);
 		await reg.dispatch("/mission:start", ctx);
@@ -777,7 +793,7 @@ describe("F-11 / TC-F11-terminal-ux: терминальный UX completed-ми�
 		expect(text).toContain("fan mission init");
 	});
 
-	it("TC-F11-term-3: /mission:start аттачен, миссия completed → 'tick skipped' + подсказка, tick НЕ вызван", async () => {
+	it("TC-F11-term-3: /mission:start аттачен, миссия completed без unchecked → 'tick skipped' + подсказка, tick НЕ вызван", async () => {
 		const loop = makeMockMissionLoop();
 		loop.status = async () => "completed";
 		const ctx = makeCtx({ missionLoop: loop, missionDir });
@@ -789,6 +805,58 @@ describe("F-11 / TC-F11-terminal-ux: терминальный UX completed-ми�
 		expect(text).toContain("Mission is completed — tick skipped.");
 		expect(text).toContain("ROADMAP.md");
 		expect(text).toContain("fan mission init");
+	});
+
+	it("TC-F11-term-3b: /mission:start аттачен, completed + unchecked → writeStatus(active) + tick + reactivated message", async () => {
+		writeFileSync(join(missionDir, "ROADMAP.md"), "# Roadmap\n\n- [x] done\n- [ ] new item\n", "utf8");
+		const loop = makeMockMissionLoop();
+		loop.status = async () => "completed";
+		const writeStatusCalls = [];
+		const ctx = makeCtx({
+			missionLoop: loop,
+			missionDir,
+			writeStatus: async (dir, status) => {
+				writeStatusCalls.push({ dir, status });
+			},
+		});
+		registerMissionSlashCommands(reg.register, ctx);
+		await reg.dispatch("/mission:start", ctx);
+
+		expect(writeStatusCalls).toEqual([{ dir: missionDir, status: "active" }]);
+		expect(loop._calls.tick.length).toBe(1);
+		const text = ctx.output.lines.join("\n");
+		expect(text).toContain("Mission reactivated — new unchecked items found.");
+	});
+
+	it("TC-F11-term-3c: /mission:start без аттача, completed + unchecked → writeStatus(active) + attach + tick", async () => {
+		writeFileSync(join(missionDir, "ROADMAP.md"), "# Roadmap\n\n- [x] done\n- [ ] new item\n", "utf8");
+		const attachCalls = [];
+		const writeStatusCalls = [];
+		const attachedLoop = makeMockMissionLoop();
+		attachedLoop.status = async () => "completed";
+		const ctx = makeCtx({
+			missionLoop: null,
+			missionDir: undefined,
+			cwd: baseDir,
+			findAttachableMission: async () => ({ missionDir, status: "completed" }),
+			attach: (dir) => {
+				attachCalls.push(dir);
+				ctx.missionLoop = attachedLoop;
+				ctx.missionDir = dir;
+				return attachedLoop;
+			},
+			writeStatus: async (dir, status) => {
+				writeStatusCalls.push({ dir, status });
+			},
+		});
+		registerMissionSlashCommands(reg.register, ctx);
+		await reg.dispatch("/mission:start", ctx);
+
+		expect(writeStatusCalls).toEqual([{ dir: missionDir, status: "active" }]);
+		expect(attachCalls).toEqual([missionDir]);
+		expect(attachedLoop._calls.tick.length).toBe(1);
+		const text = ctx.output.lines.join("\n");
+		expect(text).toContain("Mission reactivated — new unchecked items found.");
 	});
 
 	it("TC-F11-term-4: /mission:stop при completed → 'Mission already completed.', без исключений и FSM-записи", async () => {

@@ -51,8 +51,11 @@
 
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// Point the dynamic loader to the real extension source (monorepo dev).
+process.env.FAN_MISSION_DIR = resolve(import.meta.dirname ?? __dirname, "../../../../extensions/fan-mission");
 
 import {
 	handleMissionCommand,
@@ -629,16 +632,39 @@ describe("F-10 / P-5: missionStart переводит миссию в active п�
 		expect(allLog).toContain("started");
 	});
 
-	it("start из completed → InvalidTransitionError (completed терминальный)", async () => {
-		const missionDir = await missionInit("completed-test", { baseDir });
+	it("start из completed + unchecked ROADMAP → реактивация (active)", async () => {
+		const missionDir = await missionInit("completed-reactivate", { baseDir });
 		const missionPath = join(missionDir, "MISSION.md");
 		let raw = readFileSync(missionPath, "utf8");
 		raw = raw.replace(/^(status:\s*).*$/m, "$1completed");
 		writeFileSync(missionPath, raw, "utf8");
+		// Default ROADMAP has unchecked item → reactivation expected
 
-		await expect(missionStart(missionDir)).rejects.toBeInstanceOf(InvalidTransitionError);
+		const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+		await missionStart(missionDir);
+
+		const fm = readFrontmatter(readFileSync(missionPath, "utf8"));
+		expect(fm.status).toBe("active");
+		const allLog = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
+		expect(allLog).toContain("reactivated");
+	});
+
+	it("start из completed без unchecked → подсказка, статус остаётся completed", async () => {
+		const missionDir = await missionInit("completed-hint", { baseDir });
+		const missionPath = join(missionDir, "MISSION.md");
+		let raw = readFileSync(missionPath, "utf8");
+		raw = raw.replace(/^(status:\s*).*$/m, "$1completed");
+		writeFileSync(missionPath, raw, "utf8");
+		// Set ROADMAP with all items checked
+		writeFileSync(join(missionDir, "ROADMAP.md"), "# Roadmap\n\n- [x] done item\n", "utf8");
+
+		const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+		await missionStart(missionDir);
+
 		const fm = readFrontmatter(readFileSync(missionPath, "utf8"));
 		expect(fm.status).toBe("completed");
+		const allLog = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
+		expect(allLog).toMatch(/completed/i);
 	});
 
 	it("start из active → 'is active', writeMissionStatus НЕ вызвана", async () => {

@@ -591,12 +591,38 @@ export async function writeRoadmap(missionDir: string, content: string): Promise
 	atomicWriteFileSync(join(missionDir, "ROADMAP.md"), content);
 }
 
+// ─── ROADMAP helpers (shared with mission-loop) ─────────────────────────────
+
+/**
+ * Parse the first unchecked checkbox item from ROADMAP.md content.
+ * Returns { index, text } or null if all items are checked / no items found.
+ * Single source of truth — mission-loop imports this.
+ */
+export function parseFirstUnchecked(raw: string): { index: number; text: string } | null {
+	const lines = raw.split("\n");
+	for (let i = 0; i < lines.length; i++) {
+		const m = /^[-*] \[ \] (.+)$/.exec(lines[i].trim());
+		if (m) return { index: i, text: m[1] };
+	}
+	return null;
+}
+
+/**
+ * Check if the ROADMAP.md at `missionDir` contains at least one unchecked
+ * checkbox item (`- [ ] ...` or `* [ ] ...`).
+ * Used to decide whether a completed mission should be reactivated.
+ */
+export async function hasUncheckedRoadmapItems(missionDir: string): Promise<boolean> {
+	const raw = readFileSync(join(missionDir, "ROADMAP.md"), "utf8");
+	return parseFirstUnchecked(raw) !== null;
+}
+
 // ─── FSM: mission status transitions ────────────────────────────────────────
 
 const TRANSITIONS: Record<string, Set<string>> = {
 	active: new Set(["paused", "completed", "aborted", "failed", "budget_exhausted", "awaiting_decision"]),
 	paused: new Set(["active", "aborted"]),
-	completed: new Set(),
+	completed: new Set(["active"]),
 	aborted: new Set(["active"]),
 	failed: new Set(["active"]),
 	budget_exhausted: new Set(["active"]),
