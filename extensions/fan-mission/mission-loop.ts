@@ -50,7 +50,8 @@ export type MissionStatus =
 	| "aborted"
 	| "failed"
 	| "budget_exhausted"
-	| "awaiting_decision";
+	| "awaiting_decision"
+	| "busy";
 
 export interface IterationResult {
 	status: "COMPLETE" | "BLOCKED" | "DECIDE" | "FAILED";
@@ -168,6 +169,8 @@ interface LoopState {
 	pendingDecisionIdeaId?: string;
 	// F-22: number of ideas promoted in the last tick (for observability)
 	lastPromotedCount?: number;
+	// 0.7.2: consecutive empty planning iterations (backlog #32 cap)
+	emptyPlanningStreak?: number;
 }
 
 // ─── Loop state persistence (.mission-loop.json) ────────────────────────────
@@ -385,6 +388,35 @@ function isProcessAlive(pid: number): boolean {
  * Release: delete the lock file.
  */
 export function createFileLock(missionDir: string): MissionLock {
+	let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+
+	const stopHeartbeat = (): void => {
+		if (heartbeatInterval !== null) {
+			clearInterval(heartbeatInterval);
+			heartbeatInterval = null;
+		}
+	};
+
+	const startHeartbeat = (): void => {
+		stopHeartbeat();
+		const lockPath = join(missionDir, LOCK_FILE);
+		heartbeatInterval = setInterval(() => {
+			try {
+				writeFileSync(lockPath, JSON.stringify({ pid: process.pid, timestamp: Date.now() }), "utf8");
+			} catch {
+				// best-effort: if write fails, stale-takeover will kick in
+			}
+		}, 30_000);
+		// Don't keep the process alive just for the heartbeat
+		if (
+			typeof heartbeatInterval === "object" &&
+			heartbeatInterval !== null &&
+			typeof heartbeatInterval.unref === "function"
+		) {
+			heartbeatInterval.unref();
+		}
+	};
+
 	return {
 		async acquire(): Promise<boolean> {
 			const lockPath = join(missionDir, LOCK_FILE);
@@ -403,9 +435,11 @@ export function createFileLock(missionDir: string): MissionLock {
 				}
 			}
 			writeFileSync(lockPath, JSON.stringify({ pid: process.pid, timestamp: Date.now() }), "utf8");
+			startHeartbeat();
 			return true;
 		},
 		async release(): Promise<void> {
+			stopHeartbeat();
 			const lockPath = join(missionDir, LOCK_FILE);
 			try {
 				if (existsSync(lockPath)) unlinkSync(lockPath);
@@ -417,6 +451,14 @@ export function createFileLock(missionDir: string): MissionLock {
 }
 
 // ─── MissionLoop ────────────────────────────────────────────────────────────
+
+/** 0.7.2: infra-error patterns — these are runner noise, not mission blockers. */
+const INFRA_ERROR_PATTERNS: RegExp[] = [/^runAgent already in flight/, /^Lock is busy/, /^runAgent timeout/];
+
+/** Check if an error message matches infra-error patterns (runner noise). */
+export function isInfraError(message: string): boolean {
+	return INFRA_ERROR_PATTERNS.some((p) => p.test(message));
+}
 
 export class MissionLoop {
 	private missionDir: string;
@@ -444,6 +486,8 @@ export class MissionLoop {
 	private delegationTimeoutMs: number;
 	// F-48.5: cleanup pending-делегирования (отписка reply при abort/shutdown).
 	private pendingDelegationCleanup?: (() => void) | null;
+	// 0.7.2: in-memory reentrancy guard (defence-in-depth with file lock)
+	private tickRunning = false;
 
 	constructor(opts: {
 		missionDir: string;
@@ -484,9 +528,38 @@ export class MissionLoop {
 
 	// ── Public API ──────────────────────────────────────────────────────────
 
+	/**
+	 * 0.7.2: check if a tick is currently running (in-memory reentrancy guard).
+	 * Used by tick-bridge to skip ticks while the loop is busy.
+	 */
+	isTickRunning(): boolean {
+		return this.tickRunning;
+	}
+
 	async tick(): Promise<TickResult> {
+		// 0.7.2: in-memory reentrancy guard — if a tick is already running,
+		// return immediately without side effects (no journal, no STATE, no throw).
+		if (this.tickRunning) {
+			const loopState = await readMissionLoopState(this.missionDir);
+			return {
+				iteration: loopState.currentIteration,
+				steps: {
+					wake: false,
+					read: false,
+					decide: false,
+					iterate: false,
+					verify: false,
+					commit: false,
+					backlog: false,
+				},
+				status: "busy" as MissionStatus,
+			};
+		}
+		this.tickRunning = true;
+
 		const acquired = await this.lock.acquire();
 		if (!acquired) {
+			this.tickRunning = false;
 			throw new Error("Lock is busy — concurrent tick not allowed");
 		}
 
@@ -946,6 +1019,8 @@ export class MissionLoop {
 			// ── Step 7: Backlog ────────────────────────────────────────────
 			steps.backlog = true;
 			const now = await this.deps.clock.now();
+			// 0.7.2: infra errors (runner noise) are not written to BACKLOG
+			const infraSkip = isBlockOrFail && typeof iterResult.reason === "string" && isInfraError(iterResult.reason);
 			await this.appendBacklogEntry(loopState, now, currentIteration, {
 				text: nextItem.text,
 				isSuccess,
@@ -955,7 +1030,42 @@ export class MissionLoop {
 				budgetExhausted: budgetExceededPostHoc,
 				budgetUsed: loopState.budgetUsed,
 				budgetTokens,
+				...(infraSkip ? { skipBacklog: true } : {}),
 			});
+
+			// ── 0.7.2: Planning cap (backlog #32) ─────────────────────────
+			// Planning tick (index -1) that didn't add unchecked items → streak++.
+			// Streak >= 2 → enter awaiting_decision instead of infinite loop.
+			if (nextItem.index === -1) {
+				const freshRoadmapForCap = await readRoadmap(this.missionDir);
+				const hasUnchecked = /^[-*] \[ \] /m.test(freshRoadmapForCap);
+				if (!hasUnchecked) {
+					loopState.emptyPlanningStreak = (loopState.emptyPlanningStreak ?? 0) + 1;
+				} else {
+					loopState.emptyPlanningStreak = 0;
+				}
+				writeLoopStateSync(this.missionDir, loopState);
+				if (loopState.emptyPlanningStreak >= 2) {
+					loopState.emptyPlanningStreak = 0;
+					writeLoopStateSync(this.missionDir, loopState);
+					await this.enterAwaitingDecision(
+						loopState,
+						"Planning produced no new roadmap items twice — goal achieved? stop mission?",
+					);
+					return {
+						iteration: currentIteration,
+						steps,
+						status: "awaiting_decision",
+						item: currentItem,
+					};
+				}
+			} else {
+				// Non-planning tick → reset the streak
+				if ((loopState.emptyPlanningStreak ?? 0) > 0) {
+					loopState.emptyPlanningStreak = 0;
+					writeLoopStateSync(this.missionDir, loopState);
+				}
+			}
 
 			// ── Finalise ───────────────────────────────────────────────────
 			loopState.lastStep = 7;
@@ -990,6 +1100,7 @@ export class MissionLoop {
 			}
 			throw err;
 		} finally {
+			this.tickRunning = false;
 			await this.lock.release();
 		}
 	}
@@ -1510,7 +1621,13 @@ export class MissionLoop {
 			shouldGitCommit = true;
 		} else if (isBlockOrFail) {
 			const reason = iterResult.reason || "Blocker detected";
-			newBlockers.push(reason);
+			// 0.7.2: infra errors (runner noise) are NOT written to STATE.md blockers
+			if (!isInfraError(reason)) {
+				// 0.7.2: dedup — don't add identical blocker if it's the last entry
+				if (newBlockers.length === 0 || newBlockers[newBlockers.length - 1] !== reason) {
+					newBlockers.push(reason);
+				}
+			}
 		} else if (budgetExceeded) {
 			newBlockers.push(
 				`Budget exhausted: used ${loopState.budgetUsed.tokens} tokens / $${loopState.budgetUsed.usd.toFixed(2)}`,
@@ -1580,8 +1697,15 @@ export class MissionLoop {
 			budgetExhausted?: boolean;
 			budgetUsed?: { tokens: number; usd: number };
 			budgetTokens?: number;
+			/** 0.7.2: if true, skip writing to BACKLOG (infra error) */
+			skipBacklog?: boolean;
 		},
 	): Promise<void> {
+		// 0.7.2: infra errors are runner noise — skip BACKLOG entry entirely
+		if (opts.skipBacklog) {
+			return;
+		}
+
 		const { appendBacklog } = await import("./file-state-manager.js");
 
 		let idea: string;

@@ -10,7 +10,9 @@
 //   2. Dedupe — повторная доставка того же tickId игнорируется.
 //   3. Нет активного loop → игнор (+ log).
 //   4. Чужой missionDir (задан в событии и не совпадает с текущим) → игнор.
-//   5. tick() вызывается DETACHED: "Lock is busy" — штатная ситуация (log),
+//   5. 0.7.2: busy-guard — isTickRunning() === true → тихий skip (in-memory
+//      reentrancy guard; тикер не пингует работающий контур).
+//   6. tick() вызывается DETACHED: "Lock is busy" — штатная ситуация (log),
 //      прочие ошибки — console.error. Handler возвращает undefined сразу.
 
 import type { MissionLoop } from "./mission-loop.js";
@@ -79,7 +81,16 @@ export function createMissionTickHandler(deps: TickBridgeDeps): TickBridgeHandle
 			return;
 		}
 
-		// 5. Detached tick: handler не ждёт завершения и всегда возвращает void.
+		// 5. 0.7.2: busy-guard — in-memory reentrancy (тик уже выполняется).
+		// Тикер не пингует работающий контур; тихий skip без вызова tick().
+		if (typeof (loop as unknown as { isTickRunning?: () => boolean }).isTickRunning === "function") {
+			if ((loop as unknown as { isTickRunning: () => boolean }).isTickRunning()) {
+				log("[fan-mission] tick-bridge: tick skipped — loop is busy (isTickRunning)");
+				return;
+			}
+		}
+
+		// 6. Detached tick: handler не ждёт завершения и всегда возвращает void.
 		void loop.tick().catch((err: unknown) => {
 			const message = err instanceof Error ? err.message : String(err);
 			if (message.includes("Lock is busy")) {

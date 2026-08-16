@@ -259,9 +259,10 @@ describe("mission-loop planning (0.7.0): сохранение правок ROADM
 		expect(result1.item).toBe(PLANNING_ITEM_TEXT);
 		expect(deps.commits.length).toBe(0);
 
-		// Второй тик: снова planning, ничего не меняется — цикл не падает
+		// Второй тик: снова planning, ничего не меняется — 0.7.2: planning-cap
+		// (2 пустых planning-итерации подряд → awaiting_decision, закрытие бэклога #32)
 		const result2 = await loop.tick();
-		expect(result2.status).toBe("active");
+		expect(result2.status).toBe("awaiting_decision");
 		expect(deps.executor.calls.length).toBe(2);
 		expect(deps.commits.length).toBe(0);
 	});

@@ -596,8 +596,11 @@ describe("F-09 / TC-F09-6: lock предотвращает двойной кон
 
 		const loop = new MissionLoop({ missionDir, deps });
 		const t1 = loop.tick();
-		// Пока t1 не завершён — lock занят, второй tick должен отказаться
-		await expect(loop.tick()).rejects.toThrow(/lock|busy|concurrent/);
+		// 0.7.2: in-memory reentrancy guard — второй tick возвращает {status: "busy"}
+		// без попытки acquire lock (защита от DDOS тикера по работающему контуру).
+		const busyResult = await loop.tick();
+		expect(busyResult.status).toBe("busy");
+		expect(busyResult.steps.iterate).toBe(false);
 
 		// Дожидаемся, пока первый tick реально войдёт в executor (шаг 4):
 		// сборка промпта (prompt-builder) асинхронна, поэтому вызов executor
