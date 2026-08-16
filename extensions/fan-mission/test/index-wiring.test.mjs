@@ -827,3 +827,117 @@ describe("F-MISSION-INDEX / TC-10: lazy-attach в запущенной сесс�
 		expect(String(mission.frontmatter.status)).toBe("completed");
 	});
 });
+
+// ────────────────────────────────────────────────────────────────────────────
+// TC-11: батчинг вывода slash-команд (0.6.2) — обёртка registerCommand собирает
+// строки output() в буфер и делает ОДИН ctx.ui.notify (TUI showStatus заменяет
+// предыдущий статус, построчный notify потерял бы все строки, кроме последней).
+// Без UI — fallback построчно в console.log (прежнее поведение, TC-10 зелёные).
+// ────────────────────────────────────────────────────────────────────────────
+
+describe("F-MISSION-INDEX / TC-11: батчинг вывода в ctx.ui.notify", () => {
+	it("TC-11a: handler с cmdCtx.ui.notify → ОДИН notify со склеенным текстом, console.log НЕ вызван", async () => {
+		const fan = makeMockFan();
+		const handle = factory(fan);
+		liveWirings.push(handle);
+
+		// Команда без миссии: /mission:stop без аттача выводит ровно 1 строку,
+		// /mission:status — "No active mission". Берём stop (детерминированно).
+		const stopCmd = fan._commands.get("mission:stop");
+		expect(stopCmd).toBeDefined();
+
+		const notify = vi.fn();
+		const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+		let logCalls;
+		try {
+			await stopCmd.handler("", { ui: { notify } });
+			logCalls = [...logSpy.mock.calls]; // снять ДО mockRestore (он чистит mock.calls)
+		} finally {
+			logSpy.mockRestore();
+		}
+
+		expect(notify).toHaveBeenCalledTimes(1);
+		expect(notify).toHaveBeenCalledWith("No active mission to stop — nothing attached.", "info");
+		expect(logCalls).toHaveLength(0);
+	});
+
+	it("TC-11b: многострочный вывод склеивается в один notify (батчинг, не построчно)", async () => {
+		const { baseDir, missionDir } = await makeTempMission("notify-batch");
+		liveTempDirs.push(baseDir);
+		await writeMissionStatus(missionDir, "completed");
+
+		const fan = makeMockFan();
+		const handle = factory(fan);
+		liveWirings.push(handle);
+
+		// session_start: completed — терминальный для auto-attach → НЕ аттачится.
+		await fan._emit("session_start", { type: "session_start", cwd: baseDir }, { cwd: baseDir });
+
+		// /mission:start на completed → 1 строка-подсказка (без attach). Для
+		// многострочного кейса используем status: lazy-attach read-only + 4 строки.
+		const statusCmd = fan._commands.get("mission:status");
+		const notify = vi.fn();
+		const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+		let logCalls;
+		try {
+			await statusCmd.handler("", { ui: { notify } });
+			logCalls = [...logSpy.mock.calls];
+		} finally {
+			logSpy.mockRestore();
+		}
+
+		expect(notify).toHaveBeenCalledTimes(1);
+		const [text, type] = notify.mock.calls[0];
+		expect(type).toBe("info");
+		// 4 строки статуса склеены переводами строк в ОДНО сообщение.
+		expect(text.split("\n").length).toBeGreaterThanOrEqual(3);
+		expect(text).toMatch(/status/i);
+		expect(text).toMatch(/completed/);
+		expect(logCalls).toHaveLength(0);
+	});
+
+	it("TC-11c: строка 'Error: ...' в выводе → notify с типом 'error'", async () => {
+		const fan = makeMockFan();
+		const handle = factory(fan);
+		liveWirings.push(handle);
+
+		// /mission:steer без аргумента — детерминированная usage-ошибка,
+		// не требует миссии: 'Error: usage /mission:steer "<message>"'.
+		const steerCmd = fan._commands.get("mission:steer");
+		expect(steerCmd).toBeDefined();
+
+		const notify = vi.fn();
+		const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+		let logCalls;
+		try {
+			await steerCmd.handler("", { ui: { notify } });
+			logCalls = [...logSpy.mock.calls];
+		} finally {
+			logSpy.mockRestore();
+		}
+
+		expect(notify).toHaveBeenCalledTimes(1);
+		const [text, type] = notify.mock.calls[0];
+		expect(type).toBe("error");
+		expect(text).toContain("Error: usage /mission:steer");
+		expect(logCalls).toHaveLength(0);
+	});
+
+	it("TC-11d: без cmdCtx (fallback) — построчный console.log, notify не вызывается", async () => {
+		const fan = makeMockFan();
+		const handle = factory(fan);
+		liveWirings.push(handle);
+
+		const stopCmd = fan._commands.get("mission:stop");
+		const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+		let logCalls;
+		try {
+			await stopCmd.handler("");
+			logCalls = [...logSpy.mock.calls]; // снять ДО mockRestore (он чистит mock.calls)
+		} finally {
+			logSpy.mockRestore();
+		}
+
+		expect(logCalls).toEqual([["No active mission to stop — nothing attached."]]);
+	});
+});

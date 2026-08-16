@@ -211,7 +211,8 @@ export default function missionExtension(fan: ExtensionAPI): MissionWiring {
 				}
 			},
 		},
-		// TODO: вывод в TUI-командную область; console.log — минимальный fallback.
+		// Дефолтный вывод вне обёртки registerCommand (прямые вызовы из тестов,
+		// служебные пути). В TUI обёртка ниже батчит строки в ctx.ui.notify.
 		output: (line) => {
 			console.log(line);
 		},
@@ -289,8 +290,36 @@ export default function missionExtension(fan: ExtensionAPI): MissionWiring {
 	registerMissionSlashCommands((name, def) => {
 		fan.registerCommand(name, {
 			description: def.description,
-			handler: async (args) => {
-				await def.handler(args, slashCtx);
+			handler: async (args, cmdCtx) => {
+				// Батчинг вывода (0.6.2): output() собирает строки в буфер, после
+				// handler — ОДИН ctx.ui.notify. TUI showStatus ЗАМЕНЯЕТ предыдущий
+				// status-текст, поэтому построчный notify потерял бы всё, кроме
+				// последней строки (/mission:status выводит 4 строки).
+				// output мутируется в slashCtx (НЕ копия): команды читают
+				// missionLoop/missionDir, обновляемые attach() внутри handler.
+				const lines: string[] = [];
+				const prevOutput = slashCtx.output;
+				slashCtx.output = (line) => {
+					lines.push(line);
+				};
+				try {
+					await def.handler(args, slashCtx);
+				} finally {
+					slashCtx.output = prevOutput;
+				}
+				if (lines.length === 0) {
+					return;
+				}
+				const notify = cmdCtx?.ui?.notify;
+				if (typeof notify === "function") {
+					const type = lines.some((line) => line.startsWith("Error:")) ? "error" : "info";
+					notify.call(cmdCtx.ui, lines.join("\n"), type);
+				} else {
+					// Fallback без UI (тесты, RPC): построчно в консоль.
+					for (const line of lines) {
+						console.log(line);
+					}
+				}
 			},
 		});
 	}, slashCtx);

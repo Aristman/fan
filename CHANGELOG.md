@@ -4,6 +4,20 @@
 
 ### Fixed
 
+- **Вывод slash-команд `/mission:*` рендерился в строку ввода TUI.**
+  `slashCtx.output` в fan-mission был `console.log` (TODO fallback) — вывод
+  команд печатался в область редактора вместо диалога. Обёртка
+  `fan.registerCommand` (extensions/fan-mission/index.ts) теперь батчит строки
+  `output()` в буфер и после handler делает ОДИН `ctx.ui.notify` (TUI
+  `showStatus` ЗАМЕНЯЕТ предыдущий status-текст, поэтому построчный notify
+  потерял бы все строки, кроме последней — `/mission:status` выводит 4
+  строки). Тип уведомления — `error`, если хотя бы одна строка начинается с
+  `Error:`, иначе `info` (серое служебное сообщение в диалоге). Без UI
+  (тесты, RPC) — прежний fallback построчно в `console.log`. Контракт
+  `SlashCtx.output` не изменён (slash-commands.test.mjs мокирует его напрямую).
+  Тесты — блок `TC-11` в `index-wiring.test.mjs`.
+  fan-mission 0.6.1 → 0.6.2.
+
 - **lazy-attach: `/mission:start|resume|status` подхватывают контур в запущенной сессии без рестарта fan.**
   Миссионный контур аттачился только в `session_start`: если миссию остановили
   (`status: aborted`) или она стала active после старта сессии (через CLI
