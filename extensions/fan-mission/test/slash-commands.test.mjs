@@ -45,7 +45,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { initMission } from "../file-state-manager.js";
+import { initMission, writeMissionStatus } from "../file-state-manager.js";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Импорт модуля, который ещё не существует → ERR_MODULE_NOT_FOUND.
@@ -700,6 +700,122 @@ describe("F-11 / TC-F11-lazy: lazy-attach контура в запущенной
 		expect(scanCalls).toBe(0);
 		expect(ctx.attachCalls.length).toBe(0);
 		expect(existingLoop._calls.tick.length).toBe(1);
+	});
+});
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Терминальный UX (0.6.1): completed-миссия больше не молчит — status показывает
+// реальный статус (read-only attach любого статуса), start даёт подсказку
+// ROADMAP/init, stop сообщает "already <status>" вместо InvalidTransitionError.
+// ────────────────────────────────────────────────────────────────────────────────
+
+describe("F-11 / TC-F11-terminal-ux: терминальный UX completed-миссии (0.6.1)", () => {
+	let baseDir;
+	let missionDir;
+	let reg;
+
+	beforeEach(async () => {
+		baseDir = freshBaseDir();
+		missionDir = await initMission("terminal-mission", { baseDir });
+		writeRoadmap(missionDir, ["# Roadmap", "", "- [x] done item", ""]);
+		reg = makeMockRegister();
+	});
+
+	afterEach(() => {
+		rmSync(baseDir, { recursive: true, force: true });
+	});
+
+	/** ctx БЕЗ аттача со scan-ом, находящим миссию со статусом foundStatus. */
+	function makeScanCtx(foundStatus) {
+		const attachCalls = [];
+		const attachedLoop = makeMockMissionLoop();
+		attachedLoop.status = async () => foundStatus;
+		const ctx = makeCtx({
+			missionLoop: null,
+			missionDir: undefined,
+			cwd: baseDir,
+			findAttachableMission: async () => ({ missionDir, status: foundStatus }),
+			attach: (dir) => {
+				attachCalls.push(dir);
+				ctx.missionLoop = attachedLoop;
+				ctx.missionDir = dir;
+				return attachedLoop;
+			},
+		});
+		ctx.attachCalls = attachCalls;
+		ctx.attachedLoop = attachedLoop;
+		return ctx;
+	}
+
+	it("TC-F11-term-1: /mission:status без аттача, миссия completed → attach (read-only) + статус показан", async () => {
+		const ctx = makeScanCtx("completed");
+		registerMissionSlashCommands(reg.register, ctx);
+		await reg.dispatch("/mission:status", ctx);
+
+		expect(ctx.attachCalls).toEqual([missionDir]);
+		expect(ctx.missionLoop).toBe(ctx.attachedLoop);
+		const text = ctx.output.lines.join("\n");
+		expect(text).toMatch(/status/i);
+		expect(text).toMatch(/completed/);
+		// read-only: MISSION.md не изменён (статус остался active от initMission)
+		const raw = readFileSync(join(missionDir, "MISSION.md"), "utf8");
+		expect(raw).toMatch(/status:\s*active/);
+	});
+
+	it("TC-F11-term-2: /mission:start без аттача, completed → подсказка ROADMAP/init, attach НЕ вызван", async () => {
+		const ctx = makeScanCtx("completed");
+		registerMissionSlashCommands(reg.register, ctx);
+		await reg.dispatch("/mission:start", ctx);
+
+		expect(ctx.attachCalls.length).toBe(0);
+		expect(ctx.missionLoop).toBeNull();
+		const text = ctx.output.lines.join("\n");
+		expect(text).toContain("terminal-mission"); // slug миссии
+		expect(text).toMatch(/completed/i);
+		expect(text).toContain("ROADMAP.md");
+		expect(text).toContain("/mission:start");
+		expect(text).toContain("fan mission init");
+	});
+
+	it("TC-F11-term-3: /mission:start аттачен, миссия completed → 'tick skipped' + подсказка, tick НЕ вызван", async () => {
+		const loop = makeMockMissionLoop();
+		loop.status = async () => "completed";
+		const ctx = makeCtx({ missionLoop: loop, missionDir });
+		registerMissionSlashCommands(reg.register, ctx);
+		await reg.dispatch("/mission:start", ctx);
+
+		expect(loop._calls.tick.length).toBe(0);
+		const text = ctx.output.lines.join("\n");
+		expect(text).toContain("Mission is completed — tick skipped.");
+		expect(text).toContain("ROADMAP.md");
+		expect(text).toContain("fan mission init");
+	});
+
+	it("TC-F11-term-4: /mission:stop при completed → 'Mission already completed.', без исключений и FSM-записи", async () => {
+		await writeMissionStatus(missionDir, "completed");
+		const loop = makeMockMissionLoop();
+		loop.status = async () => "completed";
+		const ctx = makeCtx({ missionLoop: loop, missionDir });
+		registerMissionSlashCommands(reg.register, ctx);
+		await expect(reg.dispatch("/mission:stop", ctx)).resolves.toBeUndefined();
+
+		const text = ctx.output.lines.join("\n");
+		expect(text).toContain("Mission already completed.");
+		expect(text).not.toMatch(/Invalid status transition/);
+		// статус не изменился (FSM completed терминальный)
+		const raw = readFileSync(join(missionDir, "MISSION.md"), "utf8");
+		expect(raw).toMatch(/status:\s*completed/);
+	});
+
+	it("TC-F11-term-5: /mission:stop при active → явный фидбек 'Mission stopped (status: aborted).'", async () => {
+		const ctx = makeCtx({ missionDir });
+		registerMissionSlashCommands(reg.register, ctx);
+		await reg.dispatch("/mission:stop", ctx);
+
+		const text = ctx.output.lines.join("\n");
+		expect(text).toContain("Mission stopped (status: aborted).");
+		const raw = readFileSync(join(missionDir, "MISSION.md"), "utf8");
+		expect(raw).toMatch(/status:\s*aborted/);
 	});
 });
 

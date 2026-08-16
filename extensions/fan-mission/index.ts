@@ -139,12 +139,13 @@ export function wireMission(fan: ExtensionAPI, opts?: MissionWireOptions): Missi
  * Никаких файлов не создаёт.
  *
  * - session_start: accept = не-терминальные статусы (active/paused/awaiting_decision);
- * - lazy-attach (/mission:start|resume|status): дефолтный accept — любой статус
- *   кроме completed (команды start/resume сами делают переход в active).
+ * - lazy-attach (/mission:start|resume|status): дефолтный accept — ЛЮБОЙ статус,
+ *   включая completed (скан находит любую миссию; политика переходов/attach —
+ *   на уровне обработчиков команд).
  */
 export async function findAttachableMission(
 	cwd: string,
-	accept: (status: string) => boolean = (status) => status !== "completed",
+	accept: (status: string) => boolean = () => true,
 ): Promise<{ missionDir: string; status: string } | null> {
 	const missionsRoot = join(cwd, "docs", "missions");
 	if (!existsSync(missionsRoot)) {
@@ -225,8 +226,9 @@ export default function missionExtension(fan: ExtensionAPI): MissionWiring {
 
 	// Lazy-attach (0.6.0): /mission:start|resume|status подхватывают контур
 	// в запущенной сессии, если session_start его не аттачил (миссию остановили
-	// или активировали через CLI после старта fan). Скан берёт любой статус
-	// кроме completed — FSM-переход в active делают сами команды. ТИКЕТ-14 мост
+	// или активировали через CLI после старта fan). Скан берёт ЛЮБОЙ статус
+	// (включая completed — чтобы команды могли дать явный фидбек вместо
+	// "No mission found"); FSM-переход в active делают сами команды. ТИКЕТ-14 мост
 	// (scheduler → tick) и виджет f9 подхватываются автоматически: они читают
 	// loop из wiring/slashCtx через замыкания, обновлённые в attach().
 	slashCtx.findAttachableMission = () => findAttachableMission(slashCtx.cwd ?? process.cwd());

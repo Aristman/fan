@@ -7,6 +7,7 @@
 // DI-колбэк `register` (в проде это тонкая обёртка над fan.registerCommand),
 // вся маршрутизация тестируется на моках (test/slash-commands.test.mjs).
 
+import { basename } from "node:path";
 import { canTransition, readMission, writeMissionStatus } from "./file-state-manager.js";
 import type { MissionLoop } from "./mission-loop.js";
 import { readMissionLoopState } from "./mission-loop.js";
@@ -38,7 +39,7 @@ export interface SlashCtx {
 	// прежнее поведение (start — no-op, status — "No active mission").
 	/** cwd сессии — для скана миссий и сообщения "No mission found in <cwd>". */
 	cwd?: string;
-	/** Скан <cwd>/docs/missions: первая аттачабельная миссия (любой статус кроме completed). */
+	/** Скан <cwd>/docs/missions: первая миссия с ЛЮБЫМ статусом (включая completed). */
 	findAttachableMission?: () => Promise<{ missionDir: string; status: string } | null>;
 	/** Аттач контура: создаёт MissionLoop и обновляет ctx.missionLoop/missionDir. */
 	attach?: (missionDir: string) => MissionLoop;
@@ -82,6 +83,14 @@ function guarded(output: (line: string) => void, body: () => Promise<void>): Pro
 // (ctx.findAttachableMission) и аттачат её (ctx.attach) без рестарта fan.
 // stop/pause/steer/decide по-прежнему требуют аттаченный loop.
 
+/** Терминальные статусы FSM: tick/stop по ним — no-op, нужен явный фидбек. */
+const TERMINAL_STATUSES = new Set(["completed", "failed", "aborted", "budget_exhausted"]);
+
+/** Подсказка для completed-миссии: добавить пункты в ROADMAP или создать новую. */
+function completedMissionHint(slug: string): string {
+	return `Mission ${slug} is completed. Add new unchecked items to ROADMAP.md and run /mission:start, or create a new mission: fan mission init <new-slug>.`;
+}
+
 /** Разрешить функцию записи статуса: DI-override либо реальный writeMissionStatus. */
 function resolveWriteStatus(ctx: SlashCtx): (missionDir: string, status: string) => Promise<void> {
 	return ctx.writeStatus ?? writeMissionStatus;
@@ -108,7 +117,7 @@ async function lazyAttachForStart(ctx: SlashCtx): Promise<boolean> {
 		return false;
 	}
 	if (found.status === "completed") {
-		ctx.output("Mission is completed — run `fan mission init <slug>` to start a new one");
+		ctx.output(completedMissionHint(basename(found.missionDir)));
 		return false;
 	}
 	if (found.status !== "active") {
@@ -148,15 +157,16 @@ async function lazyAttachForResume(ctx: SlashCtx): Promise<boolean> {
 
 /**
  * Lazy-attach для /mission:status (read-only, безопасно): аттачит первую
- * не-completed миссию, чтобы показать её статус. Ничего не найдено (либо
- * только completed) → без аттача, команда выведет "No active mission".
+ * найденную миссию ЛЮБОГО статуса (включая completed), чтобы показать её
+ * реальный статус. Ничего не найдено → без аттача, команда выведет
+ * "No active mission".
  */
 async function lazyAttachForStatus(ctx: SlashCtx): Promise<void> {
 	if (!ctx.findAttachableMission || !ctx.attach) {
 		return;
 	}
 	const found = await ctx.findAttachableMission();
-	if (!found || found.status === "completed") {
+	if (!found) {
 		return;
 	}
 	ctx.attach(found.missionDir);
@@ -195,6 +205,23 @@ export function registerMissionSlashCommands(register: SlashCommandRegister, reg
 				if (!ctx.missionLoop && !(await lazyAttachForStart(ctx))) {
 					return;
 				}
+				// Терминальный статус → tick в mission-loop — silent no-op:
+				// явный фидбек вместо молчания (completed — с подсказкой ROADMAP/init).
+				if (ctx.missionLoop) {
+					let status: string | null = null;
+					try {
+						status = String(await ctx.missionLoop.status());
+					} catch {
+						status = null; // статус не прочитался — tick разберётся сам
+					}
+					if (status && TERMINAL_STATUSES.has(status)) {
+						ctx.output(`Mission is ${status} — tick skipped.`);
+						if (status === "completed") {
+							ctx.output(completedMissionHint(ctx.missionDir ? basename(ctx.missionDir) : "<slug>"));
+						}
+						return;
+					}
+				}
 				await ctx.missionLoop?.tick();
 			}),
 	});
@@ -203,9 +230,29 @@ export function registerMissionSlashCommands(register: SlashCommandRegister, reg
 		description: "Stop the mission immediately (I0 abort)",
 		handler: (_args, ctx = registrationCtx) =>
 			guarded(ctx.output, async () => {
+				// Терминальный статус → FSM-переход в aborted невозможен: явный
+				// фидбек вместо InvalidTransitionError или молчания.
+				if (ctx.missionDir) {
+					let current: string | null = null;
+					try {
+						const mission = await readMission(ctx.missionDir);
+						current = String(mission.frontmatter.status);
+					} catch {
+						current = null; // MISSION.md не прочитался — обычный путь
+					}
+					if (current && TERMINAL_STATUSES.has(current)) {
+						ctx.output(`Mission already ${current}.`);
+						return;
+					}
+				}
 				await ctx.actions.abort();
 				if (ctx.missionLoop) await ctx.missionLoop.abort();
-				if (ctx.missionDir) await writeMissionStatus(ctx.missionDir, "aborted");
+				if (ctx.missionDir) {
+					await writeMissionStatus(ctx.missionDir, "aborted");
+					ctx.output("Mission stopped (status: aborted).");
+				} else {
+					ctx.output("No active mission to stop — nothing attached.");
+				}
 			}),
 	});
 
@@ -237,7 +284,8 @@ export function registerMissionSlashCommands(register: SlashCommandRegister, reg
 		handler: (_args, ctx = registrationCtx) =>
 			guarded(ctx.output, async () => {
 				// Lazy-attach (read-only, безопасно): loop не аттачен — попробовать
-				// найти и аттачить не-completed миссию, чтобы показать её статус.
+				// найти и аттачить миссию любого статуса (включая completed),
+				// чтобы показать её реальный статус.
 				if (!ctx.missionLoop) {
 					await lazyAttachForStatus(ctx);
 				}

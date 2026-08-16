@@ -753,7 +753,7 @@ describe("F-MISSION-INDEX / TC-10: lazy-attach в запущенной сесс�
 		expect(text).toContain("fan mission init");
 	});
 
-	it("TC-10d: findAttachableMission — пустой cwd → null; aborted находит; completed пропускает", async () => {
+	it("TC-10d: findAttachableMission — пустой cwd → null; aborted находит; completed находит (0.6.1)", async () => {
 		expect(typeof findAttachableMission).toBe("function");
 
 		const emptyDir = makeEmptyTempDir();
@@ -775,13 +775,55 @@ describe("F-MISSION-INDEX / TC-10: lazy-attach в запущенной сесс�
 		expect(found).not.toBeNull();
 		expect(found.status).toBe("aborted");
 
-		// completed — дефолтный accept пропускает (аттачить нечего)
+		// completed — дефолтный accept (0.6.1) НАХОДИТ: скан видит ЛЮБУЮ миссию,
+		// политика переходов/attach — на уровне обработчиков команд
 		await writeMissionStatus(missionDir, "active");
 		await writeMissionStatus(missionDir, "completed");
-		expect(await findAttachableMission(baseDir)).toBeNull();
+		found = await findAttachableMission(baseDir);
+		expect(found).not.toBeNull();
+		expect(found.status).toBe("completed");
 
-		// фильтр session_start (не-терминальные) — completed тоже не проходит
+		// фильтр session_start (не-терминальные) — completed не проходит
 		const nonTerminal = (s) => ["active", "paused", "awaiting_decision"].includes(s);
 		expect(await findAttachableMission(baseDir, nonTerminal)).toBeNull();
+	});
+
+	it("TC-10e: session_start на completed-миссии → НЕ аттачится (регрессия TC-10b); status — read-only attach", async () => {
+		const { baseDir, missionDir } = await makeTempMission("completed-start");
+		liveTempDirs.push(baseDir);
+		await writeMissionStatus(missionDir, "completed");
+
+		const fan = makeMockFan();
+		const handle = factory(fan);
+		liveWirings.push(handle);
+
+		// session_start: completed — терминальный для auto-attach → loop НЕ создан.
+		await fan._emit(
+			"session_start",
+			{ type: "session_start", cwd: baseDir },
+			{ cwd: baseDir, hasUI: true, ui: {} },
+		);
+		expect(handle.getMissionLoop()).toBeNull();
+
+		// /mission:status: lazy-attach read-only для completed → реальный статус показан.
+		const statusCmd = fan._commands.get("mission:status");
+		expect(statusCmd).toBeDefined();
+		const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+		let statusCalls;
+		try {
+			await statusCmd.handler("");
+			statusCalls = [...logSpy.mock.calls];
+		} finally {
+			logSpy.mockRestore();
+		}
+
+		expect(handle.getMissionLoop()).not.toBeNull();
+		const text = statusCalls.map((c) => c.join(" ")).join("\n");
+		expect(text).toMatch(/status/i);
+		expect(text).toMatch(/completed/);
+
+		// read-only: статус миссии не изменился.
+		const mission = await readMission(missionDir);
+		expect(String(mission.frontmatter.status)).toBe("completed");
 	});
 });

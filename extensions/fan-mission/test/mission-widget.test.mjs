@@ -342,21 +342,22 @@ describe("F-12 / TC-F12-2: виджет авто-скрыт при отсутс�
 		ctx = widgetCtx;
 	}
 
-	it("TC-F12-2: F9 при статус 'completed' → render([]) (auto-hide)", async () => {
-		setupNoActive({ getStatusSnapshot: vi.fn(async () => makeSnapshot({ status: "completed" })) });
+	it("TC-F12-2: F9 при статус 'completed' → строка статуса 'завершена' (0.6.1: терминальный UX, не молчание)", async () => {
+		setupNoActive({ getStatusSnapshot: vi.fn(async () => makeSnapshot({ status: "completed", iteration: 7 })) });
 		const handler = ctx._registerShortcut.shortcuts.get("f9").handler;
 		await handler(ctx.ui);
 		expect(ctx._ui.calls.render.length).toBeGreaterThan(0);
-		const last = ctx._ui.calls.render.at(-1);
-		expect(last).toEqual([]);
+		const text = flatten(ctx._ui.calls.render.at(-1));
+		expect(text).toMatch(/завершена/);
+		expect(text).toMatch(/7/); // iteration
 	});
 
-	it("TC-F12-2: F9 при статус 'aborted' → render([]) (auto-hide)", async () => {
+	it("TC-F12-2: F9 при статус 'aborted' → строка статуса 'aborted' (0.6.1)", async () => {
 		setupNoActive({ getStatusSnapshot: vi.fn(async () => makeSnapshot({ status: "aborted" })) });
 		const handler = ctx._registerShortcut.shortcuts.get("f9").handler;
 		await handler(ctx.ui);
-		const last = ctx._ui.calls.render.at(-1);
-		expect(last).toEqual([]);
+		const text = flatten(ctx._ui.calls.render.at(-1));
+		expect(text).toMatch(/aborted/);
 	});
 
 	it("TC-F12-2: render не содержит '● активна' при paused/aborted/completed", async () => {

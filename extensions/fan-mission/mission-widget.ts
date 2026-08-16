@@ -81,9 +81,6 @@ function renderLines(snapshot: MissionStatusSnapshot, iterationOverride?: number
 	];
 }
 
-/** Терминальные статусы, при которых виджет полностью скрыт. */
-const TERMINAL_STATUSES = new Set(["completed", "aborted", "failed"]);
-
 /** Получить снимок из всех доступных источников. */
 async function fetchSnapshot(args: MissionWidgetArgs): Promise<MissionStatusSnapshot | null> {
 	try {
@@ -130,14 +127,12 @@ interface RenderOptions {
 	iterationOverride?: number;
 }
 
-/** Виджет: render с учётом visible и payload-iteration. */
+/** Виджет: render с учётом visible и payload-iteration. Терминальные статусы
+ * (completed/aborted/failed) тоже рендерятся строкой статуса — иначе F9 на
+ * завершённой миссии показывал пустой виджет (молчание). */
 async function renderWidget(args: MissionWidgetArgs, opts: RenderOptions): Promise<void> {
 	const snapshot = await fetchSnapshot(args);
 	if (!snapshot) {
-		await args.ui.render([]);
-		return;
-	}
-	if (TERMINAL_STATUSES.has(snapshot.status)) {
 		await args.ui.render([]);
 		return;
 	}

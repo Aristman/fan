@@ -39,6 +39,31 @@
   `packages/coding-agent/test/cli/mission-command.test.ts`.
   fan-coding-agent 2.7.2 → 2.7.3.
 
+- **Терминальный UX миссии: `completed`-миссия больше не молчит.**
+  Миссия с полностью вычеркнутым ROADMAP переходила в `completed`, после чего
+  пользователь получал молчание или ложные сообщения: `/mission:status` без
+  аттача выводил "No active mission" (lazy-скан исключал `completed`),
+  `/mission:start` молча выходил из tick (терминальный статус — no-op в
+  mission-loop), `/mission:stop` падал с сырым `InvalidTransitionError`
+  (completed → aborted запрещён FSM), виджет F9 был пуст (терминальные статусы
+  скрывались), а после рестарта fan `/mission:start` лгал "No mission found".
+  Исправлено: дефолтный `accept` в `findAttachableMission` находит миссию
+  ЛЮБОГО статуса (политика переходов — на уровне команд; session_start-путь
+  со строгим фильтром не-терминальных не изменён, регрессия TC-10b зелёная);
+  `/mission:status` лениво аттачит read-only миссию любого статуса и показывает
+  реальный `completed`; `/mission:start` без аттача на `completed` выводит
+  подсказку "Mission \<slug\> is completed. Add new unchecked items to
+  ROADMAP.md and run /mission:start, or create a new mission: fan mission init
+  \<new-slug\>" (без attach), а с аттаченным loop — "Mission is \<status\> —
+  tick skipped." + ту же подсказку для `completed`; `/mission:stop` сообщает
+  "Mission already \<status\>." на терминальном статусе и "Mission stopped
+  (status: aborted)." при успешной остановке (FSM-ошибки не глотаются);
+  виджет F9 рендерит строку терминального статуса (`○ завершена │ Итерация: N`)
+  вместо пустого виджета. Тесты — блок `TC-F11-terminal-ux` в
+  `extensions/fan-mission/test/slash-commands.test.mjs`, `TC-10d/TC-10e` в
+  `index-wiring.test.mjs`, обновлённый `TC-F12-2` в `mission-widget.test.mjs`.
+  fan-mission 0.6.0 → 0.6.1.
+
 - **Регрессия F-46: дефолтный per-iteration budget ломал интерактивные сессии.**
   `createAgentSession` применял roadmap-дефолты (100k токенов / $5.00 на
   итерацию), если в settings.json не заданы `budget.iterationTokenLimit` /
