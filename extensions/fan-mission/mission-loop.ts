@@ -24,6 +24,7 @@ import {
 	checkStateFileSize,
 	extractGoal,
 	InvalidTransitionError,
+	isRecurringItem,
 	MAX_STATE_BYTES,
 	type MissionState,
 	parseFirstUnchecked,
@@ -316,6 +317,11 @@ function clearAbortSignal(missionDir: string): void {
 // ─── ROADMAP helpers ────────────────────────────────────────────────────────
 
 function markRoadmapDone(raw: string, lineIndex: number, itemText?: string): string {
+	// 0.7.3: recurring items are NEVER marked [x] — they stay unchecked
+	// so the mission loop keeps executing them every tick (watch-loop semantics).
+	if (itemText !== undefined && isRecurringItem(itemText)) {
+		return raw;
+	}
 	const lines = raw.split("\n");
 	const uncheckedTextAt = (i: number): string | null => {
 		if (i < 0 || i >= lines.length) return null;
@@ -1660,15 +1666,25 @@ export class MissionLoop {
 			});
 		}
 
-		if (shouldGitCommit && roadmapChanged) {
-			// Mark roadmap checkbox BEFORE git commit (so commit includes both)
-			await writeRoadmap(this.missionDir, updatedRoadmap);
+		// 0.7.3: git commit happens when:
+		// - roadmapChanged (normal items: checkbox marked [x])
+		// - OR stateChanged AND item is recurring (recur items: state changes but roadmap doesn't)
+		// Planning items (index -1) keep original behavior: no commit if roadmap unchanged.
+		const isRecur = isRecurringItem(nextItem.text);
+		const shouldCommitNow = shouldGitCommit && (roadmapChanged || (stateChanged && isRecur));
+
+		if (shouldCommitNow) {
+			// Write roadmap only if it actually changed (recur items: no-op)
+			if (roadmapChanged) {
+				await writeRoadmap(this.missionDir, updatedRoadmap);
+			}
 
 			const msg = `mission: ${nextItem.text}`;
+			const commitFiles = roadmapChanged ? ["STATE.md", "ROADMAP.md"] : ["STATE.md"];
 			await this.deps.git.commit({
 				cwd: this.missionDir,
 				message: msg,
-				files: ["STATE.md", "ROADMAP.md"],
+				files: commitFiles,
 			});
 
 			loopState.committed = true;

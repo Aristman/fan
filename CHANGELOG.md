@@ -49,6 +49,26 @@
   `(?=[\s,.!?:;]|$)`. Тесты — `idea-promoter.test.mjs` (20).
   fan-mission 0.7.0 → 0.7.1.
 
+- **Recurring-пункты `(recur)` для миссий-вахт.**
+  Миссии типа «вахта» (watch-loop: «Проверяй почту и сообщай в Telegram о
+  важных письмах») требовали повторяющегося исполнения одного и того же
+  пункта ROADMAP, но выполненный пункт помечался `[x]` → миссия завершалась
+  `completed` после первой проверки. Новый маркер `(recur)` в тексте пункта
+  ROADMAP (регистронезависимый): `parseFirstUnchecked` по-прежнему возвращает
+  такой пункт (он остаётся `[ ]`), а `markRoadmapDone` — no-op (строка не
+  меняется на `[x]`). Миссия с recur-пунктами живёт вечно: тики исполняют
+  recur каждый раз, обычные пункты выполняются и помечаются `[x]` как раньше,
+  когда кончаются — recur продолжает. Planning-ветка не срабатывает, пока
+  recur unchecked (это корректно — миссия не завершается). Шаг 6: git commit
+  происходит если изменился STATE.md ИЛИ ROADMAP.md (для recur — только
+  STATE.md). Guidance в промпте (prompt-builder.ts): «This is a RECURRING
+  task (recur): it stays on the ROADMAP unchecked — perform the work for
+  this tick only, report results, do NOT mark or remove the item.». Экспорт:
+  `RECUR_MARKER`, `isRecurringItem(text)` из file-state-manager.ts. Тесты —
+  `mission-loop-recurring.test.mjs` ( recur не [x], два тика подряд,
+  обычный+recur, только-recur не completed, guidance в промпте, регрессия
+  обычных пунктов). fan-mission 0.7.2 → 0.7.3.
+
 ### Fixed
 
 - **Вывод slash-команд `/mission:*` рендерился в строку ввода TUI.**

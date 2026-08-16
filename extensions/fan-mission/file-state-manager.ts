@@ -12,6 +12,23 @@ export const MAX_STATE_BYTES = 5 * 1024;
 export const MAX_SLUG_LENGTH = 100;
 export const MISSION_FILES = ["MISSION.md", "ROADMAP.md", "STATE.md", "BACKLOG.md", "DECISIONS.md"] as const;
 
+// ─── Recurring items (0.7.3) ───────────────────────────────────────────────
+
+/**
+ * Marker for recurring ROADMAP items (watch-loop / вахта semantics).
+ * A checkbox line containing this marker is executed every tick but NEVER
+ * marked [x] — the mission stays alive as long as at least one recur item
+ * exists unchecked.
+ */
+export const RECUR_MARKER = "(recur)";
+
+/**
+ * True if the item text contains the recurring marker (case-insensitive).
+ */
+export function isRecurringItem(text: string): boolean {
+	return text.toLowerCase().includes(RECUR_MARKER.toLowerCase());
+}
+
 // ─── Dynamic template loader (handles .ts and .js at runtime) ──────────────
 
 interface MissionTemplateFiles {

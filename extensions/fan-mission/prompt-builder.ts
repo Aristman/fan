@@ -9,7 +9,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import { extractGoal, type MissionState, readMission } from "./file-state-manager.js";
+import { extractGoal, isRecurringItem, type MissionState, readMission } from "./file-state-manager.js";
 
 // ─── Limits (protection against bloated STATE/BACKLOG/ROADMAP) ──────────────
 
@@ -29,6 +29,10 @@ export const PLANNING_ITEM_TEXT = "Plan: decompose mission Goal into ROADMAP ite
 /** Guidance line appended for bootstrap/planning iterations. */
 export const BOOTSTRAP_PLANNING_GUIDANCE =
 	"- This is the bootstrap iteration: decompose the mission Goal into concrete unchecked ROADMAP.md items (- [ ] ...) and replace/extend the roadmap. Keep items atomic and verifiable.";
+
+/** Guidance line appended for recurring (recur) items (0.7.3). */
+export const RECUR_GUIDANCE =
+	"- This is a RECURRING task (recur): it stays on the ROADMAP unchecked — perform the work for this tick only, report results, do NOT mark or remove the item.";
 
 const TRUNCATION_MARKER = "...[truncated]";
 
@@ -189,6 +193,10 @@ export async function buildExecutionPrompt(opts: ExecutionPromptOptions): Promis
 		parts.push("- Commit meaningful results with clear messages.");
 		if (isPlanningIteration) {
 			parts.push(BOOTSTRAP_PLANNING_GUIDANCE);
+		}
+		// 0.7.3: recurring items get special guidance
+		if (isRecurringItem(opts.itemText)) {
+			parts.push(RECUR_GUIDANCE);
 		}
 		return parts.join("\n");
 	};
