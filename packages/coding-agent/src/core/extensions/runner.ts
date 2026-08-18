@@ -314,6 +314,9 @@ export class ExtensionRunner {
 	}
 
 	bindCommandContext(actions?: ExtensionCommandContextActions): void {
+		// Delegate through the mutable handler field so the API slot always
+		// tracks the currently bound (or reset) newSession handler.
+		this.runtime.newSession = (opts) => this.newSessionHandler(opts);
 		if (actions) {
 			this.waitForIdleFn = actions.waitForIdle;
 			this.newSessionHandler = actions.newSession;

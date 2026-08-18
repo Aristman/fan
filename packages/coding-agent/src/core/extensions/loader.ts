@@ -21,6 +21,7 @@ import type {
 	Extension,
 	ExtensionAPI,
 	ExtensionFactory,
+	ExtensionNewSessionOptions,
 	ExtensionRuntime,
 	LoadExtensionsResult,
 	MessageRenderer,
@@ -119,6 +120,9 @@ export function createExtensionRuntime(): ExtensionRuntime {
 		setModel: () => Promise.reject(new Error("Extension runtime not initialized")),
 		getThinkingLevel: notInitialized,
 		setThinkingLevel: notInitialized,
+		// Fail-safe default: without a host binding (runner.bindCommandContext),
+		// newSession is an honest refusal, not a silent success.
+		newSession: async () => ({ cancelled: true }),
 		flagValues: new Map(),
 		pendingProviderRegistrations: [],
 		// Pre-bind: queue registrations so bindCore() can flush them once the
@@ -220,6 +224,10 @@ export function createExtensionAPI(
 
 		sendUserMessage(content, options): void {
 			runtime.sendUserMessage(content, options);
+		},
+
+		newSession(options?: ExtensionNewSessionOptions) {
+			return runtime.newSession(options);
 		},
 
 		appendEntry(customType: string, data?: unknown): void {

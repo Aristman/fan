@@ -77,6 +77,7 @@ export type {
 	ExtensionFactory,
 	ExtensionFlag,
 	ExtensionHandler,
+	ExtensionNewSessionOptions,
 	ExtensionRuntime,
 	ExtensionShortcut,
 	ExtensionUIContext,

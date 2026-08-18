@@ -995,6 +995,15 @@ export interface ResolvedCommand extends RegisteredCommand {
 export type ExtensionHandler<E, R = undefined> = (event: E, ctx: ExtensionContext) => Promise<R | void> | R | void;
 
 /**
+ * Options for ExtensionAPI.newSession().
+ * Subset of ExtensionCommandContext newSession options (no `setup` hook).
+ */
+export interface ExtensionNewSessionOptions {
+	/** Link the new session to a parent session (session tree). */
+	parentSession?: string;
+}
+
+/**
  * ExtensionAPI passed to extension factory functions.
  */
 export interface ExtensionAPI {
@@ -1123,6 +1132,12 @@ export interface ExtensionAPI {
 		content: string | (TextContent | ImageContent)[],
 		options?: { deliverAs?: "steer" | "followUp" },
 	): void;
+
+	/**
+	 * Start a new session, optionally linked to a parent session.
+	 * Fail-safe: without a host binding this resolves to { cancelled: true }.
+	 */
+	newSession(options?: ExtensionNewSessionOptions): Promise<{ cancelled: boolean }>;
 
 	/** Append a custom entry to the session for state persistence (not sent to LLM). */
 	appendEntry<T = unknown>(customType: string, data?: T): void;
@@ -1461,7 +1476,13 @@ export interface ExtensionCommandContextActions {
  * Full runtime = state + actions.
  * Created by loader with throwing action stubs, completed by runner.initialize().
  */
-export interface ExtensionRuntime extends ExtensionRuntimeState, ExtensionActions {}
+export interface ExtensionRuntime extends ExtensionRuntimeState, ExtensionActions {
+	/**
+	 * Bound by runner.bindCommandContext() to the host's newSession handler.
+	 * Loader default is a fail-safe refusal ({ cancelled: true }).
+	 */
+	newSession: (options?: ExtensionNewSessionOptions) => Promise<{ cancelled: boolean }>;
+}
 
 /** Loaded extension with all registered items. */
 export interface Extension {

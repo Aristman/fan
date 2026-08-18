@@ -62,6 +62,7 @@ export type {
 	ExtensionFactory,
 	ExtensionFlag,
 	ExtensionHandler,
+	ExtensionNewSessionOptions,
 	// Runtime
 	ExtensionRuntime,
 	ExtensionShortcut,
