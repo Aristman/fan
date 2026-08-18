@@ -120,7 +120,7 @@ describe("0.8.0: continuous tick loop", () => {
 		expect(roadmap).toContain("- [x] task C");
 	});
 
-	it("[one-shot, recur, one-shot] → оба one-shot + recur один раз", async () => {
+	it("[one-shot, recur, one-shot] → оба one-shot + recur мигрирует + исполняется", async () => {
 		writeFileSync(
 			join(missionDir, "ROADMAP.md"),
 			"# Roadmap\n\n- [ ] task A\n- [ ] check email (recur)\n- [ ] task B\n",
@@ -139,18 +139,18 @@ describe("0.8.0: continuous tick loop", () => {
 
 		const result = await loop.tick();
 
-		// One-shots first (A, B), then recur (email)
+		// One-shots (A, B) + migrated recur (email) = 3 items
 		expect(result.itemsExecuted).toBe(3);
-		expect(result.status).toBe("active"); // recur keeps mission alive
+		expect(result.status).toBe("completed"); // R2: all one-shots done → completed
 		expect(executor.calls.length).toBe(3);
 
 		const roadmap = readFileSync(join(missionDir, "ROADMAP.md"), "utf8");
 		expect(roadmap).toContain("- [x] task A");
 		expect(roadmap).toContain("- [x] task B");
-		expect(roadmap).toContain("- [ ] check email (recur)"); // recur stays unchecked
+		expect(roadmap).toContain("- [x] check email (recur)"); // R2: migrated → [x]
 	});
 
-	it("только recur → исполняется один раз, yield, статус active", async () => {
+	it("только legacy recur → мигрирует, исполняется в recur-фазе, статус completed", async () => {
 		writeFileSync(
 			join(missionDir, "ROADMAP.md"),
 			"# Roadmap\n\n- [ ] check email (recur)\n",
@@ -166,15 +166,15 @@ describe("0.8.0: continuous tick loop", () => {
 		const result = await loop.tick();
 
 		expect(result.itemsExecuted).toBe(1);
-		expect(result.status).toBe("active"); // recur keeps alive
+		expect(result.status).toBe("completed"); // R2: migrated → completed, recur ran as дежурство
 		expect(executor.calls.length).toBe(1);
 
-		// Recur still unchecked
+		// R2: recur item migrated → [x] in ROADMAP
 		const roadmap = readFileSync(join(missionDir, "ROADMAP.md"), "utf8");
-		expect(roadmap).toContain("- [ ] check email (recur)");
+		expect(roadmap).toContain("- [x] check email (recur)");
 	});
 
-	it("два разных recur → оба исполняются по разу за тик", async () => {
+	it("два разных legacy recur → оба мигрируют + исполняются за тик", async () => {
 		writeFileSync(
 			join(missionDir, "ROADMAP.md"),
 			"# Roadmap\n\n- [ ] check email (recur)\n- [ ] check slack (recur)\n",
@@ -193,13 +193,13 @@ describe("0.8.0: continuous tick loop", () => {
 		const result = await loop.tick();
 
 		expect(result.itemsExecuted).toBe(2);
-		expect(result.status).toBe("active");
+		expect(result.status).toBe("completed"); // R2: all one-shots done → completed
 		expect(executor.calls.length).toBe(2);
 
-		// Both recurs still unchecked
+		// R2: both recurs migrated → [x] in ROADMAP
 		const roadmap = readFileSync(join(missionDir, "ROADMAP.md"), "utf8");
-		expect(roadmap).toContain("- [ ] check email (recur)");
-		expect(roadmap).toContain("- [ ] check slack (recur)");
+		expect(roadmap).toContain("- [x] check email (recur)");
+		expect(roadmap).toContain("- [x] check slack (recur)");
 	});
 
 	it("FAILED на 2-м пункте → тик остановился, itemsExecuted=2", async () => {

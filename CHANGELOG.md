@@ -3,6 +3,11 @@
 ## [2.8.1] — 2026-08-18
 
 ### Changed
+- **fan-mission 0.9.0: recurring переехали в RECURRING.md (R2).** Повторяющиеся задачи больше не хранятся как `(recur)`-пункты в ROADMAP. Новый файл `RECURRING.md` с per-item интервалами `(interval: Ns/m/h/d)`. Авто-миграция legacy `(recur)`-пунктов из ROADMAP в RECURRING.md при первом тике. Completed-миссия продолжает исполнять подоспевшие recurring (дежурство). Бюджет действует и на дежурные recurring. FSM: `completed → budget_exhausted` разрешён. Вариант A.
+
+## [2.8.1] — 2026-08-18
+
+### Changed
 - **fan-mission 0.8.0: тик исполняет roadmap непрерывно до стоп-условия.** `tick()` обрабатывает все one-shot пункты подряд, затем recur-пункты по одному разу за тик. Стоп-условия: все пункты исполнены (completed/yield), BLOCKED/FAILED (break), статус миссии изменился (break). `TickResult.itemsExecuted` — количество исполненных пунктов за тик.
 
 ## [0.7.4] - 2026-08-18

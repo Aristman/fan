@@ -657,7 +657,7 @@ describe("F-08 / TC-F08-2: FSM переходов статусов миссии"
 			completed: false,
 			aborted: false,
 			failed: false,
-			budget_exhausted: false,
+			budget_exhausted: true, // R2: дежурство recurring исчерпало бюджет
 		},
 		aborted: {
 			active: true,         // оператор (явный перезапуск)
@@ -697,10 +697,10 @@ describe("F-08 / TC-F08-2: FSM переходов статусов миссии"
 		}
 	}
 
-	it("TC-F08-2.invariant: completed — разрешён только переход в active (реактивация)", () => {
+	it("TC-F08-2.invariant: completed — разрешён переход в active и budget_exhausted", () => {
 		for (const to of STATUSES) {
 			if (to === "completed") continue;
-			if (to === "active") {
+			if (to === "active" || to === "budget_exhausted") {
 				expect(canTransition("completed", to)).toBe(true);
 			} else {
 				expect(canTransition("completed", to)).toBe(false);

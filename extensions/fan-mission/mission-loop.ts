@@ -18,23 +18,29 @@ import {
 import {
 	ARCHIVE_KEEP_COUNT,
 	appendDecision,
+	appendRecurringItems,
 	archiveOldDoneItems,
 	type BacklogEntry,
 	canTransition,
 	checkStateFileSize,
 	extractGoal,
 	InvalidTransitionError,
+	isRecurringDue,
 	isRecurringItem,
 	MAX_STATE_BYTES,
 	type MissionState,
+	markRecurringRun,
 	parseAllUnchecked,
 	readBacklog,
 	readMission,
+	readRecurring,
+	readRecurringState,
 	readRoadmap,
 	readState,
 	StateFileTooLarge,
 	updateBacklogEntry,
 	writeMissionStatus,
+	writeRecurringState,
 	writeRoadmap,
 	writeState,
 } from "./file-state-manager.js";
@@ -609,14 +615,33 @@ export class MissionLoop {
 			const budgetTokens = Number(mission.frontmatter.budget_tokens) || 0;
 			const budgetUsd = Number(mission.frontmatter.budget_usd) || 0;
 
-			// Terminal statuses → no-op
-			if (
-				missionStatus === "aborted" ||
-				missionStatus === "completed" ||
-				missionStatus === "failed" ||
-				missionStatus === "budget_exhausted"
-			) {
+			// Terminal statuses → no-op (except completed → recur-only дежурство)
+			if (missionStatus === "aborted" || missionStatus === "failed" || missionStatus === "budget_exhausted") {
 				return { iteration: currentIteration, steps, status: missionStatus };
+			}
+
+			// R2: completed → recur-only phase (дежурство).
+			// Skip one-shot/planning, execute only due recurring items.
+			if (missionStatus === "completed") {
+				let missionState: MissionState;
+				try {
+					missionState = await readState(this.missionDir);
+				} catch {
+					missionState = { done: [], blockers: [], nextSteps: [] };
+				}
+				const roadmapRaw = await readRoadmap(this.missionDir);
+				const recurResult = await this.runRecurPhase(
+					loopState,
+					steps,
+					currentIteration,
+					budgetTokens,
+					budgetUsd,
+					roadmapRaw,
+					missionState,
+					"completed",
+					0,
+				);
+				return recurResult;
 			}
 
 			// P1-2: Paused mission → no-op (resume only via explicit external action)
@@ -701,34 +726,35 @@ export class MissionLoop {
 			lastCompletedStep = 2;
 			this.journalStep(loopState, 2);
 
-			// ── 0.8.0: Continuous execution loop ──────────────────────────
+			// ── 0.9.0: Continuous execution loop ──────────────────────────
 			// Execute roadmap items continuously until a stop condition:
-			// - All one-shots done + all recurs executed once → yield
+			// - All one-shots done → completed/yield
 			// - Mission status changed (paused/aborted/terminal) → yield
 			// - Early exit (BLOCKED/DECIDE/FAILED/budget/abort) → return
+			// After the loop: recur-phase (RECURRING.md) runs.
 			let itemsExecuted = 0;
-			const executedRecurs = new Set<string>();
 			let recoveryAttempted = false;
+
+			// R2: legacy migration — (recur) items in ROADMAP → RECURRING.md
+			{
+				const allUncheckedForMigration = parseAllUnchecked(roadmapRaw);
+				const legacyRecurs = allUncheckedForMigration.filter((i) => isRecurringItem(i.text));
+				if (legacyRecurs.length > 0) {
+					await this.migrateLegacyRecurring(legacyRecurs, roadmapRaw);
+					roadmapRaw = await readRoadmap(this.missionDir);
+				}
+			}
 
 			while (true) {
 				// ── Step 3: Decide ─────────────────────────────────────────────
 				steps.decide = true;
+				// R2: one-shot pass takes ALL unchecked ROADMAP (no recur filter).
+				// Legacy (recur) items were migrated above; remaining unchecked = one-shots.
 				const allUnchecked = parseAllUnchecked(roadmapRaw);
-				const oneShots = allUnchecked.filter((i) => !isRecurringItem(i.text));
-				const recurs = allUnchecked.filter((i) => isRecurringItem(i.text));
-				let nextItem: { index: number; text: string } | null = oneShots[0] ?? null;
-				let recurPhase = false;
-				if (!nextItem && recurs.length > 0) {
-					nextItem = recurs.find((r) => !executedRecurs.has(r.text)) ?? null;
-					recurPhase = nextItem !== null;
-				}
+				let nextItem: { index: number; text: string } | null = allUnchecked[0] ?? null;
 
-				// All items done → completed/planning/yield
+				// All items done → completed/planning
 				if (!nextItem) {
-					// Recur items exist but all executed this tick → yield (don't complete)
-					if (recurs.length > 0) {
-						break;
-					}
 					// Guard against false completion: a ROADMAP without ANY parseable
 					// checklist items (checked or unchecked) is suspicious — the mission
 					// never had work items, so "all done" is a fabrication. Fail loudly
@@ -769,7 +795,8 @@ export class MissionLoop {
 						loopState.pendingItem = undefined;
 						loopState.committed = false;
 						writeLoopStateSync(this.missionDir, loopState);
-						return { iteration: currentIteration, steps, status: resultStatus, item: currentItem, itemsExecuted };
+						// R2: break to recur-phase (дежурство) instead of returning
+						break;
 					}
 					// Synthetic planning item: index -1 marks it as not present in the
 					// ROADMAP (markRoadmapDone/prompt marking are no-ops for it).
@@ -1129,16 +1156,6 @@ export class MissionLoop {
 					break;
 				}
 
-				if (recurPhase) {
-					executedRecurs.add(nextItem.text);
-					const remainingRecurs = recurs.filter((r) => !executedRecurs.has(r.text));
-					if (remainingRecurs.length > 0) {
-						roadmapRaw = await readRoadmap(this.missionDir);
-						continue;
-					}
-					break; // all recurs executed this tick → yield
-				}
-
 				// Re-check mission status (may have changed during execution)
 				const freshMission = await readMission(this.missionDir);
 				const freshStatus = String(freshMission.frontmatter.status) as MissionStatus;
@@ -1151,14 +1168,22 @@ export class MissionLoop {
 				roadmapRaw = await readRoadmap(this.missionDir);
 			} // end while (true)
 
-			// ── After continuous loop ──────────────────────────────────────
-			return {
-				iteration: currentIteration,
+			// ── R2: Recur-phase (RECURRING.md) ─────────────────────────────
+			// Runs after the one-shot loop: executes due recurring items.
+			// Does NOT run step 7 ideas. Budget is still enforced.
+			const recurResult = await this.runRecurPhase(
+				loopState,
 				steps,
-				status: resultStatus,
-				item: currentItem,
+				currentIteration,
+				budgetTokens,
+				budgetUsd,
+				roadmapRaw,
+				missionState,
+				resultStatus,
 				itemsExecuted,
-			};
+				currentItem,
+			);
+			return recurResult;
 		} catch (err) {
 			// Record crash marker for recovery, then re-throw
 			// Merge with on-disk state to preserve abort signals
@@ -1616,6 +1641,234 @@ export class MissionLoop {
 			status: resultStatus,
 			item: currentItem,
 		};
+	}
+
+	/**
+	 * R2: Execute due recurring items from RECURRING.md.
+	 * Called after the one-shot while-loop (active tick) or as the sole
+	 * work phase for completed missions (дежурство).
+	 *
+	 * For each due item:
+	 * 1. Budget preflight (same as step 4)
+	 * 2. executor.runIteration with recurring: true prompt
+	 * 3. Budget counting (metrics)
+	 * 4. STATE.md update (done/blockers)
+	 * 5. Git commit (STATE.md only, ROADMAP untouched)
+	 * 6. markRecurringRun + writeRecurringState (AFTER any outcome)
+	 *
+	 * Does NOT run step 7 ideas (runIdeaHooks).
+	 * Returns TickResult with updated status/itemsExecuted.
+	 */
+	private async runRecurPhase(
+		loopState: LoopState,
+		steps: TickSteps,
+		currentIteration: number,
+		budgetTokens: number,
+		budgetUsd: number,
+		roadmapRaw: string,
+		missionState: MissionState,
+		initialStatus: MissionStatus,
+		itemsExecuted: number,
+		previousItem?: string,
+	): Promise<TickResult> {
+		const recurItems = readRecurring(this.missionDir);
+		if (recurItems.length === 0) {
+			return {
+				iteration: currentIteration,
+				steps,
+				status: initialStatus,
+				item: previousItem,
+				itemsExecuted,
+			};
+		}
+
+		const nowDate = await this.deps.clock.now();
+		const nowMs = nowDate instanceof Date ? nowDate.getTime() : new Date(nowDate as unknown as string).getTime();
+		let recurState = readRecurringState(this.missionDir);
+		let resultStatus = initialStatus;
+		let currentItem: string | undefined = previousItem;
+
+		for (const item of recurItems) {
+			if (!isRecurringDue(item, recurState, nowMs)) continue;
+
+			// Budget preflight (same logic as step 4)
+			const tokensRemaining = budgetTokens - loopState.budgetUsed.tokens;
+			const usdRemaining = budgetUsd - loopState.budgetUsed.usd;
+			const tokensPreflightFail = budgetTokens > 0 && tokensRemaining <= 0;
+			const usdPreflightFail = budgetUsd > 0 && usdRemaining <= 0;
+			if (tokensPreflightFail || usdPreflightFail) {
+				resultStatus = "budget_exhausted";
+				await writeMissionStatus(this.missionDir, "budget_exhausted");
+				writeRecurringState(this.missionDir, recurState);
+				writeLoopStateSync(this.missionDir, loopState);
+				return {
+					iteration: currentIteration,
+					steps,
+					status: resultStatus,
+					item: currentItem,
+					itemsExecuted,
+				};
+			}
+
+			// Abort check before expensive work
+			if (this.isAborted()) {
+				writeRecurringState(this.missionDir, recurState);
+				return this.abortTick(loopState, steps, currentIteration, currentItem);
+			}
+
+			// Build prompt with recurring flag
+			const prompt = await buildExecutionPrompt({
+				missionDir: this.missionDir,
+				itemText: item.text,
+				index: -1, // not in ROADMAP
+				roadmapRaw,
+				state: missionState,
+				recurring: true,
+			});
+
+			// Execute
+			steps.iterate = true;
+			let iterResult: IterationResult;
+			try {
+				iterResult = await this.deps.executor.runIteration({
+					missionDir: this.missionDir,
+					prompt,
+					cwd: this.missionDir,
+				});
+			} catch {
+				// Executor failure → mark as run (interval gates retry), continue
+				recurState = markRecurringRun(recurState, item, nowMs);
+				writeRecurringState(this.missionDir, recurState);
+				writeLoopStateSync(this.missionDir, loopState);
+				continue;
+			}
+
+			// Budget counting
+			const costTokens = iterResult.costTokens || 0;
+			const costUsd = iterResult.costUsd || 0;
+			loopState.budgetUsed.tokens += costTokens;
+			loopState.budgetUsed.usd += costUsd;
+
+			const isSuccess = iterResult.status === "COMPLETE";
+			const isBlockOrFail = iterResult.status === "BLOCKED" || iterResult.status === "FAILED";
+
+			// STATE.md update
+			try {
+				const currentState = await readState(this.missionDir);
+				const newDone = [...currentState.done];
+				const newBlockers = [...currentState.blockers];
+				let newNextSteps = [...currentState.nextSteps];
+
+				if (isSuccess) {
+					if (!newDone.includes(item.text)) {
+						newDone.push(item.text);
+					}
+					newNextSteps = [];
+				} else if (isBlockOrFail) {
+					const reason = iterResult.reason || "Recurring task issue";
+					if (!isInfraError(reason)) {
+						if (newBlockers.length === 0 || newBlockers[newBlockers.length - 1] !== reason) {
+							newBlockers.push(reason);
+						}
+					}
+				}
+
+				await writeState(this.missionDir, {
+					done: newDone,
+					blockers: newBlockers,
+					nextSteps: newNextSteps,
+				});
+
+				// Git commit (STATE.md only — ROADMAP not touched)
+				await this.deps.git.commit({
+					cwd: this.missionDir,
+					message: `mission: recurring: ${item.text}`,
+					files: ["STATE.md"],
+				});
+			} catch {
+				// best-effort state/commit — markRecurringRun still happens
+			}
+
+			// Mark as run AFTER any outcome (interval gates retry)
+			recurState = markRecurringRun(recurState, item, nowMs);
+			writeRecurringState(this.missionDir, recurState);
+
+			// F1: persist accumulated budget (recur phase mutates loopState.budgetUsed)
+			writeLoopStateSync(this.missionDir, loopState);
+
+			itemsExecuted++;
+			currentItem = item.text;
+
+			// Check budget post-hoc
+			const tokensExceeded = budgetTokens > 0 && loopState.budgetUsed.tokens > budgetTokens;
+			const usdExceeded = budgetUsd > 0 && loopState.budgetUsed.usd > budgetUsd;
+			if (tokensExceeded || usdExceeded) {
+				resultStatus = "budget_exhausted";
+				await writeMissionStatus(this.missionDir, "budget_exhausted");
+				break;
+			}
+
+			// Re-check mission status (may have changed during execution)
+			try {
+				const freshMission = await readMission(this.missionDir);
+				const freshStatus = String(freshMission.frontmatter.status) as MissionStatus;
+				if (freshStatus !== "active" && freshStatus !== "completed") {
+					resultStatus = freshStatus;
+					break;
+				}
+			} catch {
+				// best-effort
+			}
+		}
+
+		return {
+			iteration: currentIteration,
+			steps,
+			status: resultStatus,
+			item: currentItem,
+			itemsExecuted,
+		};
+	}
+
+	/**
+	 * R2: Migrate legacy (recur) items from ROADMAP to RECURRING.md.
+	 * For each legacy item:
+	 * 1. Extract text without (recur) marker
+	 * 2. Add to RECURRING.md with default interval (5m)
+	 * 3. Mark [x] in ROADMAP
+	 * 4. Single git commit for all migrations
+	 */
+	private async migrateLegacyRecurring(
+		legacyItems: Array<{ index: number; text: string }>,
+		roadmapRaw: string,
+	): Promise<void> {
+		// Extract clean text (remove (recur) marker)
+		const itemsToAdd = legacyItems.map((item) => ({
+			text: item.text.replace(/\s*\(recur\)\s*/gi, " ").trim(),
+			intervalStr: "5m",
+		}));
+
+		// Append to RECURRING.md
+		appendRecurringItems(this.missionDir, itemsToAdd);
+
+		// Mark [x] in ROADMAP for each legacy item.
+		// Can't use markRoadmapDone (it skips recurring items by design).
+		// Instead, directly replace [ ] with [x] at the known line indices.
+		const lines = roadmapRaw.split("\n");
+		for (const item of legacyItems) {
+			if (item.index >= 0 && item.index < lines.length) {
+				lines[item.index] = lines[item.index].replace("[ ] ", "[x] ");
+			}
+		}
+		const updatedRoadmap = lines.join("\n");
+		await writeRoadmap(this.missionDir, updatedRoadmap);
+
+		// Single git commit for the migration
+		await this.deps.git.commit({
+			cwd: this.missionDir,
+			message: "mission: migrate recurring items to RECURRING.md",
+			files: ["ROADMAP.md", "RECURRING.md"],
+		});
 	}
 
 	/**

@@ -30,9 +30,9 @@ export const PLANNING_ITEM_TEXT = "Plan: decompose mission Goal into ROADMAP ite
 export const BOOTSTRAP_PLANNING_GUIDANCE =
 	"- This is the bootstrap iteration: decompose the mission Goal into concrete unchecked ROADMAP.md items (- [ ] ...) and replace/extend the roadmap. Keep items atomic and verifiable.";
 
-/** Guidance line appended for recurring (recur) items (0.7.3). */
+/** Guidance line appended for recurring items (R2: from RECURRING.md). */
 export const RECUR_GUIDANCE =
-	"- This is a RECURRING task (recur): it stays on the ROADMAP unchecked — perform the work for this tick only, report results, do NOT mark or remove the item.";
+	"- This is a RECURRING task: perform the work for this tick only, report results. The item lives in RECURRING.md (not ROADMAP) and is governed by its interval.";
 
 const TRUNCATION_MARKER = "...[truncated]";
 
@@ -51,6 +51,8 @@ export interface ExecutionPromptOptions {
 	state: MissionState;
 	/** Optional operator steer message(s) for this iteration. */
 	steer?: string;
+	/** R2: true when executing a recurring item from RECURRING.md. */
+	recurring?: boolean;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -191,12 +193,15 @@ export async function buildExecutionPrompt(opts: ExecutionPromptOptions): Promis
 		parts.push("- Mission files above are already provided — do not re-read them.");
 		parts.push("- Work directly on small items; only delegate genuinely multi-file/multi-module work.");
 		parts.push("- Commit meaningful results with clear messages.");
-		parts.push("- STATE.md sections must use EXACT Russian names: '## Сделано', '## Блокеры', '## Следующие шаги' (not 'Done', 'Blockers', 'Текущий шаг', etc.).");
+		parts.push(
+			"- STATE.md sections must use EXACT Russian names: '## Сделано', '## Блокеры', '## Следующие шаги' (not 'Done', 'Blockers', 'Текущий шаг', etc.).",
+		);
 		if (isPlanningIteration) {
 			parts.push(BOOTSTRAP_PLANNING_GUIDANCE);
+			parts.push("- Periodic tasks go into RECURRING.md with marker (interval: Ns/m/h/d), NOT into ROADMAP.");
 		}
-		// 0.7.3: recurring items get special guidance
-		if (isRecurringItem(opts.itemText)) {
+		// R2: recurring items (from RECURRING.md or legacy (recur) marker)
+		if (opts.recurring || isRecurringItem(opts.itemText)) {
 			parts.push(RECUR_GUIDANCE);
 		}
 		return parts.join("\n");

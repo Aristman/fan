@@ -177,6 +177,25 @@ export function markRecurringRun(
 	return { ...state, [hash]: nowMs };
 }
 
+/**
+ * Append recurring items to RECURRING.md.
+ * Creates the file with a header if it doesn't exist.
+ * Each item is added as `- [ ] <text> (interval: <intervalStr>)`.
+ */
+export function appendRecurringItems(missionDir: string, items: Array<{ text: string; intervalStr: string }>): void {
+	const filePath = join(missionDir, "RECURRING.md");
+	let existing = "";
+	if (existsSync(filePath)) {
+		existing = readFileSync(filePath, "utf8");
+	}
+	if (!existing.trim()) {
+		existing = "# Recurring tasks\n";
+	}
+	const lines = items.map((item) => `- [ ] ${item.text} (interval: ${item.intervalStr})`);
+	const updated = `${existing.trimEnd()}\n${lines.join("\n")}\n`;
+	writeFileSync(filePath, updated, "utf8");
+}
+
 // ─── Dynamic template loader (handles .ts and .js at runtime) ──────────────
 
 interface MissionTemplateFiles {
@@ -839,7 +858,7 @@ export function extractGoal(body: string): string {
 const TRANSITIONS: Record<string, Set<string>> = {
 	active: new Set(["paused", "completed", "aborted", "failed", "budget_exhausted", "awaiting_decision"]),
 	paused: new Set(["active", "aborted"]),
-	completed: new Set(["active"]),
+	completed: new Set(["active", "budget_exhausted"]),
 	aborted: new Set(["active"]),
 	failed: new Set(["active"]),
 	budget_exhausted: new Set(["active"]),
