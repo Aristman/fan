@@ -204,6 +204,21 @@
 - **2026-08-15** — 🏁 **Этап 3 ЗАВЕРШЁН.** 13/13 фич (F-36..F-47 + F-48.5). 716 тестов super-orch + phase-gates A3/B3/C3 (17/17, 12/12, 32/32). Verify final PASS.
 - **2026-08-15** — 🏁 **ПАЙПЛАЙН ЗАВЕРШЁН ПОЛНОСТЬЮ.** Все 4 этапа: 48/48 фич + F-48.5. Точка возобновления: бэклог/мерж/релиз.
 
+---
+
+### Ralph-loop: fresh session per iteration (S1–S7)
+
+> fan-mission 0.9.0 → 0.10.0, fan-coding-agent 2.7.5 → 2.8.0. Дизайн: `docs/research/ralph-loop-mission-mode.md`.
+
+- **2026-08-18** — **S2 ✅** `session_mode` frontmatter + fresh default в шаблонах. Парсинг `session_mode: fresh | persistent` в `MissionFrontmatter` (отсутствие = persistent). Шаблоны `default` и `refactor` получают `session_mode: fresh`. Коммит `0403d68`.
+- **2026-08-18** — **S4 ✅** `FRESH_SESSION_SECTION` в execution prompts. `prompt-builder.ts` добавляет секцию для fresh-режима: указание агенту не искать prior chat context, записывать nextState в STATE.md. Коммит `e663b15`.
+- **2026-08-18** — **S3 ✅** Fresh-session rotation в `MissionLoop`. Continuous while-loop: в fresh-режиме break после одной итерации. `LoopState` += `resumeAfterRotation`. `MissionLoopDeps` += `sessionRotator?`. Ротация после `finally { lock.release() }`. Коммит `160be0b`.
+- **2026-08-18** — **S5 ✅** Fresh-rotation wiring — guard, rotator, auto-resume. `rotatingGuard` в `index.ts`: при `session_shutdown` во время ротации — лёгкая очистка без `detach()`/`abort()`. `sessionRotator.rotate()` через `fan.newSession({parentSession})`. Автопродолжение: `resumeAfterRotation` на диске → `session_start` → `setTimeout(tick, 0)`. `setSessionName` → `mission/<slug>/iter-N`. Graceful degradation: rotator недоступен/отменён → persistent-fallback. Коммит `48198c6`.
+- **2026-08-18** — **S6 ✅** Fresh-mode gap coverage (тесты). Парсинг session_mode, fresh-ротация (mock rotator), промпт, guard, автопродолжение. 808 тестов fan-mission. Коммит `3c585b2`.
+- **2026-08-18** — **S1 ✅** ExtensionAPI `newSession()`. `ExtensionAPI` += `newSession(options?: { parentSession?: string }): Promise<{ cancelled: boolean }>`. Default fail-safe `cancelled: true`. Биндинг во всех 4 хост-режимах (TUI, main/server, RPC, print). Коммит `3d2a92b`.
+- **2026-08-18** — **S7 ✅** Версии и доки. fan-mission 0.10.0, coding-agent 2.8.0. CHANGELOG, orchestrator.md (секция session_mode), manual-testing.md (шаг 13), pipeline-report.md (этап ralph-loop + бэклог).
+- **2026-08-18** — 🏁 **RALPH-LOOP ЗАВЕРШЁН.** S1–S7 реализованы. Коммиты `3d2a92b`..`3c585b2` + S7. 808 тестов fan-mission. Точка возобновления: бэклог v1.1 (prune сессий, flip дефолта).
+
 ## Бэклог (follow-ups, не блокеры)
 
 1. **Флаки/падеж** `agent-session-concurrent > should queue extension-origin steering messages while streaming` — падает и на базовом HEAD (stash-подтверждено), держит `npm test` в exit 1. Нужен quarantine/тикет.
@@ -244,3 +259,17 @@
 - **Симптом:** агент сам делает git commit (4477a91), затем шаг 6 loop'а пытается commitMissionSnapshot поверх чистого дерева → `Error: git commit failed:` с пустым сообщением; итерация при этом COMPLETE
 - **Гипотеза:** commitMissionSnapshot не обрабатывает nothing-to-commit (нет staged/unstaged изменений → git commit падает), плюс stderr не захватывается в сообщение ошибки
 - **Фикс:** проверять `git status --porcelain` перед коммитом; nothing-to-commit → skip без ошибки; захватывать stderr в текст ошибки
+
+### #34 — v1.1: prune сессий mission/<slug>/iter-N
+- **Контекст:** ralph-loop (0.10.0) создаёт новую сессию на каждую итерацию. Без авто-удаления список сессий растёт линейно.
+- **Задача:** retention-политика для итерационных сессий. Варианты: `fan doctor --prune-sessions`, retention в fan-mission (авто-удаление сессий старше N дней / старше K итераций), конфигурируемый `max_iterations_retained` в frontmatter MISSION.md.
+- **Приоритет:** P2 (не блокер, v1 не удаляет сессии).
+
+### #35 — v1.1: flip дефолта «отсутствует → fresh» в 0.11.0
+- **Контекст:** 0.10.0 — отсутствие `session_mode` = persistent (обратная совместимость). Шаблоны шипят `session_mode: fresh` — де-факто дефолт для новых миссий.
+- **Задача:** после bake-in (1-2 недели) рассмотреть flip: отсутствие поля = fresh. Мотивация: persistent осмыслен только для коротких миссий (2-3 итерации), fresh дешевле и предсказуемее.
+- **Приоритет:** P3 (решение после сбора обратной связи).
+
+### #36 — Известные не-баги ralph-loop (S6)
+- **Лишний rotate при stale crash-флаге:** если `.mission-loop.json` содержит `resumeAfterRotation: true` после crash (SIGKILL между ротацией и автопродолжением), `session_start` подхватывает и запускает тик — это корректное поведение (не двойная ротация). Graceful.
+- **`rotatingGuard` skip abort:** при ротации `session_shutdown` на старом runner не вызывает `detach()`/`abort()` (лёгкая очистка: unsubTick, bridge.dispose). Миссия не переходит в `aborted`. Это by design — ротация не является прерыванием.

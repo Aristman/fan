@@ -596,3 +596,80 @@ Blocked tasks automatically wait for their dependencies to complete.
 ### 7. Always Verify After Implement
 
 The coordinator does this automatically. Look for `VERDICT: PASS`, `VERDICT: FAIL`, or `VERDICT: PARTIAL` in the verify worker output.
+
+---
+
+## Режимы сессии миссии (session_mode)
+
+> Добавлено в fan-mission 0.10.0 (ralph-loop). Дизайн: `docs/research/ralph-loop-mission-mode.md`.
+
+### Проблема
+
+Каждая итерация миссии посылается как `followUp` в одну и ту же `AgentSession`. `agent-loop` пересобирает `currentContext.messages = [...context.messages, ...prompts]` — каждая итерация несёт полную историю в LLM API. Инцидент: 334k токенов на 5-ю итерацию при лимите 700k. Auto-compaction суммаризирует, но не обнуляет и срабатывает только post-hoc.
+
+### Решение: fresh session per iteration
+
+Каждая итерация выполняется в **новой** сессии агента. Состояние миссии — полностью в файлах (MISSION/ROADMAP/STATE/BACKLOG/RECURRING/DECISIONS.md + `.mission-loop.json` + git). Контекст диалога между итерациями не переиспользуется.
+
+### Два режима
+
+| Режим | Описание | Когда использовать |
+|-------|----------|--------------------|
+| **fresh** | Каждая итерация = новая сессия. Токены ≈ const (5-7k вход + tool-выводы этой итерации). Чат очищается между итерациями. | Длинные миссии (5+ итераций), предсказуемая стоимость, tool-heavy задачи |
+| **persistent** | Все итерации в одной сессии (как ≤ 0.9.0). Токены растут линейно до compaction. | Короткие миссии (2-3 итерации), когда контекст диалога важен |
+
+### Стоимость
+
+| | persistent | fresh |
+|---|---|---|
+| Итерация N, вход | base + Σ транскриптов 1..N−1 (линейный рост) | ≈ const: system + промпт ≤20KB (~5-7k tok) + tool-выводы только этой итерации |
+| Предсказуемость | нет (до compaction-threshold) | да |
+| Overhead | — | холодное чтение рабочих файлов (~2-10k tok/итерацию) |
+| Точка безубыточности | — | fresh дешевле уже с N≈2-3 для типичных tool-heavy итераций |
+
+### Как задать режим
+
+Режим задаётся в frontmatter MISSION.md:
+
+```yaml
+# MISSION.md
+session_mode: fresh        # fresh | persistent
+```
+
+- **При init:** шаблоны `default` и `refactor` уже содержат `session_mode: fresh` — новые миссии создаются в fresh-режиме автоматически.
+- **Ручная правка:** до старта миссии отредактировать MISSION.md и добавить/изменить `session_mode`. После старта — не менять (режим фиксируется при первом тике).
+- **Отсутствие поля** = `persistent` (обратная совместимость, 0.10.0 не ломает запущенные миссии).
+
+### Что видит оператор
+
+- **Чат очищается** между итерациями — это нормально, вся история в файлах миссии и git.
+- **История сессий сохраняется:** каждая итерация = новая сессия с именем `mission/<slug>/iter-N` (через `fan.setSessionName`).
+- **`/resume`** показывает дерево итерационных сессий (через `parentSession`).
+- **Виджет F9** продолжает работать — пересоздаётся фабрикой на каждую сессию.
+- **Токены итерации не растут линейно** — вход каждой итерации ≈ const.
+
+### Ротация сессий
+
+Ротация происходит **на границе тика**, после полного персистирования состояния:
+
+1. `tick()` в сессии S_N — шаги 1-7, `writeLoopStateSync(lastStep=7)`
+2. Если fresh && isSuccess && осталась работа → `resumeAfterRotation = true`
+3. `deps.sessionRotator.rotate()` — ПОСЛЕ tick (lock освобождён)
+4. `rotatingGuard = true` → `fan.newSession({parentSession})` → новая сессия S_{N+1}
+5. `session_start` в S_{N+1} → attach → `resumeAfterRotation` → `setTimeout(tick, 0)`
+
+### Graceful degradation
+
+- **Rotator недоступен** (нет `sessionRotator` в deps) → warn, режим persistent на этот тик.
+- **`session_before_switch` отменяет ротацию** → `{cancelled: true}` → warn + persistent-fallback.
+- **SIGKILL mid-iteration** → recovery продолжает миссию (P0-1 recovery без изменений).
+- **SIGKILL между ротацией и автопродолжением** → `resumeAfterRotation` на диске, `session_start(reason "startup")` подхватывает.
+
+### Tradeoffs
+
+| Риск | Митигейшн |
+|------|------------|
+| Потеря устного контекста → повтор ошибок | Guidance «записывай в STATE.md»; STATE/BACKLOG/git — единственный канал памяти |
+| `abort()` при `session_shutdown` убивает миссию | `rotatingGuard` — лёгкая очистка без detach/abort |
+| Засорение списка сессий | `parentSession` + `setSessionName`; v1.1 — prune по возрасту/количеству |
+| DECIDE/steer mid-flight | Оба file-based — переживают ротацию без изменений |

@@ -3,7 +3,7 @@
 > Подробная инструкция ручной проверки всего, что построено в этапах 0–3
 > (48 функций + F-48.5) и post-release фиксов 2.8.1.
 > Ветка: `FAN/feature/new-agents-flow`. Версии: FAN 2.8.1, fan-coding-agent 2.7.3,
-> fan-mission 0.9.0, fan-super-orchestrator 0.3.0, fan-scheduler 0.3.0, fan-webhook 0.1.3.
+> fan-mission 0.10.0, fan-super-orchestrator 0.3.0, fan-scheduler 0.3.0, fan-webhook 0.1.3.
 
 ---
 
@@ -25,13 +25,13 @@
 ### 2. Расширения (deployed-копии)
 Синхронизировать из `extensions/` репозитория в `~/.fan/agent/extensions/`:
 
-- **fan-mission 0.9.0** — обязательно целиком: `index.ts`, `slash-commands.ts`,
+- **fan-mission 0.10.0** — обязательно целиком: `index.ts`, `slash-commands.ts`,
   `mission-loop.ts`, `prompt-builder.ts`, `mission-executor.ts`, `default-run-agent.ts`,
   `epic-delegation.ts`, `file-state-manager.ts`, `tick-bridge.ts`, `package.json`, `templates/`
 - **fan-super-orchestrator 0.3.0** — каталог целиком (если ещё не синхронизирован после Этапа 3)
 - **fan-scheduler 0.3.0**, **fan-webhook 0.1.3** — если не обновлялись ранее
 
-Проверка: в `~/.fan/agent/extensions/fan-mission/package.json` версия `0.9.0`;
+Проверка: в `~/.fan/agent/extensions/fan-mission/package.json` версия `0.10.0`;
 файл `prompt-builder.ts` присутствует.
 
 ### 3. Тестовый проект
@@ -149,6 +149,28 @@
       тики для терминальных статусов).
     - **Проверка:** установить `budget_tokens: 1000` в MISSION.md → дождаться
       исчерпания → статус `budget_exhausted`, recurring больше не исполняются.
+
+13. **Fresh-режим (0.10.0, ralph-loop):**
+    - Шаблоны `default` и `refactor` шипят `session_mode: fresh` в frontmatter
+      MISSION.md — новая миссия создаётся сразу в fresh-режиме.
+    - **Создать миссию:** `fan mission init fresh-test` → проверить MISSION.md:
+      в frontmatter есть `session_mode: fresh`.
+    - **Старт:** `/mission:start` → первая итерация выполняется как обычно.
+    - **Ротация сессий:** после завершения итерации (если осталась работа) —
+      ротация на границе тика. Наблюдать:
+      - Новая сессия создана (чат очищается — это нормально).
+      - Виджет F9 живой (пересоздаётся фабрикой).
+      - STATE.md/BACKLOG.md обновлены (состояние персистится в файлах).
+      - `mission/fresh-test/iter-N` виден в `/resume` (через `parentSession`).
+    - **Токены итерации не растут линейно:** вход каждой итерации ≈ const
+      (system + промпт ≤20KB + tool-выводы этой итерации), в отличие от
+      persistent-режима где токены растут с Σ истории.
+    - **Отдельно: persistent-миссия.** Создать миссию без `session_mode`
+      (убрать строку из frontmatter или создать вручную) → поведение как в
+      0.9.0: все итерации в одной сессии, чат не очищается, токены растут.
+    - **Graceful degradation:** если rotator недоступен или `session_before_switch`
+      отменяет ротацию → warn в логе, миссия продолжает в persistent-режиме
+      на этот тик (не падает).
 
 ---
 
