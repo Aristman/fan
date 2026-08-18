@@ -18,7 +18,13 @@
 //     7 slash-команд /mission:* (DI через fan.registerCommand), виджет
 //     (f9, uiEvents = fan.events), хуки session_start (скан
 //     <cwd>/docs/missions/*/MISSION.md → attach первого не-терминального)
-//     и session_shutdown (shutdown). Slash-команды start/resume/status
+//     и session_shutdown (shutdown; в середине fresh-ротации (rotatingGuard,
+//     ralph-loop S5) — лёгкая очистка БЕЗ detach/abort, §4.2 дизайна
+//     docs/research/ralph-loop-mission-mode.md). ralph-loop (S5): deps loop'а
+//     включают sessionRotator (rotate() → rotatingGuard + fan.newSession с
+//     parentSession из opts.getSessionFile); session_start после attach
+//     снимает .mission-loop.json.resumeAfterRotation и планирует
+//     setTimeout(loop.tick, 0) — автопродолжение после ротации. Slash-команды start/resume/status
 //     поддерживают lazy-attach: если loop не аттачен в session_start,
 //     они находят миссию через findAttachableMission(cwd) и аттачат её
 //     в запущенной сессии (без рестарта fan). ВОЗВРАЩАЕТ wiring-handle
@@ -26,7 +32,7 @@
 //     session_start через getMissionLoop()).
 
 import { type Dirent, existsSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import process from "node:process";
 import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
 import type { KeyId } from "@seaagents/fan-tui";
@@ -35,7 +41,14 @@ import { createDefaultRunAgent } from "./default-run-agent.js";
 import { readMission, writeMissionStatus } from "./file-state-manager.js";
 import { createGitAdapter } from "./git-adapter.js";
 import { promoteAcceptedIdeas } from "./idea-promoter.js";
-import { MissionLoop, readMissionLoopState, setDrainSignal } from "./mission-loop.js";
+import {
+	type LoopState,
+	MissionLoop,
+	type MissionSessionRotator,
+	readMissionLoopState,
+	setDrainSignal,
+	writeLoopStateSync,
+} from "./mission-loop.js";
 import { registerMissionWidget } from "./mission-widget.js";
 import { createSessionExecutor, type RunAgent } from "./session-executor.js";
 import { registerMissionSlashCommands, type SlashCtx } from "./slash-commands.js";
@@ -69,6 +82,9 @@ export interface MissionWireOptions {
 	runAgentTimeoutMs?: number;
 	/** F-48.5: таймаут ожидания ответа EPIC-делегирования (мс; default 30 мин). */
 	delegationTimeoutMs?: number;
+	/** ralph-loop (S5): provider текущего session-файла — parentSession для
+	 * линковки итерационных сессий при fresh-ротации (§4.5). */
+	getSessionFile?: () => string | undefined;
 }
 
 export interface MissionWiring {
@@ -76,6 +92,11 @@ export interface MissionWiring {
 	attachMission(missionDir: string): MissionLoop;
 	/** Текущий MissionLoop либо null (ленивый: создаётся в attachMission). */
 	getMissionLoop(): MissionLoop | null;
+	/** ralph-loop (S5): true, пока fresh-ротация сессии в полёте (guard §4.2 —
+	 * session_shutdown в это время НЕ должен делать detach/abort). */
+	isRotating(): boolean;
+	/** ralph-loop (S5): сброс rotation-guard (идемпотентен). */
+	clearRotationGuard(): void;
 	/** abort активного loop + очистка handle. Идемпотентен. */
 	shutdown(): Promise<void>;
 }
@@ -91,6 +112,42 @@ export function wireMission(fan: ExtensionAPI, opts?: MissionWireOptions): Missi
 	let loop: MissionLoop | null = null;
 	let attachedDir: string | null = null;
 
+	// ralph-loop (S5): guard против деструктивного abort в session_shutdown во
+	// время fresh-ротации (§4.2, КРИТИЧНО — иначе abort() пишет статус aborted
+	// и миссия умирает на первой же ротации). Ставится rotator'ом ДО
+	// fan.newSession; снимается guard-веткой session_shutdown (success, teardown
+	// внутри newSession) либо finally rotator'а (cancelled/throw — teardown не
+	// выполнялся). Scope — экземпляр wireMission (фабрики пересоздаются на
+	// каждую сессию: guard старой сессии не протекает в новую).
+	let rotatingGuard = false;
+
+	// ralph-loop (S5): DI-rotator для MissionLoop (S3-контракт). rotate()
+	// вызывается loop'ом ПОСЛЕ release lock'а при session_mode=fresh и
+	// resumeAfterRotation на диске. {cancelled:true}/throw → loop сам снимает
+	// флаг и деградирует в persistent; при успехе флаг НЕ снимается — это зона
+	// session_start новой сессии (maybeResumeAfterRotation).
+	const sessionRotator: MissionSessionRotator = {
+		async rotate() {
+			// Fail-safe: хост без биндинга newSession (старый runner, тестовый
+			// mock) → cancelled, loop деградирует в persistent (как loader default).
+			if (typeof fan.newSession !== "function") {
+				return { cancelled: true };
+			}
+			rotatingGuard = true;
+			try {
+				return await fan.newSession({ parentSession: opts?.getSessionFile?.() });
+			} finally {
+				rotatingGuard = false; // идемпотентно с guard-веткой session_shutdown
+			}
+		},
+	};
+
+	const isRotating = (): boolean => rotatingGuard;
+
+	const clearRotationGuard = (): void => {
+		rotatingGuard = false;
+	};
+
 	const attachMission = (missionDir: string): MissionLoop => {
 		if (loop && attachedDir === missionDir) {
 			return loop; // идемпотентен для того же dir — без двойного wiring
@@ -104,6 +161,8 @@ export function wireMission(fan: ExtensionAPI, opts?: MissionWireOptions): Missi
 				executor: createSessionExecutor({ runAgent }),
 				git: createGitAdapter(),
 				clock: { now: () => new Date() },
+				// ralph-loop (S5): fresh-режим ротирует сессию через fan.newSession.
+				sessionRotator,
 			},
 			// F-48.5: EPIC delegation — тот же runAgent (декомпозиция) + EventBus
 			// мост mission_delegate → super-orchestrator (fan.events).
@@ -131,7 +190,7 @@ export function wireMission(fan: ExtensionAPI, opts?: MissionWireOptions): Missi
 		}
 	};
 
-	return { attachMission, getMissionLoop, shutdown };
+	return { attachMission, getMissionLoop, isRotating, clearRotationGuard, shutdown };
 }
 
 // ─── Скан миссий (session_start + lazy-attach) ──────────────────────────────
@@ -182,7 +241,11 @@ export async function findAttachableMission(
 // ─── Extension factory ──────────────────────────────────────────────────────
 
 export default function missionExtension(fan: ExtensionAPI): MissionWiring {
-	const wiring = wireMission(fan);
+	// ralph-loop (S5): текущий session-файл, захваченный в session_start
+	// (ctx.sessionManager.getSessionFile()) — parentSession для линковки
+	// итерационных сессий при fresh-ротации.
+	let currentSessionFile: string | undefined;
+	const wiring = wireMission(fan, { getSessionFile: () => currentSessionFile });
 
 	// Общий ctx slash-команд: МУТИРУЕТСЯ в attach/shutdown, чтобы команды
 	// всегда видели актуальный loop и missionDir.
@@ -365,6 +428,41 @@ export default function missionExtension(fan: ExtensionAPI): MissionWiring {
 		getStatusSnapshot,
 	});
 
+	// ralph-loop (S5): автопродолжение после fresh-ротации. Новая сессия
+	// пересоздаёт фабрику и аттачит миссию; если на диске стоит
+	// resumeAfterRotation — сбросить флаг ДО tick (иначе он протечёт в
+	// maybeRotateSession нового tick'а и вызовет лишнюю ротацию) и запланировать
+	// tick на следующий macrotask (§4.2). Plan-B без автопродолжения: scheduler
+	// перезапускается на session_start и пришлёт mission_tick ≤60с.
+	const maybeResumeAfterRotation = async (missionDir: string, attachedLoop: MissionLoop): Promise<void> => {
+		let loopState: LoopState;
+		try {
+			loopState = await readMissionLoopState(missionDir);
+		} catch {
+			return; // state нечитаем — Plan-B (scheduler mission_tick) продолжит контур
+		}
+		if (loopState.resumeAfterRotation !== true) {
+			return;
+		}
+		try {
+			loopState.resumeAfterRotation = false;
+			writeLoopStateSync(missionDir, loopState);
+		} catch {
+			// best-effort — флаг останется на диске, худшее: лишняя ротация
+		}
+		// Наблюдаемость (§4.5): имя итерационной сессии в /resume и dashboard.
+		try {
+			if (typeof fan.setSessionName === "function") {
+				fan.setSessionName(`mission/${basename(missionDir)}/iter-${loopState.currentIteration + 1}`);
+			}
+		} catch {
+			// best-effort
+		}
+		setTimeout(() => {
+			void attachedLoop.tick();
+		}, 0);
+	};
+
 	// 3. Хуки жизненного цикла.
 	fan.on("session_start", async (event, ctx) => {
 		try {
@@ -374,9 +472,16 @@ export default function missionExtension(fan: ExtensionAPI): MissionWiring {
 				return;
 			}
 			slashCtx.cwd = cwd; // для lazy-attach: скан и диагностика "No mission found in <cwd>"
+			// ralph-loop (S5): текущий session-файл — parentSession для ротации.
+			try {
+				currentSessionFile = ctx?.sessionManager?.getSessionFile?.() ?? undefined;
+			} catch {
+				currentSessionFile = undefined;
+			}
 			const found = await findAttachableMission(cwd, (status) => NON_TERMINAL_STATUSES.has(status));
 			if (found) {
-				attach(found.missionDir);
+				const attachedLoop = attach(found.missionDir);
+				await maybeResumeAfterRotation(found.missionDir, attachedLoop);
 			}
 		} catch (err) {
 			console.warn("[fan-mission] session_start hook failed:", err);
@@ -384,6 +489,19 @@ export default function missionExtension(fan: ExtensionAPI): MissionWiring {
 	});
 
 	fan.on("session_shutdown", async () => {
+		// ralph-loop (S5, КРИТИЧНО): session_shutdown в середине fresh-ротации —
+		// это teardown СТАРОЙ сессии внутри fan.newSession, а НЕ остановка
+		// миссии. Лёгкая очистка (unsubTick, bridge.dispose) БЕЗ detach/abort —
+		// иначе abort() пишет abort-сигнал и статус aborted, и миссия умирает на
+		// первой же ротации (§4.2). Новая сессия пересоздаст фабрику и подписки.
+		if (wiring.isRotating()) {
+			if (typeof unsubTick === "function") {
+				unsubTick();
+			}
+			bridge.dispose();
+			wiring.clearRotationGuard();
+			return;
+		}
 		await detach();
 	});
 

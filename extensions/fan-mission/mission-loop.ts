@@ -167,7 +167,7 @@ export interface TickResult {
 	itemsExecuted?: number;
 }
 
-interface LoopState {
+export interface LoopState {
 	currentIteration: number;
 	lastStep: number;
 	interrupted: boolean;
@@ -223,7 +223,7 @@ export async function readMissionLoopState(missionDir: string): Promise<LoopStat
 	return { ...defaultLoopState(), ...JSON.parse(raw) };
 }
 
-function writeLoopStateSync(missionDir: string, state: LoopState): void {
+export function writeLoopStateSync(missionDir: string, state: LoopState): void {
 	const filePath = join(missionDir, LOOP_STATE_FILE);
 	const tmpPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
 	const content = JSON.stringify(state, null, 2);
