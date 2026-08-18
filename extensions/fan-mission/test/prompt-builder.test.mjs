@@ -362,6 +362,22 @@ describe("prompt-builder: freshSession section (ralph-loop S4)", () => {
 		expect(prompt).not.toContain("## Session mode");
 	});
 
+	it("freshSession=true + нормальные размеры → секция Session mode физически присутствует", async () => {
+		const prompt = await buildExecutionPrompt({
+			missionDir,
+			itemText: "item a",
+			index: ITEM_A_INDEX,
+			roadmapRaw: ROADMAP_RAW,
+			state: { done: ["small done"], blockers: [], nextSteps: ["next step"] },
+			freshSession: true,
+		});
+		// При нормальных размерах секций fresh-секция обязана присутствовать
+		expect(prompt).toContain("## Session mode");
+		expect(prompt).toContain(FRESH_SESSION_SECTION);
+		// И промпт не обрезан
+		expect(prompt.length).toBeLessThanOrEqual(MAX_PROMPT_CHARS);
+	});
+
 	it("freshSession=true + большие секции → бюджет промпта ≤ MAX_PROMPT_CHARS не превышен", async () => {
 		writeFileSync(
 			join(missionDir, "BACKLOG.md"),
