@@ -301,4 +301,18 @@ describe("prompt-builder: bootstrap planning guidance (0.7.0)", () => {
 		expect(prompt.split("\n")[0]).toBe(`Execute mission item: ${PLANNING_ITEM_TEXT}`);
 		expect(prompt).toContain(BOOTSTRAP_PLANNING_GUIDANCE);
 	});
+
+	it("Guidance содержит требование к точным русским именам секций STATE.md", async () => {
+		const prompt = await buildExecutionPrompt({
+			missionDir,
+			itemText: "Test item",
+			index: 0,
+			roadmapRaw: "- [ ] Test item",
+			state: { done: [], blockers: [], nextSteps: [] },
+		});
+		expect(prompt).toContain("## Сделано");
+		expect(prompt).toContain("## Блокеры");
+		expect(prompt).toContain("## Следующие шаги");
+		expect(prompt).toContain("EXACT Russian names");
+	});
 });

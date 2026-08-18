@@ -191,6 +191,7 @@ export async function buildExecutionPrompt(opts: ExecutionPromptOptions): Promis
 		parts.push("- Mission files above are already provided — do not re-read them.");
 		parts.push("- Work directly on small items; only delegate genuinely multi-file/multi-module work.");
 		parts.push("- Commit meaningful results with clear messages.");
+		parts.push("- STATE.md sections must use EXACT Russian names: '## Сделано', '## Блокеры', '## Следующие шаги' (not 'Done', 'Blockers', 'Текущий шаг', etc.).");
 		if (isPlanningIteration) {
 			parts.push(BOOTSTRAP_PLANNING_GUIDANCE);
 		}

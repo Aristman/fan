@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.4] - 2026-08-18
+
+### Fixed
+- **STATE.md schema violation**: Added explicit guidance in prompt-builder that STATE.md sections must use exact Russian names ("## Сделано", "## Блокеры", "## Следующие шаги"). Previously agents would sometimes write English names or incorrect translations, causing InvalidStateSchema errors during commit phase.
+
 ## [2.8.1] — 2026-08-15
 
 ### Added
