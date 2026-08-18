@@ -257,15 +257,17 @@ describe("Phase A / E2E-1: BLOCKED-tag → блокер + эскалация I3 
 		const onEscalate = vi.fn();
 		const loop = new MissionLoop({ missionDir, deps, onEscalate });
 
-		await loop.tick(); // BLOCKED
+		await loop.tick(); // 0.8.0: BLOCKED → break (1 call)
 		expect(deps.executorCalls.length).toBe(1);
 
-		await loop.tick(); // следующая итерация
-		expect(deps.executorCalls.length).toBe(2); // контур продолжил
+		await loop.tick(); // 0.8.0 continuous: risky thing + follow-up item (2 calls)
+		expect(deps.executorCalls.length).toBe(3); // 1 (BLOCKED) + 2 (continuous re-execute)
 
-		// Статус остаётся active (BLOCKED — не терминальный статус миссии)
+		// 0.8.0: tick 2 переисполняет рискованный пункт (он остался unchecked после BLOCKED)
+		// и завершает follow-up → все пункты сделаны → status=completed.
+		// Инвариант сохранён: BLOCKED не терминальный (после tick 1 статус был active).
 		const status = await loop.status();
-		expect(status).toBe("active");
+		expect(status).toBe("completed");
 	});
 });
 
@@ -321,12 +323,12 @@ describe("Phase A / E2E-2: DECIDE-tag → awaiting_decision (smoke повтор 
 		});
 		const loop = new MissionLoop({ missionDir, deps });
 
-		await loop.tick(); // DECIDE → awaiting_decision
+		await loop.tick(); // DECIDE → awaiting_decision (1 call)
 		await loop.resolveDecision("JWT");
 		expect(await loop.status()).toBe("active");
 
-		await loop.tick(); // продолжение
-		expect(deps.executorCalls.length).toBe(2);
+		await loop.tick(); // 0.8.0 continuous: bootstrap + follow-up (2 calls)
+		expect(deps.executorCalls.length).toBe(3); // 1 (DECIDE) + 2 (continuous after resolve)
 	});
 });
 
@@ -417,18 +419,19 @@ describe("Phase A / E2E-3: COMPLETE + verification ladder", () => {
 		const loop = new MissionLoop({ missionDir, deps, verificationLadder: ladder });
 		const r = await loop.tick();
 
-		// Лестница вызвана
-		expect(ladder.calls.length).toBe(1);
+		// 0.8.0 continuous: оба пункта ROADMAP исполняются в одном тике → лестница
+		// вызывается на каждом (per-iteration верификация, контракт фазы A правило 1).
+		expect(ladder.calls.length).toBe(2);
 
-		// Git commit создан (верификация прошла → фиксируем)
-		expect(deps.commits.length).toBe(1);
+		// Git commit создан на каждом пункте (верификация прошла → фиксируем)
+		expect(deps.commits.length).toBe(2);
 
-		// Запись в «Сделано»
+		// Запись в «Сделано» — оба пункта
 		const state = await readState(missionDir);
-		expect(state.done.length).toBeGreaterThan(0);
+		expect(state.done.length).toBeGreaterThanOrEqual(2);
 
-		// Статус остаётся active (есть ещё пункты ROADMAP)
-		expect(r.status).toBe("active");
+		// Статус: все пункты выполнены, нет Goal → completed
+		expect(r.status).toBe("completed");
 	});
 });
 
@@ -465,7 +468,8 @@ describe("Phase A / Smoke: 4 promise tags routing", () => {
 		});
 		const loop = new MissionLoop({ missionDir, deps, verificationLadder: ladder });
 		await loop.tick();
-		expect(ladder.calls.length).toBe(1);
+		// 0.8.0 continuous: 2 roadmap items → ladder called twice (per-iteration)
+		expect(ladder.calls.length).toBe(2);
 	});
 
 	it("smoke BLOCKED: блокер в STATE.md + эскалация I3", async () => {
@@ -508,9 +512,9 @@ describe("Phase A / Smoke: 4 promise tags routing", () => {
 		const state = await readState(missionDir);
 		expect(state.blockers.some((b) => /tests red/.test(b))).toBe(true);
 
-		// контур продолжает
+		// 0.8.0: tick 1 — FAILED → break (1 call). tick 2 — continuous re-execute (2 calls)
 		await loop.tick();
-		expect(deps.executorCalls.length).toBe(2);
+		expect(deps.executorCalls.length).toBe(3); // 1 (FAILED) + 2 (continuous after)
 	});
 });
 
@@ -549,15 +553,16 @@ describe("Phase A / EDGE: routing edge cases", () => {
 		const loop = new MissionLoop({ missionDir, deps, onEscalate });
 		const r = await loop.tick();
 
-		// Эскалация I3 с tag:null (нет обещания — оператор должен знать)
+		// 0.8.0: I3 эскалация на КАЖДОЙ итерации без тега (per-iteration)
+		// (был 1 пункт → tick 1 раз → 1 вызов; с 2 пунктами стало бы 2)
 		expect(onEscalate).toHaveBeenCalledWith(
 			"I3",
 			expect.objectContaining({ tag: null, iteration: 1 }),
 		);
 
-		// Fallback на iterResult.status=COMPLETE → commit создан (поведение «как сейчас»)
-		expect(deps.commits.length).toBe(1);
-		expect(r.status).toBe("active");
+		// 0.8.0 continuous: оба пункта ROADMAP исполняются → 2 коммита (fallback на status)
+		expect(deps.commits.length).toBe(2);
+		expect(r.status).toBe("completed");
 	});
 
 	// EDGE: Тег приоритетнее iterResult.status
@@ -600,11 +605,11 @@ describe("Phase A / EDGE: routing edge cases", () => {
 		const loop = new MissionLoop({ missionDir, deps });
 		const r = await loop.tick();
 
-		// Commit создан (поведение как сейчас — без лестницы)
-		expect(deps.commits.length).toBe(1);
+		// 0.8.0 continuous: оба пункта ROADMAP исполняются → 2 коммита (без лестницы)
+		expect(deps.commits.length).toBe(2);
 		const state = await readState(missionDir);
-		expect(state.done.length).toBeGreaterThan(0);
-		expect(r.status).toBe("active");
+		expect(state.done.length).toBeGreaterThanOrEqual(2);
+		expect(r.status).toBe("completed");
 	});
 
 	// EDGE: Ladder бросает ошибку → итерация FAILED с диагнозом, контур не падает

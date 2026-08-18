@@ -152,17 +152,17 @@ describe("P0-1: Recovery probes for each crash point", () => {
 		const loop = new MissionLoop({ missionDir, deps });
 		const result = await loop.tick();
 
-		// Executor SHOULD be called (iteration was not done)
-		expect(deps.executorCalls.length).toBe(1);
-		// Steps 4+ should run
+		// 0.8.0: recovery + continuous loop → both items processed
+		expect(deps.executorCalls.length).toBe(2);
 		expect(result.steps.iterate).toBe(true);
 		expect(result.steps.commit).toBe(true);
 		expect(result.steps.backlog).toBe(true);
-		expect(result.status).toBe("active");
+		expect(result.status).toBe("completed");
+		expect(result.itemsExecuted).toBe(2);
 
-		// Verify loop state is clean
+		// Verify loop state
 		const ls = await readMissionLoopState(missionDir);
-		expect(ls.lastStep).toBe(7);
+		expect(ls.lastStep).toBe(3); // ended at "all done" decision
 		expect(ls.interrupted).toBe(false);
 	});
 
@@ -178,25 +178,26 @@ describe("P0-1: Recovery probes for each crash point", () => {
 		const loop = new MissionLoop({ missionDir, deps });
 		const result = await loop.tick();
 
-		// Executor should NOT be called
-		expect(deps.executorCalls.length).toBe(0);
-		// iterate step is skipped
-		expect(result.steps.iterate).toBe(false);
-		// commit and backlog should run
+		// 0.8.0: recovery skips executor for task-alpha, but continuous loop processes task-beta
+		expect(deps.executorCalls.length).toBe(1);
+		// iterate step is skipped for recovered item
+		expect(result.steps.iterate).toBe(true); // true because task-beta runs iterate
 		expect(result.steps.commit).toBe(true);
 		expect(result.steps.backlog).toBe(true);
-		expect(result.status).toBe("active");
+		expect(result.status).toBe("completed");
+		expect(result.itemsExecuted).toBe(2);
 
-		// STATE.md should have the done entry
+		// STATE.md should have both done entries
 		const state = await readState(missionDir);
 		expect(state.done).toContain("task-alpha");
+		expect(state.done).toContain("task-beta");
 
-		// Git commit should have been created
-		expect(deps.commits.length).toBe(1);
+		// Git commits for both items
+		expect(deps.commits.length).toBe(2);
 
-		// Loop state clean
+		// Loop state
 		const ls = await readMissionLoopState(missionDir);
-		expect(ls.lastStep).toBe(7);
+		expect(ls.lastStep).toBe(3); // ended at "all done"
 		expect(ls.interrupted).toBe(false);
 		expect(ls.iterationResult).toBeUndefined();
 	});
@@ -212,13 +213,16 @@ describe("P0-1: Recovery probes for each crash point", () => {
 		const loop = new MissionLoop({ missionDir, deps });
 		const result = await loop.tick();
 
-		expect(deps.executorCalls.length).toBe(0);
-		expect(result.steps.iterate).toBe(false);
+		// 0.8.0: recovery commits task-alpha, then continuous loop processes task-beta
+		expect(deps.executorCalls.length).toBe(1);
+		expect(result.steps.iterate).toBe(true); // task-beta runs iterate
 		expect(result.steps.commit).toBe(true);
-		expect(deps.commits.length).toBe(1);
+		expect(deps.commits.length).toBe(2);
+		expect(result.itemsExecuted).toBe(2);
 
 		const state = await readState(missionDir);
 		expect(state.done).toContain("task-alpha");
+		expect(state.done).toContain("task-beta");
 	});
 
 	it("Crash mid-step 6 (commit done, journal not advanced) → redo executor, idempotent commit", async () => {
@@ -542,8 +546,10 @@ describe("P1-5: STATE.md overflow and auto-archiving", () => {
 		const result = await loop.tick();
 
 		// Should succeed (archived old items, then continued)
-		expect(result.status).toBe("active");
+		// 0.8.0: single item processed → completed
+		expect(result.status).toBe("completed");
 		expect(result.steps.iterate).toBe(true);
+		expect(result.itemsExecuted).toBe(1);
 
 		// STATE.md should now be under limit
 		const sizeAfter = checkStateFileSize(missionDir);
@@ -626,7 +632,8 @@ describe("P1-6: File-lock (createFileLock)", () => {
 
 		// Should work fine with default file-lock
 		expect(result.steps.iterate).toBe(true);
-		expect(result.status).toBe("active");
+		// 0.8.0: single item → completed
+		expect(result.status).toBe("completed");
 
 		// Lock file should be cleaned up
 		expect(existsSync(join(missionDir, ".mission-loop.lock"))).toBe(false);
@@ -770,35 +777,21 @@ describe("Integration: full scenario with deep-fix features", () => {
 		]);
 
 		try {
-			// Tick 1: normal
-			const deps1 = makeDeps();
-			const loop1 = new MissionLoop({ missionDir, deps: deps1 });
-			const r1 = await loop1.tick();
-			expect(r1.iteration).toBe(1);
-			expect(r1.status).toBe("active");
-
-			// Simulate crash after step 4 of tick 2
+			// 0.8.0: Simulate crash after step 4 of tick 1 (task-a recovered from journal)
 			writeLoopState(missionDir, {
-				currentIteration: 2, lastStep: 4, interrupted: true,
+				currentIteration: 1, lastStep: 4, interrupted: true,
 				iterationResult: { status: "COMPLETE", costTokens: 50, costUsd: 0.005 },
-				pendingItem: "task-b", pendingItemIndex: 3, committed: false,
+				pendingItem: "task-a", pendingItemIndex: 2, committed: false,
 				budgetUsed: { tokens: 50, usd: 0.005 },
 			});
 
-			// Tick 2: recovery → skip executor, do commit+backlog
-			const deps2 = makeDeps();
-			const loop2 = new MissionLoop({ missionDir, deps: deps2 });
-			const r2 = await loop2.tick();
-			expect(r2.iteration).toBe(2);
-			expect(deps2.executorCalls.length).toBe(0);
-			expect(deps2.commits.length).toBe(1);
-
-			// Tick 3: normal
-			const deps3 = makeDeps();
-			const loop3 = new MissionLoop({ missionDir, deps: deps3 });
-			const r3 = await loop3.tick();
-			expect(r3.iteration).toBe(3);
-			expect(r3.status).toBe("active");
+			// Tick 1: recovery skips executor for task-a, continuous loop processes task-b and task-c
+			const deps1 = makeDeps();
+			const loop1 = new MissionLoop({ missionDir, deps: deps1 });
+			const r1 = await loop1.tick();
+			expect(r1.itemsExecuted).toBe(3);
+			expect(deps1.executorCalls.length).toBe(2); // task-b + task-c (task-a recovered)
+			expect(r1.status).toBe("completed");
 
 			// All 3 items done
 			const state = await readState(missionDir);

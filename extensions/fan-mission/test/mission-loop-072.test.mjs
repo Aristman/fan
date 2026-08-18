@@ -523,14 +523,10 @@ describe("0.7.2 Part 5: Planning cap (backlog #32)", () => {
 		});
 		const loop = new MissionLoop({ missionDir, deps });
 
-		// First planning tick — empty (no unchecked items added)
+		// 0.8.0: continuous loop runs planning twice within one tick → awaiting_decision immediately
 		const r1 = await loop.tick();
-		expect(r1.status).toBe("active");
+		expect(r1.status).toBe("awaiting_decision");
 		expect(r1.item).toContain("decompose");
-
-		// Second planning tick — empty → triggers awaiting_decision
-		const r2 = await loop.tick();
-		expect(r2.status).toBe("awaiting_decision");
 	});
 
 	it("Productive planning (adds unchecked items) → streak reset", async () => {
@@ -566,9 +562,9 @@ describe("0.7.2 Part 5: Planning cap (backlog #32)", () => {
 		const depsWithSmart = makeDeps({ executor: smartExecutor });
 		const loop = new MissionLoop({ missionDir, deps: depsWithSmart });
 
-		// First planning tick — productive (adds items)
+		// 0.8.0: planning adds items → loop processes them → planning again (goal non-empty) → cap triggers
 		const r1 = await loop.tick();
-		expect(r1.status).toBe("active");
+		expect(r1.status).toBe("awaiting_decision");
 
 		// LoopState should have emptyPlanningStreak = 0
 		const ls = await readMissionLoopState(missionDir);
@@ -583,11 +579,13 @@ describe("0.7.2 Part 5: Planning cap (backlog #32)", () => {
 		});
 		const loop = new MissionLoop({ missionDir, deps });
 
-		// First empty planning tick
-		await loop.tick();
+		// 0.8.0: first tick runs planning twice (continuous loop) → awaiting_decision
+		const r = await loop.tick();
+		expect(r.status).toBe("awaiting_decision");
 
 		const ls = await readMissionLoopState(missionDir);
-		expect(ls.emptyPlanningStreak).toBe(1);
+		// After awaiting_decision, streak is reset to 0
+		expect(ls.emptyPlanningStreak ?? 0).toBe(0);
 	});
 
 	it("Non-planning tick resets emptyPlanningStreak", async () => {

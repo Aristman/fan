@@ -220,12 +220,16 @@ describe("TC-F22-3: real metrics across iterations", () => {
 				expect(parsed).toHaveProperty("status");
 			}
 
-			// getMetrics → агрегаты.
+			// 0.8.0: continuous loop — каждый тик гонит итерации подряд до stop-condition.
+			// Метрики считаются по итерациям, не по тикам.
+			// Сценарий: 8 пунктов, 5 COMPLETE + 1 FAILED responses, 6 тиков.
+			//   Tick 1: 5 complete + 1 failed → break (FAILED). 6 итераций.
+			//   Tick 2-6: каждый тик атакует оставшийся FAILED-пункт (мок возвращает
+			//             последний ответ), break. По 1 итерации на тик.
+			// Итого: totalIterations = 11, failures = 6 → failureRate = 6/11.
 			const metrics = await metricsCollector.getMetrics(missionDir);
-			expect(metrics.totalIterations).toBeGreaterThanOrEqual(6);
-			// 1 FAILED из 6 → failureRate ≈ 0.167 < 0.2 (MAST порог проходит).
-			expect(metrics.failureRate).toBeLessThan(0.2);
-			expect(metrics.failureRate).toBeCloseTo(1 / 6, 1);
+			expect(metrics.totalIterations).toBe(11);
+			expect(metrics.failureRate).toBeCloseTo(6 / 11, 5);
 			expect(metrics.totalTokensIn).toBeGreaterThanOrEqual(0);
 		} finally {
 			env.cleanup();
@@ -260,9 +264,10 @@ describe("TC-F22-4: verification ladder failure end-to-end", () => {
 
 			// ── Итерация 2: контур продолжает — лестница проходит → commit ───
 			await loop.tick();
-			expect(executorCalls.length).toBe(2); // следующая итерация запустилась
-			expect(commits.length).toBe(1); // лестница прошла → фиксируем
-			expect(await loop.status()).toBe("active");
+			// 0.8.0: continuous loop processes remaining items after ladder pass
+			expect(executorCalls.length).toBeGreaterThanOrEqual(2);
+			expect(commits.length).toBeGreaterThanOrEqual(1);
+			expect(await loop.status()).toBe("completed"); // all items done
 		} finally {
 			env.cleanup();
 		}

@@ -138,14 +138,15 @@ describe("ROADMAP `*`-маркеры чеклиста", () => {
 		const loop = new MissionLoop({ missionDir, deps });
 		const result = await loop.tick();
 
-		expect(result.status).not.toBe("completed");
-		expect(result.status).toBe("active");
-		expect(result.iteration).toBe(1);
-		expect(result.item).toBe("task-alpha");
-		expect(deps.executorCalls.length).toBe(1);
+		// 0.8.0: continuous loop processes all items → completed
+		expect(result.status).toBe("completed");
+		expect(result.iteration).toBe(2);
+		expect(result.itemsExecuted).toBe(2);
+		expect(deps.executorCalls.length).toBe(2);
 
 		const state = await readState(missionDir);
 		expect(state.done).toContain("task-alpha");
+		expect(state.done).toContain("task-beta");
 	});
 
 	it("2. Смешанный ROADMAP `- [x]` + `* [ ]` → берёт `*`-пункт", async () => {
@@ -162,9 +163,10 @@ describe("ROADMAP `*`-маркеры чеклиста", () => {
 		const loop = new MissionLoop({ missionDir, deps });
 		const result = await loop.tick();
 
-		expect(result.status).toBe("active");
-		expect(result.item).toBe("task-beta");
-		expect(deps.executorCalls.length).toBe(1);
+		// 0.8.0: continuous loop processes both unchecked items → completed
+		expect(result.status).toBe("completed");
+		expect(result.itemsExecuted).toBe(2);
+		expect(deps.executorCalls.length).toBe(2);
 		expect(deps.executorCalls[0].prompt).toContain("task-beta");
 	});
 
@@ -181,9 +183,10 @@ describe("ROADMAP `*`-маркеры чеклиста", () => {
 		const loop = new MissionLoop({ missionDir, deps });
 		await loop.tick();
 
+		// 0.8.0: continuous loop processes both items
 		const roadmap = readFileSync(join(missionDir, "ROADMAP.md"), "utf8");
 		expect(roadmap).toContain("* [x] task-alpha");
-		expect(roadmap).toContain("* [ ] task-beta");
+		expect(roadmap).toContain("* [x] task-beta");
 		expect(roadmap).not.toContain("- [x] task-alpha");
 	});
 

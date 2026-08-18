@@ -209,10 +209,11 @@ describe("mission-loop: recurring items (0.7.3)", () => {
 			deps: { executor, git, clock: makeMockClock(), lock },
 		});
 
-		// Tick 1: should process "Implement feature A" (first unchecked)
+		// 0.8.0: Tick 1 processes both items (one-shot first, then recur)
 		const result1 = await loop.tick();
 		expect(result1.status).toBe("active");
-		expect(result1.item).toBe("Implement feature A");
+		expect(result1.item).toBe("Check email (recur)"); // last item processed
+		expect(result1.itemsExecuted).toBe(2);
 		lock.held = false;
 
 		// ROADMAP after tick 1: feature A is [x], recur is still [ ]
@@ -220,10 +221,11 @@ describe("mission-loop: recurring items (0.7.3)", () => {
 		expect(updatedRoadmap).toContain("- [x] Implement feature A");
 		expect(updatedRoadmap).toContain("- [ ] Check email (recur)");
 
-		// Tick 2: should process "Check email (recur)"
+		// Tick 2: processes recur again
 		const result2 = await loop.tick();
 		expect(result2.status).toBe("active");
 		expect(result2.item).toBe("Check email (recur)");
+		expect(result2.itemsExecuted).toBe(1);
 
 		// ROADMAP after tick 2: feature A still [x], recur still [ ]
 		updatedRoadmap = readFileSync(join(missionDir, "ROADMAP.md"), "utf8");
@@ -342,18 +344,11 @@ describe("mission-loop: regression — ordinary items (0.7.3)", () => {
 			deps: { executor, git, clock: makeMockClock(), lock },
 		});
 
-		// Tick 1: feature A
-		await loop.tick();
-		lock.held = false;
+		// 0.8.0: Tick 1 processes both items (continuous loop)
+		const result = await loop.tick();
+		expect(result.itemsExecuted).toBe(2);
 
 		let updatedRoadmap = readFileSync(join(missionDir, "ROADMAP.md"), "utf8");
-		expect(updatedRoadmap).toContain("- [x] Implement feature A");
-		expect(updatedRoadmap).toContain("- [ ] Implement feature B");
-
-		// Tick 2: feature B
-		await loop.tick();
-
-		updatedRoadmap = readFileSync(join(missionDir, "ROADMAP.md"), "utf8");
 		expect(updatedRoadmap).toContain("- [x] Implement feature A");
 		expect(updatedRoadmap).toContain("- [x] Implement feature B");
 	});

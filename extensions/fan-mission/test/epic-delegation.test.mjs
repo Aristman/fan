@@ -238,7 +238,7 @@ describe("F-48.5: EPIC delegation (mission-loop → super-orchestrator)", () => 
 			expect(executor.calls.length).toBe(0);
 
 			// Результат — COMPLETE с синтезом отчётов
-			expect(result.status).toBe("active");
+			expect(result.status).toBe("completed");
 		});
 	});
 
@@ -317,7 +317,7 @@ describe("F-48.5: EPIC delegation (mission-loop → super-orchestrator)", () => 
 			expect(executor.calls.length).toBe(1);
 
 			// Результат от executor (COMPLETE)
-			expect(result.status).toBe("active");
+			expect(result.status).toBe("completed");
 		});
 	});
 
@@ -349,7 +349,7 @@ describe("F-48.5: EPIC delegation (mission-loop → super-orchestrator)", () => 
 			expect(executor.calls.length).toBe(1);
 
 			// Результат от локального executor
-			expect(result.status).toBe("active");
+			expect(result.status).toBe("completed");
 		});
 	});
 
@@ -385,7 +385,7 @@ describe("F-48.5: EPIC delegation (mission-loop → super-orchestrator)", () => 
 
 			// Таймаут → fallback: executor.runIteration вызван
 			expect(executor.calls.length).toBe(1);
-			expect(result.status).toBe("active");
+			expect(result.status).toBe("completed");
 		});
 	});
 
@@ -498,7 +498,7 @@ describe("F-48.5: EPIC delegation (mission-loop → super-orchestrator)", () => 
 			expect(delegationEmitted).toBe(false);
 
 			// Результат: обычный COMPLETE
-			expect(result.status).toBe("active");
+			expect(result.status).toBe("completed");
 			expect(result.item).toBe("Добавить логирование");
 		});
 	});
@@ -526,7 +526,7 @@ describe("F-48.5: EPIC delegation (mission-loop → super-orchestrator)", () => 
 
 			// Пустой массив → fallback: executor.runIteration вызван
 			expect(executor.calls.length).toBe(1);
-			expect(result.status).toBe("active");
+			expect(result.status).toBe("completed");
 		});
 	});
 

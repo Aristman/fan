@@ -248,29 +248,32 @@ describe("F-09 / TC-F09-1: один полный тик цикла (7 шагов
 		expect(result.steps.commit).toBe(true);
 		expect(result.steps.backlog).toBe(true);
 
-		// Итерация продвинулась
-		expect(result.iteration).toBe(1);
-		// Статус — остаётся active (не терминальный)
-		expect(result.status).toBe("active");
+		// 0.8.0: continuous loop — all items processed in one tick
+		expect(result.iteration).toBe(2);
+		// All items done → completed
+		expect(result.status).toBe("completed");
 		// Не interrupted (нормальный тик)
 		expect(result.interrupted).toBeFalsy();
+		// 0.8.0: itemsExecuted reflects count
+		expect(result.itemsExecuted).toBe(2);
 
-		// STATE.md «Сделано» содержит новую запись
+		// STATE.md «Сделано» содержит записи
 		const state = await readState(missionDir);
 		expect(state.done.length).toBeGreaterThan(0);
 		expect(state.done[0]).toMatch(/bootstrap|happy-iter/);
 
-		// Git commit создан
-		expect(deps.commits.length).toBe(1);
+		// Git commits — one per item
+		expect(deps.commits.length).toBe(2);
 		expect(deps.commits[0].message).toMatch(/bootstrap|happy-iter/);
 
-		// Executor вызван ровно один раз
-		expect(deps.executorCalls.length).toBe(1);
+		// Executor вызван на каждый пункт
+		expect(deps.executorCalls.length).toBe(2);
 
 		// .mission-loop.json обновлён
 		const loopState = await readMissionLoopState(missionDir);
-		expect(loopState.currentIteration).toBe(1);
-		expect(loopState.lastStep).toBe(7);
+		expect(loopState.currentIteration).toBe(2);
+		// 0.8.0: lastStep=3 because the loop ended at "all done" decision
+		expect(loopState.lastStep).toBe(3);
 		expect(loopState.interrupted).toBe(false);
 	});
 
@@ -380,8 +383,9 @@ describe("F-09 / TC-F09-2: stateless recovery после kill между ите�
 		// Все шаги пройдены
 		expect(result.steps.iterate).toBe(true);
 		expect(result.steps.commit).toBe(true);
-		// currentIteration = 1
-		expect(result.iteration).toBe(1);
+		// 0.8.0: continuous loop processes all items → iteration = 2
+		expect(result.iteration).toBe(2);
+		expect(result.itemsExecuted).toBe(2);
 	});
 });
 
@@ -669,9 +673,11 @@ describe("F-09 / TC-F09-7: budget exhausted → mission → budget_exhausted", (
 		const loop = new MissionLoop({ missionDir, deps });
 		const result = await loop.tick();
 
-		// budget=0 → unlimited → status stays active (iteration succeeded)
-		expect(result.status).toBe("active");
+		// budget=0 → unlimited → iteration succeeded
+		// 0.8.0: single item processed → mission completed (no more items)
+		expect(result.status).toBe("completed");
 		expect(deps.executorCalls.length).toBe(1); // executor WAS called
+		expect(result.itemsExecuted).toBe(1);
 	});
 
 	it("TC-F09-7: исчерпание budget во время итерации (costTokens > remaining) → budget_exhausted", async () => {
@@ -726,13 +732,13 @@ describe("F-09 / TC-F09-8: currentIteration увеличивается на ка
 	it("TC-F09-8: 3 последовательных tick() → currentIteration = 3, 3 commit'а", async () => {
 		const deps = makeDeps();
 		const loop = new MissionLoop({ missionDir, deps });
-		await loop.tick();
-		await loop.tick();
+		// 0.8.0: continuous loop — first tick processes all 3 items
 		const result = await loop.tick();
 
 		expect(result.iteration).toBe(3);
 		expect(deps.commits.length).toBe(3);
 		expect(deps.executorCalls.length).toBe(3);
+		expect(result.itemsExecuted).toBe(3);
 
 		const loopState = await readMissionLoopState(missionDir);
 		expect(loopState.currentIteration).toBe(3);
@@ -741,10 +747,11 @@ describe("F-09 / TC-F09-8: currentIteration увеличивается на ка
 	it("TC-F09-8: каждый tick передвигает ROADMAP.md (чекбокс [ ] → [x])", async () => {
 		const deps = makeDeps();
 		const loop = new MissionLoop({ missionDir, deps });
+		// 0.8.0: continuous loop — first tick processes all 3 items
 		await loop.tick();
 		const roadmap = readFileSync(join(missionDir, "ROADMAP.md"), "utf8");
 		const checked = roadmap.match(/- \[x\]/g) || [];
-		expect(checked.length).toBe(1);
+		expect(checked.length).toBe(3);
 	});
 });
 

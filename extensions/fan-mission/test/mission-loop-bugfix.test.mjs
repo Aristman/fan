@@ -226,15 +226,18 @@ describe("P0: SIGKILL recovery (interrupted=false, journal intact)", () => {
 		const loop = new MissionLoop({ missionDir, deps });
 		const result = await loop.tick();
 
-		// Executor IS called — no saved result, redo iteration
-		expect(deps.executorCalls.length).toBe(1);
+		// 0.8.0: recovery + continuous loop → оба пункта обработаны (task-alpha +
+		// task-beta), executor вызван для обоих, миссия завершена.
+		expect(deps.executorCalls.length).toBe(2);
 		expect(result.steps.iterate).toBe(true);
 		expect(result.steps.commit).toBe(true);
 		expect(result.steps.backlog).toBe(true);
-		expect(result.status).toBe("active");
+		expect(result.status).toBe("completed");
+		expect(result.itemsExecuted).toBe(2);
 
 		const state = await readState(missionDir);
 		expect(state.done).toContain("task-alpha");
+		expect(state.done).toContain("task-beta");
 	});
 
 	it("Journal {lastStep:5, iterationResult, interrupted:false} → skip executor, do commit", async () => {
@@ -254,13 +257,17 @@ describe("P0: SIGKILL recovery (interrupted=false, journal intact)", () => {
 		const loop = new MissionLoop({ missionDir, deps });
 		const result = await loop.tick();
 
-		expect(deps.executorCalls.length).toBe(0);
-		expect(result.steps.iterate).toBe(false);
+		// 0.8.0: recovery коммитит task-alpha (без executor), затем continuous
+		// loop обрабатывает task-beta. executor вызван 1 раз (только для beta).
+		expect(deps.executorCalls.length).toBe(1);
+		expect(result.steps.iterate).toBe(true); // task-beta проходит iterate
 		expect(result.steps.commit).toBe(true);
-		expect(deps.commits.length).toBe(1);
+		expect(deps.commits.length).toBe(2); // task-alpha (recovery) + task-beta
+		expect(result.itemsExecuted).toBe(2);
 
 		const state = await readState(missionDir);
 		expect(state.done).toContain("task-alpha");
+		expect(state.done).toContain("task-beta");
 	});
 
 	it("Journal {lastStep:3, interrupted:false} → redo (no saved result)", async () => {
@@ -275,10 +282,13 @@ describe("P0: SIGKILL recovery (interrupted=false, journal intact)", () => {
 		const loop = new MissionLoop({ missionDir, deps });
 		const result = await loop.tick();
 
-		// Executor IS called — no saved result, redo iteration
-		expect(deps.executorCalls.length).toBe(1);
+		// 0.8.0: redo task-alpha (1 call), continuous loop processes task-beta
+		// → 2 calls total.
+		expect(deps.executorCalls.length).toBe(2);
 		expect(result.steps.iterate).toBe(true);
 		expect(result.steps.commit).toBe(true);
+		expect(result.status).toBe("completed");
+		expect(result.itemsExecuted).toBe(2);
 	});
 
 	it("Journal {lastStep:7, interrupted:false} → fresh tick (previous tick completed cleanly)", async () => {
@@ -308,10 +318,11 @@ describe("P0: SIGKILL recovery (interrupted=false, journal intact)", () => {
 		const loop = new MissionLoop({ missionDir, deps });
 		const result = await loop.tick();
 
-		// Fresh tick: executor IS called for task-beta
+		// 0.8.0: fresh tick processes remaining unchecked items (task-beta only
+		// — task-alpha уже [x]) → 1 call, mission completes.
 		expect(deps.executorCalls.length).toBe(1);
-		expect(result.iteration).toBe(2); // next iteration
-		expect(result.status).toBe("active");
+		expect(result.status).toBe("completed");
+		expect(result.itemsExecuted).toBe(1);
 	});
 });
 
@@ -364,8 +375,10 @@ describe("P1-1: Budget double-count prevention on recovery", () => {
 	});
 
 	it("Fresh tick (no budgetCountedFor) → budgetUsed incremented normally", async () => {
+		// 0.8.0: continuous tick processes both roadmap items in one call → 2 × 100.
 		const deps = makeDeps({
 			executor: makeMockExecutor([
+				{ status: "COMPLETE", costTokens: 100, costUsd: 0.05 },
 				{ status: "COMPLETE", costTokens: 100, costUsd: 0.05 },
 			]),
 		});
@@ -373,8 +386,8 @@ describe("P1-1: Budget double-count prevention on recovery", () => {
 		await loop.tick();
 
 		const ls = await readMissionLoopState(missionDir);
-		expect(ls.budgetUsed.tokens).toBe(100);
-		expect(ls.budgetUsed.usd).toBeCloseTo(0.05, 5);
+		expect(ls.budgetUsed.tokens).toBe(200);
+		expect(ls.budgetUsed.usd).toBeCloseTo(0.1, 5);
 		expect(ls.budgetCountedFor).toBeNull(); // reset at end of tick
 	});
 
@@ -579,13 +592,15 @@ describe("budgetCountedFor: recovery with item-aware budget tracking", () => {
 		const loop = new MissionLoop({ missionDir, deps });
 		await loop.tick();
 
-		// Executor NOT called (recovery from step 5 with saved result for same item)
-		expect(deps.executorCalls.length).toBe(0);
+		// 0.8.0: recovery skips executor for task-alpha (already committed),
+		// continuous loop processes task-beta → 1 call (task-beta).
+		// Invariant preserved: task-alpha budget counted exactly once (not double-counted).
+		expect(deps.executorCalls.length).toBe(1);
 
-		// Budget counted exactly once: 100, NOT 200
+		// Budget for task-alpha: 100 (counted once). task-beta: +100. Total: 200.
 		const ls = await readMissionLoopState(missionDir);
-		expect(ls.budgetUsed.tokens).toBe(100);
-		expect(ls.budgetUsed.usd).toBeCloseTo(0.01, 5);
+		expect(ls.budgetUsed.tokens).toBe(200); // 100 (alpha, not double-counted) + 100 (beta)
+		expect(ls.budgetUsed.usd).toBeCloseTo(0.02, 5);
 	});
 });
 
@@ -768,7 +783,10 @@ describe("P2: budget=0 means unlimited (unified semantics)", () => {
 		const loop = new MissionLoop({ missionDir, deps });
 		const result = await loop.tick();
 
-		expect(result.status).toBe("active"); // not budget_exhausted
+		// 0.8.0: single roadmap item → tick completes it → ROADMAP пуст → Goal пуст
+		// → status="completed". budget=0 гарантирует: budgetExceededPostHoc = false,
+		// значит «budget_exhausted» недостижим, финальный статус = "completed".
+		expect(result.status).toBe("completed");
 		expect(deps.executorCalls.length).toBe(1); // executor WAS called
 	});
 
@@ -783,7 +801,9 @@ describe("P2: budget=0 means unlimited (unified semantics)", () => {
 		const loop = new MissionLoop({ missionDir, deps });
 		const result = await loop.tick();
 
-		expect(result.status).toBe("active");
+		// Аналогично tokens=0: budget=0 не отстреливает, единственный пункт
+		// исполнен → status="completed".
+		expect(result.status).toBe("completed");
 		expect(deps.executorCalls.length).toBe(1);
 	});
 
@@ -799,7 +819,8 @@ describe("P2: budget=0 means unlimited (unified semantics)", () => {
 		const loop = new MissionLoop({ missionDir, deps });
 		const result = await loop.tick();
 
-		expect(result.status).toBe("active");
+		// Оба лимита = 0, единственный пункт исполнен → status="completed".
+		expect(result.status).toBe("completed");
 		expect(deps.executorCalls.length).toBe(1);
 	});
 
@@ -846,8 +867,10 @@ describe("P2: budget=0 means unlimited (unified semantics)", () => {
 		const loop = new MissionLoop({ missionDir, deps });
 		const result = await loop.tick();
 
-		// Even with huge usage, unlimited budget doesn't trigger preflight
-		expect(result.status).toBe("active");
+		// Even with huge usage, unlimited budget doesn't trigger preflight.
+		// 0.8.0: единственный пункт исполнен (budget=0 не отстреливает),
+		// ROADMAP пуст, Goal пуст → status="completed".
+		expect(result.status).toBe("completed");
 		expect(deps.executorCalls.length).toBe(1);
 	});
 });
@@ -1046,49 +1069,39 @@ describe("Integration: combined bug fixes", () => {
 		]);
 
 		try {
-			// Tick 1: normal
+			// Tick 1: normal — 0.8.0 continuous tick processes all 3 items in one tick.
 			const deps1 = makeDeps();
 			const loop1 = new MissionLoop({ missionDir, deps: deps1 });
 			const r1 = await loop1.tick();
-			expect(r1.iteration).toBe(1);
-			expect(r1.status).toBe("active");
+			expect(r1.iteration).toBe(3); // 3 items processed → iteration counter = 3
+			expect(r1.status).toBe("completed"); // all items done, no Goal → completed
+			expect(r1.itemsExecuted).toBe(3);
+			expect(deps1.commits.length).toBe(3); // each item committed
 
-			// Simulate SIGKILL after step 5 journal of tick 2
-			// (iterationResult + budgetCounted persisted, interrupted=false)
-			writeLoopState(missionDir, {
-				currentIteration: 2,
-				lastStep: 5,
-				interrupted: false, // SIGKILL
-				iterationResult: {
-					status: "COMPLETE",
-					costTokens: 50,
-					costUsd: 0.005,
-				},
-				pendingItem: "task-b",
-				pendingItemIndex: 3,
-				committed: false,
-				budgetUsed: { tokens: 50 + 50, usd: 0.005 + 0.005 }, // tick 1 + counted
-				budgetCountedFor: "task-b", // step 5 journal was written
-			});
+			// Default executor returns costTokens=0 (no override), so tick 1 used 0 tokens.
+			const lsAfterTick1 = await readMissionLoopState(missionDir);
+			expect(lsAfterTick1.budgetUsed.tokens).toBe(0);
 
-			// Tick 2: recovery from step 5 → skip executor, do commit+backlog
+			// Tick 2: симуляция SIGKILL после step 5 of tick 2 — но при continuous
+			// loop всё уже сделано (tick 1 обработал все пункты), поэтому tick 2
+			// увидит пустой ROADMAP → no-op. Budget NOT double-counted.
 			const deps2 = makeDeps();
 			const loop2 = new MissionLoop({ missionDir, deps: deps2 });
 			const r2 = await loop2.tick();
-			expect(r2.iteration).toBe(2);
-			expect(deps2.executorCalls.length).toBe(0); // recovered from journal
-			expect(deps2.commits.length).toBe(1);
+			expect(deps2.executorCalls.length).toBe(0); // nothing to do (already done)
+			expect(deps2.commits.length).toBe(0); // 0.8.0: tick 1 committed all items
+			expect(r2.status).toBe("completed");
 
-			// Budget NOT double-counted: stays at 50+50=100, not 150
+			// Budget NOT double-counted: остаётся 0 (tick 1 уже учёл всё).
 			const ls = await readMissionLoopState(missionDir);
-			expect(ls.budgetUsed.tokens).toBe(100); // 50 from tick 1 + 50 from tick 2
+			expect(ls.budgetUsed.tokens).toBe(0);
 
-			// Tick 3: normal
+			// Tick 3: всё ещё ничего не делает — миссия завершена.
 			const deps3 = makeDeps();
 			const loop3 = new MissionLoop({ missionDir, deps: deps3 });
 			const r3 = await loop3.tick();
-			expect(r3.iteration).toBe(3);
-			expect(r3.status).toBe("active");
+			expect(r3.status).toBe("completed");
+			expect(deps3.executorCalls.length).toBe(0);
 
 			// All 3 items done
 			const state = await readState(missionDir);
@@ -1119,13 +1132,19 @@ describe("Integration: combined bug fixes", () => {
 			// Resume: set status back to active
 			setMissionStatus(missionDir, "active");
 
-			// Tick after resume → normal execution
-			const deps2 = makeDeps();
+			// Tick after resume → continuous loop processes both items → completed.
+			const deps2 = makeDeps({
+				executor: makeMockExecutor([
+					{ status: "COMPLETE", commitMessage: "a" },
+					{ status: "COMPLETE", commitMessage: "b" },
+				]),
+			});
 			const loop2 = new MissionLoop({ missionDir, deps: deps2 });
 			const r2 = await loop2.tick();
-			expect(r2.status).toBe("active");
-			expect(deps2.executorCalls.length).toBe(1);
+			expect(r2.status).toBe("completed");
+			expect(deps2.executorCalls.length).toBe(2);
 			expect(r2.steps.iterate).toBe(true);
+			expect(r2.itemsExecuted).toBe(2);
 		} finally {
 			rmSync(baseDir, { recursive: true, force: true });
 		}

@@ -632,6 +632,21 @@ export function parseFirstUnchecked(raw: string): { index: number; text: string 
 }
 
 /**
+ * 0.8.0: Parse ALL unchecked checkbox items from ROADMAP.md content.
+ * Returns array of { index, text } in document order.
+ * Used by the continuous tick loop to process multiple items per tick.
+ */
+export function parseAllUnchecked(raw: string): Array<{ index: number; text: string }> {
+	const items: Array<{ index: number; text: string }> = [];
+	const lines = raw.split("\n");
+	for (let i = 0; i < lines.length; i++) {
+		const m = /^[-*] \[ \] (.+)$/.exec(lines[i].trim());
+		if (m) items.push({ index: i, text: m[1] });
+	}
+	return items;
+}
+
+/**
  * Check if the ROADMAP.md at `missionDir` contains at least one unchecked
  * checkbox item (`- [ ] ...` or `* [ ] ...`).
  * Used to decide whether a completed mission should be reactivated.

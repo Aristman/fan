@@ -381,16 +381,23 @@ describe("Phase B / E2E-2: метрики на каждой итерации", (
 		rmSync(baseDir, { recursive: true, force: true });
 	});
 
-	it("onIterationEnd вызван ровно 5 раз (по разу на итерацию, включая BLOCKED/FAILED)", () => {
-		expect(collector.calls.length).toBe(5);
+	it("onIterationEnd вызван по разу на итерацию (включая BLOCKED/FAILED)", () => {
+		// 0.8.0 continuous semantics: tick 1 processes items 1-3 (COMPLETE) and item 4
+		// (BLOCKED → break) → 4 iterations. Then ticks 2-5 each retry item 4 once
+		// (mock cycles to FAILED after idx=3 → FAILED → break) → 1 iteration each.
+		// Total: 4 + 1 + 1 + 1 + 1 = 8 iterations.
+		expect(collector.calls.length).toBe(8);
 	});
 
-	it("записи содержат iteration 1..5 в порядке вызова", () => {
+	it("записи содержат iteration 1..8 в порядке вызова", () => {
 		const iterations = collector.calls.map((c) => c.record.iteration);
-		expect(iterations).toEqual([1, 2, 3, 4, 5]);
+		expect(iterations).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
 	});
 
 	it("записи содержат status и promiseTag, отражающие исход итерации", () => {
+		// 0.8.0 continuous semantics: tick 1 processes items 1-3 (COMPLETE) and item 4
+		// (BLOCKED → break). Tick 2-5: item 4 retried (FAILED each → break). Status:
+		// [COMPLETE, COMPLETE, COMPLETE, BLOCKED, FAILED, FAILED, FAILED, FAILED].
 		// status — case-insensitive (контур передаёт iterResult.status; коллектор F-21
 		// классифицирует lowercase — точный casing на усмотрение Green-фазы).
 		// promiseTag — из parsePromise(response), uppercase (однозначно).
@@ -406,6 +413,9 @@ describe("Phase B / E2E-2: метрики на каждой итерации", (
 		expect(records[3].promiseTag).toBe("BLOCKED");
 		expect(records[4].status).toMatch(/fail/i);
 		expect(records[4].promiseTag).toBe("FAILED");
+		expect(records[5].status).toMatch(/fail/i);
+		expect(records[6].status).toMatch(/fail/i);
+		expect(records[7].status).toMatch(/fail/i);
 	});
 
 	it("токены/duration присутствуют в записях (iterResult их не имеет → 0/undefined)", () => {
@@ -542,16 +552,17 @@ describe("Phase B / EDGE: устойчивость и backward-compat", () => {
 		const loop = new MissionLoop({ missionDir, deps, metricsCollector });
 
 		// tick НЕ должен выбросить (контур не падает на ошибке collector'а).
+		// 0.8.0 continuous: tick 1 обрабатывает все 4 пункта ROADMAP (mock cycles) → completed.
 		const r1 = await loop.tick();
-		expect(r1.status).toBe("active");
-		// collector БЫЛ вызван (и бросил), но контур выжил.
+		expect(r1.status).toBe("completed");
+		// collector БЫЛ вызван (и бросил), но контур выжил — 1 вызов на итерацию = 4.
 		expect(calls.length).toBeGreaterThanOrEqual(1);
 
-		// Второй tick — контур продолжает (try/catch изолировал ошибку).
+		// Второй tick — все пункты уже сделаны, идемпотентный no-op.
 		const r2 = await loop.tick();
-		expect(r2.status).toBe("active");
-		expect(deps.executorCalls.length).toBe(2);
-		expect(calls.length).toBeGreaterThanOrEqual(2);
+		expect(r2.status).toBe("completed");
+		expect(deps.executorCalls.length).toBe(4); // 0.8.0: continuous обработал все 4 пункта в tick 1
+		expect(calls.length).toBeGreaterThanOrEqual(4);
 	});
 
 	// EDGE: ideaGenerator бросает ошибку → контур продолжает итерации
@@ -570,14 +581,15 @@ describe("Phase B / EDGE: устойчивость и backward-compat", () => {
 		});
 		const loop = new MissionLoop({ missionDir, deps, ideaGenerator });
 
+		// 0.8.0 continuous: tick 1 обрабатывает все 4 пункта (mock cycles) → completed.
 		const r1 = await loop.tick();
-		expect(r1.status).toBe("active");
-		// generator БЫЛ вызван (и бросил), но контур выжил.
+		expect(r1.status).toBe("completed");
+		// generator БЫЛ вызван на каждой итерации (per-iteration), но контур выжил.
 		expect(genCalls.length).toBeGreaterThanOrEqual(1);
 
 		await loop.tick();
-		expect(deps.executorCalls.length).toBe(2);
-		expect(genCalls.length).toBeGreaterThanOrEqual(2);
+		expect(deps.executorCalls.length).toBe(4); // 0.8.0: continuous — все 4 пункта в tick 1
+		expect(genCalls.length).toBeGreaterThanOrEqual(4);
 	});
 
 	// EDGE: ideaScorer бросает ошибку → контур продолжает, идея остаётся в BACKLOG
@@ -601,11 +613,13 @@ describe("Phase B / EDGE: устойчивость и backward-compat", () => {
 		});
 		const loop = new MissionLoop({ missionDir, deps, ideaGenerator: generator, ideaScorer });
 
-		// 3 тика: на 3-м генератор добавляет идею, скорер бросает.
+		// 0.8.0 continuous: tick 1 обрабатывает 2 пункта, tick 2 — ещё 2 пункта
+		// (mock cycles через "c"), на 3-м вызове generator добавляет идею, scorer бросает.
+		// tick 3: нет пунктов → completed.
 		await loop.tick();
 		await loop.tick();
 		const r3 = await loop.tick(); // НЕ должен выбросить
-		expect(r3.status).toBe("active");
+		expect(r3.status).toBe("completed");
 
 		// scorer БЫЛ вызван (и бросил), но контур выжил.
 		expect(scorerCalls.length).toBeGreaterThanOrEqual(1);
@@ -638,6 +652,8 @@ describe("Phase B / EDGE: устойчивость и backward-compat", () => {
 		});
 		const loop = new MissionLoop({ missionDir, deps, ideaGenerator: generator, ideaScorer });
 
+		// 0.8.0 continuous: tick 1 обрабатывает 2 пункта, tick 2 — на 3-м пункте
+		// generate триггерит (3-й вызов), scorer возвращает DECIDE → awaiting_decision.
 		await loop.tick();
 		await loop.tick();
 		await loop.tick(); // 3-й: generate добавляет идею, scorer → DECIDE → awaiting_decision
@@ -649,9 +665,10 @@ describe("Phase B / EDGE: устойчивость и backward-compat", () => {
 		await loop.resolveDecision("принять идею в план");
 		expect(await loop.status()).toBe("active");
 
-		// Следующий tick запускает свежую итерацию (executor вызвана снова).
+		// 0.8.0 continuous: tick 4 обрабатывает оставшиеся пункты (4, 5) за один тик
+		// → всего 5 вызовов executor (2 + 1 + 2 = 5).
 		await loop.tick();
-		expect(deps.executorCalls.length).toBe(4);
+		expect(deps.executorCalls.length).toBe(5);
 	});
 
 	// EDGE: Без инъекций (обычный контур) → поведение не меняется (backward compat):
@@ -665,6 +682,8 @@ describe("Phase B / EDGE: устойчивость и backward-compat", () => {
 		// Обычный контур — без ideaGenerator/ideaScorer/metricsCollector.
 		const loop = new MissionLoop({ missionDir, deps });
 
+		// 0.8.0 continuous: tick 1 обрабатывает 2 пункта, tick 2 — 1 пункт
+		// (mock cycles через "b" — последний результат), затем completed.
 		await loop.tick();
 		await loop.tick();
 
@@ -672,9 +691,9 @@ describe("Phase B / EDGE: устойчивость и backward-compat", () => {
 		const metricsPath = join(missionDir, "metrics.jsonl");
 		expect(existsSync(metricsPath)).toBe(false);
 
-		// Контур работает как раньше: 2 итерации отработали, 2 коммита.
-		expect(deps.executorCalls.length).toBe(2);
-		expect(deps.commits.length).toBe(2);
+		// 0.8.0 continuous: все 3 пункта исполнены за 2 тика (2 + 1), 3 коммита.
+		expect(deps.executorCalls.length).toBe(3);
+		expect(deps.commits.length).toBe(3);
 	});
 
 	// EDGE: ideaScorer REJECTED сам пишет DECISIONS.md (контур не дублирует)
@@ -696,13 +715,16 @@ describe("Phase B / EDGE: устойчивость и backward-compat", () => {
 		});
 		const loop = new MissionLoop({ missionDir, deps, ideaGenerator: generator, ideaScorer });
 
+		// 0.8.0 continuous: tick 1 (2 пункта), tick 2 (2 пункта), tick 3 — на 3-м пункте
+		// generate триггерит (3-й вызов), scorer возвращает REJECTED (не DECIDE).
 		await loop.tick();
 		await loop.tick();
 		const r3 = await loop.tick(); // 3-й: scorer → REJECTED
 
 		// REJECTED → контур НЕ переходит в awaiting_decision (только DECIDE).
-		expect(r3.status).toBe("active");
-		expect(await loop.status()).toBe("active");
+		// 0.8.0: все 5 пунктов выполнены в tick 3 → completed.
+		expect(r3.status).toBe("completed");
+		expect(await loop.status()).toBe("completed");
 		// scorer БЫЛ вызван для отклонённой идеи.
 		expect(ideaScorer.calls.length).toBe(1);
 	});

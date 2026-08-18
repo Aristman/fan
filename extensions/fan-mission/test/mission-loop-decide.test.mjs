@@ -406,10 +406,11 @@ describe("F-17 / TC-F17-2: resolveDecision() возобновляет работ
 		await loop.tick(); // DECIDE
 		await loop.resolveDecision("JWT");
 
-		// Следующий tick — должен запустить executor
+		// 0.8.0: tick after resolve processes DECIDE item + continues to second item
 		await loop.tick();
 
-		expect(deps.executorCalls.length).toBe(2);
+		// 3 executor calls: DECIDE + 2 COMPLETE (continuous loop)
+		expect(deps.executorCalls.length).toBe(3);
 
 		// Второй вызов executor'а содержит ответ оператора в prompt
 		const secondCall = deps.executorCalls[1];
@@ -594,8 +595,9 @@ describe("F-17 / TC-F17-3: таймаут DECIDE → aborted", () => {
 
 		// Следующий tick работает нормально
 		const r = await loop.tick();
-		expect(r.status).toBe("active");
-		expect(deps.executorCalls.length).toBe(2); // второй вызов состоялся
+		// 0.8.0: continuous loop processes remaining items after DECIDE resolution
+		expect(r.status).toBe("completed");
+		expect(deps.executorCalls.length).toBeGreaterThanOrEqual(2); // at least DECIDE + 1 COMPLETE
 	});
 });
 

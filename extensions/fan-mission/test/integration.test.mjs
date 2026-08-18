@@ -154,23 +154,20 @@ describe("F-15 / TC-F15-1: end-to-end — 3 итерации миссии", () =
 	});
 
 	it("TC-F15-1.happy: 3 tick() → currentIteration = 3, 3 commit'а, STATE.md обновлён", async () => {
-		// 3 последовательных тика
+		// 0.8.0: continuous loop — first tick processes all 3 items
 		const r1 = await env.missionLoop.tick();
-		const r2 = await env.missionLoop.tick();
-		const r3 = await env.missionLoop.tick();
 
-		expect(r1.iteration).toBe(1);
-		expect(r2.iteration).toBe(2);
-		expect(r3.iteration).toBe(3);
+		expect(r1.iteration).toBe(3);
+		expect(r1.itemsExecuted).toBe(3);
 
-		// STATE.md «Сделано» содержит 3 пункта (по одному на итерацию)
+		// STATE.md «Сделано» содержит 3 пункта
 		const state = await readState(env.missionDir);
 		expect(state.done).toHaveLength(3);
 
 		// 3 git commit'а
 		expect(env.git.commits).toHaveLength(3);
 
-		// BACKLOG.md получил 3 записи (шаг 7 каждого тика)
+		// BACKLOG.md получил 3 записи
 		const backlogRaw = readFileSync(join(env.missionDir, "BACKLOG.md"), "utf8");
 		const backlogLines = backlogRaw.split("\n").filter((l) => l.startsWith("|") && !l.startsWith("| id"));
 		expect(backlogLines.length).toBeGreaterThanOrEqual(3);
@@ -224,8 +221,11 @@ describe("F-15 / TC-F15-1: end-to-end — 3 итерации миссии", () =
 			vi.useRealTimers();
 		}
 
-		// Scheduler тикает → actions.sendMessage(...) вызывается
-		expect(env.actions.sendCalls.length).toBeGreaterThanOrEqual(3);
+		// 0.8.0: continuous loop — первый тик исполняет все 3 one-shot пункта
+		// подряд, миссия переходит в «completed». Дальнейшие тики планировщика
+		// (каждые 100ms × 350ms ≈ 3 огня) отсекаются гард-условием getStatus()
+		// != «active», поэтому sendMessage не доставляется. Ровно 1 sendCall.
+		expect(env.actions.sendCalls.length).toBe(1);
 
 		// Интеграционная проверка: scheduler должен дёргать missionLoop.tick().
 		// В текущей реализации scheduler НЕ интегрирован с missionLoop,
@@ -269,8 +269,9 @@ describe("F-15 / TC-F15-2: steer меняет поведение агента", 
 		});
 		expect(res.status).toBe(200);
 
-		// Действие дошло до actions.sendMessage
-		expect(env.actions.sendCalls.length).toBeGreaterThanOrEqual(1);
+		// 0.8.0: webhook доставляет steer как ровно 1 sendCall(steer);
+		// missionLoop.tick() ниже потребляет очередь, sendMessage не дёргает.
+		expect(env.actions.sendCalls.length).toBe(1);
 		const steerCall = env.actions.sendCalls.find(
 			(c) =>
 				(c.opts && c.opts.streamingBehavior === "steer") ||
@@ -281,12 +282,10 @@ describe("F-15 / TC-F15-2: steer меняет поведение агента", 
 		// Следующая итерация → executor получает steer
 		await env.missionLoop.tick();
 
-		// Интеграционная проверка: executor.calls[N].steer === steerText.
-		// Текущий MissionLoop не пробрасывает steer в executor.runIteration,
-		// поэтому calls[0].steer === null → FAIL.
-		const lastCall = env.executor.calls[env.executor.calls.length - 1];
-		expect(lastCall).toBeDefined();
-		expect(lastCall.steer).toBe(steerText); // ← FAIL в Red-фазе
+		// 0.8.0: steer is consumed on first iteration of continuous loop
+		const firstCall = env.executor.calls[0];
+		expect(firstCall).toBeDefined();
+		expect(firstCall.steer).toBe(steerText); // ← FAIL в Red-фазе
 	});
 
 	it("TC-F15-2: actions.sendMessage({streamingBehavior:'steer'}) → следующая итерация получает steer", async () => {
@@ -318,8 +317,9 @@ describe("F-15 / TC-F15-2: steer меняет поведение агента", 
 		await env.actions.sendMessage(steerText, { streamingBehavior: "steer" });
 		await env.missionLoop.tick();
 
-		const lastCall = env.executor.calls[env.executor.calls.length - 1];
-		expect(lastCall.prompt).toContain(steerText); // ← FAIL в Red-фазе
+		// 0.8.0: steer is in the first call's prompt (consumed on first iteration)
+		const firstCall = env.executor.calls[0];
+		expect(firstCall.prompt).toContain(steerText); // ← FAIL в Red-фазе
 	});
 });
 
@@ -509,8 +509,10 @@ describe("F-15 / Edge: scheduler + missionLoop интеграция", () => {
 			vi.useRealTimers();
 		}
 
-		// Scheduler отправил ≥3 followUp через actions.sendMessage
-		expect(env.actions.sendCalls.length).toBeGreaterThanOrEqual(3);
+		// 0.8.0: continuous loop — первый scheduler-тик (100ms) гонит 3 итерации
+		// подряд, миссия становится «completed». Гард-условие getStatus() в
+		// scheduler.ts отсекает последующие тики на 200/300ms. Ровно 1 sendCall.
+		expect(env.actions.sendCalls.length).toBe(1);
 
 		// Интеграционная проверка: scheduler должен дёргать missionLoop.tick() напрямую,
 		// а не только отправлять followUp. В текущей реализации scheduler
@@ -532,7 +534,7 @@ describe("F-15 / Edge: scheduler + missionLoop интеграция", () => {
 			});
 
 			await vi.advanceTimersByTimeAsync(350);
-			expect(env.actions.sendCalls.length).toBeGreaterThanOrEqual(2);
+			expect(env.actions.sendCalls.length).toBeGreaterThanOrEqual(1);
 
 			env.scheduler.stop();
 

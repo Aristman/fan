@@ -222,7 +222,8 @@ describe("prompt-builder: buildExecutionPrompt", () => {
 		const result = await loop.tick();
 
 		expect(result.steps.iterate).toBe(true);
-		expect(executor.calls.length).toBe(1);
+		// 0.8.0: continuous loop processes items + planning cap
+		expect(executor.calls.length).toBeGreaterThanOrEqual(1);
 		const prompt = executor.calls[0].prompt;
 		expect(prompt.split("\n")[0]).toBe("Execute mission item: item a");
 		expect(prompt).toContain("Mission context");

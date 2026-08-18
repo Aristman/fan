@@ -27,7 +27,7 @@ import {
 	isRecurringItem,
 	MAX_STATE_BYTES,
 	type MissionState,
-	parseFirstUnchecked,
+	parseAllUnchecked,
 	readBacklog,
 	readMission,
 	readRoadmap,
@@ -143,6 +143,8 @@ export interface TickResult {
 	status: MissionStatus;
 	interrupted?: boolean;
 	item?: string;
+	/** 0.8.0: number of roadmap items executed during this tick. */
+	itemsExecuted?: number;
 }
 
 interface LoopState {
@@ -693,404 +695,469 @@ export class MissionLoop {
 				}
 			}
 
-			const roadmapRaw = await readRoadmap(this.missionDir);
+			let roadmapRaw = await readRoadmap(this.missionDir);
 			await this.deps.git.log({ cwd: this.missionDir });
 
 			lastCompletedStep = 2;
 			this.journalStep(loopState, 2);
 
-			// ── Step 3: Decide ─────────────────────────────────────────────
-			steps.decide = true;
-			let nextItem = parseFirstUnchecked(roadmapRaw);
+			// ── 0.8.0: Continuous execution loop ──────────────────────────
+			// Execute roadmap items continuously until a stop condition:
+			// - All one-shots done + all recurs executed once → yield
+			// - Mission status changed (paused/aborted/terminal) → yield
+			// - Early exit (BLOCKED/DECIDE/FAILED/budget/abort) → return
+			let itemsExecuted = 0;
+			const executedRecurs = new Set<string>();
+			let recoveryAttempted = false;
 
-			// All items done → completed
-			if (!nextItem) {
-				// Guard against false completion: a ROADMAP without ANY parseable
-				// checklist items (checked or unchecked) is suspicious — the mission
-				// never had work items, so "all done" is a fabrication. Fail loudly
-				// instead of silently completing with zero work done.
-				if (!hasAnyChecklistItem(roadmapRaw)) {
-					if (canTransition(resultStatus, "failed")) {
-						resultStatus = "failed";
-						await writeMissionStatus(this.missionDir, "failed");
+			while (true) {
+				// ── Step 3: Decide ─────────────────────────────────────────────
+				steps.decide = true;
+				const allUnchecked = parseAllUnchecked(roadmapRaw);
+				const oneShots = allUnchecked.filter((i) => !isRecurringItem(i.text));
+				const recurs = allUnchecked.filter((i) => isRecurringItem(i.text));
+				let nextItem: { index: number; text: string } | null = oneShots[0] ?? null;
+				let recurPhase = false;
+				if (!nextItem && recurs.length > 0) {
+					nextItem = recurs.find((r) => !executedRecurs.has(r.text)) ?? null;
+					recurPhase = nextItem !== null;
+				}
+
+				// All items done → completed/planning/yield
+				if (!nextItem) {
+					// Recur items exist but all executed this tick → yield (don't complete)
+					if (recurs.length > 0) {
+						break;
 					}
-					this.journalStep(loopState, 3);
+					// Guard against false completion: a ROADMAP without ANY parseable
+					// checklist items (checked or unchecked) is suspicious — the mission
+					// never had work items, so "all done" is a fabrication. Fail loudly
+					// instead of silently completing with zero work done.
+					if (!hasAnyChecklistItem(roadmapRaw)) {
+						if (canTransition(resultStatus, "failed")) {
+							resultStatus = "failed";
+							await writeMissionStatus(this.missionDir, "failed");
+						}
+						this.journalStep(loopState, 3);
+						loopState.interrupted = false;
+						loopState.iterationResult = undefined;
+						loopState.pendingItem = undefined;
+						loopState.committed = false;
+						writeLoopStateSync(this.missionDir, loopState);
+						return {
+							iteration: currentIteration,
+							steps,
+							status: resultStatus,
+							item: "ROADMAP contains no parseable checklist items",
+							itemsExecuted,
+						};
+					}
+					// 0.7.0 bootstrap planning: a valid ROADMAP (has checked items) with
+					// no unchecked items left AND a non-empty mission Goal → the mission
+					// still has work to decompose. Do NOT complete: run a planning
+					// iteration on a synthetic item — the executor must decompose the
+					// Goal into unchecked ROADMAP items (prompt-builder adds guidance).
+					// Empty Goal → completed as before (nothing left to plan).
+					if (!extractGoal(mission.body)) {
+						if (canTransition(resultStatus, "completed")) {
+							resultStatus = "completed";
+							await writeMissionStatus(this.missionDir, "completed");
+						}
+						this.journalStep(loopState, 3);
+						loopState.interrupted = false;
+						loopState.iterationResult = undefined;
+						loopState.pendingItem = undefined;
+						loopState.committed = false;
+						writeLoopStateSync(this.missionDir, loopState);
+						return { iteration: currentIteration, steps, status: resultStatus, item: currentItem, itemsExecuted };
+					}
+					// Synthetic planning item: index -1 marks it as not present in the
+					// ROADMAP (markRoadmapDone/prompt marking are no-ops for it).
+					nextItem = { index: -1, text: PLANNING_ITEM_TEXT };
+				}
+
+				// Recovery: determine resume point (use ORIGINAL values from disk)
+				// P0 fix: recovery triggers by PRESENCE of saved iterationResult in journal
+				// (which is persisted at step 5 together with budgetCountedFor), NOT solely
+				// by the interrupted flag. After SIGKILL, interrupted=false but the journal
+				// may still have the saved result from step 5.
+				//
+				// - lastStep >= 4 with saved iterationResult + pendingItem → resume from step 5+
+				//   (executor skipped, budget already counted via budgetCountedFor)
+				// - interrupted=true with lastStep > 0 → in-process crash, resume from lastStep+1
+				// - 0.8.0: lastStep 1..6 with interrupted=false → SIGKILL (no catch handler);
+				//   resumeFromStep=0 → falls through to fresh executor call (redo).
+				// - Otherwise → fresh iteration (no recovery needed)
+				// 0.8.0: recovery only on first pass of the continuous loop.
+				// SIGKILL/budget invariants are preserved per-item (budgetCountedFor prevents
+				// double-counting the recovered item); the continuous loop then proceeds to the
+				// next unchecked roadmap item.
+				let resumeFromStep = 0;
+				if (!recoveryAttempted) {
+					recoveryAttempted = true;
+					if (recoveredLastStep >= 4 && loopState.iterationResult && loopState.pendingItem) {
+						resumeFromStep = recoveredLastStep + 1;
+					} else if (recoveredInterrupted && recoveredLastStep > 0) {
+						resumeFromStep = recoveredLastStep + 1;
+					}
+				}
+
+				// Increment iteration only for fresh starts (not recovery past step 1)
+				if (resumeFromStep <= 1) {
+					currentIteration++;
+					loopState.currentIteration = currentIteration;
+				}
+
+				currentItem = nextItem.text;
+				lastCompletedStep = 3;
+				this.journalStep(loopState, 3);
+
+				// Recovery: skip past commit → just finish backlog
+				if (resumeFromStep > 6) {
+					steps.backlog = true;
+					const now = await this.deps.clock.now();
+					await this.appendBacklogEntry(loopState, now, currentIteration, {
+						text: nextItem.text,
+						isSuccess: true,
+						isBlockOrFail: false,
+						costUsd: 0,
+						iterStatus: loopState.iterationResult?.status,
+					});
 					loopState.interrupted = false;
 					loopState.iterationResult = undefined;
 					loopState.pendingItem = undefined;
+					loopState.pendingItemIndex = undefined;
 					loopState.committed = false;
+					loopState.budgetCountedFor = null;
+					this.journalStep(loopState, 7);
 					writeLoopStateSync(this.missionDir, loopState);
-					return {
-						iteration: currentIteration,
-						steps,
-						status: resultStatus,
-						item: "ROADMAP contains no parseable checklist items",
-					};
+					return { iteration: currentIteration, steps, status: resultStatus, item: currentItem };
 				}
-				// 0.7.0 bootstrap planning: a valid ROADMAP (has checked items) with
-				// no unchecked items left AND a non-empty mission Goal → the mission
-				// still has work to decompose. Do NOT complete: run a planning
-				// iteration on a synthetic item — the executor must decompose the
-				// Goal into unchecked ROADMAP items (prompt-builder adds guidance).
-				// Empty Goal → completed as before (nothing left to plan).
-				if (!extractGoal(mission.body)) {
-					if (canTransition(resultStatus, "completed")) {
-						resultStatus = "completed";
-						await writeMissionStatus(this.missionDir, "completed");
+
+				// ── Step 4: Iterate ────────────────────────────────────────────
+				let iterResult: IterationResult;
+
+				if (resumeFromStep >= 4 && loopState.iterationResult && loopState.pendingItem === nextItem.text) {
+					// P0-1: Recovery with saved result — skip executor
+					iterResult = loopState.iterationResult;
+					steps.iterate = false;
+
+					// Note: loopState.committed is always false here — step 6 clears
+					// committed before advancing lastStep to 6. If the full tick completed,
+					// pendingItem is also cleared, so we never enter this branch.
+				} else {
+					// P1-4 + P2-7: Budget preflight BEFORE executor
+					steps.iterate = true;
+
+					// P2 fix: budget=0 / missing = unlimited (no limit).
+					// Only check preflight when budget > 0 (explicit limit set).
+					const tokensRemaining = budgetTokens - loopState.budgetUsed.tokens;
+					const usdRemaining = budgetUsd - loopState.budgetUsed.usd;
+					const tokensPreflightFail = budgetTokens > 0 && tokensRemaining <= 0;
+					const usdPreflightFail = budgetUsd > 0 && usdRemaining <= 0;
+					if (tokensPreflightFail || usdPreflightFail) {
+						resultStatus = "budget_exhausted";
+						await writeMissionStatus(this.missionDir, "budget_exhausted");
+						return this.finishTickNoIterate(loopState, steps, currentIteration, resultStatus, currentItem);
 					}
-					this.journalStep(loopState, 3);
-					loopState.interrupted = false;
-					loopState.iterationResult = undefined;
-					loopState.pendingItem = undefined;
+
+					// P0-2: abort check before expensive work
+					if (this.isAborted()) {
+						return this.abortTick(loopState, steps, currentIteration, currentItem);
+					}
+
+					// F-15: consume pending steer messages (webhook / scheduler / operator)
+					const steerMessages = consumeSteerQueue(this.missionDir);
+					let steer = steerMessages.length > 0 ? steerMessages.join("\n") : undefined;
+					// F-17: consume pending operator answer to a DECIDE question
+					if (loopState.pendingOperatorAnswer !== undefined) {
+						const answerLine = `operator_answer: ${loopState.pendingOperatorAnswer}`;
+						steer = steer ? `${steer}\n${answerLine}` : answerLine;
+						loopState.pendingOperatorAnswer = undefined;
+					}
+					// Prompt enriched with mission context (MISSION/ROADMAP/STATE/BACKLOG,
+					// `<promise>` reporting protocol, guidance and steer) — the executor
+					// must not waste the iteration on rediscovering mission files.
+					const prompt = await buildExecutionPrompt({
+						missionDir: this.missionDir,
+						itemText: nextItem.text,
+						index: nextItem.index,
+						roadmapRaw,
+						state: missionState,
+						...(steer ? { steer } : {}),
+					});
+					const runLocalIteration = (): Promise<IterationResult> =>
+						this.deps.executor.runIteration({
+							missionDir: this.missionDir,
+							prompt,
+							cwd: this.missionDir,
+							...(steer ? { steer } : {}),
+						});
+					// F-48.5: [EPIC]-пункт → delegation path (декомпозиция → EventBus →
+					// super-orchestrator). Любая неудача делегирования → безопасный
+					// fallback на локальный executor.runIteration.
+					if (isEpicItem(nextItem.text) && this.epicRunAgent && this.epicEventBus) {
+						let delegated: IterationResult | null = null;
+						try {
+							delegated = await runEpicDelegation({
+								missionDir: this.missionDir,
+								itemText: nextItem.text,
+								runAgent: this.epicRunAgent,
+								eventBus: this.epicEventBus,
+								timeoutMs: this.delegationTimeoutMs,
+								cwd: this.missionDir,
+								...(steer ? { steer } : {}),
+								onPendingChange: (cleanup) => {
+									this.pendingDelegationCleanup = cleanup;
+								},
+							});
+						} catch {
+							delegated = null; // непредвиденная ошибка → локальный fallback
+						}
+						this.pendingDelegationCleanup = null;
+						iterResult = delegated ?? (await runLocalIteration());
+					} else {
+						iterResult = await runLocalIteration();
+					}
+
+					// P0-1: persist result immediately after step 4
+					loopState.iterationResult = iterResult;
+					loopState.pendingItem = nextItem.text;
+					loopState.pendingItemIndex = nextItem.index;
 					loopState.committed = false;
-					writeLoopStateSync(this.missionDir, loopState);
-					return { iteration: currentIteration, steps, status: resultStatus };
-				}
-				// Synthetic planning item: index -1 marks it as not present in the
-				// ROADMAP (markRoadmapDone/prompt marking are no-ops for it).
-				nextItem = { index: -1, text: PLANNING_ITEM_TEXT };
-			}
-
-			// Recovery: determine resume point (use ORIGINAL values from disk)
-			// P0 fix: recovery triggers by PRESENCE of saved iterationResult in journal
-			// (which is persisted at step 5 together with budgetCountedFor), NOT solely
-			// by the interrupted flag. After SIGKILL, interrupted=false but the journal
-			// may still have the saved result from step 5.
-			//
-			// - lastStep >= 4 with saved iterationResult + pendingItem → resume from step 5+
-			//   (executor skipped, budget already counted via budgetCountedFor)
-			// - interrupted=true with lastStep > 0 → in-process crash, resume from lastStep+1
-			// - Otherwise → fresh iteration (no recovery needed)
-			let resumeFromStep = 0;
-			if (recoveredLastStep >= 4 && loopState.iterationResult && loopState.pendingItem) {
-				resumeFromStep = recoveredLastStep + 1;
-			} else if (recoveredInterrupted && recoveredLastStep > 0) {
-				resumeFromStep = recoveredLastStep + 1;
-			}
-
-			// Increment iteration only for fresh starts (not recovery past step 1)
-			if (resumeFromStep <= 1) {
-				currentIteration++;
-				loopState.currentIteration = currentIteration;
-			}
-
-			currentItem = nextItem.text;
-			lastCompletedStep = 3;
-			this.journalStep(loopState, 3);
-
-			// Recovery: skip past commit → just finish backlog
-			if (resumeFromStep > 6) {
-				steps.backlog = true;
-				const now = await this.deps.clock.now();
-				await this.appendBacklogEntry(loopState, now, currentIteration, {
-					text: nextItem.text,
-					isSuccess: true,
-					isBlockOrFail: false,
-					costUsd: 0,
-					iterStatus: loopState.iterationResult?.status,
-				});
-				loopState.interrupted = false;
-				loopState.iterationResult = undefined;
-				loopState.pendingItem = undefined;
-				loopState.pendingItemIndex = undefined;
-				loopState.committed = false;
-				loopState.budgetCountedFor = null;
-				this.journalStep(loopState, 7);
-				writeLoopStateSync(this.missionDir, loopState);
-				return { iteration: currentIteration, steps, status: resultStatus, item: currentItem };
-			}
-
-			// ── Step 4: Iterate ────────────────────────────────────────────
-			let iterResult: IterationResult;
-
-			if (resumeFromStep >= 4 && loopState.iterationResult && loopState.pendingItem === nextItem.text) {
-				// P0-1: Recovery with saved result — skip executor
-				iterResult = loopState.iterationResult;
-				steps.iterate = false;
-
-				// Note: loopState.committed is always false here — step 6 clears
-				// committed before advancing lastStep to 6. If the full tick completed,
-				// pendingItem is also cleared, so we never enter this branch.
-			} else {
-				// P1-4 + P2-7: Budget preflight BEFORE executor
-				steps.iterate = true;
-
-				// P2 fix: budget=0 / missing = unlimited (no limit).
-				// Only check preflight when budget > 0 (explicit limit set).
-				const tokensRemaining = budgetTokens - loopState.budgetUsed.tokens;
-				const usdRemaining = budgetUsd - loopState.budgetUsed.usd;
-				const tokensPreflightFail = budgetTokens > 0 && tokensRemaining <= 0;
-				const usdPreflightFail = budgetUsd > 0 && usdRemaining <= 0;
-				if (tokensPreflightFail || usdPreflightFail) {
-					resultStatus = "budget_exhausted";
-					await writeMissionStatus(this.missionDir, "budget_exhausted");
-					return this.finishTickNoIterate(loopState, steps, currentIteration, resultStatus, currentItem);
+					this.journalStep(loopState, 4);
 				}
 
-				// P0-2: abort check before expensive work
+				lastCompletedStep = 4;
+
+				// P0-2: abort check after iteration, before commit
 				if (this.isAborted()) {
 					return this.abortTick(loopState, steps, currentIteration, currentItem);
 				}
 
-				// F-15: consume pending steer messages (webhook / scheduler / operator)
-				const steerMessages = consumeSteerQueue(this.missionDir);
-				let steer = steerMessages.length > 0 ? steerMessages.join("\n") : undefined;
-				// F-17: consume pending operator answer to a DECIDE question
-				if (loopState.pendingOperatorAnswer !== undefined) {
-					const answerLine = `operator_answer: ${loopState.pendingOperatorAnswer}`;
-					steer = steer ? `${steer}\n${answerLine}` : answerLine;
-					loopState.pendingOperatorAnswer = undefined;
-				}
-				// Prompt enriched with mission context (MISSION/ROADMAP/STATE/BACKLOG,
-				// `<promise>` reporting protocol, guidance and steer) — the executor
-				// must not waste the iteration on rediscovering mission files.
-				const prompt = await buildExecutionPrompt({
-					missionDir: this.missionDir,
-					itemText: nextItem.text,
-					index: nextItem.index,
-					roadmapRaw,
-					state: missionState,
-					...(steer ? { steer } : {}),
-				});
-				const runLocalIteration = (): Promise<IterationResult> =>
-					this.deps.executor.runIteration({
-						missionDir: this.missionDir,
-						prompt,
-						cwd: this.missionDir,
-						...(steer ? { steer } : {}),
-					});
-				// F-48.5: [EPIC]-пункт → delegation path (декомпозиция → EventBus →
-				// super-orchestrator). Любая неудача делегирования → безопасный
-				// fallback на локальный executor.runIteration.
-				if (isEpicItem(nextItem.text) && this.epicRunAgent && this.epicEventBus) {
-					let delegated: IterationResult | null = null;
-					try {
-						delegated = await runEpicDelegation({
-							missionDir: this.missionDir,
-							itemText: nextItem.text,
-							runAgent: this.epicRunAgent,
-							eventBus: this.epicEventBus,
-							timeoutMs: this.delegationTimeoutMs,
-							cwd: this.missionDir,
-							...(steer ? { steer } : {}),
-							onPendingChange: (cleanup) => {
-								this.pendingDelegationCleanup = cleanup;
-							},
-						});
-					} catch {
-						delegated = null; // непредвиденная ошибка → локальный fallback
-					}
-					this.pendingDelegationCleanup = null;
-					iterResult = delegated ?? (await runLocalIteration());
-				} else {
-					iterResult = await runLocalIteration();
+				// F-17: DECIDE interruption — parse the promise tag from the raw response.
+				// Call-site guard: only strings are parsed (parsePromise(non-string) throws).
+				const parsedPromise = typeof iterResult.response === "string" ? parsePromise(iterResult.response) : null;
+				if (parsedPromise?.tag === "DECIDE") {
+					return await this.decideTick(loopState, steps, currentIteration, currentItem, parsedPromise.reason);
 				}
 
-				// P0-1: persist result immediately after step 4
+				// F-18: promise-tag routing — COMPLETE/BLOCKED/FAILED tags take priority
+				// over iterResult.status; the reason from the tag becomes iterResult.reason.
+				if (parsedPromise) {
+					iterResult.status = parsedPromise.tag;
+					iterResult.reason = parsedPromise.reason;
+				} else {
+					// No promise tag in the raw response → I3 escalation, then fallback
+					// to iterResult.status (backward compat).
+					this.escalate("I3", { tag: null, iteration: currentIteration });
+				}
+
+				// F-18: BLOCKED (after routing) → I3 escalation with the blocker reason
+				// (the blocker itself is recorded in STATE.md by step 6).
+				if (iterResult.status === "BLOCKED") {
+					this.escalate("I3", { tag: "BLOCKED", reason: iterResult.reason, iteration: currentIteration });
+				}
+
+				// ── Step 5: Verify ─────────────────────────────────────────────
+				steps.verify = true;
+				const costTokens = iterResult.costTokens || 0;
+				const costUsd = iterResult.costUsd || 0;
+
+				// P1-1 fix: increment budget BEFORE journal write so that when
+				// journal confirms step 5 (budgetCountedFor present), budgetUsed is
+				// guaranteed to already include the cost. Crash between increment and
+				// journal = no journal → budget lost but not double-counted on recovery.
+				const wasBudgetCounted = loopState.budgetCountedFor === nextItem.text;
+				if (!wasBudgetCounted) {
+					loopState.budgetUsed.tokens += costTokens;
+					loopState.budgetUsed.usd += costUsd;
+				}
+				// else: budget already counted for this item — skip to prevent double-count
+
 				loopState.iterationResult = iterResult;
 				loopState.pendingItem = nextItem.text;
 				loopState.pendingItemIndex = nextItem.index;
 				loopState.committed = false;
-				this.journalStep(loopState, 4);
-			}
+				loopState.budgetCountedFor = nextItem.text;
+				this.journalStep(loopState, 5);
 
-			lastCompletedStep = 4;
+				// P1-4: check both token and USD limits
+				const tokensExceeded = budgetTokens > 0 && loopState.budgetUsed.tokens > budgetTokens;
+				const usdExceeded = budgetUsd > 0 && loopState.budgetUsed.usd > budgetUsd;
+				const budgetExceededPostHoc = tokensExceeded || usdExceeded;
 
-			// P0-2: abort check after iteration, before commit
-			if (this.isAborted()) {
-				return this.abortTick(loopState, steps, currentIteration, currentItem);
-			}
+				let isSuccess = iterResult.status === "COMPLETE";
+				let isBlockOrFail = iterResult.status === "BLOCKED" || iterResult.status === "FAILED";
 
-			// F-17: DECIDE interruption — parse the promise tag from the raw response.
-			// Call-site guard: only strings are parsed (parsePromise(non-string) throws).
-			const parsedPromise = typeof iterResult.response === "string" ? parsePromise(iterResult.response) : null;
-			if (parsedPromise?.tag === "DECIDE") {
-				return await this.decideTick(loopState, steps, currentIteration, currentItem, parsedPromise.reason);
-			}
-
-			// F-18: promise-tag routing — COMPLETE/BLOCKED/FAILED tags take priority
-			// over iterResult.status; the reason from the tag becomes iterResult.reason.
-			if (parsedPromise) {
-				iterResult.status = parsedPromise.tag;
-				iterResult.reason = parsedPromise.reason;
-			} else {
-				// No promise tag in the raw response → I3 escalation, then fallback
-				// to iterResult.status (backward compat).
-				this.escalate("I3", { tag: null, iteration: currentIteration });
-			}
-
-			// F-18: BLOCKED (after routing) → I3 escalation with the blocker reason
-			// (the blocker itself is recorded in STATE.md by step 6).
-			if (iterResult.status === "BLOCKED") {
-				this.escalate("I3", { tag: "BLOCKED", reason: iterResult.reason, iteration: currentIteration });
-			}
-
-			// ── Step 5: Verify ─────────────────────────────────────────────
-			steps.verify = true;
-			const costTokens = iterResult.costTokens || 0;
-			const costUsd = iterResult.costUsd || 0;
-
-			// P1-1 fix: increment budget BEFORE journal write so that when
-			// journal confirms step 5 (budgetCountedFor present), budgetUsed is
-			// guaranteed to already include the cost. Crash between increment and
-			// journal = no journal → budget lost but not double-counted on recovery.
-			const wasBudgetCounted = loopState.budgetCountedFor === nextItem.text;
-			if (!wasBudgetCounted) {
-				loopState.budgetUsed.tokens += costTokens;
-				loopState.budgetUsed.usd += costUsd;
-			}
-			// else: budget already counted for this item — skip to prevent double-count
-
-			loopState.iterationResult = iterResult;
-			loopState.pendingItem = nextItem.text;
-			loopState.pendingItemIndex = nextItem.index;
-			loopState.committed = false;
-			loopState.budgetCountedFor = nextItem.text;
-			this.journalStep(loopState, 5);
-
-			// P1-4: check both token and USD limits
-			const tokensExceeded = budgetTokens > 0 && loopState.budgetUsed.tokens > budgetTokens;
-			const usdExceeded = budgetUsd > 0 && loopState.budgetUsed.usd > budgetUsd;
-			const budgetExceededPostHoc = tokensExceeded || usdExceeded;
-
-			let isSuccess = iterResult.status === "COMPLETE";
-			let isBlockOrFail = iterResult.status === "BLOCKED" || iterResult.status === "FAILED";
-
-			// F-18: verification ladder — COMPLETE iterations are verified before
-			// commit (budget already counted: the work was done). Ladder failure →
-			// iteration treated as FAILED: no commit, no roadmap checkbox, diagnosis
-			// goes to STATE.md blockers (step 6), loop continues.
-			if (isSuccess && this.verificationLadder) {
-				const ladderOutcome = await this.runVerificationLadder();
-				if (!ladderOutcome.passed) {
-					iterResult.status = "FAILED";
-					iterResult.reason =
-						ladderOutcome.diagnosis ??
-						(ladderOutcome.failedStep
-							? `Verification failed at step: ${ladderOutcome.failedStep}`
-							: "Verification ladder failed");
-					// Persist the amended result so a crash before step 6 cannot
-					// recover as COMPLETE and commit a failed iteration.
-					loopState.iterationResult = iterResult;
-					writeLoopStateSync(this.missionDir, loopState);
-					isSuccess = false;
-					isBlockOrFail = true;
+				// F-18: verification ladder — COMPLETE iterations are verified before
+				// commit (budget already counted: the work was done). Ladder failure →
+				// iteration treated as FAILED: no commit, no roadmap checkbox, diagnosis
+				// goes to STATE.md blockers (step 6), loop continues.
+				if (isSuccess && this.verificationLadder) {
+					const ladderOutcome = await this.runVerificationLadder();
+					if (!ladderOutcome.passed) {
+						iterResult.status = "FAILED";
+						iterResult.reason =
+							ladderOutcome.diagnosis ??
+							(ladderOutcome.failedStep
+								? `Verification failed at step: ${ladderOutcome.failedStep}`
+								: "Verification ladder failed");
+						// Persist the amended result so a crash before step 6 cannot
+						// recover as COMPLETE and commit a failed iteration.
+						loopState.iterationResult = iterResult;
+						writeLoopStateSync(this.missionDir, loopState);
+						isSuccess = false;
+						isBlockOrFail = true;
+					}
 				}
-			}
 
-			// P2-7: budget exceeded AFTER successful iteration → commit first, then status
-			if (budgetExceededPostHoc && !isSuccess) {
-				resultStatus = "budget_exhausted";
-			} else if (budgetExceededPostHoc && isSuccess) {
-				// Will set budget_exhausted AFTER commit
-				resultStatus = "active"; // temporarily — will change after commit
-			}
+				// P2-7: budget exceeded AFTER successful iteration → commit first, then status
+				if (budgetExceededPostHoc && !isSuccess) {
+					resultStatus = "budget_exhausted";
+				} else if (budgetExceededPostHoc && isSuccess) {
+					// Will set budget_exhausted AFTER commit
+					resultStatus = "active"; // temporarily — will change after commit
+				}
 
-			lastCompletedStep = 5;
+				lastCompletedStep = 5;
 
-			// ── Step 6: Commit ─────────────────────────────────────────────
-			steps.commit = true;
-			await this.doStep6Commit(
-				loopState,
-				nextItem,
-				roadmapRaw,
-				iterResult,
-				isSuccess,
-				isBlockOrFail,
-				budgetExceededPostHoc,
-			);
+				// ── Step 6: Commit ─────────────────────────────────────────────
+				steps.commit = true;
+				await this.doStep6Commit(
+					loopState,
+					nextItem,
+					roadmapRaw,
+					iterResult,
+					isSuccess,
+					isBlockOrFail,
+					budgetExceededPostHoc,
+				);
 
-			// P3-d: deduplicated — single branch for budget_exhausted after commit
-			if (budgetExceededPostHoc) {
-				resultStatus = "budget_exhausted";
-				await writeMissionStatus(this.missionDir, "budget_exhausted");
-			}
+				// P3-d: deduplicated — single branch for budget_exhausted after commit
+				if (budgetExceededPostHoc) {
+					resultStatus = "budget_exhausted";
+					await writeMissionStatus(this.missionDir, "budget_exhausted");
+				}
 
-			// P0-1: Clear iteration result INSIDE step 6 (before advancing lastStep)
-			// This ensures that if we crash between step 6 and step 7,
-			// recovery won't try to re-execute the already-committed item.
-			loopState.iterationResult = undefined;
-			loopState.pendingItem = undefined;
-			loopState.pendingItemIndex = undefined;
-			loopState.committed = false;
+				// P0-1: Clear iteration result INSIDE step 6 (before advancing lastStep)
+				// This ensures that if we crash between step 6 and step 7,
+				// recovery won't try to re-execute the already-committed item.
+				loopState.iterationResult = undefined;
+				loopState.pendingItem = undefined;
+				loopState.pendingItemIndex = undefined;
+				loopState.committed = false;
 
-			this.journalStep(loopState, 6);
-			lastCompletedStep = 6;
+				this.journalStep(loopState, 6);
+				lastCompletedStep = 6;
 
-			// P0-2: abort check after commit
-			if (this.isAborted()) {
-				return this.abortTick(loopState, steps, currentIteration, currentItem);
-			}
+				// P0-2: abort check after commit
+				if (this.isAborted()) {
+					return this.abortTick(loopState, steps, currentIteration, currentItem);
+				}
 
-			// ── Step 7: Backlog ────────────────────────────────────────────
-			steps.backlog = true;
-			const now = await this.deps.clock.now();
-			// 0.7.2: infra errors (runner noise) are not written to BACKLOG
-			const infraSkip = isBlockOrFail && typeof iterResult.reason === "string" && isInfraError(iterResult.reason);
-			await this.appendBacklogEntry(loopState, now, currentIteration, {
-				text: nextItem.text,
-				isSuccess,
-				isBlockOrFail,
-				costUsd,
-				iterStatus: iterResult.status,
-				budgetExhausted: budgetExceededPostHoc,
-				budgetUsed: loopState.budgetUsed,
-				budgetTokens,
-				...(infraSkip ? { skipBacklog: true } : {}),
-			});
+				// ── Step 7: Backlog ────────────────────────────────────────────
+				steps.backlog = true;
+				const now = await this.deps.clock.now();
+				// 0.7.2: infra errors (runner noise) are not written to BACKLOG
+				const infraSkip = isBlockOrFail && typeof iterResult.reason === "string" && isInfraError(iterResult.reason);
+				await this.appendBacklogEntry(loopState, now, currentIteration, {
+					text: nextItem.text,
+					isSuccess,
+					isBlockOrFail,
+					costUsd,
+					iterStatus: iterResult.status,
+					budgetExhausted: budgetExceededPostHoc,
+					budgetUsed: loopState.budgetUsed,
+					budgetTokens,
+					...(infraSkip ? { skipBacklog: true } : {}),
+				});
 
-			// ── 0.7.2: Planning cap (backlog #32) ─────────────────────────
-			// Planning tick (index -1) that didn't add unchecked items → streak++.
-			// Streak >= 2 → enter awaiting_decision instead of infinite loop.
-			if (nextItem.index === -1) {
-				const freshRoadmapForCap = await readRoadmap(this.missionDir);
-				const hasUnchecked = /^[-*] \[ \] /m.test(freshRoadmapForCap);
-				if (!hasUnchecked) {
-					loopState.emptyPlanningStreak = (loopState.emptyPlanningStreak ?? 0) + 1;
+				// ── 0.7.2: Planning cap (backlog #32) ─────────────────────────
+				// Planning tick (index -1) that didn't add unchecked items → streak++.
+				// Streak >= 2 → enter awaiting_decision instead of infinite loop.
+				if (nextItem.index === -1) {
+					const freshRoadmapForCap = await readRoadmap(this.missionDir);
+					const hasUnchecked = /^[-*] \[ \] /m.test(freshRoadmapForCap);
+					if (!hasUnchecked) {
+						loopState.emptyPlanningStreak = (loopState.emptyPlanningStreak ?? 0) + 1;
+					} else {
+						loopState.emptyPlanningStreak = 0;
+					}
+					writeLoopStateSync(this.missionDir, loopState);
+					if (loopState.emptyPlanningStreak >= 2) {
+						loopState.emptyPlanningStreak = 0;
+						writeLoopStateSync(this.missionDir, loopState);
+						await this.enterAwaitingDecision(
+							loopState,
+							"Planning produced no new roadmap items twice — goal achieved? stop mission?",
+						);
+						return {
+							iteration: currentIteration,
+							steps,
+							status: "awaiting_decision",
+							item: currentItem,
+							itemsExecuted,
+						};
+					}
 				} else {
-					loopState.emptyPlanningStreak = 0;
+					// Non-planning tick → reset the streak
+					if ((loopState.emptyPlanningStreak ?? 0) > 0) {
+						loopState.emptyPlanningStreak = 0;
+						writeLoopStateSync(this.missionDir, loopState);
+					}
 				}
+
+				// ── Finalise ───────────────────────────────────────────────────
+				loopState.lastStep = 7;
+				loopState.interrupted = false;
+				loopState.budgetCountedFor = null; // P1-1: reset for next iteration
 				writeLoopStateSync(this.missionDir, loopState);
-				if (loopState.emptyPlanningStreak >= 2) {
-					loopState.emptyPlanningStreak = 0;
-					writeLoopStateSync(this.missionDir, loopState);
-					await this.enterAwaitingDecision(
-						loopState,
-						"Planning produced no new roadmap items twice — goal achieved? stop mission?",
-					);
-					return {
-						iteration: currentIteration,
-						steps,
-						status: "awaiting_decision",
-						item: currentItem,
-					};
+				lastCompletedStep = 7;
+
+				// ── Phase B hooks (F-19/F-20/F-21) ────────────────────────────
+				// After the journal write (lastStep=7), so a crash mid-hook recovers
+				// cleanly; hook errors never crash the loop (try/catch inside).
+				await this.emitIterationMetrics(currentIteration, iterResult, parsedPromise);
+				resultStatus = await this.runIdeaHooks(loopState, resultStatus);
+
+				// ── 0.8.0: Continuous loop — continue or break ──────────────
+				itemsExecuted++;
+
+				// BLOCKED/FAILED items stay unchecked → break to avoid infinite retry
+				if (!isSuccess) {
+					break;
 				}
-			} else {
-				// Non-planning tick → reset the streak
-				if ((loopState.emptyPlanningStreak ?? 0) > 0) {
-					loopState.emptyPlanningStreak = 0;
-					writeLoopStateSync(this.missionDir, loopState);
+
+				if (recurPhase) {
+					executedRecurs.add(nextItem.text);
+					const remainingRecurs = recurs.filter((r) => !executedRecurs.has(r.text));
+					if (remainingRecurs.length > 0) {
+						roadmapRaw = await readRoadmap(this.missionDir);
+						continue;
+					}
+					break; // all recurs executed this tick → yield
 				}
-			}
 
-			// ── Finalise ───────────────────────────────────────────────────
-			loopState.lastStep = 7;
-			loopState.interrupted = false;
-			loopState.budgetCountedFor = null; // P1-1: reset for next iteration
-			writeLoopStateSync(this.missionDir, loopState);
-			lastCompletedStep = 7;
+				// Re-check mission status (may have changed during execution)
+				const freshMission = await readMission(this.missionDir);
+				const freshStatus = String(freshMission.frontmatter.status) as MissionStatus;
+				if (freshStatus !== "active") {
+					resultStatus = freshStatus;
+					break;
+				}
 
-			// ── Phase B hooks (F-19/F-20/F-21) ────────────────────────────
-			// After the journal write (lastStep=7), so a crash mid-hook recovers
-			// cleanly; hook errors never crash the loop (try/catch inside).
-			await this.emitIterationMetrics(currentIteration, iterResult, parsedPromise);
-			resultStatus = await this.runIdeaHooks(loopState, resultStatus);
+				// Re-read roadmap for next item
+				roadmapRaw = await readRoadmap(this.missionDir);
+			} // end while (true)
 
+			// ── After continuous loop ──────────────────────────────────────
 			return {
 				iteration: currentIteration,
 				steps,
 				status: resultStatus,
 				item: currentItem,
+				itemsExecuted,
 			};
 		} catch (err) {
 			// Record crash marker for recovery, then re-throw

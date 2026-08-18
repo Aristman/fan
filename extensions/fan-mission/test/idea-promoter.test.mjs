@@ -623,7 +623,9 @@ describe("F-22 / TC-F22-7: интеграция шага 7 (мок scorer→ROAD
 		});
 
 		const result = await loop.tick();
-		expect(result.status).toBe("active");
+		// 0.8.0: continuous loop processes all 3 items → completed
+		expect(result.status).toBe("completed");
+		expect(result.itemsExecuted).toBe(3);
 
 		// ROADMAP.md unchanged (no idea-001 marker).
 		const roadmap = readFileSync(join(missionDir, "ROADMAP.md"), "utf8");
