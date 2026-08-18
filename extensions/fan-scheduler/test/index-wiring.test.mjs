@@ -240,10 +240,10 @@ describe("F-13 / index-wiring: lifecycle через хуки factory", () => {
 		try {
 			factory(fan);
 
-			// session_start → старт (дефолт intervalMs 300000; getStatus видит active)
+			// session_start → старт (дефолт intervalMs 60000; getStatus видит active)
 			await fan._emit("session_start", { type: "session_start" }, { cwd: tmp });
 
-			// 1 тик на дефолтном интервале (300000 мс)
+			// тики на дефолтном интервале (60000 мс → 5 тиков за 310 с)
 			await vi.advanceTimersByTimeAsync(310_000);
 			expect(fan.sendUserMessage.mock.calls.length).toBeGreaterThanOrEqual(1);
 			const before = fan.sendUserMessage.mock.calls.length;

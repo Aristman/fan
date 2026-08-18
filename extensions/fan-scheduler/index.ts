@@ -27,7 +27,7 @@ import { join } from "node:path";
 import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
 
 import type { MissionStatus, SchedulerHandle, TickPayload } from "./scheduler.js";
-import { startScheduler } from "./scheduler.js";
+import { hasRecurringItems, startScheduler } from "./scheduler.js";
 
 export type { TickPayload } from "./scheduler.js";
 
@@ -67,7 +67,11 @@ export function readMissionStatus(missionDir: string): string | null {
 	}
 }
 
-/** Находит первую не-терминальную миссию в <cwd>/docs/missions/. */
+/**
+ * Находит миссию для тиков в <cwd>/docs/missions/: первую не-терминальную;
+ * если такой нет — (R3) первую completed с непустым RECURRING.md (дежурство).
+ * Completed без recurring-пунктов не возвращается → тиков нет, как раньше.
+ */
 export function findActiveMission(cwd: string): { dir: string; status: string } | null {
 	const root = join(cwd, "docs", "missions");
 	if (!existsSync(root)) return null;
@@ -78,13 +82,19 @@ export function findActiveMission(cwd: string): { dir: string; status: string } 
 		return null;
 	}
 	entries.sort((a, b) => a.name.localeCompare(b.name));
+	let completedOnDuty: { dir: string; status: string } | null = null;
 	for (const e of entries) {
 		if (!e.isDirectory()) continue;
 		const dir = join(root, e.name);
 		const status = readMissionStatus(dir);
-		if (status && NON_TERMINAL.has(status)) return { dir, status };
+		if (!status) continue;
+		if (NON_TERMINAL.has(status)) return { dir, status };
+		// R3: completed-миссия с recurring-пунктами остаётся на дежурстве.
+		if (status === "completed" && !completedOnDuty && hasRecurringItems(dir)) {
+			completedOnDuty = { dir, status };
+		}
 	}
-	return null;
+	return completedOnDuty;
 }
 
 // ─── Wiring ─────────────────────────────────────────────────────────────────

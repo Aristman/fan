@@ -10,7 +10,7 @@
 //
 // Фабрика тестируется через mock fan (on/sendUserMessage) как в
 // index-wiring.test.mjs: emit session_start с ctx {cwd}, реальный startScheduler
-// под vi.useFakeTimers() (дефолт intervalMs 300000 → advance 310000 мс = 1 тик).
+// под vi.useFakeTimers() (дефолт intervalMs 60000 → advance 310000 мс = 5 тиков).
 
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -127,12 +127,34 @@ describe("mission-detect: findActiveMission", () => {
 		writeMission(cwd, "done", "completed");
 		expect(findActiveMission(cwd)).toBeNull();
 	});
+
+	it("R3: completed + RECURRING.md с unchecked-пунктами → возвращается (дежурство)", () => {
+		const cwd = makeTempDir();
+		const missionDir = writeMission(cwd, "duty", "completed");
+		writeFileSync(join(missionDir, "RECURRING.md"), "- [ ] Check feed (interval: 30m)\n", "utf8");
+		expect(findActiveMission(cwd)).toEqual({ dir: missionDir, status: "completed" });
+	});
+
+	it("R3: completed + пустой RECURRING.md → null", () => {
+		const cwd = makeTempDir();
+		const missionDir = writeMission(cwd, "duty", "completed");
+		writeFileSync(join(missionDir, "RECURRING.md"), "# Recurring\n\n(empty)\n", "utf8");
+		expect(findActiveMission(cwd)).toBeNull();
+	});
+
+	it("R3: active-миссия приоритетнее completed-дежурной", () => {
+		const cwd = makeTempDir();
+		const dutyDir = writeMission(cwd, "aaa-duty", "completed");
+		writeFileSync(join(dutyDir, "RECURRING.md"), "- [ ] Duty\n", "utf8");
+		const activeDir = writeMission(cwd, "zzz-active", "active");
+		expect(findActiveMission(cwd)).toEqual({ dir: activeDir, status: "active" });
+	});
 });
 
 // ────────────────────────────────────────────────────────────────────────────
 // 3-4. factory: getStatus / getMissionDir через поведение тиков.
-// Реальный startScheduler под fake timers; дефолт intervalMs 300000 →
-// advance 310000 мс даёт ровно 1 возможность тика.
+// Реальный startScheduler под fake timers; дефолт intervalMs 60000 →
+// advance 310000 мс даёт 5 возможностей тика.
 // ────────────────────────────────────────────────────────────────────────────
 
 describe("mission-detect: фабрика (getStatus/getMissionDir через тики)", () => {
@@ -202,6 +224,38 @@ describe("mission-detect: фабрика (getStatus/getMissionDir через т�
 			await fan._emit("session_start", { type: "session_start", reason: "startup" }, { cwd });
 
 			await vi.advanceTimersByTimeAsync(620_000); // 2 интервала — тиков нет вовсе
+			expect(fan.sendUserMessage).not.toHaveBeenCalled();
+		} finally {
+			await fan._emit("session_shutdown", { type: "session_shutdown" });
+		}
+	});
+
+	it("R3: session_start с completed-миссией на дежурстве (RECURRING.md) → тик доставлен", async () => {
+		const fan = makeMockFan();
+		const cwd = makeTempDir();
+		const missionDir = writeMission(cwd, "duty", "completed");
+		writeFileSync(join(missionDir, "RECURRING.md"), "- [ ] Duty item (interval: 30m)\n", "utf8");
+		try {
+			factory(fan);
+			await fan._emit("session_start", { type: "session_start", reason: "startup" }, { cwd });
+
+			await vi.advanceTimersByTimeAsync(65_000); // 1 тик на дефолтном интервале (60s)
+			expect(fan.sendUserMessage.mock.calls.length).toBeGreaterThanOrEqual(1);
+			expect(fan.sendUserMessage.mock.calls[0][0]).toContain(missionDir);
+		} finally {
+			await fan._emit("session_shutdown", { type: "session_shutdown" });
+		}
+	});
+
+	it("R3: session_start с completed-миссией БЕЗ RECURRING.md → тиков нет", async () => {
+		const fan = makeMockFan();
+		const cwd = makeTempDir();
+		writeMission(cwd, "done", "completed");
+		try {
+			factory(fan);
+			await fan._emit("session_start", { type: "session_start", reason: "startup" }, { cwd });
+
+			await vi.advanceTimersByTimeAsync(310_000);
 			expect(fan.sendUserMessage).not.toHaveBeenCalled();
 		} finally {
 			await fan._emit("session_shutdown", { type: "session_shutdown" });

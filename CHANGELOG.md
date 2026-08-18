@@ -3,6 +3,7 @@
 ## [2.8.1] — 2026-08-18
 
 ### Changed
+- **fan-scheduler 0.3.0: дежурство completed-миссий + базовый polling 60s (R3).** Планировщик тикает миссии со статусом `active` ИЛИ `completed` с непустым RECURRING.md (хотя бы один unchecked-пункт); completed без recurring — пропуск, как раньше. Базовый интервал polling: 300s → 60s (дешёвый no-op тик — без LLM-вызовов, loop сам решает, что подоспело). Per-mission `tick_interval_ms` из frontmatter MISSION.md (валидное число ≥ 1000) троттлит тики конкретной миссии (in-memory lastTickTs; cron-конфиг обгоняет интервал и не троттлится). `findActiveMission` возвращает completed-миссию на дежурстве, если не-терминальных нет.
 - **fan-mission 0.9.0: recurring переехали в RECURRING.md (R2).** Повторяющиеся задачи больше не хранятся как `(recur)`-пункты в ROADMAP. Новый файл `RECURRING.md` с per-item интервалами `(interval: Ns/m/h/d)`. Авто-миграция legacy `(recur)`-пунктов из ROADMAP в RECURRING.md при первом тике. Completed-миссия продолжает исполнять подоспевшие recurring (дежурство). Бюджет действует и на дежурные recurring. FSM: `completed → budget_exhausted` разрешён. Вариант A.
 
 ## [2.8.1] — 2026-08-18

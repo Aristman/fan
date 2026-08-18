@@ -175,7 +175,7 @@ describe("F-14 / scheduler-tick-bridge: фабрика (mission_tick / legacy)",
 			factory(fan);
 			await fan._emit("session_start", { type: "session_start" }, { cwd: tmp });
 
-			await vi.advanceTimersByTimeAsync(310_000); // 1 тик на дефолтном интервале
+			await vi.advanceTimersByTimeAsync(65_000); // 1 тик на дефолтном интервале (60s)
 
 			expect(fan.events.emit).toHaveBeenCalledTimes(1);
 			const [channel, payload] = fan.events.emit.mock.calls[0];

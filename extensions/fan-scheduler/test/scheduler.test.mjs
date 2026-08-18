@@ -19,7 +19,7 @@
 //     getMissionDir?: () => string          — для подстановки {missionDir}
 //     tickPrompt?: string                   — шаблон с плейсхолдерами
 //                                            {missionDir}, {date}
-//     intervalMs?: number                   — период тиков (мс). Дефолт 300000
+//     intervalMs?: number                   — период тиков (мс). Дефолт 60000
 //     cronExpression?: string               — опциональный cron (refactor-цель)
 //
 //   Возвращаемое значение:
@@ -33,13 +33,16 @@
 //      aborted/failed/budget_exhausted).
 //   3. stop() — выключает setInterval/cron, новых тиков нет.
 //   4. start→stop→start (restart) — корректно переустанавливает таймер.
-//   5. Дефолты: intervalMs = 300000 (5 мин), tickPrompt — дефолтный шаблон из спеки.
+//   5. Дефолты: intervalMs = 60000 (60 с), tickPrompt — дефолтный шаблон из спеки.
 //
 // Этап 0 (Red): модуль `extensions/fan-scheduler/scheduler.ts` ещё не существует
 // → динамический import падает с ERR_MODULE_NOT_FOUND. Каждый it() отмечается
 // vitest как failing. После реализации модуля по контракту выше — тесты должны
 // проходить.
 
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
 	afterEach,
 	beforeEach,
@@ -118,7 +121,7 @@ function makeMockGetStatus(overrides = {}) {
 /**
  * Полный DI-контекст для scheduler'а.
  * Поведение по умолчанию: активная миссия, missionDir="/tmp/test-mission",
- * интервал 300000 мс, дефолтный шаблон.
+ * интервал 60000 мс, дефолтный шаблон.
  */
 function makeCtx(overrides = {}) {
 	const actions = makeMockActions(overrides.actions);
@@ -645,7 +648,7 @@ describe("F-13 / TC-F13-defaults: конфигурационные дефолт�
 		vi.useRealTimers();
 	});
 
-	it("TC-F13-defaults: intervalMs не задан → дефолт 300000 мс (5 мин)", async () => {
+	it("TC-F13-defaults: intervalMs не задан → дефолт 60000 мс (60 с)", async () => {
 		const ctx = makeCtx({
 			// intervalMs НЕ передан
 			defaultStatus: "active",
@@ -654,9 +657,12 @@ describe("F-13 / TC-F13-defaults: конфигурационные дефолт�
 		});
 		const handle = startScheduler(ctx);
 		try {
-			// За 1100 мс тиков быть не должно (дефолт = 300000)
-			await vi.advanceTimersByTimeAsync(1100);
+			// За 59 с тиков быть не должно (дефолт = 60000)
+			await vi.advanceTimersByTimeAsync(59_000);
 			expect(ctx._actions.calls.length).toBe(0);
+			// На 61-й секунде — первый тик
+			await vi.advanceTimersByTimeAsync(2_000);
+			expect(ctx._actions.calls.length).toBeGreaterThanOrEqual(1);
 		} finally {
 			handle.stop();
 		}
@@ -912,5 +918,289 @@ describe("F-13 / TC-F13-cron-strict: parseCronExpression rejects sneaky invalid 
 		expect(() => parseCronExpression("*/5 * * * *")).not.toThrow();
 		expect(() => parseCronExpression("0 12 * * 1-5")).not.toThrow();
 		expect(() => parseCronExpression("30 10 1,15 * *")).not.toThrow();
+	});
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// R3 (0.3.0): дежурство completed-миссий + per-mission tick_interval_ms
+// ────────────────────────────────────────────────────────────────────────────
+
+const r3TempDirs = [];
+
+function makeR3TempDir() {
+	const dir = mkdtempSync(join(tmpdir(), "fan-scheduler-r3-"));
+	r3TempDirs.push(dir);
+	return dir;
+}
+
+/** Миссия на диске: MISSION.md (frontmatter) + опциональный RECURRING.md. */
+function makeR3Mission({ status = "completed", recurring = null, extraFm = "" }) {
+	const dir = makeR3TempDir();
+	writeFileSync(
+		join(dir, "MISSION.md"),
+		`---\nstatus: ${status}\n${extraFm}---\n\n# Mission\n`,
+		"utf8",
+	);
+	if (recurring !== null) {
+		writeFileSync(join(dir, "RECURRING.md"), recurring, "utf8");
+	}
+	return dir;
+}
+
+describe("R3 / TC-R3-duty: completed-миссия с RECURRING.md тикается (дежурство)", () => {
+	beforeEach(async () => {
+		await importScheduler();
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-08-12T10:00:00Z"));
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+		while (r3TempDirs.length > 0) {
+			const dir = r3TempDirs.pop();
+			try {
+				rmSync(dir, { recursive: true, force: true });
+			} catch {
+				// ignore — tempdir cleanup best-effort
+			}
+		}
+	});
+
+	it("TC-R3-duty-1: completed + RECURRING.md с unchecked-пунктами → тик доставляется", async () => {
+		const dir = makeR3Mission({
+			status: "completed",
+			recurring: "# Recurring\n\n- [ ] Check feed (interval: 30m)\n- [ ] Ping API\n",
+		});
+		const ctx = makeCtx({
+			intervalMs: 1000,
+			defaultStatus: "completed",
+			getMissionDir: () => dir,
+			tickPrompt: "tick {date}",
+		});
+		const handle = startScheduler(ctx);
+		try {
+			await vi.advanceTimersByTimeAsync(1100);
+			expect(ctx._actions.calls.length).toBeGreaterThanOrEqual(1);
+			expect(ctx._actions.calls[0].streamingBehavior).toBe("followUp");
+		} finally {
+			handle.stop();
+		}
+	});
+
+	it("TC-R3-duty-2: completed без RECURRING.md → пропуск (как раньше)", async () => {
+		const dir = makeR3Mission({ status: "completed", recurring: null });
+		const ctx = makeCtx({
+			intervalMs: 1000,
+			defaultStatus: "completed",
+			getMissionDir: () => dir,
+			tickPrompt: "tick {date}",
+		});
+		const handle = startScheduler(ctx);
+		try {
+			await vi.advanceTimersByTimeAsync(3100);
+			expect(ctx._actions.calls.length).toBe(0);
+		} finally {
+			handle.stop();
+		}
+	});
+
+	it("TC-R3-duty-2b: completed + пустой RECURRING.md → пропуск", async () => {
+		const dir = makeR3Mission({ status: "completed", recurring: "# Recurring\n\n(nothing yet)\n" });
+		const ctx = makeCtx({
+			intervalMs: 1000,
+			defaultStatus: "completed",
+			getMissionDir: () => dir,
+			tickPrompt: "tick {date}",
+		});
+		const handle = startScheduler(ctx);
+		try {
+			await vi.advanceTimersByTimeAsync(3100);
+			expect(ctx._actions.calls.length).toBe(0);
+		} finally {
+			handle.stop();
+		}
+	});
+
+	it("TC-R3-duty-2c: completed + RECURRING.md только с checked-пунктами → пропуск", async () => {
+		const dir = makeR3Mission({ status: "completed", recurring: "- [x] Done item\n- [x] Another done\n" });
+		const ctx = makeCtx({
+			intervalMs: 1000,
+			defaultStatus: "completed",
+			getMissionDir: () => dir,
+			tickPrompt: "tick {date}",
+		});
+		const handle = startScheduler(ctx);
+		try {
+			await vi.advanceTimersByTimeAsync(3100);
+			expect(ctx._actions.calls.length).toBe(0);
+		} finally {
+			handle.stop();
+		}
+	});
+
+	it("TC-R3-duty-3: active — поведение без изменений (регрессия, RECURRING.md не нужен)", async () => {
+		const dir = makeR3Mission({ status: "active", recurring: null });
+		const ctx = makeCtx({
+			intervalMs: 1000,
+			defaultStatus: "active",
+			getMissionDir: () => dir,
+			tickPrompt: "tick {date}",
+		});
+		const handle = startScheduler(ctx);
+		try {
+			await vi.advanceTimersByTimeAsync(1100);
+			expect(ctx._actions.calls.length).toBeGreaterThanOrEqual(1);
+		} finally {
+			handle.stop();
+		}
+	});
+
+	it("TC-R3-duty-4: остальные статусы (paused/awaiting_decision/aborted/failed/budget_exhausted) → пропуск даже с RECURRING.md", async () => {
+		const skipStatuses = ["paused", "awaiting_decision", "aborted", "failed", "budget_exhausted"];
+		for (const status of skipStatuses) {
+			const dir = makeR3Mission({ status, recurring: "- [ ] Duty item (interval: 30m)\n" });
+			const ctx = makeCtx({
+				intervalMs: 1000,
+				defaultStatus: status,
+				getMissionDir: () => dir,
+				tickPrompt: "tick {date}",
+			});
+			const handle = startScheduler(ctx);
+			try {
+				await vi.advanceTimersByTimeAsync(2100);
+				expect(ctx._actions.calls.length).toBe(0);
+			} finally {
+				handle.stop();
+			}
+		}
+	});
+});
+
+describe("R3 / TC-R3-interval: tick_interval_ms из frontmatter MISSION.md", () => {
+	beforeEach(async () => {
+		await importScheduler();
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-08-12T10:00:00Z"));
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+		while (r3TempDirs.length > 0) {
+			const dir = r3TempDirs.pop();
+			try {
+				rmSync(dir, { recursive: true, force: true });
+			} catch {
+				// ignore — tempdir cleanup best-effort
+			}
+		}
+	});
+
+	it("TC-R3-interval-5: tick_interval_ms: 30000 → второй тик через 15s отклонён, через 35s — доставлен", async () => {
+		const dir = makeR3Mission({ status: "active", extraFm: "tick_interval_ms: 30000\n" });
+		const ctx = makeCtx({
+			intervalMs: 1000, // базовый polling 1s — быстрее per-mission интервала
+			defaultStatus: "active",
+			getMissionDir: () => dir,
+			tickPrompt: "tick {date}",
+		});
+		const handle = startScheduler(ctx);
+		try {
+			// Первый тик на ~1s — доставлен (lastTickTs ещё не было)
+			await vi.advanceTimersByTimeAsync(1100);
+			expect(ctx._actions.calls.length).toBe(1);
+
+			// Через 15s после старта (14s после тика) — отклонён (< 30000)
+			await vi.advanceTimersByTimeAsync(13_900);
+			expect(ctx._actions.calls.length).toBe(1);
+
+			// Через 35s после старта (34s после первого тика) — доставлен
+			await vi.advanceTimersByTimeAsync(20_000);
+			expect(ctx._actions.calls.length).toBe(2);
+		} finally {
+			handle.stop();
+		}
+	});
+
+	it("TC-R3-interval-6: невалидный tick_interval_ms (строка/0/-5/<1000) → базовый интервал", async () => {
+		const invalidValues = ["abc", "0", "-5", "500"];
+		for (const value of invalidValues) {
+			const dir = makeR3Mission({ status: "active", extraFm: `tick_interval_ms: ${value}\n` });
+			const ctx = makeCtx({
+				intervalMs: 1000,
+				defaultStatus: "active",
+				getMissionDir: () => dir,
+				tickPrompt: "tick {date}",
+			});
+			const handle = startScheduler(ctx);
+			try {
+				// Базовый интервал 1000 мс применяется: 3 интервала → ≥3 тика
+				await vi.advanceTimersByTimeAsync(3500);
+				expect(ctx._actions.calls.length).toBeGreaterThanOrEqual(3);
+			} finally {
+				handle.stop();
+			}
+		}
+	});
+
+	it("TC-R3-interval-6b: нет tick_interval_ms во frontmatter → базовый интервал", async () => {
+		const dir = makeR3Mission({ status: "active" });
+		const ctx = makeCtx({
+			intervalMs: 1000,
+			defaultStatus: "active",
+			getMissionDir: () => dir,
+			tickPrompt: "tick {date}",
+		});
+		const handle = startScheduler(ctx);
+		try {
+			await vi.advanceTimersByTimeAsync(3500);
+			expect(ctx._actions.calls.length).toBeGreaterThanOrEqual(3);
+		} finally {
+			handle.stop();
+		}
+	});
+
+	it("TC-R3-interval-7: tick_interval_ms применяется и к completed-дежурству", async () => {
+		const dir = makeR3Mission({
+			status: "completed",
+			recurring: "- [ ] Duty item (interval: 30m)\n",
+			extraFm: "tick_interval_ms: 30000\n",
+		});
+		const ctx = makeCtx({
+			intervalMs: 1000,
+			defaultStatus: "completed",
+			getMissionDir: () => dir,
+			tickPrompt: "tick {date}",
+		});
+		const handle = startScheduler(ctx);
+		try {
+			await vi.advanceTimersByTimeAsync(1100);
+			expect(ctx._actions.calls.length).toBe(1); // дежурный тик доставлен
+			await vi.advanceTimersByTimeAsync(13_900);
+			expect(ctx._actions.calls.length).toBe(1); // троттлинг
+			await vi.advanceTimersByTimeAsync(20_000);
+			expect(ctx._actions.calls.length).toBe(2); // интервал истёк
+		} finally {
+			handle.stop();
+		}
+	});
+
+	it("TC-R3-interval-8: cron-конфиг обгоняет tick_interval_ms (троттлинг не применяется)", async () => {
+		const localStart = new Date(2026, 7, 12, 10, 0, 0, 0);
+		vi.setSystemTime(localStart);
+		const dir = makeR3Mission({ status: "active", extraFm: "tick_interval_ms: 300000\n" });
+		const ctx = makeCtx({
+			cronExpression: "* * * * *", // каждую минуту
+			defaultStatus: "active",
+			getMissionDir: () => dir,
+			tickPrompt: "tick {date}",
+		});
+		const handle = startScheduler(ctx);
+		try {
+			// 3 минуты → 3 cron-тика, несмотря на tick_interval_ms: 300000
+			await vi.advanceTimersByTimeAsync(3 * 60_000 + 100);
+			expect(ctx._actions.calls.length).toBeGreaterThanOrEqual(3);
+		} finally {
+			handle.stop();
+		}
 	});
 });

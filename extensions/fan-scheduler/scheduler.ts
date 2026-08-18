@@ -7,8 +7,21 @@
 // getStatus(); если миссия "active" — actions.sendMessage(tickPrompt, "followUp")
 // с подстановкой плейсхолдеров {missionDir}/{date}. cronExpression (опционально)
 // побеждает intervalMs; невалидный cron → явная ошибка при старте.
+//
+// R3 (0.3.0): миссия "completed" тоже тикается, если в её каталоге есть
+// непустой RECURRING.md (дежурство; loop сам решает, что подоспело — no-op
+// тик без LLM-вызовов). Per-mission `tick_interval_ms` из frontmatter
+// MISSION.md (≥1000) троттлит тики этой миссии (in-memory lastTickTs;
+// cron-конфиг не троттлится). Базовый интервал: 60_000 мс.
 
-export type MissionStatus = "active" | "paused" | "completed" | "aborted" | "failed" | "budget_exhausted";
+export type MissionStatus =
+	| "active"
+	| "paused"
+	| "awaiting_decision"
+	| "completed"
+	| "aborted"
+	| "failed"
+	| "budget_exhausted";
 
 // Только "steer" | "followUp": fan.sendUserMessage поддерживает лишь эти два
 // режима deliverAs ("nextTurn" исключён — планировщик всегда шлёт "followUp").
@@ -43,7 +56,8 @@ export interface SchedulerHandle {
 	stop: () => void;
 }
 
-export const DEFAULT_INTERVAL_MS = 300_000; // 5 минут
+export const DEFAULT_INTERVAL_MS = 60_000; // 60 секунд — дешёвый polling;
+// LLM-вызовов на no-op тике нет (mission-loop сам решает, что подоспело).
 
 export const DEFAULT_TICK_PROMPT =
 	"Тик контура миссии. Прочитай STATE.md, ROADMAP.md и BACKLOG.md в {missionDir}, " +
@@ -67,9 +81,54 @@ export function renderTickPrompt(template: string, vars: TickPromptVars): string
 }
 
 // ─── Cron-утилиты (вынесены в cron-parser.ts) ────────────────────────────────
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { nextCronDelayMs, parseCronExpression } from "./cron-parser.js";
 
 export { parseCronExpression } from "./cron-parser.js";
+
+// ─── R3: дежурство completed-миссий + per-mission интервал ──────────────────
+
+/** Пункт RECURRING.md: незакрытый checkbox `- [ ] ...` / `* [ ] ...`. */
+const RECURRING_ITEM_RE = /^[-*] \[ \] .+$/m;
+
+/**
+ * R3: есть ли в каталоге миссии непустой RECURRING.md (хотя бы один
+ * unchecked-пункт). Файл отсутствует/нечитаем/без пунктов → false.
+ * Дешёвая проверка (только чтение файла) — loop сам решает, что подоспело.
+ */
+export function hasRecurringItems(missionDir: string): boolean {
+	if (!missionDir) return false;
+	try {
+		const text = readFileSync(join(missionDir, "RECURRING.md"), "utf8");
+		return RECURRING_ITEM_RE.test(text);
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * R3: per-mission интервал тиков из frontmatter MISSION.md
+ * (`tick_interval_ms: <number>`). Валидное положительное число ≥ 1000 →
+ * интервал в мс; поле отсутствует/невалидно → null (базовый интервал).
+ */
+export function readTickIntervalMs(missionDir: string): number | null {
+	if (!missionDir) return null;
+	try {
+		const text = readFileSync(join(missionDir, "MISSION.md"), "utf8");
+		const fm = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+		if (!fm) return null;
+		const line = fm[1].split(/\r?\n/).find((l) => /^tick_interval_ms\s*:/.test(l));
+		if (!line) return null;
+		const raw = line.replace(/^tick_interval_ms\s*:\s*/, "").trim();
+		const n = Number(raw);
+		if (!Number.isFinite(n) || n < 1000) return null;
+		return n;
+	} catch {
+		return null;
+	}
+}
 
 // ─── Планировщик ────────────────────────────────────────────────────────────
 
@@ -85,15 +144,39 @@ export function startScheduler(ctx: SchedulerCtx): SchedulerHandle {
 	let intervalId: ReturnType<typeof setInterval> | undefined;
 	let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
+	// R3: per-mission lastTickTs — троттлинг по tick_interval_ms из MISSION.md.
+	const lastTickByMission = new Map<string, number>();
+
 	const tickHandler = async (): Promise<void> => {
 		const status = await ctx.getStatus();
 		if (stopped) {
 			return;
 		}
-		if (status !== "active") {
-			return; // paused / терминальные статусы → тик не доставляется
-		}
 		const missionDir = ctx.getMissionDir ? ctx.getMissionDir() : "";
+		if (status === "completed") {
+			// R3 (дежурство): completed-миссия тикается только при непустом
+			// RECURRING.md (есть unchecked-пункты). Дальше loop решает, что
+			// подоспело; no-op тик дешёвый — без LLM-вызовов. Completed без
+			// recurring → пропуск, как раньше.
+			if (!hasRecurringItems(missionDir)) {
+				return;
+			}
+		} else if (status !== "active") {
+			return; // paused / awaiting_decision / терминальные → тик не доставляется
+		}
+		// R3: per-mission tick_interval_ms из frontmatter MISSION.md. Только для
+		// interval-режима — cron-конфиг обгоняет интервал и не троттлится.
+		if (ctx.cronExpression === undefined) {
+			const minIntervalMs = readTickIntervalMs(missionDir);
+			if (minIntervalMs !== null) {
+				const now = Date.now();
+				const last = lastTickByMission.get(missionDir) ?? 0;
+				if (now - last < minIntervalMs) {
+					return;
+				}
+				lastTickByMission.set(missionDir, now);
+			}
+		}
 		const date = new Date().toISOString();
 		const text = renderTickPrompt(template, { missionDir, date });
 		if (ctx.actions.onTick) {
