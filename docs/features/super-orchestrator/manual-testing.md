@@ -3,7 +3,7 @@
 > Подробная инструкция ручной проверки всего, что построено в этапах 0–3
 > (48 функций + F-48.5) и post-release фиксов 2.8.1.
 > Ветка: `FAN/feature/new-agents-flow`. Версии: FAN 2.8.1, fan-coding-agent 2.7.3,
-> fan-mission 0.6.0, fan-super-orchestrator 0.3.0, fan-scheduler 0.2.0, fan-webhook 0.1.3.
+> fan-mission 0.9.0, fan-super-orchestrator 0.3.0, fan-scheduler 0.3.0, fan-webhook 0.1.3.
 
 ---
 
@@ -25,13 +25,13 @@
 ### 2. Расширения (deployed-копии)
 Синхронизировать из `extensions/` репозитория в `~/.fan/agent/extensions/`:
 
-- **fan-mission 0.6.0** — обязательно целиком: `index.ts`, `slash-commands.ts`,
+- **fan-mission 0.9.0** — обязательно целиком: `index.ts`, `slash-commands.ts`,
   `mission-loop.ts`, `prompt-builder.ts`, `mission-executor.ts`, `default-run-agent.ts`,
-  `epic-delegation.ts`, `file-state-manager.ts`, `package.json`, `templates/`
+  `epic-delegation.ts`, `file-state-manager.ts`, `tick-bridge.ts`, `package.json`, `templates/`
 - **fan-super-orchestrator 0.3.0** — каталог целиком (если ещё не синхронизирован после Этапа 3)
-- **fan-scheduler 0.2.0**, **fan-webhook 0.1.3** — если не обновлялись ранее
+- **fan-scheduler 0.3.0**, **fan-webhook 0.1.3** — если не обновлялись ранее
 
-Проверка: в `~/.fan/agent/extensions/fan-mission/package.json` версия `0.6.0`;
+Проверка: в `~/.fan/agent/extensions/fan-mission/package.json` версия `0.9.0`;
 файл `prompt-builder.ts` присутствует.
 
 ### 3. Тестовый проект
@@ -48,8 +48,8 @@
    ```
    fan mission init test-mission
    ```
-   ✅ `docs/missions/test-mission/` создан: MISSION.md, ROADMAP.md, STATE.md,
-   BACKLOG.md, DECISIONS.md, tree-journal.jsonl.
+   ✅ `docs/missions/test-mission/` создан: MISSION.md, ROADMAP.md, RECURRING.md,
+   STATE.md, BACKLOG.md, DECISIONS.md, tree-journal.jsonl.
    ❌ Повторный init той же миссии → «Mission already exists» (ожидаемо).
 
    **0.7.0 — описание при init:**
@@ -95,9 +95,11 @@
 
 6. **Виджет:** `F9` — виджет миссии появляется/скрывается (статус, итерация, шаг).
 
-7. **Авто-тик:** при активной миссии scheduler раз в 5 минут шлёт `mission_tick` →
+7. **Авто-тик:** при активной миссии scheduler раз в 60 секунд шлёт `mission_tick` →
    контур делает итерацию без ручного `/mission:start`. (Можно проверить
    `docs/missions/test-mission/.mission-loop.json` — currentIteration растёт сам.)
+   Интервал переопределяется через `tick_interval_ms` в frontmatter MISSION.md
+   (≥ 1000 мс). Пример: `tick_interval_ms: 30000` → тики каждые 30 с.
 
 8. **Промоушн идей (0.7.1):** после нескольких итераций генератор идей добавляет
    IDEA-записи в BACKLOG.md, скорер оценивает; идеи с score ≥ 0.7 получают статус
@@ -105,6 +107,48 @@
    → контур исполняет их как обычные пункты. В BACKLOG статус меняется на PROMOTED.
    Идеи в диапазоне 0.5–0.7 → вопрос оператору; ответ «да» через `/mission:decide`
    → промоушн на следующем тике.
+
+9. **Recurring-задачи (0.9.0):**
+   - Recurring-задачи живут в отдельном файле `RECURRING.md` (не в ROADMAP).
+   - Формат пункта: `- [ ] Текст задачи (interval: 30m)`
+   - Суффиксы интервала: `s` (секунды), `m` (минуты), `h` (часы), `d` (дни).
+   - Если интервал не указан или невалиден → дефолт 5 минут.
+   - Состояние последних запусков хранится в `.recurring-state.json` (hash → timestamp).
+   - **Добавить тестовый recurring-пункт:**
+     ```
+     # docs/missions/test-mission/RECURRING.md
+     - [ ] Проверить логи приложения (interval: 2m)
+     ```
+   - Дождаться подхода интервала (≥ 2 мин) → тик исполняет только подоспелые
+     recurring-задачи. Проверить: STATE.md обновлён, коммит
+     `mission: recurring: Проверить логи приложения`.
+   - **Важно:** recurring-пункты НЕ отмечаются `[x]` — они остаются unchecked
+     и исполняются циклически (watch-loop семантика).
+
+10. **Legacy-миграция (0.9.0):** если в ROADMAP остались пункты с маркером
+    `(recur)` (старый формат ≤ 0.7.3), при первом тике они автоматически
+    мигрируют в RECURRING.md с дефолтным интервалом 5m и отмечаются `[x]`
+    в ROADMAP. Коммит: `mission: migrate recurring items to RECURRING.md`.
+
+11. **Завершение миссии и дежурство (0.9.0):**
+    - Когда все пункты ROADMAP отмечены `[x]` → статус `completed`, даже если
+      в RECURRING.md есть живые recurring-задачи.
+    - Completed-миссия остаётся на дежурстве: планировщик продолжает тикать
+      (базовый polling 60 с, переопределение через `tick_interval_ms` в
+      frontmatter MISSION.md).
+    - На каждом тике completed-миссии исполняются **только подоспелые**
+      recurring-задачи (one-shot работа не выполняется).
+    - **Проверка:** дождаться `completed` → добавить новый пункт в RECURRING.md →
+      дождаться подхода интервала → STATE.md обновлён, recurring исполнен.
+
+12. **Бюджет на дежурстве (0.9.0):**
+    - Бюджет (`budget_usd` / `budget_tokens` в MISSION.md) действует и на
+      дежурные recurring-задачи.
+    - При исчерпании бюджета во время выполнения recurring → статус
+      `budget_exhausted`, дежурство останавливается (планировщик пропускает
+      тики для терминальных статусов).
+    - **Проверка:** установить `budget_tokens: 1000` в MISSION.md → дождаться
+      исчерпания → статус `budget_exhausted`, recurring больше не исполняются.
 
 ---
 
