@@ -11,6 +11,7 @@ export interface MissionTemplateFiles {
 	"STATE.md": string;
 	"BACKLOG.md": string;
 	"DECISIONS.md": string;
+	"RECURRING.md": string;
 }
 
 /**
@@ -34,12 +35,13 @@ export async function loadTemplate(name: string): Promise<MissionTemplateFiles> 
 	const here = new URL(".", import.meta.url);
 	const templateDir = new URL(`./${name}/`, here);
 
-	const [missionMod, roadmapMod, stateMod, backlogMod, decisionsMod] = await Promise.all([
+	const [missionMod, roadmapMod, stateMod, backlogMod, decisionsMod, recurringMod] = await Promise.all([
 		import(new URL("MISSION.md.ts", templateDir).href),
 		import(new URL("ROADMAP.md.ts", templateDir).href),
 		import(new URL("STATE.md.ts", templateDir).href),
 		import(new URL("BACKLOG.md.ts", templateDir).href),
 		import(new URL("DECISIONS.md.ts", templateDir).href),
+		import(new URL("RECURRING.md.ts", templateDir).href),
 	]);
 
 	return {
@@ -48,6 +50,7 @@ export async function loadTemplate(name: string): Promise<MissionTemplateFiles> 
 		"STATE.md": stateMod.STATE_MD,
 		"BACKLOG.md": backlogMod.BACKLOG_MD,
 		"DECISIONS.md": decisionsMod.DECISIONS_MD,
+		"RECURRING.md": recurringMod.RECURRING_MD,
 	};
 }
 

@@ -2,7 +2,7 @@
 // Manages 5 mission files (MISSION.md, ROADMAP.md, STATE.md, BACKLOG.md, DECISIONS.md),
 // FSM status transitions, and slug validation with path-traversal protection.
 
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
@@ -29,6 +29,154 @@ export function isRecurringItem(text: string): boolean {
 	return text.toLowerCase().includes(RECUR_MARKER.toLowerCase());
 }
 
+// ─── RECURRING.md infrastructure (R1) ──────────────────────────────────────
+
+/** Default interval when (interval: ...) is missing or invalid: 5 minutes. */
+export const DEFAULT_RECUR_INTERVAL_MS = 300_000;
+
+/** A parsed recurring item from RECURRING.md. */
+export interface RecurringItem {
+	/** 0-based line index in the file. */
+	index: number;
+	/** Task text without the interval marker. */
+	text: string;
+	/** Parsed interval in milliseconds. */
+	intervalMs: number;
+	/** Original raw line text (trimmed). */
+	rawText: string;
+}
+
+/** Suffix → multiplier map for interval parsing. */
+const INTERVAL_SUFFIXES: Record<string, number> = {
+	s: 1_000,
+	m: 60_000,
+	h: 3_600_000,
+	d: 86_400_000,
+};
+
+/**
+ * Parse interval string like "30m", "2h", "7d", "30s" to milliseconds.
+ * Returns DEFAULT_RECUR_INTERVAL_MS for invalid/missing input.
+ */
+function parseIntervalMs(raw: string): number {
+	const m = /^(\d+)([smhd])$/i.exec(raw.trim());
+	if (!m) return DEFAULT_RECUR_INTERVAL_MS;
+	const value = Number(m[1]);
+	const suffix = m[2].toLowerCase();
+	const multiplier = INTERVAL_SUFFIXES[suffix];
+	if (!multiplier || value <= 0) return DEFAULT_RECUR_INTERVAL_MS;
+	return value * multiplier;
+}
+
+/**
+ * Parse RECURRING.md content into RecurringItem[].
+ * Format: `- [ ] Task text (interval: 30m)`
+ * The interval marker `(interval: ...)` is extracted from the end of text;
+ * if multiple markers exist, the last one wins.
+ * text field = item text WITHOUT the interval marker.
+ */
+export function parseRecurringItems(raw: string): RecurringItem[] {
+	const items: RecurringItem[] = [];
+	const lines = raw.split("\n");
+	for (let i = 0; i < lines.length; i++) {
+		const trimmed = lines[i].trim();
+		const checkboxMatch = /^[-*] \[ \] (.+)$/.exec(trimmed);
+		if (!checkboxMatch) continue;
+		const fullText = checkboxMatch[1];
+
+		// Extract the LAST (interval: ...) marker (case-insensitive).
+		const intervalRegex = /\(interval:\s*(\S+)\)/gi;
+		const allMatches = fullText.matchAll(intervalRegex);
+		let lastMatch: RegExpExecArray | null = null;
+		for (const m of allMatches) {
+			lastMatch = m as RegExpExecArray;
+		}
+
+		let text = fullText;
+		let intervalMs = DEFAULT_RECUR_INTERVAL_MS;
+		if (lastMatch) {
+			intervalMs = parseIntervalMs(lastMatch[1]);
+			// Remove the last (interval: ...) marker from text, trim trailing spaces.
+			text = fullText.slice(0, lastMatch.index).replace(/\s+$/, "");
+		}
+
+		items.push({ index: i, text, intervalMs, rawText: trimmed });
+	}
+	return items;
+}
+
+/**
+ * Read and parse RECURRING.md from mission directory.
+ * Returns empty array if file doesn't exist (not an error).
+ */
+export function readRecurring(missionDir: string): RecurringItem[] {
+	const filePath = join(missionDir, "RECURRING.md");
+	if (!existsSync(filePath)) return [];
+	const raw = readFileSync(filePath, "utf8");
+	return parseRecurringItems(raw);
+}
+
+/**
+ * Stable short hash of normalized recurring item text.
+ * Normalization: trim, collapse whitespace, lowercase.
+ * Returns first 12 hex chars of SHA-1.
+ */
+export function recurringItemHash(text: string): string {
+	const normalized = text.trim().replace(/\s+/g, " ").toLowerCase();
+	return createHash("sha1").update(normalized).digest("hex").slice(0, 12);
+}
+
+/**
+ * Read .recurring-state.json from mission directory.
+ * Returns empty object if file doesn't exist.
+ */
+export function readRecurringState(missionDir: string): Record<string, number> {
+	const filePath = join(missionDir, ".recurring-state.json");
+	if (!existsSync(filePath)) return {};
+	try {
+		const raw = readFileSync(filePath, "utf8");
+		return JSON.parse(raw) as Record<string, number>;
+	} catch {
+		return {};
+	}
+}
+
+/**
+ * Write .recurring-state.json atomically.
+ */
+export function writeRecurringState(missionDir: string, state: Record<string, number>): void {
+	const filePath = join(missionDir, ".recurring-state.json");
+	atomicWriteFileSync(
+		filePath,
+		`${JSON.stringify(state, null, 2)}
+`,
+	);
+}
+
+/**
+ * Check if a recurring item is due for execution.
+ * An item is due when (nowMs - lastRunMs) >= intervalMs.
+ * Items that have never run (no entry in state) are always due.
+ */
+export function isRecurringDue(item: RecurringItem, state: Record<string, number>, nowMs: number): boolean {
+	const hash = recurringItemHash(item.text);
+	if (!(hash in state)) return true; // never run → always due
+	return nowMs - state[hash] >= item.intervalMs;
+}
+
+/**
+ * Return a new state object with the item's last-run timestamp updated.
+ * Immutable — does not mutate the input state.
+ */
+export function markRecurringRun(
+	state: Record<string, number>,
+	item: RecurringItem,
+	nowMs: number,
+): Record<string, number> {
+	const hash = recurringItemHash(item.text);
+	return { ...state, [hash]: nowMs };
+}
+
 // ─── Dynamic template loader (handles .ts and .js at runtime) ──────────────
 
 interface MissionTemplateFiles {
@@ -37,6 +185,7 @@ interface MissionTemplateFiles {
 	"STATE.md": string;
 	"BACKLOG.md": string;
 	"DECISIONS.md": string;
+	"RECURRING.md": string;
 }
 
 interface TemplateModule {
@@ -288,6 +437,12 @@ export async function initMission(
 
 	for (const [fileName, raw] of Object.entries(templates) as [keyof MissionTemplateFiles, string][]) {
 		writeFileSync(join(missionDir, fileName), tmpl.renderTemplate(raw, vars), "utf8");
+	}
+
+	// .gitignore: exclude runtime state files from version control.
+	const gitignorePath = join(missionDir, ".gitignore");
+	if (!existsSync(gitignorePath)) {
+		writeFileSync(gitignorePath, ".mission-loop.json\n.mission-loop.lock\n.recurring-state.json\n", "utf8");
 	}
 
 	return missionDir;
