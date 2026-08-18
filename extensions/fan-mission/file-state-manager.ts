@@ -330,6 +330,8 @@ export interface MissionFrontmatter {
 	budget_usd: number;
 	max_depth: number;
 	max_width: number;
+	/** Optional: 'fresh' | 'persistent'. Absent = persistent (backward compat). */
+	session_mode?: string;
 	[key: string]: unknown;
 }
 

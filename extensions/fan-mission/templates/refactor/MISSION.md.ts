@@ -11,6 +11,7 @@ budget_tokens: 300000
 budget_usd: 5.00
 max_depth: 3
 max_width: 3
+session_mode: fresh
 template: refactor
 ---
 

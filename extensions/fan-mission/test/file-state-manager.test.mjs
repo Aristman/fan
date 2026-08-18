@@ -1110,6 +1110,111 @@ describe("F-08 / P-3: Template selection", () => {
 });
 
 // ────────────────────────────────────────────────────────────────────────────
+// S2 (ralph-loop): session_mode frontmatter — optional, default = persistent
+
+describe("F-08 / session_mode frontmatter", () => {
+	let baseDir;
+	beforeEach(() => {
+		baseDir = freshBaseDir();
+	});
+	afterEach(() => {
+		rmSync(baseDir, { recursive: true, force: true });
+	});
+
+	it("parses session_mode: fresh", async () => {
+		const missionDir = await initMission("sm-fresh", { baseDir });
+		writeFileSync(
+			join(missionDir, "MISSION.md"),
+			[
+				"---",
+				"mission_id: mission-test",
+				"created: 2026-08-10T00:00:00Z",
+				"status: active",
+				"metric_type: test_pass_rate",
+				"metric_command: npm test",
+				"budget_tokens: 500000",
+				"budget_usd: 10.00",
+				"max_depth: 4",
+				"max_width: 4",
+				"session_mode: fresh",
+				"---",
+				"",
+				"# body",
+				"",
+			].join("\n"),
+			"utf8",
+		);
+		const { frontmatter } = await readMission(missionDir);
+		expect(frontmatter.session_mode).toBe("fresh");
+	});
+
+	it("parses session_mode: persistent", async () => {
+		const missionDir = await initMission("sm-persistent", { baseDir });
+		writeFileSync(
+			join(missionDir, "MISSION.md"),
+			[
+				"---",
+				"mission_id: mission-test",
+				"created: 2026-08-10T00:00:00Z",
+				"status: active",
+				"metric_type: test_pass_rate",
+				"metric_command: npm test",
+				"budget_tokens: 500000",
+				"budget_usd: 10.00",
+				"max_depth: 4",
+				"max_width: 4",
+				"session_mode: persistent",
+				"---",
+				"",
+				"# body",
+				"",
+			].join("\n"),
+			"utf8",
+		);
+		const { frontmatter } = await readMission(missionDir);
+		expect(frontmatter.session_mode).toBe("persistent");
+	});
+
+	it("missing session_mode -> undefined, no validation error (old format)", async () => {
+		const missionDir = await initMission("sm-absent", { baseDir });
+		writeFileSync(
+			join(missionDir, "MISSION.md"),
+			[
+				"---",
+				"mission_id: mission-test",
+				"created: 2026-08-10T00:00:00Z",
+				"status: active",
+				"metric_type: test_pass_rate",
+				"metric_command: npm test",
+				"budget_tokens: 500000",
+				"budget_usd: 10.00",
+				"max_depth: 4",
+				"max_width: 4",
+				"---",
+				"",
+				"# body",
+				"",
+			].join("\n"),
+			"utf8",
+		);
+		const { frontmatter } = await readMission(missionDir);
+		expect(frontmatter.session_mode).toBeUndefined();
+	});
+
+	it("initMission (default template) creates MISSION.md with session_mode: fresh", async () => {
+		const missionDir = await initMission("sm-init-default", { baseDir });
+		const { frontmatter } = await readMission(missionDir);
+		expect(frontmatter.session_mode).toBe("fresh");
+	});
+
+	it("initMission (refactor template) creates MISSION.md with session_mode: fresh", async () => {
+		const missionDir = await initMission("sm-init-refactor", { baseDir, template: "refactor" });
+		const { frontmatter } = await readMission(missionDir);
+		expect(frontmatter.session_mode).toBe("fresh");
+	});
+});
+
+// ────────────────────────────────────────────────────────────────────────────
 // P-5/P-6: InvalidTransitionError — writeMissionStatus throws typed error
 
 describe("F-08 / P-5/P-6: InvalidTransitionError from writeMissionStatus", () => {
