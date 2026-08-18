@@ -1012,6 +1012,7 @@ export class MissionLoop {
 						roadmapRaw,
 						state: missionState,
 						...(steer ? { steer } : {}),
+						freshSession: this.sessionMode === "fresh",
 					});
 					const runLocalIteration = (): Promise<IterationResult> =>
 						this.deps.executor.runIteration({
@@ -1837,6 +1838,7 @@ export class MissionLoop {
 				roadmapRaw,
 				state: missionState,
 				recurring: true,
+				freshSession: this.sessionMode === "fresh",
 			});
 
 			// Execute

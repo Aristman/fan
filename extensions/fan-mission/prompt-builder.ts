@@ -34,6 +34,20 @@ export const BOOTSTRAP_PLANNING_GUIDANCE =
 export const RECUR_GUIDANCE =
 	"- This is a RECURRING task: perform the work for this tick only, report results. The item lives in RECURRING.md (not ROADMAP) and is governed by its interval.";
 
+/**
+ * ralph-loop (S4): section appended when the executor runs in a FRESH session
+ * (`session_mode: fresh`). Exact wording from
+ * docs/research/ralph-loop-mission-mode.md §5.
+ */
+export const FRESH_SESSION_SECTION = [
+	"## Session mode",
+	"- This is a FRESH session (ralph loop): no prior conversation exists. All mission",
+	"  state is in the sections above and in git history. Do NOT search for prior chat context.",
+	"- The previous iteration's outcome is the latest BACKLOG entry and STATE.md.",
+	"- Before finishing, record anything the NEXT iteration must know into STATE.md",
+	"  '## Следующие шаги' — the next session will not remember this one.",
+].join("\n");
+
 const TRUNCATION_MARKER = "...[truncated]";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -53,6 +67,9 @@ export interface ExecutionPromptOptions {
 	steer?: string;
 	/** R2: true when executing a recurring item from RECURRING.md. */
 	recurring?: boolean;
+	/** ralph-loop (S4): true when this iteration runs in a fresh session
+	 * (`session_mode: fresh`) — adds the "Session mode" cold-start section. */
+	freshSession?: boolean;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -203,6 +220,11 @@ export async function buildExecutionPrompt(opts: ExecutionPromptOptions): Promis
 		// R2: recurring items (from RECURRING.md or legacy (recur) marker)
 		if (opts.recurring || isRecurringItem(opts.itemText)) {
 			parts.push(RECUR_GUIDANCE);
+		}
+		// ralph-loop (S4): fresh-session cold-start section (only when enabled)
+		if (opts.freshSession === true) {
+			parts.push("");
+			parts.push(FRESH_SESSION_SECTION);
 		}
 		return parts.join("\n");
 	};

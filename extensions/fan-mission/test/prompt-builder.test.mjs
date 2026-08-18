@@ -12,6 +12,7 @@ import { MissionLoop } from "../mission-loop.js";
 import {
 	BOOTSTRAP_PLANNING_GUIDANCE,
 	buildExecutionPrompt,
+	FRESH_SESSION_SECTION,
 	isBootstrapItem,
 	MAX_PROMPT_CHARS,
 	MAX_SECTION_CHARS,
@@ -315,5 +316,67 @@ describe("prompt-builder: bootstrap planning guidance (0.7.0)", () => {
 		expect(prompt).toContain("## Блокеры");
 		expect(prompt).toContain("## Следующие шаги");
 		expect(prompt).toContain("EXACT Russian names");
+	});
+});
+
+// ─── ralph-loop (S4): fresh-session section ───────────────────────────────
+
+describe("prompt-builder: freshSession section (ralph-loop S4)", () => {
+	it("freshSession=true → секция «Session mode» присутствует (точный текст §5)", async () => {
+		const prompt = await buildExecutionPrompt({
+			missionDir,
+			itemText: "item a",
+			index: ITEM_A_INDEX,
+			roadmapRaw: ROADMAP_RAW,
+			state: { done: [], blockers: [], nextSteps: [] },
+			freshSession: true,
+		});
+		expect(prompt).toContain("## Session mode");
+		expect(prompt).toContain(FRESH_SESSION_SECTION);
+		expect(prompt).toContain("FRESH session (ralph loop)");
+		expect(prompt).toContain("Do NOT search for prior chat context.");
+		expect(prompt).toContain("the next session will not remember this one.");
+	});
+
+	it("freshSession=false → секции «Session mode» нет", async () => {
+		const prompt = await buildExecutionPrompt({
+			missionDir,
+			itemText: "item a",
+			index: ITEM_A_INDEX,
+			roadmapRaw: ROADMAP_RAW,
+			state: { done: [], blockers: [], nextSteps: [] },
+			freshSession: false,
+		});
+		expect(prompt).not.toContain("## Session mode");
+		expect(prompt).not.toContain("FRESH session (ralph loop)");
+	});
+
+	it("freshSession=undefined → секции «Session mode» нет", async () => {
+		const prompt = await buildExecutionPrompt({
+			missionDir,
+			itemText: "item a",
+			index: ITEM_A_INDEX,
+			roadmapRaw: ROADMAP_RAW,
+			state: { done: [], blockers: [], nextSteps: [] },
+		});
+		expect(prompt).not.toContain("## Session mode");
+	});
+
+	it("freshSession=true + большие секции → бюджет промпта ≤ MAX_PROMPT_CHARS не превышен", async () => {
+		writeFileSync(
+			join(missionDir, "BACKLOG.md"),
+			`# Backlog\n\n${"backlog line with content\n".repeat(400)}`,
+			"utf8",
+		);
+		const prompt = await buildExecutionPrompt({
+			missionDir,
+			itemText: "item a",
+			index: ITEM_A_INDEX,
+			roadmapRaw: ROADMAP_RAW,
+			state: { done: ["x".repeat(3900)], blockers: [], nextSteps: [] },
+			steer: "s".repeat(3900),
+			freshSession: true,
+		});
+		expect(prompt.length).toBeLessThanOrEqual(MAX_PROMPT_CHARS);
 	});
 });
