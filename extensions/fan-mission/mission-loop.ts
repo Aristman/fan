@@ -101,6 +101,20 @@ export interface MissionLoopDeps {
 	git: MissionGit;
 	clock: MissionClock;
 	lock?: MissionLock;
+	/** ralph-loop (S3): session rotator for `session_mode: fresh`. Absent →
+	 * fresh mode degrades to persistent with a one-time warn. */
+	sessionRotator?: MissionSessionRotator;
+}
+
+/**
+ * ralph-loop (S3): DI session rotator. Called by tick() AFTER the tick fully
+ * finalised (writeLoopStateSync lastStep=7, interrupted=false) and released the
+ * lock, when fresh-mode work remains (LoopState.resumeAfterRotation).
+ * `{cancelled: true}` → the loop clears the flag, warns and falls back to
+ * persistent mode for the rest of the process.
+ */
+export interface MissionSessionRotator {
+	rotate(): Promise<{ cancelled: boolean }>;
 }
 
 /** Phase B (F-19): DI idea generator hook — called after each completed iteration. */
@@ -180,6 +194,10 @@ interface LoopState {
 	lastPromotedCount?: number;
 	// 0.7.2: consecutive empty planning iterations (backlog #32 cap)
 	emptyPlanningStreak?: number;
+	// ralph-loop (S3): fresh-mode rotation request — set only after a fully
+	// persisted finalise (lastStep=7, interrupted=false); consumed by the
+	// session_start wiring (S5) which resets it and auto-continues the loop.
+	resumeAfterRotation?: boolean;
 }
 
 // ─── Loop state persistence (.mission-loop.json) ────────────────────────────
@@ -502,6 +520,14 @@ export class MissionLoop {
 	private pendingDelegationCleanup?: (() => void) | null;
 	// 0.7.2: in-memory reentrancy guard (defence-in-depth with file lock)
 	private tickRunning = false;
+	// ralph-loop (S3): session mode resolved once per tick from MISSION.md
+	// frontmatter (immutable after init). 'fresh' requires an injected
+	// sessionRotator; without it the mode degrades to persistent.
+	private sessionMode: "fresh" | "persistent" = "persistent";
+	// ralph-loop (S3): after a cancelled rotation the mission runs persistent
+	// for the rest of the process (rotation is not retried).
+	private rotationFallbackPersistent = false;
+	private rotatorMissingWarned = false;
 
 	constructor(opts: {
 		missionDir: string;
@@ -551,6 +577,75 @@ export class MissionLoop {
 	}
 
 	async tick(): Promise<TickResult> {
+		const result = await this._tickInner();
+		// ralph-loop (S3): session rotation happens AFTER the tick fully
+		// finalised and the lock was released (finally inside _tickInner).
+		await this.maybeRotateSession();
+		return result;
+	}
+
+	/**
+	 * ralph-loop (S3): resolve the session mode once per tick from MISSION.md
+	 * frontmatter (`session_mode`). 'fresh' requires an injected sessionRotator;
+	 * without it (or after a cancelled rotation) the mode degrades to
+	 * persistent — with a one-time warn for the missing rotator.
+	 */
+	private resolveSessionMode(rawMode: unknown): "fresh" | "persistent" {
+		if (String(rawMode) !== "fresh") return "persistent";
+		if (this.rotationFallbackPersistent) return "persistent";
+		if (!this.deps.sessionRotator) {
+			if (!this.rotatorMissingWarned) {
+				this.rotatorMissingWarned = true;
+				console.warn(
+					`[fan-mission] session_mode: fresh but no sessionRotator injected — degrading to persistent (missionDir: ${this.missionDir})`,
+				);
+			}
+			return "persistent";
+		}
+		return "fresh";
+	}
+
+	/**
+	 * ralph-loop (S3): post-tick session rotation. Runs after _tickInner()'s
+	 * finally (lock released): if the tick requested a rotation
+	 * (LoopState.resumeAfterRotation persisted on disk), ask the injected
+	 * rotator to switch the session. `{cancelled: true}` (or a rotator error)
+	 * → clear the flag, warn, and run persistent for the rest of the process.
+	 */
+	private async maybeRotateSession(): Promise<void> {
+		if (this.sessionMode !== "fresh") return;
+		const rotator = this.deps.sessionRotator;
+		if (!rotator) return;
+		let loopState: LoopState;
+		try {
+			loopState = await readMissionLoopState(this.missionDir);
+		} catch {
+			return; // state unreadable — nothing to rotate on
+		}
+		if (!loopState.resumeAfterRotation) return;
+		let cancelled = false;
+		try {
+			const outcome = await rotator.rotate();
+			cancelled = outcome.cancelled === true;
+		} catch (err) {
+			cancelled = true;
+			console.warn("[fan-mission] session rotation failed — falling back to persistent mode:", err);
+		}
+		if (cancelled) {
+			this.rotationFallbackPersistent = true;
+			this.sessionMode = "persistent";
+			try {
+				loopState.resumeAfterRotation = false;
+				writeLoopStateSync(this.missionDir, loopState);
+			} catch {
+				// best-effort — the flag stays on disk; next tick's rotation is
+				// skipped anyway due to rotationFallbackPersistent.
+			}
+			console.warn("[fan-mission] session rotation cancelled — mission continues in persistent mode");
+		}
+	}
+
+	private async _tickInner(): Promise<TickResult> {
 		// 0.7.2: in-memory reentrancy guard — if a tick is already running,
 		// return immediately without side effects (no journal, no STATE, no throw).
 		if (this.tickRunning) {
@@ -614,6 +709,11 @@ export class MissionLoop {
 			const missionStatus = String(mission.frontmatter.status) as MissionStatus;
 			const budgetTokens = Number(mission.frontmatter.budget_tokens) || 0;
 			const budgetUsd = Number(mission.frontmatter.budget_usd) || 0;
+
+			// ralph-loop (S3): session mode — resolved once per tick (frontmatter
+			// is immutable after init). Resolved here, before the completed
+			// early-return, so recur-phase rotation works in дежурство too.
+			this.sessionMode = this.resolveSessionMode(mission.frontmatter.session_mode);
 
 			// Terminal statuses → no-op (except completed → recur-only дежурство)
 			if (missionStatus === "aborted" || missionStatus === "failed" || missionStatus === "budget_exhausted") {
@@ -1166,6 +1266,19 @@ export class MissionLoop {
 
 				// Re-read roadmap for next item
 				roadmapRaw = await readRoadmap(this.missionDir);
+
+				// ralph-loop (S3): fresh mode — one iteration per session. If
+				// unchecked one-shot work remains, request session rotation +
+				// auto-resume. The flag is set only after the finalise above
+				// (lastStep=7, interrupted=false persisted), so the next session
+				// safely continues from disk.
+				if (this.sessionMode === "fresh") {
+					if (parseAllUnchecked(roadmapRaw).length > 0) {
+						loopState.resumeAfterRotation = true;
+						writeLoopStateSync(this.missionDir, loopState);
+					}
+					break;
+				}
 			} // end while (true)
 
 			// ── R2: Recur-phase (RECURRING.md) ─────────────────────────────
@@ -1818,6 +1931,18 @@ export class MissionLoop {
 				}
 			} catch {
 				// best-effort
+			}
+
+			// ralph-loop (S3): fresh mode — one recurring item per session,
+			// rotate between due items. markRecurringRun above guarantees the
+			// next tick's re-entry skips the item just executed.
+			if (this.sessionMode === "fresh") {
+				const moreDue = recurItems.some((other) => other !== item && isRecurringDue(other, recurState, nowMs));
+				if (moreDue) {
+					loopState.resumeAfterRotation = true;
+					writeLoopStateSync(this.missionDir, loopState);
+				}
+				break;
 			}
 		}
 
