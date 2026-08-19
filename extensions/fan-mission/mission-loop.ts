@@ -1229,7 +1229,9 @@ export class MissionLoop {
 						writeLoopStateSync(this.missionDir, loopState);
 						await this.enterAwaitingDecision(
 							loopState,
-							"Planning produced no new roadmap items twice — goal achieved? stop mission?",
+							// F-MISSION-DIALOG: вопрос пишется в pendingDecision — его показывает
+							// операторный диалог (decision-dialog.ts) при входе в awaiting_decision.
+							"Планирование 2 раза подряд не добавило новых пунктов в ROADMAP. Миссия исчерпала направление или ждёт указания.",
 						);
 						return {
 							iteration: currentIteration,

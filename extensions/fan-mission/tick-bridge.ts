@@ -15,7 +15,7 @@
 //   6. tick() вызывается DETACHED: "Lock is busy" — штатная ситуация (log),
 //      прочие ошибки — console.error. Handler возвращает undefined сразу.
 
-import type { MissionLoop } from "./mission-loop.js";
+import type { MissionLoop, TickResult } from "./mission-loop.js";
 
 /** Пейлоад события "mission_tick" (все поля опциональны для handler-а). */
 export interface MissionTickEvent {
@@ -29,6 +29,10 @@ export interface TickBridgeDeps {
 	getMissionDir(): string | undefined;
 	now?: () => number;
 	log?: (msg: string) => void;
+	/** F-MISSION-DIALOG: опциональный колбэк на результат завершившегося тика
+	 * (обратно-совместимо: без него поведение прежнее). Вызывается синхронно
+	 * в then-цепочке; исключения глотаются (не должны ломать мост). */
+	onTickResult?: (result: TickResult) => void;
 }
 
 export interface TickBridgeHandle {
@@ -91,15 +95,29 @@ export function createMissionTickHandler(deps: TickBridgeDeps): TickBridgeHandle
 		}
 
 		// 6. Detached tick: handler не ждёт завершения и всегда возвращает void.
-		void loop.tick().catch((err: unknown) => {
-			const message = err instanceof Error ? err.message : String(err);
-			if (message.includes("Lock is busy")) {
-				// Штатная ситуация: предыдущий тик ещё выполняется.
-				log("[fan-mission] tick-bridge: tick skipped — lock is busy");
-			} else {
-				console.error("[fan-mission] tick-bridge: loop.tick() failed:", err);
-			}
-		});
+		void loop
+			.tick()
+			.then((result) => {
+				// F-MISSION-DIALOG: уведомить wiring о результате тика (точка 1:
+				// status === "awaiting_decision" → операторный диалог). Колбэк
+				// сам не блокирует тик (index.ts запускает prompter detached).
+				if (result && typeof deps.onTickResult === "function") {
+					try {
+						deps.onTickResult(result);
+					} catch (err) {
+						console.error("[fan-mission] tick-bridge: onTickResult callback failed:", err);
+					}
+				}
+			})
+			.catch((err: unknown) => {
+				const message = err instanceof Error ? err.message : String(err);
+				if (message.includes("Lock is busy")) {
+					// Штатная ситуация: предыдущий тик ещё выполняется.
+					log("[fan-mission] tick-bridge: tick skipped — lock is busy");
+				} else {
+					console.error("[fan-mission] tick-bridge: loop.tick() failed:", err);
+				}
+			});
 	};
 
 	return {

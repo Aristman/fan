@@ -36,7 +36,7 @@ import { basename, join } from "node:path";
 import process from "node:process";
 import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
 import type { KeyId } from "@seaagents/fan-tui";
-
+import { createOperatorDecisionPrompter, type OperatorDecisionUI } from "./decision-dialog.js";
 import { createDefaultRunAgent } from "./default-run-agent.js";
 import { readMission, writeMissionStatus } from "./file-state-manager.js";
 import { createGitAdapter } from "./git-adapter.js";
@@ -267,6 +267,23 @@ export default function missionExtension(fan: ExtensionAPI): MissionWiring {
 	// в session_start. Без UI (RPC/headless/тесты) остаётся undefined — loop
 	// всё равно пишет console.warn.
 	let operatorNotify: ((msg: string) => void) | undefined;
+	// F-MISSION-DIALOG: operator UI (ExtensionUIContext с select/input/notify),
+	// захваченный в session_start. Без полного UI (RPC/headless/тесты) —
+	// undefined: prompter деградирует в headlessNotify (warning без диалога).
+	let operatorUi: OperatorDecisionUI | undefined;
+	// F-MISSION-DIALOG: опросник решений миссии (awaiting_decision → диалог).
+	// Anti-spam по pendingDecision.date — внутри prompter'а (один диалог на вопрос).
+	const decisionPrompter = createOperatorDecisionPrompter({
+		headlessNotify: (msg) => operatorNotify?.(msg),
+	});
+	// Detached-вызов: диалог не блокирует tick/session_start; сбой диалога
+	// не должен ронять контур (миссия остаётся awaiting_decision, fallback —
+	// /mission:decide).
+	const promptOperatorDecision = (targetLoop: MissionLoop, missionDir: string): void => {
+		void decisionPrompter.maybePrompt(targetLoop, missionDir, operatorUi).catch((err) => {
+			console.error("[fan-mission] decision dialog failed:", err);
+		});
+	};
 	const wiring = wireMission(fan, {
 		getSessionFile: () => currentSessionFile,
 		notify: (msg) => operatorNotify?.(msg),
@@ -333,6 +350,19 @@ export default function missionExtension(fan: ExtensionAPI): MissionWiring {
 	const bridge = createMissionTickHandler({
 		getLoop: () => wiring.getMissionLoop(),
 		getMissionDir: () => slashCtx.missionDir,
+		// F-MISSION-DIALOG (точка 1): тик завершился в awaiting_decision →
+		// показать операторный диалог (detached — тикер не блокируется).
+		onTickResult: (result) => {
+			if (result.status !== "awaiting_decision") {
+				return;
+			}
+			const currentLoop = wiring.getMissionLoop();
+			const missionDir = slashCtx.missionDir;
+			if (!currentLoop || !missionDir) {
+				return;
+			}
+			promptOperatorDecision(currentLoop, missionDir);
+		},
 	});
 	const unsubTick = fan.events?.on ? fan.events.on("mission_tick", bridge.handler) : undefined;
 
@@ -494,6 +524,12 @@ export default function missionExtension(fan: ExtensionAPI): MissionWiring {
 			lastUiCtx = ctx as unknown as typeof lastUiCtx;
 			// ralph-loop incident fix: канал degradation-алертов для MissionLoop.
 			operatorNotify = typeof ctx?.ui?.notify === "function" ? (msg) => ctx.ui.notify(msg, "warning") : undefined;
+			// F-MISSION-DIALOG: UI для диалога решений — только если есть select+input
+			// (partial UI как {} в тестах/RPC → undefined → headless-ветка prompter'а).
+			operatorUi =
+				typeof ctx?.ui?.select === "function" && typeof ctx?.ui?.input === "function"
+					? (ctx.ui as OperatorDecisionUI)
+					: undefined;
 			const cwd = ctx?.cwd ?? (event as unknown as { cwd?: string }).cwd;
 			if (!cwd) {
 				return;
@@ -509,6 +545,13 @@ export default function missionExtension(fan: ExtensionAPI): MissionWiring {
 			if (found) {
 				const attachedLoop = attach(found.missionDir);
 				await maybeResumeAfterRotation(found.missionDir, attachedLoop);
+				// F-MISSION-DIALOG (точка 2): recovery — миссия застряла в
+				// awaiting_decision до рестарта/ротации → показать диалог сразу.
+				// Anti-spam внутри prompter'а: повторный session_start с тем же
+				// pendingDecision.date даст только notify.
+				if (found.status === "awaiting_decision") {
+					promptOperatorDecision(attachedLoop, found.missionDir);
+				}
 			}
 		} catch (err) {
 			console.warn("[fan-mission] session_start hook failed:", err);
