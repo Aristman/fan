@@ -278,3 +278,7 @@
 - **Статус:** open (найден 2026-08-19, живой прогон gmail-watch)
 - **Контекст:** recovery планирования после crash-итерации (StateFileTooLarge) + успешное планирование без новых пунктов при ПОЛНОСТЬЮ закрытом ROADMAP → emptyPlanningStreak=2 → awaiting_decision. Но миссия выполнена — должна была уйти в completed → дежурство. Проверка completed должна идти ДО эскалации streak; crash-итерация не должна засчитываться как «пустое планирование».
 - **Митигация:** decision-dialog (f58d960) делает awaiting_decision видимым и разрешимым через UI.
+
+### #38 — Warn-throttle для RECURRING.md + паритет-проверка парсеров
+- **Статус:** open (verify-находки 2026-08-19, не блокируют)
+- **Контекст:** (a) console.warn «RECURRING.md has content but no parseable items» спамит каждый тик (60s) — нужен throttle/dedup по пути файла; также warn'ит на легитимное «все пункты checked». (b) Pre-existing: fan-mission парсер trim'ит строки, fan-scheduler — нет (indented пункты не детектятся scheduler'ом). (c) Дублирование парсера в двух пакетах — кандидат на общий модуль.
