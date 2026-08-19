@@ -902,6 +902,33 @@ export class MissionLoop {
 					// recurring (legit 0.7.0 scenario: roadmap closed, goal not covered,
 					// no duty → keep planning → streak → awaiting_decision).
 					if (!extractGoal(mission.body) || readRecurring(this.missionDir).length > 0) {
+						// Part 3: before completing, evaluate pending IDEA backlog entries
+						// when scorer + promoter are configured. A DECIDE verdict blocks
+						// completion; promoted ROADMAP items keep the loop alive.
+						let pendingIdeas: BacklogEntry[] = [];
+						try {
+							pendingIdeas = (await readBacklog(this.missionDir)).filter((e) => e.status === "IDEA");
+						} catch {
+							pendingIdeas = [];
+						}
+						if (pendingIdeas.length > 0 && this.ideaScorer && this.ideaPromoter) {
+							const hookStatus = await this.runIdeaScoringAndPromotion(loopState, resultStatus, {
+								scoreExistingIdeas: true,
+							});
+							if (hookStatus === "awaiting_decision") {
+								return {
+									iteration: currentIteration,
+									steps,
+									status: "awaiting_decision",
+									item: currentItem,
+								};
+							}
+							roadmapRaw = await readRoadmap(this.missionDir);
+							if (parseAllUnchecked(roadmapRaw).length > 0) {
+								continue;
+							}
+						}
+
 						if (canTransition(resultStatus, "completed")) {
 							resultStatus = "completed";
 							await writeMissionStatus(this.missionDir, "completed");
@@ -1615,7 +1642,7 @@ export class MissionLoop {
 	private async runIdeaHooks(loopState: LoopState, resultStatus: MissionStatus): Promise<MissionStatus> {
 		if (resultStatus !== "active") return resultStatus;
 
-		// Phase B (F-19/F-20): generate + score new ideas.
+		let scoreExistingIdeas = false;
 		if (this.ideaGenerator) {
 			let added = 0;
 			try {
@@ -1624,41 +1651,65 @@ export class MissionLoop {
 			} catch {
 				// generator errors must not crash the loop
 			}
+			scoreExistingIdeas = added > 0;
+		}
 
-			if (added > 0 && this.ideaScorer) {
-				// Re-read backlog AFTER generator runs so new entries are visible.
-				let backlog: BacklogEntry[];
+		return this.runIdeaScoringAndPromotion(loopState, resultStatus, { scoreExistingIdeas });
+	}
+
+	/**
+	 * Score pending IDEA backlog entries and promote ROADMAP ones.
+	 *
+	 * `scoreExistingIdeas` controls whether the scorer is invoked:
+	 *   - `true`: score all IDEA entries (used before completing and when the
+	 *     generator produced new ideas this tick).
+	 *   - `false`: skip scoring but still run the promoter (preserves legacy
+	 *     behavior when no generator or it added nothing).
+	 *
+	 * Scorer errors and REJECTED verdicts are consumed once per tick — the
+	 * same entry is not re-scored in the same tick. Returns the possibly
+	 * updated status (`awaiting_decision` on the first DECIDE verdict).
+	 */
+	private async runIdeaScoringAndPromotion(
+		loopState: LoopState,
+		resultStatus: MissionStatus,
+		opts?: { scoreExistingIdeas?: boolean },
+	): Promise<MissionStatus> {
+		if (resultStatus !== "active") return resultStatus;
+
+		if (this.ideaScorer && opts?.scoreExistingIdeas !== false) {
+			let backlog: BacklogEntry[];
+			try {
+				backlog = await readBacklog(this.missionDir);
+			} catch {
+				backlog = [];
+			}
+
+			let decide: { id: string; idea: string; score: number } | null = null;
+			for (const entry of backlog) {
+				if (entry.status !== "IDEA") continue;
 				try {
-					backlog = await readBacklog(this.missionDir);
+					const result = await this.ideaScorer.scoreIdea(this.missionDir, {
+						id: entry.id,
+						idea: entry.idea,
+						source: entry.source,
+					});
+					if (result?.status === "DECIDE" && decide === null) {
+						decide = { id: entry.id, idea: entry.idea, score: result.score };
+					}
 				} catch {
-					backlog = [];
+					// Scorer error: the idea is considered processed for this tick
+					// and remains in BACKLOG in its current status.
 				}
+			}
 
-				let decide: { id: string; idea: string; score: number } | null = null;
-				for (const entry of backlog) {
-					if (entry.status !== "IDEA") continue;
-					try {
-						const result = await this.ideaScorer.scoreIdea(this.missionDir, {
-							id: entry.id,
-							idea: entry.idea,
-							source: entry.source,
-						});
-						if (result?.status === "DECIDE" && decide === null) {
-							decide = { id: entry.id, idea: entry.idea, score: result.score };
-						}
-					} catch {
-						// Scorer error: the idea stays unscored ("IDEA"); continue.
-					}
-				}
-
-				if (decide) {
-					try {
-						// F-22: pass ideaId so resolveDecision can update BACKLOG on accept.
-						await this.enterAwaitingDecision(loopState, `${decide.idea} (score: ${decide.score})`, decide.id);
-						return "awaiting_decision";
-					} catch {
-						// A failed transition must not crash the loop.
-					}
+			if (decide) {
+				try {
+					// F-22: pass ideaId so resolveDecision can update BACKLOG on accept.
+					await this.enterAwaitingDecision(loopState, `${decide.idea} (score: ${decide.score})`, decide.id);
+					return "awaiting_decision";
+				} catch {
+					// A failed transition must not crash the loop.
 				}
 			}
 		}

@@ -24,10 +24,14 @@ import {
 	InvalidTransitionError,
 	readDecisions,
 	readMission,
+	appendBacklog,
+	readBacklog,
+	parseAllUnchecked,
 } from "../file-state-manager.js";
 import { MissionLoop, readMissionLoopState } from "../mission-loop.js";
 import { PLANNING_ITEM_TEXT } from "../prompt-builder.js";
 import { registerMissionSlashCommands } from "../slash-commands.js";
+import { promoteAcceptedIdeas } from "../idea-promoter.js";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -357,5 +361,159 @@ describe("/mission:complete", () => {
 		await commands.get("mission:complete").handler("", ctx);
 
 		expect(lines.join("\n")).toContain("no mission attached");
+	});
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// Part 3: pending IDEA evaluation before completed (closed ROADMAP + RECURRING)
+// ════════════════════════════════════════════════════════════════════════════
+
+describe("step 3: pending IDEA evaluation before completed", () => {
+	let baseDir;
+
+	beforeEach(() => {
+		baseDir = freshBaseDir();
+	});
+	afterEach(() => {
+		rmSync(baseDir, { recursive: true, force: true });
+	});
+
+	function makeIdeaLoop(missionDir, { scorerResults, promoter = promoteAcceptedIdeas, executorResults = [{ status: "COMPLETE", commitMessage: "iter" }] } = {}) {
+		const scorerCalls = [];
+		const promoterCalls = [];
+		const ideaScorer = {
+			async scoreIdea(dir, idea) {
+				scorerCalls.push({ dir, idea });
+				const r = scorerResults?.[idea.id];
+				if (r) return { id: idea.id, score: r.score ?? 0.5, status: r.status };
+				return { id: idea.id, score: 0.5, status: "DECIDE" };
+			},
+		};
+		const ideaPromoter = {
+			async promote(dir) {
+				promoterCalls.push({ dir });
+				return promoter(dir);
+			},
+		};
+		const deps = makeDeps({ executor: makeMockExecutor(executorResults) });
+		const loop = new MissionLoop({ missionDir, deps, ideaScorer, ideaPromoter });
+		return { loop, scorerCalls, promoterCalls };
+	}
+
+	it("completed + RECURRING + IDEA + scorer/promoter: ROADMAP → idea promoted, loop stays active", async () => {
+		const missionDir = await initClosedMission(baseDir, "idea-promote");
+		writeRecurring(missionDir, ["- [ ] Check inbox (interval: 30m)", ""]);
+		await appendBacklog(missionDir, {
+			id: "idea-001",
+			date: "2026-08-19T10:00:00Z",
+			idea: "Add dark mode",
+			source: "operator",
+			fit: 0,
+			value: 0,
+			risk: 0,
+			cost: 0,
+			score: 0,
+			status: "IDEA",
+		});
+
+		const { loop, scorerCalls, promoterCalls } = makeIdeaLoop(missionDir, {
+			scorerResults: { "idea-001": { score: 0.75, status: "ROADMAP" } },
+		});
+
+		// Scorer → ROADMAP; real promoter adds the idea to ROADMAP; the continuous
+		// loop executes the new item in the same tick and then completes.
+		const result = await loop.tick();
+
+		expect(promoterCalls.length).toBeGreaterThanOrEqual(1);
+		expect(scorerCalls.length).toBeGreaterThanOrEqual(1);
+		// New ROADMAP item was executed by the mock executor.
+		const roadmapRaw = readFileSync(join(missionDir, "ROADMAP.md"), "utf8");
+		expect(parseAllUnchecked(roadmapRaw).length).toBe(0);
+		expect(result.itemsExecuted).toBeGreaterThanOrEqual(1);
+		expect(await missionStatus(missionDir)).toBe("completed");
+	});
+
+	it("completed + RECURRING + IDEA + scorer/promoter: REJECTED → still completed", async () => {
+		const missionDir = await initClosedMission(baseDir, "idea-reject");
+		writeRecurring(missionDir, ["- [ ] Check inbox (interval: 30m)", ""]);
+		await appendBacklog(missionDir, {
+			id: "idea-001",
+			date: "2026-08-19T10:00:00Z",
+			idea: "Rewrite in Rust",
+			source: "operator",
+			fit: 0,
+			value: 0,
+			risk: 0,
+			cost: 0,
+			score: 0,
+			status: "IDEA",
+		});
+
+		const { loop } = makeIdeaLoop(missionDir, {
+			scorerResults: { "idea-001": { score: 0.35, status: "REJECTED" } },
+		});
+
+		const result = await loop.tick();
+
+		expect(result.status).toBe("completed");
+		expect(await missionStatus(missionDir)).toBe("completed");
+		// The mock scorer returned REJECTED; the loop completed without awaiting_decision.
+		// The backlog entry stays as-is because the mock does not update it.
+		const backlog = await readBacklog(missionDir);
+		const entry = backlog.find((e) => e.id === "idea-001");
+		expect(entry.status).toBe("IDEA");
+	});
+
+	it("completed + RECURRING + IDEA without scorer/promoter → completed (idea waits)", async () => {
+		const missionDir = await initClosedMission(baseDir, "idea-waits");
+		writeRecurring(missionDir, ["- [ ] Check inbox (interval: 30m)", ""]);
+		await appendBacklog(missionDir, {
+			id: "idea-001",
+			date: "2026-08-19T10:00:00Z",
+			idea: "Add dark mode",
+			source: "operator",
+			fit: 0,
+			value: 0,
+			risk: 0,
+			cost: 0,
+			score: 0,
+			status: "IDEA",
+		});
+
+		const deps = makeDeps();
+		const loop = new MissionLoop({ missionDir, deps });
+
+		const result = await loop.tick();
+
+		expect(result.status).toBe("completed");
+		const backlog = await readBacklog(missionDir);
+		const entry = backlog.find((e) => e.id === "idea-001");
+		expect(entry.status).toBe("IDEA");
+	});
+
+	it("completed + RECURRING + IDEA + scorer/promoter: DECIDE → awaiting_decision", async () => {
+		const missionDir = await initClosedMission(baseDir, "idea-decide");
+		writeRecurring(missionDir, ["- [ ] Check inbox (interval: 30m)", ""]);
+		await appendBacklog(missionDir, {
+			id: "idea-001",
+			date: "2026-08-19T10:00:00Z",
+			idea: "Refactor auth",
+			source: "operator",
+			fit: 0,
+			value: 0,
+			risk: 0,
+			cost: 0,
+			score: 0,
+			status: "IDEA",
+		});
+
+		const { loop } = makeIdeaLoop(missionDir, {
+			scorerResults: { "idea-001": { score: 0.55, status: "DECIDE" } },
+		});
+
+		const result = await loop.tick();
+
+		expect(result.status).toBe("awaiting_decision");
+		expect(await missionStatus(missionDir)).toBe("awaiting_decision");
 	});
 });

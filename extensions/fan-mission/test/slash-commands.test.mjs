@@ -912,6 +912,8 @@ describe("F-11 / TC-F11-registry: registerMissionSlashCommands регистри�
 			"mission:steer",
 			"mission:decide",
 			"mission:complete",
+			"mission",
+			"idea",
 		];
 		for (const name of expected) {
 			expect(reg.commands.has(name), `command ${name} not registered`).toBe(true);
@@ -919,7 +921,7 @@ describe("F-11 / TC-F11-registry: registerMissionSlashCommands регистри�
 			expect(typeof cmd.handler, `command ${name} handler not a function`).toBe("function");
 			expect(cmd.description, `command ${name} description empty`).toBeTruthy();
 		}
-		expect(reg.commands.size).toBe(9);
+		expect(reg.commands.size).toBe(11);
 	});
 
 	it("TC-F11-registry: handler каждой команды принимает args + ctx (async или sync)", async () => {
@@ -943,7 +945,7 @@ describe("F-11 / TC-F11-registry: registerMissionSlashCommands регистри�
 			calls.push(name);
 		};
 		registerMissionSlashCommands(registerSpy, ctx);
-		expect(calls.length).toBe(9);
+		expect(calls.length).toBe(11);
 	});
 });
 
@@ -1090,5 +1092,182 @@ describe("F-11 / TC-F11-init: /mission:init <slug> [описание]", () => {
 	it("без аргументов → usage-ошибка", async () => {
 		await reg.dispatch("/mission:init", ctx);
 		expect(ctx.output.lines.some((l) => /usage \/mission:init <slug>/.test(l))).toBe(true);
+	});
+});
+
+// ──────────────────────────────────────────────────────────────────────────────────
+// Space-separated `/mission <subcommand>` dispatcher (Part 1)
+// ──────────────────────────────────────────────────────────────────────────────────
+
+describe("F-11 / TC-F11-space: /mission <subcommand> — space-separated dispatcher", () => {
+	let baseDir;
+	let missionDir;
+	let ctx;
+	let reg;
+
+	beforeEach(async () => {
+		baseDir = freshBaseDir();
+		missionDir = await initMission("space-mission", { baseDir });
+		writeRoadmap(missionDir, ["# Roadmap", "", "- [ ] step", ""]);
+		ctx = makeCtx({ missionDir });
+		reg = makeMockRegister();
+		registerMissionSlashCommands(reg.register, ctx);
+	});
+
+	afterEach(() => {
+		rmSync(baseDir, { recursive: true, force: true });
+	});
+
+	it("команда 'mission' зарегистрирована", () => {
+		expect(reg.commands.has("mission")).toBe(true);
+	});
+
+	it("bare /mission → выводит help со всеми subcommand'ами", async () => {
+		await reg.dispatch("/mission", ctx);
+		const text = ctx.output.lines.join("\n");
+		expect(text).toMatch(/Usage:\s*\/mission/);
+		for (const sub of ["init", "start", "stop", "pause", "resume", "status", "steer", "decide", "complete", "idea"]) {
+			expect(text).toContain(`/mission ${sub}`);
+		}
+	});
+
+	it("неизвестный subcommand → help + ошибка", async () => {
+		await reg.dispatch("/mission unknown", ctx);
+		const text = ctx.output.lines.join("\n");
+		expect(text).toContain("Unknown subcommand: unknown");
+		expect(text).toContain("/mission init");
+	});
+
+	it("/mission status эквивалентен /mission:status", async () => {
+		await reg.dispatch("/mission status", ctx);
+		const text = ctx.output.lines.join("\n");
+		expect(text).toMatch(/status/i);
+		expect(text).toMatch(/active/);
+	});
+
+	it("/mission start эквивалентен /mission:start → tick", async () => {
+		await reg.dispatch("/mission start", ctx);
+		expect(ctx.missionLoop._calls.tick.length).toBe(1);
+	});
+
+	it("/mission steer msg эквивалентен /mission:steer msg", async () => {
+		await reg.dispatch('/mission steer "focus on auth"', ctx);
+		expect(ctx.actionsCalls.sendMessage.length).toBe(1);
+		expect(ctx.actionsCalls.sendMessage[0].message).toBe("focus on auth");
+	});
+
+	it("/mission init создаёт миссию", async () => {
+		const ctx2 = makeCtx({ cwd: baseDir });
+		const reg2 = makeMockRegister();
+		registerMissionSlashCommands(reg2.register, ctx2);
+		await reg2.dispatch("/mission init from-space Build API", ctx2);
+		const dir = join(baseDir, "docs", "missions", "from-space");
+		expect(existsSync(join(dir, "MISSION.md"))).toBe(true);
+		expect(ctx2.output.lines).toContain(`Mission from-space initialized at ${dir}. Start with /mission:start.`);
+	});
+});
+
+// ──────────────────────────────────────────────────────────────────────────────────
+// `/idea <text>` command (Part 2)
+// ──────────────────────────────────────────────────────────────────────────────────
+
+describe("F-11 / TC-F11-idea: /idea <text> — record operator idea", () => {
+	let baseDir;
+	let missionDir;
+	let ctx;
+	let reg;
+
+	function makeIdeaCtx(foundStatus, overrides = {}) {
+		return makeCtx({
+			missionLoop: null,
+			missionDir: undefined,
+			cwd: baseDir,
+			findAttachableMission: async () => ({ missionDir, status: foundStatus }),
+			...overrides,
+		});
+	}
+
+	beforeEach(async () => {
+		baseDir = freshBaseDir();
+		missionDir = await initMission("idea-mission", { baseDir });
+		writeRoadmap(missionDir, ["# Roadmap", "", "- [x] done", ""]);
+	});
+
+	afterEach(() => {
+		rmSync(baseDir, { recursive: true, force: true });
+	});
+
+	it("команда 'idea' зарегистрирована", () => {
+		ctx = makeIdeaCtx("active");
+		reg = makeMockRegister();
+		registerMissionSlashCommands(reg.register, ctx);
+		expect(reg.commands.has("idea")).toBe(true);
+	});
+
+	it("/idea текст → строка в BACKLOG.md (source=operator, status=IDEA)", async () => {
+		ctx = makeIdeaCtx("active");
+		reg = makeMockRegister();
+		registerMissionSlashCommands(reg.register, ctx);
+		await reg.dispatch("/idea Add dark mode", ctx);
+
+		const { readBacklog } = await import("../file-state-manager.js");
+		const entries = await readBacklog(missionDir);
+		const entry = entries.find((e) => e.idea === "Add dark mode");
+		expect(entry).toBeTruthy();
+		expect(entry.source).toBe("operator");
+		expect(entry.status).toBe("IDEA");
+		expect(ctx.output.lines.join("\n")).toContain("Idea recorded.");
+	});
+
+	it("completed миссия → /idea реактивирует её в active", async () => {
+		await writeMissionStatus(missionDir, "completed");
+		ctx = makeIdeaCtx("completed");
+		reg = makeMockRegister();
+		registerMissionSlashCommands(reg.register, ctx);
+		await reg.dispatch("/idea Add dark mode", ctx);
+
+		const { readMission } = await import("../file-state-manager.js");
+		const mission = await readMission(missionDir);
+		expect(mission.frontmatter.status).toBe("active");
+		const text = ctx.output.lines.join("\n");
+		expect(text).toContain("Idea recorded");
+		expect(text).toContain("reactivated");
+	});
+
+	it("active миссия → /idea не меняет статус, но записывает идею", async () => {
+		ctx = makeIdeaCtx("active");
+		reg = makeMockRegister();
+		registerMissionSlashCommands(reg.register, ctx);
+		await reg.dispatch("/idea Add dark mode", ctx);
+
+		const { readMission, readBacklog } = await import("../file-state-manager.js");
+		const mission = await readMission(missionDir);
+		expect(mission.frontmatter.status).toBe("active");
+		const entries = await readBacklog(missionDir);
+		expect(entries.some((e) => e.idea === "Add dark mode" && e.source === "operator")).toBe(true);
+	});
+
+	it("нет миссии → понятная ошибка", async () => {
+		ctx = makeCtx({
+			missionLoop: null,
+			missionDir: undefined,
+			cwd: baseDir,
+			findAttachableMission: async () => null,
+		});
+		reg = makeMockRegister();
+		registerMissionSlashCommands(reg.register, ctx);
+		await reg.dispatch("/idea Add dark mode", ctx);
+		expect(ctx.output.lines.join("\n")).toContain("No mission found");
+	});
+
+	it("/mission idea текст — тот же handler", async () => {
+		ctx = makeIdeaCtx("active");
+		reg = makeMockRegister();
+		registerMissionSlashCommands(reg.register, ctx);
+		await reg.dispatch("/mission idea Add dark mode", ctx);
+
+		const { readBacklog } = await import("../file-state-manager.js");
+		const entries = await readBacklog(missionDir);
+		expect(entries.some((e) => e.idea === "Add dark mode" && e.source === "operator")).toBe(true);
 	});
 });

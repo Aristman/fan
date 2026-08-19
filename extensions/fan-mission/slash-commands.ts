@@ -9,10 +9,13 @@
 
 import { existsSync } from "node:fs";
 import { basename, join } from "node:path";
+import { formatIdeaEntry, formatIdeaId, maxIdeaNumber } from "./backlog-format.js";
 import {
+	appendBacklog,
 	canTransition,
 	hasUncheckedRoadmapItems,
 	initMission,
+	readBacklog,
 	readMission,
 	writeMissionStatus,
 } from "./file-state-manager.js";
@@ -206,10 +209,85 @@ const STEP_NAMES: Record<number, string> = {
 	7: "backlog",
 };
 
+// ─── Idea command (shared by `/idea <text>` and `/mission idea <text>`) ─────
+
+/**
+ * Append an operator-sourced idea to the first mission's BACKLOG.md.
+ * If the mission is not active (and the FSM allows), reactivate it so the
+ * scorer/promoter can pick the idea up on the next tick.
+ */
+async function handleIdeaCommand(rawArgs: string, ctx: SlashCtx): Promise<void> {
+	const ideaText = rawArgs.trim();
+	if (!ideaText) {
+		ctx.output("Error: usage /idea <text> or /mission idea <text>");
+		return;
+	}
+
+	const finder = ctx.findAttachableMission;
+	if (!finder) {
+		ctx.output("Error: lazy-attach not available — cannot locate a mission");
+		return;
+	}
+
+	const found = await finder();
+	if (!found) {
+		outputNoMissionFound(ctx);
+		return;
+	}
+
+	const missionDir = found.missionDir;
+	let entries: BacklogEntry[] = [];
+	try {
+		entries = await readBacklog(missionDir);
+	} catch {
+		entries = [];
+	}
+
+	const id = formatIdeaId(maxIdeaNumber(entries) + 1);
+	const entry = formatIdeaEntry({
+		id,
+		date: new Date().toISOString(),
+		idea: ideaText,
+		source: "operator",
+	});
+	await appendBacklog(missionDir, entry);
+
+	const mission = await readMission(missionDir);
+	const currentStatus = String(mission.frontmatter.status);
+	if (currentStatus !== "active" && canTransition(currentStatus, "active")) {
+		await resolveWriteStatus(ctx)(missionDir, "active");
+		ctx.output("Idea recorded — mission reactivated, it will be scored on the next tick.");
+		return;
+	}
+
+	ctx.output("Idea recorded.");
+}
+
+// ─── `/mission` subcommand dispatcher ───────────────────────────────────────
+
+/** Print a dim-style help list for the `/mission` dispatcher. */
+function outputMissionHelp(ctx: SlashCtx, defs: ReadonlyMap<string, SlashCommandDef>, unknownSub?: string): void {
+	const dim = "\x1b[2m";
+	const reset = "\x1b[0m";
+	const lines: string[] = [];
+	if (unknownSub) {
+		lines.push(`${dim}Unknown subcommand: ${unknownSub}${reset}`);
+	}
+	lines.push(`${dim}Usage: /mission <subcommand> [args]${reset}`);
+	lines.push(`${dim}Subcommands:${reset}`);
+	for (const [name, def] of defs) {
+		lines.push(`${dim}  /mission ${name.padEnd(8)} — ${def.description}${reset}`);
+	}
+	ctx.output(lines.join("\n"));
+}
+
 // ─── Registration ───────────────────────────────────────────────────────────
 
 /**
- * Зарегистрировать 9 slash-команд /mission:* (спека §6.3 + init из 0.7.0).
+ * Зарегистрировать slash-команды миссии:
+ *   - классические `/mission:*` (сохраняются как алиасы),
+ *   - `/idea <text>` — запись идеи оператора,
+ *   - `/mission <subcommand>` — диспетчер через пробел.
  *
  * Маршрутизация по уровням прерываний (§3.2.2):
  *   /mission:stop   — I0 abort (actions.abort + missionLoop.abort + status=aborted)
@@ -221,7 +299,19 @@ const STEP_NAMES: Record<number, string> = {
  *   /mission:init   — создание миссии (описание позиционально или диалогами).
  */
 export function registerMissionSlashCommands(register: SlashCommandRegister, registrationCtx: SlashCtx): void {
-	register("mission:start", {
+	// Collect subcommand definitions so the bare `/mission` dispatcher can
+	// route to them and render a help list without duplicating handlers.
+	const subcommandDefs = new Map<string, SlashCommandDef>();
+
+	const wrappedRegister = (name: string, def: SlashCommandDef): void => {
+		register(name, def);
+		const shortName = name.replace(/^mission:/, "");
+		if (name !== "mission") {
+			subcommandDefs.set(shortName, def);
+		}
+	};
+
+	wrappedRegister("mission:start", {
 		description: "Start the mission loop (runs one tick)",
 		handler: (_args, ctx = registrationCtx) =>
 			guarded(ctx.output, async () => {
@@ -269,7 +359,7 @@ export function registerMissionSlashCommands(register: SlashCommandRegister, reg
 			}),
 	});
 
-	register("mission:stop", {
+	wrappedRegister("mission:stop", {
 		description: "Stop the mission immediately (I0 abort)",
 		handler: (_args, ctx = registrationCtx) =>
 			guarded(ctx.output, async () => {
@@ -299,7 +389,7 @@ export function registerMissionSlashCommands(register: SlashCommandRegister, reg
 			}),
 	});
 
-	register("mission:pause", {
+	wrappedRegister("mission:pause", {
 		description: "Pause the mission after the current turn (I1 drain)",
 		handler: (_args, ctx = registrationCtx) =>
 			guarded(ctx.output, async () => {
@@ -308,7 +398,7 @@ export function registerMissionSlashCommands(register: SlashCommandRegister, reg
 			}),
 	});
 
-	register("mission:resume", {
+	wrappedRegister("mission:resume", {
 		description: "Resume the mission after pause",
 		handler: (_args, ctx = registrationCtx) =>
 			guarded(ctx.output, async () => {
@@ -322,7 +412,7 @@ export function registerMissionSlashCommands(register: SlashCommandRegister, reg
 			}),
 	});
 
-	register("mission:status", {
+	wrappedRegister("mission:status", {
 		description: "Show mission status, iteration, budget usage and current step",
 		handler: (_args, ctx = registrationCtx) =>
 			guarded(ctx.output, async () => {
@@ -384,7 +474,7 @@ export function registerMissionSlashCommands(register: SlashCommandRegister, reg
 			}),
 	});
 
-	register("mission:steer", {
+	wrappedRegister("mission:steer", {
 		description: 'Inject a steering message into the running loop (I2): /mission:steer "<msg>"',
 		handler: (args, ctx = registrationCtx) =>
 			guarded(ctx.output, async () => {
@@ -397,7 +487,7 @@ export function registerMissionSlashCommands(register: SlashCommandRegister, reg
 			}),
 	});
 
-	register("mission:decide", {
+	wrappedRegister("mission:decide", {
 		description: 'Answer a DECIDE interruption (I3 followUp): /mission:decide "<answer>"',
 		handler: (args, ctx = registrationCtx) =>
 			guarded(ctx.output, async () => {
@@ -425,7 +515,7 @@ export function registerMissionSlashCommands(register: SlashCommandRegister, reg
 	// gmail-watch incident: прямой выход из карусели awaiting_decision →
 	// planning → awaiting_decision. Оператор завершает миссию с вопроса;
 	// дежурство по RECURRING.md продолжается через scheduler tick.
-	register("mission:complete", {
+	wrappedRegister("mission:complete", {
 		description: "Mark mission as completed (from awaiting_decision) — continue recurring duty only",
 		handler: (_args, ctx = registrationCtx) =>
 			guarded(ctx.output, async () => {
@@ -447,7 +537,7 @@ export function registerMissionSlashCommands(register: SlashCommandRegister, reg
 	// запрашивается диалогами (Goal обязателен, Scope/Constraints — нет);
 	// без UI (RPC/headless) миссия создаётся без описания (пустой Goal), как
 	// раньше. Существующая миссия → ошибка через output.
-	register("mission:init", {
+	wrappedRegister("mission:init", {
 		description: "Initialize a new mission: /mission:init <slug> [description]",
 		handler: (args, ctx = registrationCtx) =>
 			guarded(ctx.output, async () => {
@@ -509,6 +599,36 @@ export function registerMissionSlashCommands(register: SlashCommandRegister, reg
 				}
 				const dir = await initMission(slug, { baseDir, ...(description ? { description } : {}) });
 				ctx.output(`Mission ${slug} initialized at ${dir}. Start with /mission:start.`);
+			}),
+	});
+
+	// Part 2: /idea <text> — append an operator idea to BACKLOG.md and
+	// reactivate the mission when possible.
+	wrappedRegister("idea", {
+		description: "Record an idea in the mission backlog: /idea <text>",
+		handler: (args, ctx = registrationCtx) => guarded(ctx.output, () => handleIdeaCommand(args, ctx)),
+	});
+
+	// Part 1: /mission <subcommand> — space-separated dispatcher; bare `/mission`
+	// prints a dim help list. Old `/mission:*` commands remain as aliases.
+	register("mission", {
+		description: "Mission commands: init, start, stop, pause, resume, status, steer, decide, complete, idea",
+		handler: (args, ctx = registrationCtx) =>
+			guarded(ctx.output, async () => {
+				const trimmed = args.trim();
+				if (!trimmed) {
+					outputMissionHelp(ctx, subcommandDefs);
+					return;
+				}
+				const spaceIdx = trimmed.search(/\s/);
+				const sub = spaceIdx === -1 ? trimmed : trimmed.slice(0, spaceIdx);
+				const rest = spaceIdx === -1 ? "" : trimmed.slice(spaceIdx + 1).trimStart();
+				const def = subcommandDefs.get(sub);
+				if (!def) {
+					outputMissionHelp(ctx, subcommandDefs, sub);
+					return;
+				}
+				await def.handler(rest, ctx);
 			}),
 	});
 }
