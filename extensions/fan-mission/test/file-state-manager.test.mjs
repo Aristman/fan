@@ -40,7 +40,7 @@
 // Файлы миссии располагаются в `<baseDir>/<slug>/` (по умолчанию
 // `docs/missions/<slug>/` — спека §3.1.2).
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	existsSync,
 	mkdtempSync,
@@ -288,12 +288,33 @@ describe("F-08 / TC-F08-1: STATE.md парсинг и лимит 5 KB", () => {
 		await expect(readState(missionDir)).rejects.toBeInstanceOf(InvalidStateSchema);
 	});
 
-	it("TC-F08-1.edge: STATE.md > 5 KB (байт) -> StateFileTooLarge", async () => {
+	// ralph-loop incident fix: readState больше НЕ бросает StateFileTooLarge —
+	// oversized STATE.md обрезается до лимита + console.warn. Бросок убивал тик
+	// и клинчил fresh-миссии (инцидент ralph-loop: 5266 байт → застрявшая
+	// ротация). StateFileTooLarge по-прежнему бросает writeState (см. ниже).
+	it("TC-F08-1.edge: STATE.md > 5 KB (байт) -> truncate + warn (НЕ throw)", async () => {
 		const missionDir = await initMission("auth-refactor", { baseDir });
+		// Секции-заголовки первыми, bloat — в последней секции: после обрезки
+		// все обязательные секции остаются на месте и файл парсится.
+		const header = "## Сделано\n- a\n\n## Блокеры\n- b\n\n## Следующие шаги\n";
 		const padding = "x".repeat(MAX_STATE_BYTES); // строго больше лимита
-		const content = `## Сделано\n${padding}\n## Блокеры\n\n## Следующие шаги\n`;
+		const content = header + padding;
+		expect(Buffer.byteLength(content, "utf8")).toBeGreaterThan(MAX_STATE_BYTES);
 		writeRawState(missionDir, content);
-		await expect(readState(missionDir)).rejects.toBeInstanceOf(StateFileTooLarge);
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+		try {
+			const state = await readState(missionDir);
+			expect(state.done).toEqual(["a"]);
+			expect(state.blockers).toEqual(["b"]);
+			// warn с фактическим размером
+			expect(warnSpy).toHaveBeenCalledOnce();
+			expect(String(warnSpy.mock.calls[0][0])).toContain(String(MAX_STATE_BYTES));
+			expect(String(warnSpy.mock.calls[0][0])).toContain(
+				String(Buffer.byteLength(content, "utf8")),
+			);
+		} finally {
+			warnSpy.mockRestore();
+		}
 	});
 
 	it("TC-F08-1.edge: STATE.md точно на лимите 5 KB (байт) -> успех", async () => {
@@ -313,23 +334,32 @@ describe("F-08 / TC-F08-1: STATE.md парсинг и лимит 5 KB", () => {
 		await expect(readState(missionDir)).resolves.toBeDefined();
 	});
 
-	it("TC-F08-1.edge: STATE.md 5121 байт (1 байт сверх лимита) -> StateFileTooLarge", async () => {
+	// ralph-loop incident fix: семантика truncate+warn вместо throw (см. выше).
+	it("TC-F08-1.edge: STATE.md 5121 байт (1 байт сверх лимита) -> truncate + warn", async () => {
 		const missionDir = await initMission("auth-refactor", { baseDir });
-		const header = "## Сделано\n## Блокеры\n## Следующие шаги\n";
+		const header = "## Сделано\n- a\n\n## Блокеры\n- b\n\n## Следующие шаги\n";
 		const headerBytes = Buffer.byteLength(header, "utf8");
 		const padBytes = MAX_STATE_BYTES - headerBytes + 1; // 1 byte over
 		const content = header + "x".repeat(padBytes);
 		expect(Buffer.byteLength(content, "utf8")).toBe(MAX_STATE_BYTES + 1);
 		writeRawState(missionDir, content);
-		await expect(readState(missionDir)).rejects.toBeInstanceOf(StateFileTooLarge);
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+		try {
+			await expect(readState(missionDir)).resolves.toBeDefined();
+			expect(warnSpy).toHaveBeenCalledOnce();
+		} finally {
+			warnSpy.mockRestore();
+		}
 	});
 
-	it("TC-F08-1.edge: кириллица считается в байтах (2 байта на символ UTF-8)", async () => {
+	it("TC-F08-1.edge: кириллица считается в байтах (2 байта на символ UTF-8) -> truncate + warn", async () => {
 		const missionDir = await initMission("auth-refactor", { baseDir });
 		// Create content where character count < 5120 but byte count > 5120
 		// "ы" = 2 bytes in UTF-8. 2600 chars of "ы" = 5200 bytes > 5120
 		// But 2600 < 5120 character count
-		const header = "## Сделано\n## Блокеры\n## Следующие шаги\n";
+		// ralph-loop incident fix: семантика truncate+warn вместо throw (см. выше).
+		// Обрезка по байтам на границе multibyte-символа не должна падать.
+		const header = "## Сделано\n- a\n\n## Блокеры\n- b\n\n## Следующие шаги\n";
 		const headerBytes = Buffer.byteLength(header, "utf8");
 		// Use cyrillic "ы" (2 bytes each) to fill
 		const remaining = MAX_STATE_BYTES - headerBytes;
@@ -339,7 +369,13 @@ describe("F-08 / TC-F08-1: STATE.md парсинг и лимит 5 KB", () => {
 		// Verify: character count may be under MAX_STATE_BYTES, but bytes exceed
 		expect(Buffer.byteLength(content, "utf8")).toBeGreaterThan(MAX_STATE_BYTES);
 		writeRawState(missionDir, content);
-		await expect(readState(missionDir)).rejects.toBeInstanceOf(StateFileTooLarge);
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+		try {
+			await expect(readState(missionDir)).resolves.toBeDefined();
+			expect(warnSpy).toHaveBeenCalledOnce();
+		} finally {
+			warnSpy.mockRestore();
+		}
 	});
 
 	it("TC-F08-1.edge: writeState пишет в файл (roundtrip)", async () => {

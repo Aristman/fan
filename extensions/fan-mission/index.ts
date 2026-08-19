@@ -85,6 +85,9 @@ export interface MissionWireOptions {
 	/** ralph-loop (S5): provider текущего session-файла — parentSession для
 	 * линковки итерационных сессий при fresh-ротации (§4.5). */
 	getSessionFile?: () => string | undefined;
+	/** ralph-loop incident fix: operator notification channel (обычно
+	 * ctx.ui.notify из session_start) — degradation-алерты из MissionLoop. */
+	notify?: (msg: string) => void;
 }
 
 export interface MissionWiring {
@@ -135,7 +138,20 @@ export function wireMission(fan: ExtensionAPI, opts?: MissionWireOptions): Missi
 			}
 			rotatingGuard = true;
 			try {
-				return await fan.newSession({ parentSession: opts?.getSessionFile?.() });
+				// ralph-loop incident fix: defensive result + диагностика. Хост может
+				// резолвить undefined (unbound/failed binding) — тогда ротация считается
+				// cancelled (loop деградирует в persistent с видимым notify), а не падает
+				// с TypeError на outcome.cancelled. Исключение логируем и пробрасываем —
+				// loop сам ловит и деградирует.
+				const result = await fan.newSession({ parentSession: opts?.getSessionFile?.() });
+				if (result == null) {
+					console.error("[fan-mission] fan.newSession resolved to", result, "— treating rotation as cancelled");
+					return { cancelled: true };
+				}
+				return result;
+			} catch (err) {
+				console.error("[fan-mission] fan.newSession threw during session rotation:", err);
+				throw err;
 			} finally {
 				rotatingGuard = false; // идемпотентно с guard-веткой session_shutdown
 			}
@@ -163,6 +179,8 @@ export function wireMission(fan: ExtensionAPI, opts?: MissionWireOptions): Missi
 				clock: { now: () => new Date() },
 				// ralph-loop (S5): fresh-режим ротирует сессию через fan.newSession.
 				sessionRotator,
+				// ralph-loop incident fix: operator-visible degradation alerts.
+				notify: opts?.notify,
 			},
 			// F-48.5: EPIC delegation — тот же runAgent (декомпозиция) + EventBus
 			// мост mission_delegate → super-orchestrator (fan.events).
@@ -245,7 +263,14 @@ export default function missionExtension(fan: ExtensionAPI): MissionWiring {
 	// (ctx.sessionManager.getSessionFile()) — parentSession для линковки
 	// итерационных сессий при fresh-ротации.
 	let currentSessionFile: string | undefined;
-	const wiring = wireMission(fan, { getSessionFile: () => currentSessionFile });
+	// ralph-loop incident fix: operator notify-канал (ctx.ui.notify), захваченный
+	// в session_start. Без UI (RPC/headless/тесты) остаётся undefined — loop
+	// всё равно пишет console.warn.
+	let operatorNotify: ((msg: string) => void) | undefined;
+	const wiring = wireMission(fan, {
+		getSessionFile: () => currentSessionFile,
+		notify: (msg) => operatorNotify?.(msg),
+	});
 
 	// Общий ctx slash-команд: МУТИРУЕТСЯ в attach/shutdown, чтобы команды
 	// всегда видели актуальный loop и missionDir.
@@ -467,6 +492,8 @@ export default function missionExtension(fan: ExtensionAPI): MissionWiring {
 	fan.on("session_start", async (event, ctx) => {
 		try {
 			lastUiCtx = ctx as unknown as typeof lastUiCtx;
+			// ralph-loop incident fix: канал degradation-алертов для MissionLoop.
+			operatorNotify = typeof ctx?.ui?.notify === "function" ? (msg) => ctx.ui.notify(msg, "warning") : undefined;
 			const cwd = ctx?.cwd ?? (event as unknown as { cwd?: string }).cwd;
 			if (!cwd) {
 				return;

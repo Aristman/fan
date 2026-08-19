@@ -46,6 +46,10 @@ export const FRESH_SESSION_SECTION = [
 	"- The previous iteration's outcome is the latest BACKLOG entry and STATE.md.",
 	"- Before finishing, record anything the NEXT iteration must know into STATE.md",
 	"  '## Следующие шаги' — the next session will not remember this one.",
+	// ralph-loop incident fix: oversized STATE.md is truncated on read — keep it
+	// a compact handoff document, not a knowledge base.
+	"- Keep STATE.md compact (past ~5KB it is truncated): details go to dedicated files",
+	"  (RUNBOOK.md etc.), STATE.md keeps only next-steps and pointers.",
 ].join("\n");
 
 const TRUNCATION_MARKER = "...[truncated]";

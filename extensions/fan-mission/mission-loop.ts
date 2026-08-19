@@ -37,7 +37,6 @@ import {
 	readRecurringState,
 	readRoadmap,
 	readState,
-	StateFileTooLarge,
 	updateBacklogEntry,
 	writeMissionStatus,
 	writeRecurringState,
@@ -104,6 +103,10 @@ export interface MissionLoopDeps {
 	/** ralph-loop (S3): session rotator for `session_mode: fresh`. Absent →
 	 * fresh mode degrades to persistent with a one-time warn. */
 	sessionRotator?: MissionSessionRotator;
+	/** ralph-loop incident fix: optional operator notification channel for
+	 * visible degradation alerts (rotation cancelled/failed, rotator missing).
+	 * Without it the persistent fallback was invisible outside console logs. */
+	notify?: (msg: string) => void;
 }
 
 /**
@@ -577,7 +580,19 @@ export class MissionLoop {
 	}
 
 	async tick(): Promise<TickResult> {
-		const result = await this._tickInner();
+		let result: TickResult;
+		try {
+			result = await this._tickInner();
+		} catch (err) {
+			// ralph-loop incident fix: even when the tick died, still attempt
+			// rotation — resumeAfterRotation may be persisted on disk from a
+			// previous iteration, and a fresh session is the recovery path for
+			// a wedged persistent session (e.g. bloated STATE.md killing every
+			// tick in the same session). maybeRotateSession never throws
+			// (rotator errors are caught inside). The tick error is rethrown.
+			await this.maybeRotateSession();
+			throw err;
+		}
 		// ralph-loop (S3): session rotation happens AFTER the tick fully
 		// finalised and the lock was released (finally inside _tickInner).
 		await this.maybeRotateSession();
@@ -599,10 +614,25 @@ export class MissionLoop {
 				console.warn(
 					`[fan-mission] session_mode: fresh but no sessionRotator injected — degrading to persistent (missionDir: ${this.missionDir})`,
 				);
+				this.notifyOperator(
+					"⚠️ session_mode: fresh but no sessionRotator injected — mission degrades to persistent mode",
+				);
 			}
 			return "persistent";
 		}
 		return "fresh";
+	}
+
+	/**
+	 * ralph-loop incident fix: best-effort operator notification. Never throws —
+	 * a broken notify channel must not kill the tick or the rotation path.
+	 */
+	private notifyOperator(msg: string): void {
+		try {
+			this.deps.notify?.(msg);
+		} catch {
+			// best-effort — console.warn already emitted by the caller
+		}
 	}
 
 	/**
@@ -642,6 +672,7 @@ export class MissionLoop {
 				// skipped anyway due to rotationFallbackPersistent.
 			}
 			console.warn("[fan-mission] session rotation cancelled — mission continues in persistent mode");
+			this.notifyOperator("⚠️ session rotation cancelled — mission continues in persistent mode");
 		}
 	}
 
@@ -771,8 +802,10 @@ export class MissionLoop {
 			// ── Step 2: Read ───────────────────────────────────────────────
 			steps.read = true;
 
-			// P1-5: preflight STATE.md size — archive if over limit
-			// readState may throw StateFileTooLarge, so handle it proactively
+			// P1-5: preflight STATE.md size — archive if over limit.
+			// ralph-loop incident fix: readState no longer throws StateFileTooLarge
+			// (it truncates + warns), but the preflight still keeps STATE.md small
+			// proactively so prompts and git history stay compact.
 			let stateSize = checkStateFileSize(this.missionDir);
 			if (stateSize >= MAX_STATE_BYTES) {
 				const archived = await archiveOldDoneItems(this.missionDir, ARCHIVE_KEEP_COUNT);
@@ -794,31 +827,9 @@ export class MissionLoop {
 
 			// Validate STATE.md exists and parse it (may throw for schema issues).
 			// The parsed state is reused in step 4 to build the execution prompt.
-			let missionState: MissionState;
-			try {
-				missionState = await readState(this.missionDir);
-			} catch (e) {
-				if (e instanceof StateFileTooLarge && stateSize < MAX_STATE_BYTES) {
-					// Shouldn't happen, but handle gracefully
-					const archived = await archiveOldDoneItems(this.missionDir, ARCHIVE_KEEP_COUNT);
-					if (!archived) {
-						resultStatus = "failed";
-						await writeMissionStatus(this.missionDir, "failed");
-						this.journalStep(loopState, 7);
-						loopState.interrupted = false;
-						writeLoopStateSync(this.missionDir, loopState);
-						return {
-							iteration: currentIteration,
-							steps,
-							status: "failed",
-							item: "STATE.md overflow — archiving impossible",
-						};
-					}
-					missionState = await readState(this.missionDir); // re-read after archive
-				} else {
-					throw e;
-				}
-			}
+			// (readState truncates oversized files instead of throwing — see
+			// file-state-manager.ts readState.)
+			const missionState = await readState(this.missionDir);
 
 			let roadmapRaw = await readRoadmap(this.missionDir);
 			await this.deps.git.log({ cwd: this.missionDir });

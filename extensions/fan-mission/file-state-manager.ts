@@ -264,6 +264,9 @@ export class MissionFileImmutable extends Error {
 	}
 }
 
+// ralph-loop incident fix: no longer thrown from readState (oversized STATE.md
+// is truncated + warned instead, so a bloated file cannot wedge the mission
+// loop). Still thrown by writeState; kept exported for compatibility.
 export class StateFileTooLarge extends Error {
 	constructor(max: number, actual?: number) {
 		const detail = actual !== undefined ? ` (${actual} bytes)` : "";
@@ -476,10 +479,18 @@ export async function readState(missionDir: string): Promise<MissionState> {
 	if (!existsSync(statePath)) {
 		throw new MissionNotFound(missionDir);
 	}
-	const raw = readFileSync(statePath, "utf8");
+	let raw = readFileSync(statePath, "utf8");
 	const byteLen = Buffer.byteLength(raw, "utf8");
 	if (byteLen > MAX_STATE_BYTES) {
-		throw new StateFileTooLarge(MAX_STATE_BYTES, byteLen);
+		// ralph-loop incident fix: an oversized STATE.md must NOT kill the tick —
+		// a throw here wedges fresh-mode missions (dead tick skips session
+		// rotation, every subsequent tick dies on the same file). Truncate to
+		// the limit and warn instead of throwing StateFileTooLarge. The class
+		// stays exported for compatibility (writeState still throws it).
+		console.warn(
+			`[fan-mission] STATE.md is ${byteLen} bytes (limit ${MAX_STATE_BYTES}) — truncating for read; archive or compact the file`,
+		);
+		raw = Buffer.from(raw, "utf8").subarray(0, MAX_STATE_BYTES).toString("utf8");
 	}
 
 	const sections = parseSections(raw);
