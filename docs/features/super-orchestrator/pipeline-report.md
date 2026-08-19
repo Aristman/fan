@@ -273,3 +273,8 @@
 ### #36 — Известные не-баги ralph-loop (S6)
 - **Лишний rotate при stale crash-флаге:** если `.mission-loop.json` содержит `resumeAfterRotation: true` после crash (SIGKILL между ротацией и автопродолжением), `session_start` подхватывает и запускает тик — это корректное поведение (не двойная ротация). Graceful.
 - **`rotatingGuard` skip abort:** при ротации `session_shutdown` на старом runner не вызывает `detach()`/`abort()` (лёгкая очистка: unsubTick, bridge.dispose). Миссия не переходит в `aborted`. Это by design — ротация не является прерыванием.
+
+### #37 — Приоритет completed над эскалацией empty-planning
+- **Статус:** open (найден 2026-08-19, живой прогон gmail-watch)
+- **Контекст:** recovery планирования после crash-итерации (StateFileTooLarge) + успешное планирование без новых пунктов при ПОЛНОСТЬЮ закрытом ROADMAP → emptyPlanningStreak=2 → awaiting_decision. Но миссия выполнена — должна была уйти в completed → дежурство. Проверка completed должна идти ДО эскалации streak; crash-итерация не должна засчитываться как «пустое планирование».
+- **Митигация:** decision-dialog (f58d960) делает awaiting_decision видимым и разрешимым через UI.
