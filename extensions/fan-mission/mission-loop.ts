@@ -895,7 +895,13 @@ export class MissionLoop {
 					// iteration on a synthetic item — the executor must decompose the
 					// Goal into unchecked ROADMAP items (prompt-builder adds guidance).
 					// Empty Goal → completed as before (nothing left to plan).
-					if (!extractGoal(mission.body)) {
+					// R2-интент fix (gmail-watch incident): ROADMAP fully closed AND live
+					// RECURRING.md (has items) → completed too — the mission's one-shot
+					// work is done and recurring duty (дежурство) continues in the
+					// recur-phase. Bootstrap-planning remains only for missions WITHOUT
+					// recurring (legit 0.7.0 scenario: roadmap closed, goal not covered,
+					// no duty → keep planning → streak → awaiting_decision).
+					if (!extractGoal(mission.body) || readRecurring(this.missionDir).length > 0) {
 						if (canTransition(resultStatus, "completed")) {
 							resultStatus = "completed";
 							await writeMissionStatus(this.missionDir, "completed");
@@ -1413,6 +1419,50 @@ export class MissionLoop {
 		writeLoopStateSync(this.missionDir, loopState);
 
 		await writeMissionStatus(this.missionDir, "active");
+	}
+
+	/**
+	 * Operator-initiated completion from awaiting_decision.
+	 * Valid ONLY from awaiting_decision (the operator closes the mission on
+	 * the pending question); from any other status → InvalidTransitionError.
+	 * Records the reason in DECISIONS.md (ADR format, like resolveDecision),
+	 * clears the decide timeout + pending decision state, and transitions
+	 * MISSION.md to completed. Recurring duty (RECURRING.md) keeps running
+	 * afterwards via the scheduler tick (completed → recur-phase дежурство).
+	 */
+	async completeMission(reason?: string): Promise<void> {
+		const mission = await readMission(this.missionDir);
+		const currentStatus = String(mission.frontmatter.status);
+		if (currentStatus !== "awaiting_decision") {
+			throw new InvalidTransitionError(currentStatus, "completed");
+		}
+
+		const loopState = await readMissionLoopState(this.missionDir);
+		const question = loopState.pendingDecision?.question ?? "не указан";
+		const now = await this.deps.clock.now();
+
+		// ADR-style entry (question + operator completion reason)
+		await appendDecision(this.missionDir, {
+			id: `ADR-${randomUUID().slice(0, 8)}`,
+			date: now.toISOString(),
+			status: "accepted",
+			context: question,
+			decision: reason ?? "Mission marked as completed by operator",
+			consequences: "",
+		});
+
+		this.clearDecideTimer();
+
+		loopState.pendingDecision = undefined;
+		loopState.pendingDecisionIdeaId = undefined;
+		loopState.pendingOperatorAnswer = undefined;
+		loopState.interrupted = false;
+		loopState.iterationResult = undefined;
+		loopState.pendingItem = undefined;
+		loopState.committed = false;
+		writeLoopStateSync(this.missionDir, loopState);
+
+		await writeMissionStatus(this.missionDir, "completed");
 	}
 
 	async status(): Promise<MissionStatus> {

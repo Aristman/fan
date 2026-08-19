@@ -4,7 +4,8 @@
 // молчаливый статус в виджете и не понимал, что от него ждут ответа.
 // Теперь при входе в awaiting_decision оператору немедленно показывается
 // стандартный диалог ExtensionUIContext (notify + select + input); ответ из
-// диалога → loop.resolveDecision(answer). /mission:decide остаётся fallback
+// диалога → loop.resolveDecision(answer); «Миссия выполнена» →
+// loop.completeMission(MISSION_COMPLETE_ANSWER). /mission:decide остаётся fallback
 // («Оставить на паузе» / Esc).
 //
 // Поведение promptOperatorDecision (через createOperatorDecisionPrompter):
@@ -20,10 +21,9 @@
 //       «Ответить текстом» → ui.input(question) → непустой ответ →
 //           await loop.resolveDecision(answer) + notify-подтверждение;
 //       «Миссия выполнена — завершить (completed)» →
-//           resolveDecision(MISSION_COMPLETE_ANSWER) — НЕ прямая правка
-//           статуса: FSM-перехода awaiting_decision→completed нет, идём
-//           через resolveDecision → active → следующий тик сам детектит
-//           completed по закрытому ROADMAP;
+//           await loop.completeMission(MISSION_COMPLETE_ANSWER) — прямой
+//           переход awaiting_decision → completed (FSM разрешён); дежурство
+//           по RECURRING.md продолжается через scheduler tick (recur-phase);
 //       «Оставить на паузе (ответить позже через /mission:decide)» → ничего;
 //     select отменён (Esc/undefined) → ничего (миссия остаётся
 //     awaiting_decision).
@@ -65,8 +65,8 @@ export const DECISION_OPTION_ANSWER = "Ответить текстом";
 export const DECISION_OPTION_COMPLETE = "Миссия выполнена — завершить (completed)";
 export const DECISION_OPTION_LATER = "Оставить на паузе (ответить позже через /mission:decide)";
 
-/** Ответ-заглушка для опции «Миссия выполнена»: через resolveDecision → active,
- * следующий тик сам детектит completed (прямой FSM-переход отсутствует). */
+/** Reason, записываемый в DECISIONS.md при опции «Миссия выполнена»:
+ * передаётся в loop.completeMission(reason) как ADR-decision. */
 export const MISSION_COMPLETE_ANSWER = "Mission complete: roadmap fully closed by operator decision";
 
 // ─── Factory ────────────────────────────────────────────────────────────────
@@ -144,7 +144,13 @@ export function createOperatorDecisionPrompter(opts?: OperatorDecisionPrompterOp
 			}
 			// Пустой ответ / Esc в input → ничего (миссия остаётся awaiting_decision)
 		} else if (choice === DECISION_OPTION_COMPLETE) {
-			await applyAnswer(MISSION_COMPLETE_ANSWER);
+			try {
+				await loop.completeMission(MISSION_COMPLETE_ANSWER);
+				ui.notify(`✅ Миссия ${slug} завершена (completed) — дежурство по RECURRING.md продолжается`, "info");
+			} catch (err) {
+				// Статус мог измениться между select и complete (timeout, /mission:decide).
+				ui.notify(`Не удалось завершить миссию: ${err instanceof Error ? err.message : String(err)}`, "error");
+			}
 		}
 		// DECISION_OPTION_LATER / undefined (Esc) → ничего: fallback /mission:decide
 	};

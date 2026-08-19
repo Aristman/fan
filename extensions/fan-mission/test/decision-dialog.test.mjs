@@ -7,15 +7,15 @@
 //        «Оставить на паузе (ответить позже через /mission:decide)».
 //   2. «Ответить текстом» → input(question) → непустой ответ →
 //      loop.resolveDecision(answer) + notify-подтверждение.
-//   3. «Миссия выполнена…» → resolveDecision(MISSION_COMPLETE_ANSWER)
-//      (прямой FSM-переход awaiting_decision→completed отсутствует).
+//   3. «Миссия выполнена…» → loop.completeMission(MISSION_COMPLETE_ANSWER)
+//      (прямой FSM-переход awaiting_decision→completed, дежурство продолжается).
 //   4. «Оставить на паузе» / Esc (undefined) → resolveDecision НЕ вызывается.
 //   5. Anti-spam: повторный maybePrompt с тем же pendingDecision.date —
 //      только notify, select повторно НЕ вызывается.
 //   6. ui === undefined (RPC/headless) → только headlessNotify (если есть
 //      pendingDecision), диалога нет.
 //
-// readState — DI (без диска); loop — stub с resolveDecision.
+// readState — DI (без диска); loop — stub с resolveDecision/completeMission.
 
 import { describe, expect, it, vi } from "vitest";
 
@@ -44,7 +44,10 @@ function makeUi(overrides = {}) {
 }
 
 function makeLoop() {
-	return { resolveDecision: vi.fn().mockResolvedValue(undefined) };
+	return {
+		resolveDecision: vi.fn().mockResolvedValue(undefined),
+		completeMission: vi.fn().mockResolvedValue(undefined),
+	};
 }
 
 function makePrompter(pendingDecision, opts = {}) {
@@ -146,7 +149,7 @@ describe("F-MISSION-DIALOG / «Ответить текстом»", () => {
 // ─── 3. Опция «Миссия выполнена — завершить» ────────────────────────────────
 
 describe("F-MISSION-DIALOG / «Миссия выполнена — завершить»", () => {
-	it("выбор опции → resolveDecision(MISSION_COMPLETE_ANSWER)", async () => {
+	it("выбор опции → completeMission(MISSION_COMPLETE_ANSWER)", async () => {
 		const { prompter } = makePrompter({ question: QUESTION, date: DATE });
 		const ui = makeUi({ select: vi.fn().mockResolvedValue(DECISION_OPTION_COMPLETE) });
 		const loop = makeLoop();
@@ -154,9 +157,10 @@ describe("F-MISSION-DIALOG / «Миссия выполнена — заверш�
 		await prompter.maybePrompt(loop, MISSION_DIR, ui);
 
 		expect(ui.input).not.toHaveBeenCalled();
-		expect(loop.resolveDecision).toHaveBeenCalledTimes(1);
-		expect(loop.resolveDecision).toHaveBeenCalledWith(MISSION_COMPLETE_ANSWER);
-		expect(ui.notify).toHaveBeenCalledWith(expect.stringContaining("Решение записано"), "info");
+		expect(loop.completeMission).toHaveBeenCalledTimes(1);
+		expect(loop.completeMission).toHaveBeenCalledWith(MISSION_COMPLETE_ANSWER);
+		expect(loop.resolveDecision).not.toHaveBeenCalled();
+		expect(ui.notify).toHaveBeenCalledWith(expect.stringContaining("завершена"), "info");
 	});
 });
 
@@ -184,10 +188,10 @@ describe("F-MISSION-DIALOG / пауза и отмена", () => {
 		expect(loop.resolveDecision).not.toHaveBeenCalled();
 	});
 
-	it("resolveDecision бросает (статус сменился) → notify с ошибкой, без throw", async () => {
+	it("completeMission бросает (статус сменился) → notify с ошибкой, без throw", async () => {
 		const { prompter } = makePrompter({ question: QUESTION, date: DATE });
 		const ui = makeUi({ select: vi.fn().mockResolvedValue(DECISION_OPTION_COMPLETE) });
-		const loop = { resolveDecision: vi.fn().mockRejectedValue(new Error("Invalid transition")) };
+		const loop = { completeMission: vi.fn().mockRejectedValue(new Error("Invalid transition")) };
 
 		await expect(prompter.maybePrompt(loop, MISSION_DIR, ui)).resolves.toBeUndefined();
 		expect(ui.notify).toHaveBeenCalledWith(expect.stringContaining("Invalid transition"), "error");

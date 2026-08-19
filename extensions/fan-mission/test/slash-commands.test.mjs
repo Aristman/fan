@@ -28,7 +28,8 @@
 //         currentStep: string,
 //       }
 //
-//   Регистрируются 8 команд (спека §6.3 таблица + /mission:init из 0.7.0):
+//   Регистрируются 9 команд (спека §6.3 таблица + /mission:init из 0.7.0
+//   + /mission:complete — завершение из awaiting_decision):
 //     /mission:init    — создание миссии (описание позиционально или диалогами)
 //     /mission:start   — запуск контура (MissionLoop.tick() или no-op)
 //     /mission:stop    — I0 abort
@@ -37,6 +38,7 @@
 //     /mission:status  — вывод статуса через ctx.output
 //     /mission:steer   — I2 sendMessage("...", { streamingBehavior: "steer" })
 //     /mission:decide  — I3 sendMessage("...", { streamingBehavior: "followUp" })
+//     /mission:complete — завершение из awaiting_decision (дежурство продолжается)
 //
 // Этап 0: skip реальный fan.registerCommand — только DI-контракт. Это позволяет
 // тестировать логику маршрутизации (I0/I1/I2/I3) без зависимости от TUI.
@@ -894,8 +896,8 @@ describe("F-11 / TC-F11-terminal-ux: терминальный UX completed-ми�
 	});
 });
 
-describe("F-11 / TC-F11-registry: registerMissionSlashCommands регистрирует все 8 команд", () => {
-	it("TC-F11-registry: после registerMissionSlashCommands зарегистрированы все 8 команд", () => {
+describe("F-11 / TC-F11-registry: registerMissionSlashCommands регистрирует все 9 команд", () => {
+	it("TC-F11-registry: после registerMissionSlashCommands зарегистрированы все 9 команд", () => {
 		const ctx = makeCtx();
 		const reg = makeMockRegister();
 		registerMissionSlashCommands(reg.register, ctx);
@@ -909,6 +911,7 @@ describe("F-11 / TC-F11-registry: registerMissionSlashCommands регистри�
 			"mission:status",
 			"mission:steer",
 			"mission:decide",
+			"mission:complete",
 		];
 		for (const name of expected) {
 			expect(reg.commands.has(name), `command ${name} not registered`).toBe(true);
@@ -916,7 +919,7 @@ describe("F-11 / TC-F11-registry: registerMissionSlashCommands регистри�
 			expect(typeof cmd.handler, `command ${name} handler not a function`).toBe("function");
 			expect(cmd.description, `command ${name} description empty`).toBeTruthy();
 		}
-		expect(reg.commands.size).toBe(8);
+		expect(reg.commands.size).toBe(9);
 	});
 
 	it("TC-F11-registry: handler каждой команды принимает args + ctx (async или sync)", async () => {
@@ -933,14 +936,14 @@ describe("F-11 / TC-F11-registry: registerMissionSlashCommands регистри�
 		await expect(steerCmd.handler("test msg", ctx)).resolves.toBeUndefined();
 	});
 
-	it("TC-F11-registry: register вызывается ровно 8 раз", () => {
+	it("TC-F11-registry: register вызывается ровно 9 раз", () => {
 		const ctx = makeCtx();
 		const calls = [];
 		const registerSpy = (name, opts) => {
 			calls.push(name);
 		};
 		registerMissionSlashCommands(registerSpy, ctx);
-		expect(calls.length).toBe(8);
+		expect(calls.length).toBe(9);
 	});
 });
 

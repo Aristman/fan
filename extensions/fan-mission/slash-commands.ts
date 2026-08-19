@@ -209,7 +209,7 @@ const STEP_NAMES: Record<number, string> = {
 // ─── Registration ───────────────────────────────────────────────────────────
 
 /**
- * Зарегистрировать 8 slash-команд /mission:* (спека §6.3 + init из 0.7.0).
+ * Зарегистрировать 9 slash-команд /mission:* (спека §6.3 + init из 0.7.0).
  *
  * Маршрутизация по уровням прерываний (§3.2.2):
  *   /mission:stop   — I0 abort (actions.abort + missionLoop.abort + status=aborted)
@@ -217,6 +217,7 @@ const STEP_NAMES: Record<number, string> = {
  *   /mission:steer  — I2 steer (sendMessage(..., { streamingBehavior: "steer" }))
  *   /mission:decide — I3 followUp (sendMessage(..., { streamingBehavior: "followUp" }))
  *   /mission:start|resume|status — управляющие команды.
+ *   /mission:complete — завершение из awaiting_decision (дежурство продолжается).
  *   /mission:init   — создание миссии (описание позиционально или диалогами).
  */
 export function registerMissionSlashCommands(register: SlashCommandRegister, registrationCtx: SlashCtx): void {
@@ -417,6 +418,26 @@ export function registerMissionSlashCommands(register: SlashCommandRegister, reg
 					}
 				} else {
 					await ctx.actions.sendMessage(answer, { streamingBehavior: "followUp" });
+				}
+			}),
+	});
+
+	// gmail-watch incident: прямой выход из карусели awaiting_decision →
+	// planning → awaiting_decision. Оператор завершает миссию с вопроса;
+	// дежурство по RECURRING.md продолжается через scheduler tick.
+	register("mission:complete", {
+		description: "Mark mission as completed (from awaiting_decision) — continue recurring duty only",
+		handler: (_args, ctx = registrationCtx) =>
+			guarded(ctx.output, async () => {
+				if (!ctx.missionLoop) {
+					ctx.output("Error: no mission attached. Use /mission:start or /mission:status first.");
+					return;
+				}
+				try {
+					await ctx.missionLoop.completeMission("operator via /mission:complete");
+					ctx.output("Mission marked as completed — recurring duty (RECURRING.md) continues.");
+				} catch (err) {
+					ctx.output(`Error: ${err instanceof Error ? err.message : String(err)}`);
 				}
 			}),
 	});

@@ -227,7 +227,7 @@ describe("F-LOAD / TC-3: хуки lifecycle — множественная по�
 
 // ─── TC-4: ≥8 команд /mission:* (от fan-mission), все имена уникальны ──────────
 
-describe("F-LOAD / TC-4: команды /mission:* — ≥8, без дублей", () => {
+describe("F-LOAD / TC-4: команды /mission:* — ≥9, без дублей", () => {
 	const EXPECTED_COMMANDS = [
 		"mission:init",
 		"mission:start",
@@ -237,25 +237,26 @@ describe("F-LOAD / TC-4: команды /mission:* — ≥8, без дублей
 		"mission:resume",
 		"mission:steer",
 		"mission:decide",
+		"mission:complete",
 	];
 
-	it("TC-4a: зарегистрированы все 8 команд /mission:* с handler+description", () => {
+	it("TC-4a: зарегистрированы все 9 команд /mission:* с handler+description", () => {
 		for (const name of EXPECTED_COMMANDS) {
 			expect(fan._commands.has(name), `command ${name} not registered`).toBe(true);
 			const cmd = fan._commands.get(name);
 			expect(typeof cmd.handler, `${name} handler not a function`).toBe("function");
 			expect(cmd.description, `${name} description empty`).toBeTruthy();
 		}
-		// Суммарно ≥8 команд /mission:* (по контракту задачи).
+		// Суммарно ≥9 команд /mission:* (по контракту задачи).
 		const missionCmds = [...fan._commands.keys()].filter((n) => n.startsWith("mission:"));
-		expect(missionCmds.length).toBeGreaterThanOrEqual(8);
+		expect(missionCmds.length).toBeGreaterThanOrEqual(9);
 	});
 
 	it("TC-4b: нет дублей команд — каждое имя registerCommand уникально", () => {
 		const names = fan.registerCommand.mock.calls.map((c) => c[0]);
 		const unique = new Set(names);
 		expect(unique.size).toBe(names.length); // ни одно имя не перезаписало другое
-		expect(names.length).toBe(8); // ровно 8 — все от fan-mission (scheduler/webhook команд не регистрируют)
+		expect(names.length).toBe(9); // ровно 9 — все от fan-mission (scheduler/webhook команд не регистрируют)
 	});
 });
 
@@ -322,7 +323,7 @@ describe("F-LOAD / TC-7: отсутствие конфликтов (двойна
 		// Проверяем: размер Map === числу вызовов registerCommand (никто не перезаписан).
 		const calls = fan.registerCommand.mock.calls.length;
 		expect(fan._commands.size).toBe(calls);
-		expect(calls).toBe(8);
+		expect(calls).toBe(9);
 	});
 
 	it("TC-7b: повторный session_start + session_shutdown не падает (идемпотентность, нет конфликта подписок)", async () => {
