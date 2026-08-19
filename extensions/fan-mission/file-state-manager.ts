@@ -70,7 +70,10 @@ function parseIntervalMs(raw: string): number {
 
 /**
  * Parse RECURRING.md content into RecurringItem[].
- * Format: `- [ ] Task text (interval: 30m)`
+ * Canonical format: `- [ ] Task text (interval: 30m)`
+ * Tolerant format: heading line with an interval marker,
+ * e.g. `## Task text (interval: 30m)` (body under the heading is NOT
+ * part of the item; headings without the marker are structure, ignored).
  * The interval marker `(interval: ...)` is extracted from the end of text;
  * if multiple markers exist, the last one wins.
  * text field = item text WITHOUT the interval marker.
@@ -81,8 +84,18 @@ export function parseRecurringItems(raw: string): RecurringItem[] {
 	for (let i = 0; i < lines.length; i++) {
 		const trimmed = lines[i].trim();
 		const checkboxMatch = /^[-*] \[ \] (.+)$/.exec(trimmed);
-		if (!checkboxMatch) continue;
-		const fullText = checkboxMatch[1];
+		let fullText: string | null = null;
+		if (checkboxMatch) {
+			fullText = checkboxMatch[1];
+		} else {
+			// Tolerant header format: `## Text (interval: 15m)`. Requires the
+			// (interval: ...) marker — headings without it are structure.
+			const headerMatch = /^#{1,3}\s+(.+)$/.exec(trimmed);
+			if (headerMatch && /\(interval:\s*\S+\)/i.test(headerMatch[1])) {
+				fullText = headerMatch[1];
+			}
+		}
+		if (!fullText) continue;
 
 		// Extract the LAST (interval: ...) marker (case-insensitive).
 		const intervalRegex = /\(interval:\s*(\S+)\)/gi;
@@ -106,14 +119,36 @@ export function parseRecurringItems(raw: string): RecurringItem[] {
 }
 
 /**
+ * True if RECURRING.md content has substantive (non-structural) lines:
+ * anything beyond blank lines, HTML comments and headings. Used to warn
+ * about silent degradation (file has content but no parseable items).
+ */
+function hasSubstantiveRecurringContent(raw: string): boolean {
+	const withoutComments = raw.replace(/<!--[\s\S]*?-->/g, "");
+	return withoutComments.split("\n").some((line) => {
+		const t = line.trim();
+		return t.length > 0 && !/^#{1,6}\s/.test(t);
+	});
+}
+
+/**
  * Read and parse RECURRING.md from mission directory.
  * Returns empty array if file doesn't exist (not an error).
+ * Warns when the file has substantive content but no parseable items
+ * (silent degradation: scheduler would never tick this mission).
  */
 export function readRecurring(missionDir: string): RecurringItem[] {
 	const filePath = join(missionDir, "RECURRING.md");
 	if (!existsSync(filePath)) return [];
 	const raw = readFileSync(filePath, "utf8");
-	return parseRecurringItems(raw);
+	const items = parseRecurringItems(raw);
+	if (items.length === 0 && hasSubstantiveRecurringContent(raw)) {
+		console.warn(
+			`[fan-mission] ${filePath} has content but no parseable recurring items — ` +
+				"use '- [ ] text (interval: 30m)' or '## text (interval: 30m)'",
+		);
+	}
+	return items;
 }
 
 /**

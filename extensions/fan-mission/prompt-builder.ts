@@ -219,7 +219,9 @@ export async function buildExecutionPrompt(opts: ExecutionPromptOptions): Promis
 		);
 		if (isPlanningIteration) {
 			parts.push(BOOTSTRAP_PLANNING_GUIDANCE);
-			parts.push("- Periodic tasks go into RECURRING.md with marker (interval: Ns/m/h/d), NOT into ROADMAP.");
+			parts.push(
+				"- Periodic tasks go into RECURRING.md with marker (interval: Ns/m/h/d) as checklist items: '- [ ] Task text (interval: 30m)' (or '## Task text (interval: 30m)'), NOT into ROADMAP.",
+			);
 		}
 		// R2: recurring items (from RECURRING.md or legacy (recur) marker)
 		if (opts.recurring || isRecurringItem(opts.itemText)) {

@@ -1,6 +1,6 @@
 {
 	"name": "fan-scheduler",
-	"version": "0.3.0",
+	"version": "0.3.1",
 	"description": "Планировщик тиков I4 для миссионного контура — периодическое пробуждение контура через setInterval/cron, доставка tick-промпта в actions.sendMessage как followUp.",
 	"type": "module",
 	"private": true,

@@ -59,12 +59,14 @@ import {
 
 let startScheduler;
 let parseCronExpression;
+let hasRecurringItems;
 
 async function importScheduler() {
 	if (!startScheduler) {
 		const mod = await import("../scheduler.js");
 		startScheduler = mod.startScheduler;
 		parseCronExpression = mod.parseCronExpression;
+		hasRecurringItems = mod.hasRecurringItems;
 	}
 	return startScheduler;
 }
@@ -1201,6 +1203,92 @@ describe("R3 / TC-R3-interval: tick_interval_ms из frontmatter MISSION.md", ()
 			expect(ctx._actions.calls.length).toBeGreaterThanOrEqual(3);
 		} finally {
 			handle.stop();
+		}
+	});
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// Толерантный header-формат RECURRING.md + warn о молчаливой деградации
+// ────────────────────────────────────────────────────────────────────────────
+
+describe("hasRecurringItems: header-формат и silent-degradation warn", () => {
+	const tempDirs = [];
+
+	function makeMission(recurring) {
+		const dir = mkdtempSync(join(tmpdir(), "fan-scheduler-hdr-"));
+		tempDirs.push(dir);
+		writeFileSync(join(dir, "RECURRING.md"), recurring, "utf8");
+		return dir;
+	}
+
+	beforeEach(async () => {
+		await importScheduler();
+	});
+
+	afterEach(() => {
+		while (tempDirs.length > 0) {
+			const dir = tempDirs.pop();
+			try {
+				rmSync(dir, { recursive: true, force: true });
+			} catch {
+				// ignore — tempdir cleanup best-effort
+			}
+		}
+	});
+
+	it("header-формат '## Text (interval: 15m)' → true", () => {
+		const dir = makeMission("## Прогон gmail-watch (interval: 15m)\n\nПроцедура: прочитай почту.\n");
+		expect(hasRecurringItems(dir)).toBe(true);
+	});
+
+	it("смешанный файл (чеклист + заголовок) → true", () => {
+		const dir = makeMission("- [ ] Check email (interval: 10m)\n## Weekly report (interval: 7d)\n");
+		expect(hasRecurringItems(dir)).toBe(true);
+	});
+
+	it("заголовок без маркера (interval:) → false (структура)", () => {
+		const dir = makeMission("# Recurring tasks\n## Процедура дежурства\n");
+		expect(hasRecurringItems(dir)).toBe(false);
+	});
+
+	it("маркер case-insensitive: '(INTERVAL: 2H)' → true", () => {
+		const dir = makeMission("### Task (INTERVAL: 2H)\n");
+		expect(hasRecurringItems(dir)).toBe(true);
+	});
+
+	it("контент без парсибельных пунктов → false + console.warn", () => {
+		const dir = makeMission("# Recurring tasks\n\nПрогон gmail-watch каждые 15 минут\n");
+		const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+		try {
+			expect(hasRecurringItems(dir)).toBe(false);
+			expect(spy).toHaveBeenCalledTimes(1);
+			expect(spy.mock.calls[0][0]).toContain("no parseable recurring items");
+		} finally {
+			spy.mockRestore();
+		}
+	});
+
+	it("только заголовок и HTML-комментарии (шаблон) → false, без warn", () => {
+		const dir = makeMission(
+			"# Recurring tasks\n\n<!-- Format: - [ ] Task text (interval: 30m) -->\n<!-- Example: - [ ] Describe the periodic task (interval: 30m) -->\n",
+		);
+		const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+		try {
+			expect(hasRecurringItems(dir)).toBe(false);
+			expect(spy).not.toHaveBeenCalled();
+		} finally {
+			spy.mockRestore();
+		}
+	});
+
+	it("парсибельные пункты → true, без warn", () => {
+		const dir = makeMission("- [ ] Task (interval: 10m)\n");
+		const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+		try {
+			expect(hasRecurringItems(dir)).toBe(true);
+			expect(spy).not.toHaveBeenCalled();
+		} finally {
+			spy.mockRestore();
 		}
 	});
 });

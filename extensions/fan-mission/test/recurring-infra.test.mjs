@@ -10,7 +10,7 @@
 // - markRecurringRun: immutability
 // - initMission: creates RECURRING.md and .gitignore
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -325,5 +325,107 @@ describe("initMission: RECURRING.md and .gitignore", () => {
 		const content = readFileSync(join(missionDir, ".gitignore"), "utf8");
 		expect(content).toContain(".mission-loop.json");
 		expect(content).toContain(".mission-loop.lock");
+	});
+});
+
+// ─── Header-формат (толерантный парсинг) ───────────────────────────────────
+
+describe("parseRecurringItems: header format", () => {
+	it("parses '## Text (interval: 15m)' — interval extracted, text without marker", () => {
+		const raw = "## Прогон gmail-watch (interval: 15m)\n\nПроцедура: прочитай почту и ответь.\n";
+		const items = parseRecurringItems(raw);
+		expect(items).toHaveLength(1);
+		expect(items[0].text).toBe("Прогон gmail-watch");
+		expect(items[0].intervalMs).toBe(15 * 60_000);
+	});
+
+	it("body under the heading is NOT part of the item", () => {
+		const raw = "## Watch feed (interval: 30m)\nStep 1: do this\nStep 2: do that\n";
+		const items = parseRecurringItems(raw);
+		expect(items).toHaveLength(1);
+		expect(items[0].text).toBe("Watch feed");
+		expect(items[0].rawText).toBe("## Watch feed (interval: 30m)");
+	});
+
+	it("mixed file: checklist + header → both parsed", () => {
+		const raw = "- [ ] Check email (interval: 10m)\n\n## Weekly report (interval: 7d)\nDetails here\n";
+		const items = parseRecurringItems(raw);
+		expect(items).toHaveLength(2);
+		expect(items[0].text).toBe("Check email");
+		expect(items[0].intervalMs).toBe(10 * 60_000);
+		expect(items[1].text).toBe("Weekly report");
+		expect(items[1].intervalMs).toBe(7 * 86_400_000);
+	});
+
+	it("heading without (interval:) marker → ignored (structure)", () => {
+		const raw = "# Recurring tasks\n\n## Процедура дежурства\n\nТекст процедуры\n";
+		expect(parseRecurringItems(raw)).toEqual([]);
+	});
+
+	it("supports # and ### levels with marker", () => {
+		const raw = "# Top (interval: 1h)\n### Deep (interval: 30s)\n";
+		const items = parseRecurringItems(raw);
+		expect(items).toHaveLength(2);
+		expect(items[0].text).toBe("Top");
+		expect(items[0].intervalMs).toBe(3_600_000);
+		expect(items[1].text).toBe("Deep");
+		expect(items[1].intervalMs).toBe(30_000);
+	});
+
+	it("header with invalid interval → DEFAULT_RECUR_INTERVAL_MS", () => {
+		const raw = "## Task (interval: abc)";
+		const items = parseRecurringItems(raw);
+		expect(items).toHaveLength(1);
+		expect(items[0].text).toBe("Task");
+		expect(items[0].intervalMs).toBe(DEFAULT_RECUR_INTERVAL_MS);
+	});
+
+	it("header marker is case-insensitive", () => {
+		const raw = "## Task (INTERVAL: 2H)";
+		const items = parseRecurringItems(raw);
+		expect(items).toHaveLength(1);
+		expect(items[0].intervalMs).toBe(2 * 3_600_000);
+	});
+});
+
+// ─── readRecurring: warn при молчаливой деградации ─────────────────────────
+
+describe("readRecurring: silent-degradation warn", () => {
+	it("non-empty file without parseable items → console.warn", () => {
+		writeFileSync(
+			join(missionDir, "RECURRING.md"),
+			"# Recurring tasks\n\nПрогон gmail-watch каждые 15 минут\n",
+			"utf8",
+		);
+		const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+		try {
+			expect(readRecurring(missionDir)).toEqual([]);
+			expect(spy).toHaveBeenCalledTimes(1);
+			expect(spy.mock.calls[0][0]).toContain("no parseable recurring items");
+		} finally {
+			spy.mockRestore();
+		}
+	});
+
+	it("file with parseable items → no warn", () => {
+		writeFileSync(join(missionDir, "RECURRING.md"), "- [ ] Task (interval: 10m)\n", "utf8");
+		const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+		try {
+			expect(readRecurring(missionDir)).toHaveLength(1);
+			expect(spy).not.toHaveBeenCalled();
+		} finally {
+			spy.mockRestore();
+		}
+	});
+
+	it("fresh template (header + comments only) → no warn", () => {
+		// initMission уже создал RECURRING.md из шаблона (beforeEach)
+		const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+		try {
+			expect(readRecurring(missionDir)).toEqual([]);
+			expect(spy).not.toHaveBeenCalled();
+		} finally {
+			spy.mockRestore();
+		}
 	});
 });

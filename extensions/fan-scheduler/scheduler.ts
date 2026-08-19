@@ -93,19 +93,46 @@ export { parseCronExpression } from "./cron-parser.js";
 /** Пункт RECURRING.md: незакрытый checkbox `- [ ] ...` / `* [ ] ...`. */
 const RECURRING_ITEM_RE = /^[-*] \[ \] .+$/m;
 
+/** Пункт RECURRING.md (толерантный формат): заголовок с (interval: ...) маркером. */
+const RECURRING_HEADER_RE = /^#{1,3}\s+.*\(interval:\s*\S+\)/im;
+
+/**
+ * Есть ли в содержимом RECURRING.md содержательные (не-структурные) строки:
+ * что-либо кроме пустых строк, HTML-комментариев и заголовков. Нужно для
+ * warn о молчаливой деградации (контент есть, а парсибельных пунктов нет).
+ * Логически идентично hasSubstantiveRecurringContent в fan-mission.
+ */
+function hasSubstantiveRecurringContent(raw: string): boolean {
+	const withoutComments = raw.replace(/<!--[\s\S]*?-->/g, "");
+	return withoutComments.split("\n").some((line) => {
+		const t = line.trim();
+		return t.length > 0 && !/^#{1,6}\s/.test(t);
+	});
+}
+
 /**
  * R3: есть ли в каталоге миссии непустой RECURRING.md (хотя бы один
- * unchecked-пункт). Файл отсутствует/нечитаем/без пунктов → false.
+ * unchecked-пункт чеклиста или заголовок с (interval: ...) маркером).
+ * Файл отсутствует/нечитаем/без пунктов → false.
  * Дешёвая проверка (только чтение файла) — loop сам решает, что подоспело.
+ * Контент без парсибельных пунктов → console.warn (молчаливая деградация).
  */
 export function hasRecurringItems(missionDir: string): boolean {
 	if (!missionDir) return false;
+	let text: string;
 	try {
-		const text = readFileSync(join(missionDir, "RECURRING.md"), "utf8");
-		return RECURRING_ITEM_RE.test(text);
+		text = readFileSync(join(missionDir, "RECURRING.md"), "utf8");
 	} catch {
 		return false;
 	}
+	if (RECURRING_ITEM_RE.test(text) || RECURRING_HEADER_RE.test(text)) return true;
+	if (hasSubstantiveRecurringContent(text)) {
+		console.warn(
+			`[fan-scheduler] ${join(missionDir, "RECURRING.md")} has content but no parseable recurring items — ` +
+				"use '- [ ] text (interval: 30m)' or '## text (interval: 30m)'",
+		);
+	}
+	return false;
 }
 
 /**

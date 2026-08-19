@@ -142,6 +142,17 @@ describe("mission-detect: findActiveMission", () => {
 		expect(findActiveMission(cwd)).toBeNull();
 	});
 
+	it("R3: completed + header-only RECURRING.md ('## Text (interval: 15m)') → возвращается (дежурство)", () => {
+		const cwd = makeTempDir();
+		const missionDir = writeMission(cwd, "duty", "completed");
+		writeFileSync(
+			join(missionDir, "RECURRING.md"),
+			"## Прогон gmail-watch (interval: 15m)\n\nПроцедура: прочитай почту и ответь.\n",
+			"utf8",
+		);
+		expect(findActiveMission(cwd)).toEqual({ dir: missionDir, status: "completed" });
+	});
+
 	it("R3: active-миссия приоритетнее completed-дежурной", () => {
 		const cwd = makeTempDir();
 		const dutyDir = writeMission(cwd, "aaa-duty", "completed");
