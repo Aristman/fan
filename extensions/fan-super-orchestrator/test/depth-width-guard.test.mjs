@@ -34,10 +34,12 @@
 import { beforeAll, describe, expect, it } from "vitest";
 
 let canSpawn;
+let canSpawnBatch;
 
 beforeAll(async () => {
 	const mod = await import("../depth-width-guard.js");
 	canSpawn = mod.canSpawn;
+	canSpawnBatch = mod.canSpawnBatch;
 });
 
 // ─── TC-F25-1: лимит глубины ────────────────────────────────────────────────
@@ -193,5 +195,72 @@ describe("опции по умолчанию (maxDepth=12, workingWidth=4, maxWi
 		const decision = canSpawn(1, 4, { maxDepth: 100 });
 		expect(decision.allowed).toBe(false);
 		expect(decision.reason).toBe("max_width_exceeded");
+	});
+});
+
+// ─── canSpawnBatch: batch-вариант для EPIC-делегирования ──────────────────
+// Пачка из N новых детей допустима при N <= workingWidth и N <= maxWidth
+// (граница `>`, в отличие от поштучного `>=`). Дефолт workingWidth=4 синхронен
+// с MAX_EPIC_SUBTASKS в fan-mission/epic-delegation.ts.
+
+describe("canSpawnBatch: размер пачки против лимитов ширины", () => {
+	it("4 пакета при default workingWidth=4 → allowed (граница `>`: 4 не превышает 4)", () => {
+		const decision = canSpawnBatch(1, 4);
+		expect(decision.allowed).toBe(true);
+		expect(decision.reason).toBeUndefined();
+	});
+
+	it("5 пакетов при default workingWidth=4 → отказ max_width_exceeded", () => {
+		const decision = canSpawnBatch(1, 5);
+		expect(decision.allowed).toBe(false);
+		expect(decision.reason).toBe("max_width_exceeded");
+	});
+
+	it("13 пакетов при maxWidth=12 → отказ max_width_exceeded (жёсткий верх)", () => {
+		// workingWidth=12 поднят до предохранителя, чтобы проверять именно maxWidth
+		const decision = canSpawnBatch(1, 13, { maxWidth: 12, workingWidth: 12 });
+		expect(decision.allowed).toBe(false);
+		expect(decision.reason).toBe("max_width_exceeded");
+	});
+
+	it("12 пакетов при maxWidth=12, workingWidth=12 → allowed (граница предохранителя)", () => {
+		const decision = canSpawnBatch(1, 12, { maxWidth: 12, workingWidth: 12 });
+		expect(decision.allowed).toBe(true);
+	});
+
+	it("кастомный workingWidth=2: пачка 3 → отказ, пачка 2 → allowed", () => {
+		expect(canSpawnBatch(1, 3, { workingWidth: 2 }).allowed).toBe(false);
+		expect(canSpawnBatch(1, 2, { workingWidth: 2 }).allowed).toBe(true);
+	});
+});
+
+describe("canSpawnBatch: depth-отказ сохранён (как в поштучном canSpawn)", () => {
+	it("depth=5 при default maxWorkingDepth=4 → отказ max_depth_exceeded", () => {
+		const decision = canSpawnBatch(5, 1);
+		expect(decision.allowed).toBe(false);
+		expect(decision.reason).toBe("max_depth_exceeded");
+		expect(decision.currentDepth).toBe(4);
+		expect(decision.maxDepth).toBe(4);
+	});
+
+	it("depth=4 == effectiveMax → allowed (последний рабочий уровень)", () => {
+		const decision = canSpawnBatch(4, 1);
+		expect(decision.allowed).toBe(true);
+	});
+
+	it("depth-отказ приоритетнее width-отказа и вызывает onDepthExceeded ровно один раз", () => {
+		let calls = 0;
+		const decision = canSpawnBatch(5, 100, { onDepthExceeded: () => calls++ });
+		expect(decision.allowed).toBe(false);
+		expect(decision.reason).toBe("max_depth_exceeded");
+		expect(calls).toBe(1);
+	});
+
+	it("width-отказ НЕ вызывает onDepthExceeded", () => {
+		let calls = 0;
+		const decision = canSpawnBatch(1, 5, { onDepthExceeded: () => calls++ });
+		expect(decision.allowed).toBe(false);
+		expect(decision.reason).toBe("max_width_exceeded");
+		expect(calls).toBe(0);
 	});
 });

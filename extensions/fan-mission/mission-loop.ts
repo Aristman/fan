@@ -107,6 +107,9 @@ export interface MissionLoopDeps {
 	 * visible degradation alerts (rotation cancelled/failed, rotator missing).
 	 * Without it the persistent fallback was invisible outside console logs. */
 	notify?: (msg: string) => void;
+	/** F-48.5 circuit breaker: max consecutive FAILED delegations for the same
+	 * EPIC item before forcing local execution (default 2). */
+	maxDelegationFailures?: number;
 }
 
 /**
@@ -201,6 +204,10 @@ export interface LoopState {
 	// persisted finalise (lastStep=7, interrupted=false); consumed by the
 	// session_start wiring (S5) which resets it and auto-continues the loop.
 	resumeAfterRotation?: boolean;
+	// F-48.5 circuit breaker: consecutive FAILED delegations for the same EPIC item.
+	// Persisted across ticks (survives rotation / restart) so the loop does not
+	// spin on a permanently failing delegation.
+	delegationFailure?: { item: string; count: number };
 }
 
 // ─── Loop state persistence (.mission-loop.json) ────────────────────────────
@@ -516,6 +523,9 @@ export function createFileLock(missionDir: string): MissionLock {
 
 /** 0.7.2: infra-error patterns — these are runner noise, not mission blockers. */
 const INFRA_ERROR_PATTERNS: RegExp[] = [/^runAgent already in flight/, /^Lock is busy/, /^runAgent timeout/];
+
+/** F-48.5: consecutive EPIC delegation failures before forcing local execution. */
+const MAX_DELEGATION_FAILURES = 2;
 
 /** Check if an error message matches infra-error patterns (runner noise). */
 export function isInfraError(message: string): boolean {
@@ -1114,7 +1124,33 @@ export class MissionLoop {
 							delegated = null; // непредвиденная ошибка → локальный fallback
 						}
 						this.pendingDelegationCleanup = null;
-						iterResult = delegated ?? (await runLocalIteration());
+						if (delegated !== null && delegated.status === "FAILED") {
+							const maxFailures = this.deps.maxDelegationFailures ?? MAX_DELEGATION_FAILURES;
+							const prev = loopState.delegationFailure;
+							const failureCount = prev && prev.item === nextItem.text ? prev.count + 1 : 1;
+							if (failureCount >= maxFailures) {
+								const warning = `EPIC delegation failed ${failureCount} times for the same item — executing locally`;
+								console.warn(`[fan-mission] ${warning}`);
+								this.notifyOperator(`⚠️ ${warning}`);
+								iterResult = await runLocalIteration();
+								loopState.delegationFailure = undefined;
+							} else {
+								loopState.delegationFailure = { item: nextItem.text, count: failureCount };
+								iterResult = delegated;
+							}
+						} else if (delegated !== null && delegated.status === "COMPLETE") {
+							loopState.delegationFailure = undefined;
+							iterResult = delegated;
+						} else if (delegated === null) {
+							// null (fallback: нет подписчика, таймаут, невалидный JSON,
+							// ошибка emit) → локальное исполнение как раньше; FAILED-счётчик
+							// НЕ трогается — fallback не является отказом делегирования.
+							iterResult = await runLocalIteration();
+						} else {
+							// Прочие статусы (например BLOCKED) — сбрасываем счётчик.
+							loopState.delegationFailure = undefined;
+							iterResult = delegated;
+						}
 					} else {
 						iterResult = await runLocalIteration();
 					}

@@ -110,6 +110,34 @@ export function canSpawn(depth: number, currentChildren: number, opts?: DepthWid
 }
 
 /**
+ * Batch-вариант canSpawn: разрешить одновременное порождение `newChildren`
+ * детей на глубине `depth`. Пачка из N новых детей допустима, если
+ * N <= workingWidth и N <= maxWidth (поштучный guard использует `>=`,
+ * потому что currentChildren — уже существующие дети; здесь счётчик —
+ * размер порождаемой пачки, поэтому граница — `>`).
+ */
+export function canSpawnBatch(depth: number, newChildren: number, opts?: DepthWidthGuardOptions): SpawnDecision {
+	const maxDepth = opts?.maxDepth ?? DEFAULT_GUARD.maxDepth;
+	const maxWidth = opts?.maxWidth ?? DEFAULT_GUARD.maxWidth;
+	const workingWidth = opts?.workingWidth ?? DEFAULT_GUARD.workingWidth;
+	const maxWorkingDepth = opts?.maxWorkingDepth ?? DEFAULT_GUARD.maxWorkingDepth;
+	const effectiveMax = maxWorkingDepth < 2 ? 0 : Math.min(maxWorkingDepth, HARD_DEPTH_LIMIT);
+
+	if (depth > effectiveMax) {
+		opts?.onDepthExceeded?.({ currentDepth: effectiveMax, maxDepth: effectiveMax });
+		return { allowed: false, reason: "max_depth_exceeded", currentDepth: effectiveMax, maxDepth: effectiveMax };
+	}
+	if (depth >= maxDepth) {
+		opts?.onDepthExceeded?.({ currentDepth: maxDepth, maxDepth });
+		return { allowed: false, reason: "max_depth_exceeded" };
+	}
+	if (newChildren > maxWidth || newChildren > workingWidth) {
+		return { allowed: false, reason: "max_width_exceeded" };
+	}
+	return { allowed: true };
+}
+
+/**
  * F-36: глубина текущего узла из env FAN_ORCHESTRATOR_DEPTH.
  * Отсутствующее, пустое или невалидное значение → 0 (L0).
  */

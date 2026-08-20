@@ -544,4 +544,89 @@ describe("F-48.5: super-orchestrator entry-point wiring", () => {
 			expect(resultData.results[0].status).toBe("completed");
 		});
 	});
+
+	// ─── TC-9: width-guard на batch (canSpawnBatch в handleDelegate) ────────
+	// EPIC-декомпозиция (fan-mission, MAX_EPIC_SUBTASKS=4) не должна порождать
+	// больше пакетов, чем default workingWidth=4; превышение → отказ до spawn.
+	describe("TC-9: batch width guard — packages.length против workingWidth", () => {
+		beforeEach(() => {
+			// guard читает глубину из env (L0: переменная не задана)
+			delete process.env.FAN_ORCHESTRATOR_DEPTH;
+		});
+
+		it("4 пакета при default workingWidth=4 → guard пройден, depth2.run вызван", async () => {
+			const eventBus = makeMockEventBus();
+			const fan = makeMockFan(eventBus);
+			writeMissionMd("active");
+
+			const mockDepth2 = makeMockDepth2();
+			const mod = await import("../index.js");
+			mod.default(fan, { createDepth2: mockDepth2.create });
+
+			await fan._emitHook("session_start", { cwd: baseDir }, { cwd: baseDir });
+
+			const correlationId = `test-batch4-${Date.now()}`;
+			const replyEvent = `mission_delegate_result:${correlationId}`;
+
+			eventBus.emit("mission_delegate", {
+				missionDir,
+				correlationId,
+				packages: [
+					{ task: "Подзадача 1" },
+					{ task: "Подзадача 2" },
+					{ task: "Подзадача 3" },
+					{ task: "Подзадача 4" },
+				],
+				replyEvent,
+			});
+
+			await new Promise((r) => setTimeout(r, 100));
+
+			// Guard пройден: depth2.run вызван с 4 детьми, reply без error
+			expect(mockDepth2._runCalls.length).toBe(1);
+			expect(mockDepth2._runCalls[0].runOpts.children).toBe(4);
+			const replyEmit = eventBus.findEmit(replyEvent);
+			expect(replyEmit).toBeDefined();
+			expect(replyEmit.data.error).toBeUndefined();
+			expect(Array.isArray(replyEmit.data.results)).toBe(true);
+		});
+
+		it("5 пакетов при default workingWidth=4 → reply {error: max_width_exceeded} без depth2.run", async () => {
+			const eventBus = makeMockEventBus();
+			const fan = makeMockFan(eventBus);
+			writeMissionMd("active");
+
+			const mockDepth2 = makeMockDepth2();
+			const mod = await import("../index.js");
+			mod.default(fan, { createDepth2: mockDepth2.create });
+
+			await fan._emitHook("session_start", { cwd: baseDir }, { cwd: baseDir });
+
+			const correlationId = `test-batch5-${Date.now()}`;
+			const replyEvent = `mission_delegate_result:${correlationId}`;
+
+			eventBus.emit("mission_delegate", {
+				missionDir,
+				correlationId,
+				packages: [
+					{ task: "Подзадача 1" },
+					{ task: "Подзадача 2" },
+					{ task: "Подзадача 3" },
+					{ task: "Подзадача 4" },
+					{ task: "Подзадача 5" },
+				],
+				replyEvent,
+			});
+
+			await new Promise((r) => setTimeout(r, 100));
+
+			// Guard отклонил: depth2 НЕ запускался, reply содержит ошибку ширины
+			expect(mockDepth2._runCalls.length).toBe(0);
+			const replyEmit = eventBus.findEmit(replyEvent);
+			expect(replyEmit).toBeDefined();
+			expect(replyEmit.data.error).toBeDefined();
+			expect(replyEmit.data.error).toContain("max_width_exceeded");
+			expect(replyEmit.data.results).toBeUndefined();
+		});
+	});
 });

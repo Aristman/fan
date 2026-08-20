@@ -10,8 +10,8 @@
 //      контура: tree-journal.jsonl в missionDir (createTreeJournal),
 //      бюджет миссии из frontmatter, startup-reconciliation (best-effort),
 //      подписка fan.events.on("mission_delegate", handler);
-//   2. mission_delegate → guard canSpawn (depth из FAN_ORCHESTRATOR_DEPTH,
-//      width = packages.length) → depth2-integration.run (journal/budget/
+//   2. mission_delegate → guard canSpawnBatch (depth из FAN_ORCHESTRATOR_DEPTH,
+//      batch = packages.length) → depth2-integration.run (journal/budget/
 //      port-pool/node-auth — реальные модули; spawn/send — DI, см. ниже) →
 //      emit replyEvent { results[], totalUsage } либо { error };
 //   3. correlationId: каждый запрос обрабатывается отдельным depth2-handle —
@@ -50,7 +50,7 @@ import { basename, join } from "node:path";
 import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
 
 import { createChildNodeClient } from "./child-node-client.js";
-import { canSpawn, currentDepthFromEnv, type DepthWidthGuardOptions } from "./depth-width-guard.js";
+import { canSpawnBatch, currentDepthFromEnv, type DepthWidthGuardOptions } from "./depth-width-guard.js";
 import {
 	createDepth2Integration,
 	type Depth2Handle,
@@ -383,10 +383,11 @@ export default function superOrchestratorExtension(
 		}
 
 		try {
-			// Guard: depth из FAN_ORCHESTRATOR_DEPTH (+1 — глубина детей L1),
-			// width = количество пакетов.
+			// Guard: depth из FAN_ORCHESTRATOR_DEPTH (+1 — глубина детей L1).
+			// Batch-семантика: packages.length — размер порождаемой пачки детей,
+			// поэтому отказ только при packages.length > workingWidth (> maxWidth).
 			const childDepth = currentDepthFromEnv() + 1;
-			const decision = canSpawn(childDepth, packages.length, opts?.guardOptions);
+			const decision = canSpawnBatch(childDepth, packages.length, opts?.guardOptions);
 			if (!decision.allowed) {
 				const error =
 					decision.reason === "max_width_exceeded"

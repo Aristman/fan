@@ -43,6 +43,12 @@ export function delegateResultChannel(correlationId: string): string {
 /** Таймаут ожидания ответа делегирования по умолчанию (30 минут). */
 export const DEFAULT_DELEGATION_TIMEOUT_MS = 30 * 60 * 1000;
 
+/** Максимум подзадач EPIC-декомпозиции: синхронно с DEFAULT_GUARD.workingWidth
+ * в fan-super-orchestrator/depth-width-guard.ts — декомпозиция не должна
+ * порождать больше пакетов, чем оркестратор способен запустить параллельно
+ * (иначе mission_delegate гарантированно отклоняется width-guard'ом). */
+export const MAX_EPIC_SUBTASKS = 4;
+
 /** Минимальный EventBus-контракт для делегирования (production EventBus
  *  совместим структурно; listenerCount опционален — см. шапку модуля). */
 export interface EpicEventBus {
@@ -85,7 +91,7 @@ export function buildDecompositionPrompt(itemText: string): string {
 		"",
 		`EPIC-пункт: ${epicText}`,
 		"",
-		"Выполни декомпозицию этого эпика на 3-4 независимые подзадачи для параллельного выполнения дочерними узлами.",
+		`Выполни декомпозицию этого эпика на независимые подзадачи для параллельного выполнения дочерними узлами — не более ${MAX_EPIC_SUBTASKS} (жёсткий лимит ширины оркестратора).`,
 		'Верни ТОЛЬКО JSON-массив объектов вида: [{"task": "описание подзадачи", "tokenBudget": 5000, "toolManifest": ["read", "bash"]}].',
 		"Поля tokenBudget (бюджет токенов) и toolManifest (допустимые инструменты: read/write/edit/bash/grep/find/ls) опциональны.",
 		"Никакого текста кроме JSON-массива не выводи.",
