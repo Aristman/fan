@@ -239,6 +239,7 @@ describe("F-LOAD / TC-4: команды /mission:* — ≥9, без дублей
 		"mission:decide",
 		"mission:complete",
 		"idea",
+		"epic",
 		"mission",
 	];
 
@@ -258,7 +259,7 @@ describe("F-LOAD / TC-4: команды /mission:* — ≥9, без дублей
 		const names = fan.registerCommand.mock.calls.map((c) => c[0]);
 		const unique = new Set(names);
 		expect(unique.size).toBe(names.length); // ни одно имя не перезаписало другое
-		expect(names.length).toBe(11); // 9 /mission:* + /idea + /mission dispatcher
+		expect(names.length).toBe(12); // 9 /mission:* + /idea + /epic + /mission dispatcher
 	});
 });
 
@@ -325,7 +326,7 @@ describe("F-LOAD / TC-7: отсутствие конфликтов (двойна
 		// Проверяем: размер Map === числу вызовов registerCommand (никто не перезаписан).
 		const calls = fan.registerCommand.mock.calls.length;
 		expect(fan._commands.size).toBe(calls);
-		expect(calls).toBe(11);
+		expect(calls).toBe(12);
 	});
 
 	it("TC-7b: повторный session_start + session_shutdown не падает (идемпотентность, нет конфликта подписок)", async () => {

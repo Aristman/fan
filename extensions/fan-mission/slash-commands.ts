@@ -17,7 +17,9 @@ import {
 	initMission,
 	readBacklog,
 	readMission,
+	readRoadmap,
 	writeMissionStatus,
+	writeRoadmap,
 } from "./file-state-manager.js";
 import type { MissionLoop } from "./mission-loop.js";
 import { readMissionLoopState } from "./mission-loop.js";
@@ -263,6 +265,55 @@ async function handleIdeaCommand(rawArgs: string, ctx: SlashCtx): Promise<void> 
 	ctx.output("Idea recorded.");
 }
 
+// ─── Epic command (shared by `/epic <text>` and `/mission epic <text>`) ─────
+
+/**
+ * Append an operator-sourced EPIC item (`- [ ] [EPIC] <text>`) to the first
+ * mission's ROADMAP.md. The [EPIC] marker triggers sub-orchestrator
+ * decomposition on the next tick. If the mission is not active (and the FSM
+ * allows), reactivate it so the epic is picked up.
+ */
+async function handleEpicCommand(rawArgs: string, ctx: SlashCtx): Promise<void> {
+	const epicText = rawArgs.trim();
+	if (!epicText) {
+		ctx.output("Error: usage /epic <text> or /mission epic <text>");
+		return;
+	}
+
+	const finder = ctx.findAttachableMission;
+	if (!finder) {
+		ctx.output("Error: lazy-attach not available — cannot locate a mission");
+		return;
+	}
+
+	const found = await finder();
+	if (!found) {
+		outputNoMissionFound(ctx);
+		return;
+	}
+
+	const missionDir = found.missionDir;
+	const item = `- [ ] [EPIC] ${epicText}`;
+	let raw = "";
+	try {
+		raw = await readRoadmap(missionDir);
+	} catch {
+		raw = "";
+	}
+	const content = raw && !raw.endsWith("\n") ? `${raw}\n${item}\n` : `${raw}${item}\n`;
+	await writeRoadmap(missionDir, content);
+
+	const mission = await readMission(missionDir);
+	const currentStatus = String(mission.frontmatter.status);
+	if (currentStatus !== "active" && canTransition(currentStatus, "active")) {
+		await resolveWriteStatus(ctx)(missionDir, "active");
+		ctx.output("EPIC added to ROADMAP — mission reactivated, it will be decomposed on the next tick.");
+		return;
+	}
+
+	ctx.output("EPIC added to ROADMAP.");
+}
+
 // ─── `/mission` subcommand dispatcher ───────────────────────────────────────
 
 /** Print a dim-style help list for the `/mission` dispatcher. */
@@ -287,6 +338,7 @@ function outputMissionHelp(ctx: SlashCtx, defs: ReadonlyMap<string, SlashCommand
  * Зарегистрировать slash-команды миссии:
  *   - классические `/mission:*` (сохраняются как алиасы),
  *   - `/idea <text>` — запись идеи оператора,
+ *   - `/epic <text>` — EPIC-пункт в ROADMAP (декомпозиция на следующем тике),
  *   - `/mission <subcommand>` — диспетчер через пробел.
  *
  * Маршрутизация по уровням прерываний (§3.2.2):
@@ -609,10 +661,17 @@ export function registerMissionSlashCommands(register: SlashCommandRegister, reg
 		handler: (args, ctx = registrationCtx) => guarded(ctx.output, () => handleIdeaCommand(args, ctx)),
 	});
 
+	// Part 3: /epic <text> — append an [EPIC] item to ROADMAP.md and
+	// reactivate the mission when possible.
+	wrappedRegister("epic", {
+		description: "Add an EPIC item to the mission roadmap: /epic <text>",
+		handler: (args, ctx = registrationCtx) => guarded(ctx.output, () => handleEpicCommand(args, ctx)),
+	});
+
 	// Part 1: /mission <subcommand> — space-separated dispatcher; bare `/mission`
 	// prints a dim help list. Old `/mission:*` commands remain as aliases.
 	register("mission", {
-		description: "Mission commands: init, start, stop, pause, resume, status, steer, decide, complete, idea",
+		description: "Mission commands: init, start, stop, pause, resume, status, steer, decide, complete, idea, epic",
 		handler: (args, ctx = registrationCtx) =>
 			guarded(ctx.output, async () => {
 				const trimmed = args.trim();

@@ -914,6 +914,7 @@ describe("F-11 / TC-F11-registry: registerMissionSlashCommands регистри�
 			"mission:complete",
 			"mission",
 			"idea",
+			"epic",
 		];
 		for (const name of expected) {
 			expect(reg.commands.has(name), `command ${name} not registered`).toBe(true);
@@ -921,7 +922,7 @@ describe("F-11 / TC-F11-registry: registerMissionSlashCommands регистри�
 			expect(typeof cmd.handler, `command ${name} handler not a function`).toBe("function");
 			expect(cmd.description, `command ${name} description empty`).toBeTruthy();
 		}
-		expect(reg.commands.size).toBe(11);
+		expect(reg.commands.size).toBe(12);
 	});
 
 	it("TC-F11-registry: handler каждой команды принимает args + ctx (async или sync)", async () => {
@@ -945,7 +946,7 @@ describe("F-11 / TC-F11-registry: registerMissionSlashCommands регистри�
 			calls.push(name);
 		};
 		registerMissionSlashCommands(registerSpy, ctx);
-		expect(calls.length).toBe(11);
+		expect(calls.length).toBe(12);
 	});
 });
 
@@ -1126,7 +1127,7 @@ describe("F-11 / TC-F11-space: /mission <subcommand> — space-separated dispatc
 		await reg.dispatch("/mission", ctx);
 		const text = ctx.output.lines.join("\n");
 		expect(text).toMatch(/Usage:\s*\/mission/);
-		for (const sub of ["init", "start", "stop", "pause", "resume", "status", "steer", "decide", "complete", "idea"]) {
+		for (const sub of ["init", "start", "stop", "pause", "resume", "status", "steer", "decide", "complete", "idea", "epic"]) {
 			expect(text).toContain(`/mission ${sub}`);
 		}
 	});
@@ -1269,5 +1270,127 @@ describe("F-11 / TC-F11-idea: /idea <text> — record operator idea", () => {
 		const { readBacklog } = await import("../file-state-manager.js");
 		const entries = await readBacklog(missionDir);
 		expect(entries.some((e) => e.idea === "Add dark mode" && e.source === "operator")).toBe(true);
+	});
+});
+
+// ──────────────────────────────────────────────────────────────────────────────────
+// `/epic <text>` command (Part 3) — [EPIC]-пункт в ROADMAP.md (триггер декомпозиции)
+// ──────────────────────────────────────────────────────────────────────────────────
+
+describe("F-11 / TC-F11-epic: /epic <text> — add EPIC item to ROADMAP", () => {
+	let baseDir;
+	let missionDir;
+	let ctx;
+	let reg;
+
+	function makeEpicCtx(foundStatus, overrides = {}) {
+		return makeCtx({
+			missionLoop: null,
+			missionDir: undefined,
+			cwd: baseDir,
+			findAttachableMission: async () => ({ missionDir, status: foundStatus }),
+			...overrides,
+		});
+	}
+
+	beforeEach(async () => {
+		baseDir = freshBaseDir();
+		missionDir = await initMission("epic-mission", { baseDir });
+		writeRoadmap(missionDir, ["# Roadmap", "", "- [x] done", ""]);
+	});
+
+	afterEach(() => {
+		rmSync(baseDir, { recursive: true, force: true });
+	});
+
+	it("команда 'epic' зарегистрирована", () => {
+		ctx = makeEpicCtx("active");
+		reg = makeMockRegister();
+		registerMissionSlashCommands(reg.register, ctx);
+		expect(reg.commands.has("epic")).toBe(true);
+	});
+
+	it("/epic текст → строка '- [ ] [EPIC] текст' в ROADMAP.md", async () => {
+		ctx = makeEpicCtx("active");
+		reg = makeMockRegister();
+		registerMissionSlashCommands(reg.register, ctx);
+		await reg.dispatch("/epic Implement auth module", ctx);
+
+		const raw = readFileSync(join(missionDir, "ROADMAP.md"), "utf8");
+		expect(raw).toContain("- [ ] [EPIC] Implement auth module");
+		expect(ctx.output.lines.join("\n")).toContain("EPIC added to ROADMAP.");
+	});
+
+	it("completed миссия → /epic реактивирует её в active", async () => {
+		await writeMissionStatus(missionDir, "completed");
+		ctx = makeEpicCtx("completed");
+		reg = makeMockRegister();
+		registerMissionSlashCommands(reg.register, ctx);
+		await reg.dispatch("/epic Implement auth module", ctx);
+
+		const { readMission } = await import("../file-state-manager.js");
+		const mission = await readMission(missionDir);
+		expect(mission.frontmatter.status).toBe("active");
+		const text = ctx.output.lines.join("\n");
+		expect(text).toContain("EPIC added to ROADMAP");
+		expect(text).toContain("reactivated");
+	});
+
+	it("active миссия → /epic не меняет статус, но добавляет пункт", async () => {
+		ctx = makeEpicCtx("active");
+		reg = makeMockRegister();
+		registerMissionSlashCommands(reg.register, ctx);
+		await reg.dispatch("/epic Implement auth module", ctx);
+
+		const { readMission } = await import("../file-state-manager.js");
+		const mission = await readMission(missionDir);
+		expect(mission.frontmatter.status).toBe("active");
+		const raw = readFileSync(join(missionDir, "ROADMAP.md"), "utf8");
+		expect(raw).toContain("- [ ] [EPIC] Implement auth module");
+		expect(ctx.output.lines.join("\n")).not.toContain("reactivated");
+	});
+
+	it("нет миссии → понятная ошибка", async () => {
+		ctx = makeCtx({
+			missionLoop: null,
+			missionDir: undefined,
+			cwd: baseDir,
+			findAttachableMission: async () => null,
+		});
+		reg = makeMockRegister();
+		registerMissionSlashCommands(reg.register, ctx);
+		await reg.dispatch("/epic Implement auth module", ctx);
+		expect(ctx.output.lines.join("\n")).toContain("No mission found");
+	});
+
+	it("/epic без текста → usage-ошибка", async () => {
+		ctx = makeEpicCtx("active");
+		reg = makeMockRegister();
+		registerMissionSlashCommands(reg.register, ctx);
+		await reg.dispatch("/epic", ctx);
+		expect(ctx.output.lines.join("\n")).toContain("usage /epic <text>");
+		const raw = readFileSync(join(missionDir, "ROADMAP.md"), "utf8");
+		expect(raw).not.toContain("[EPIC]");
+	});
+
+	it("UTF-8 и пробелы: /epic Реализовать X (подзадача 1; подзадача 2) → точная строка", async () => {
+		ctx = makeEpicCtx("active");
+		reg = makeMockRegister();
+		registerMissionSlashCommands(reg.register, ctx);
+		await reg.dispatch("/epic Реализовать X (подзадача 1; подзадача 2)", ctx);
+
+		const raw = readFileSync(join(missionDir, "ROADMAP.md"), "utf8");
+		expect(raw).toContain("- [ ] [EPIC] Реализовать X (подзадача 1; подзадача 2)");
+	});
+
+	it("/mission epic текст — тот же handler", async () => {
+		ctx = makeEpicCtx("active");
+		reg = makeMockRegister();
+		registerMissionSlashCommands(reg.register, ctx);
+		await reg.dispatch("/mission epic Implement auth module", ctx);
+
+		const raw = readFileSync(join(missionDir, "ROADMAP.md"), "utf8");
+		expect(raw).toContain("- [ ] [EPIC] Implement auth module");
+		expect(ctx.output.lines.join("\n")).toContain("EPIC added to ROADMAP.");
 	});
 });
