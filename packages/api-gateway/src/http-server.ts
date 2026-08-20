@@ -4,7 +4,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
-import { generateToken as createToken, listTokens, revokeToken, tokenAuth } from "./auth.js";
+import { generateToken as createToken, isAuthDisabled, listTokens, revokeToken, tokenAuth } from "./auth.js";
 import { getMissionBudget, getMissionStatus, getMissionTree, isValidMissionSlug } from "./mission-api.js";
 import type {
 	AnalyticsReportMeta,
@@ -520,7 +520,9 @@ export async function startServer(
 	console.log(`[api-gateway] Server running at http://${host}:${port}`);
 	console.log(`[api-gateway] Health: http://${host}:${port}/api/health`);
 	console.log(`[api-gateway] Docs: http://${host}:${port}/api/health`);
-	if (process.env.FAN_NO_AUTH) {
+	// Единая проверка с tokenAuth (./auth.ts): иначе warn срабатывает при
+	// FAN_NO_AUTH=0 (или любой truthy-строке), хотя auth фактически включён.
+	if (isAuthDisabled()) {
 		console.warn(`[api-gateway] ⚠️  Auth disabled (FAN_NO_AUTH=${process.env.FAN_NO_AUTH})`);
 	}
 

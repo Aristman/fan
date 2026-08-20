@@ -1045,3 +1045,129 @@ describe("F-38: validateDepth на границе приёма отчёта (dep
 		expect(readJournal(mission).filter((e) => e.event === "validation_failed")).toHaveLength(0);
 	});
 });
+
+// ─── F-49: readiness-wait — DI waitForReady между spawn и sendPackage ────
+
+describe("F-49: waitForReady — DI-ожидание готовности дочернего узла", () => {
+	it("без DI waitForReady: поведение прежнее — waitForReady не вызывается, sendPackage идёт сразу", async () => {
+		const mission = makeMission();
+		const spawnNode = makeSpawnMock();
+		const sendPackage = makeSendMock();
+		const handle = makeHandle(mission, { spawnNode, sendPackage });
+
+		await handle.run({ task: "Эпик", children: 1, deadline: DEADLINE });
+
+		expect(spawnNode).toHaveBeenCalledTimes(1);
+		expect(sendPackage).toHaveBeenCalledTimes(1);
+	});
+
+	it("со stub waitForReady: вызван с портом узла ДО sendPackage, sendPackage идёт после успеха", async () => {
+		const mission = makeMission();
+		const spawnNode = makeSpawnMock();
+		const sendPackage = makeSendMock();
+		const order = [];
+		const waitForReady = vi.fn(async (port) => {
+			order.push(["ready", port]);
+		});
+		spawnNode.mockImplementation(async (opts) => {
+			order.push(["spawn", opts.port]);
+			return { pid: 10_000 + opts.port };
+		});
+		sendPackage.mockImplementation(async (opts) => {
+			order.push(["send", opts.port]);
+			return makeReport("L1/node-1", "mission-f34/L1/node-1");
+		});
+
+		const handle = makeHandle(mission, { spawnNode, sendPackage, waitForReady });
+		await handle.run({ task: "Эпик", children: 1, deadline: DEADLINE });
+
+		expect(waitForReady).toHaveBeenCalledTimes(1);
+		expect(waitForReady).toHaveBeenCalledWith(7001);
+		expect(order).toEqual([
+			["spawn", 7001],
+			["ready", 7001],
+			["send", 7001],
+		]);
+		expect(readJournal(mission).filter((e) => e.event === "complete")).toHaveLength(1);
+	});
+
+	it("reject на waitForReady: run бросает, fail-запись, killNode, release порта, возврат аллокации", async () => {
+		const mission = makeMission();
+		const spawnNode = makeSpawnMock();
+		const killNode = vi.fn(async () => {});
+		const waitForReady = vi.fn(async () => {
+			throw new Error("readiness timeout");
+		});
+		const handle = makeHandle(mission, { spawnNode, killNode, waitForReady });
+
+		await expect(handle.run({ task: "Эпик", children: 1, deadline: DEADLINE })).rejects.toThrow(
+			/readiness timeout/,
+		);
+
+		expect(waitForReady).toHaveBeenCalledTimes(1);
+		expect(spawnNode).toHaveBeenCalledTimes(1);
+
+		const entries = readJournal(mission);
+		const spawns = entries.filter((e) => e.event === "spawn");
+		const fails = entries.filter((e) => e.event === "fail");
+		expect(spawns).toHaveLength(1);
+		expect(fails).toHaveLength(1);
+		expect(fails[0].nodeId).toBe("L1/node-1");
+		expect(entries.filter((e) => e.event === "complete")).toHaveLength(0);
+
+		// killNode вызван на упавшем узле.
+		expect(killNode).toHaveBeenCalledWith("L1/node-1");
+
+		// Порт освобождён, активных узлов нет.
+		const ports = readPorts(mission);
+		expect(Object.keys(ports).filter((id) => id.startsWith("L1/"))).toEqual([]);
+
+		// Аллокация возвращена (узел ничего не потребил).
+		const budgetState = readBudgetState(mission);
+		expect(budgetState.allocated.tokens).toBe(0);
+		expect(budgetState.allocated.usd).toBe(0);
+	});
+
+	it("abort() во время waitForReady: killNode, abort-запись, release, без fail", async () => {
+		const mission = makeMission();
+		const spawnNode = makeSpawnMock();
+		const killNode = vi.fn(async () => {});
+		const readyDeferred = deferred();
+		const waitForReady = vi.fn(() => readyDeferred.promise);
+		const sendPackage = makeSendMock();
+
+		const handle = makeHandle(mission, { spawnNode, sendPackage, killNode, waitForReady });
+
+		const runPromise = handle.run({ task: "Эпик", children: 1, deadline: DEADLINE });
+		runPromise.catch(() => {}); // подавляем unhandled rejection до await
+
+		// Дожидаемся, пока spawnNode и waitForReady будут вызваны.
+		await vi.waitFor(
+			() => {
+				expect(spawnNode).toHaveBeenCalledTimes(1);
+				expect(waitForReady).toHaveBeenCalledTimes(1);
+			},
+			{ timeout: 2_000, interval: 10 },
+		);
+
+		// abort() во время висящего waitForReady.
+		const abortPromise = handle.abort();
+		// Разрешаем waitForReady ПОСЛЕ вызова abort() — имитирует отмену/возврат.
+		readyDeferred.reject(new Error("aborted"));
+		await abortPromise;
+		await runPromise;
+
+		expect(killNode).toHaveBeenCalledWith("L1/node-1");
+
+		const entries = readJournal(mission);
+		const aborts = entries.filter((e) => e.event === "abort");
+		const fails = entries.filter((e) => e.event === "fail");
+		expect(aborts).toHaveLength(1);
+		expect(aborts[0].nodeId).toBe("L1/node-1");
+		// F1-семантика: без fail (пакет не отправлялся).
+		expect(fails).toHaveLength(0);
+
+		const ports = readPorts(mission);
+		expect(Object.keys(ports).filter((id) => id.startsWith("L1/"))).toEqual([]);
+	}, 10_000);
+});

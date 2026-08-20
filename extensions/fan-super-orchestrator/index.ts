@@ -57,6 +57,7 @@ import {
 	type Depth2Options,
 	type Depth2SendOpts,
 	type Depth2SpawnOpts,
+	type WaitForReady,
 } from "./depth2-integration.js";
 import { clean } from "./message-sanitizer.js";
 import type { NodeReport } from "./node-report.js";
@@ -76,6 +77,13 @@ export function delegateResultChannel(correlationId: string): string {
 
 /** Deadline пакетов по умолчанию (30 минут). */
 const DEFAULT_DEADLINE_MS = 30 * 60 * 1000;
+
+/** Интервал poll готовности дочернего узла (мс). */
+const READY_POLL_INTERVAL_MS = 500;
+/** Таймаут одного fetch к /api/health (мс). */
+const READY_POLL_PER_TRY_MS = 3_000;
+/** Общий таймаут readiness-wait по умолчанию (мс). */
+const DEFAULT_READY_TIMEOUT_MS = 60_000;
 
 /** Подзадача в составе mission_delegate.packages. */
 export interface DelegatePackage {
@@ -163,9 +171,17 @@ const MAX_PROCESSED_CORRELATIONS = 1000;
  *  child-node-client (sendWorkPackage с onValidationFailed → journal через
  *  depth2-integration) — как в адаптерах test/phase-gate-c.e2e.mjs.
  *  ProcessManager делит portsFile с PortPool depth2-integration: запись id
- *  уже создана его пулом, поэтому pm.spawn переиспользует тот же порт. */
-function createProductionNodeAdapters(missionDir: string): {
+ *  уже создана его пулом, поэтому pm.spawn переиспользует тот же порт.
+ *  waitForReady — fetch-poll /api/health (READY_POLL_INTERVAL_MS) с
+ *  per-try таймаутом READY_POLL_PER_TRY_MS; общий потолок — readyTimeoutMs.
+ *  Без ожидания WS-коннект sendPackage мгновенно упадёт «Unable to
+ *  connect» — boot ~10s (расширения, провайдеры). */
+function createProductionNodeAdapters(
+	missionDir: string,
+	readyTimeoutMs: number = DEFAULT_READY_TIMEOUT_MS,
+): {
 	spawnNode: (opts: Depth2SpawnOpts) => Promise<{ pid: number }>;
+	waitForReady: WaitForReady;
 	sendPackage: (opts: Depth2SendOpts) => Promise<NodeReport>;
 	killNode: (id: string) => Promise<void>;
 } {
@@ -173,6 +189,22 @@ function createProductionNodeAdapters(missionDir: string): {
 		portsFile: join(missionDir, "child-ports.json"),
 		pidDir: join(missionDir, "pids"),
 	});
+	const waitForReady: WaitForReady = async (port: number) => {
+		const deadline = Date.now() + readyTimeoutMs;
+		const url = `http://127.0.0.1:${port}/api/health`;
+		while (Date.now() < deadline) {
+			try {
+				const res = await fetch(url, { signal: AbortSignal.timeout(READY_POLL_PER_TRY_MS) });
+				if (res.ok) {
+					return;
+				}
+			} catch {
+				/* ещё не слушает / connect refused / таймаут одной попытки */
+			}
+			await new Promise((resolve) => setTimeout(resolve, READY_POLL_INTERVAL_MS));
+		}
+		throw new Error(`child node not ready on port ${port} within ${readyTimeoutMs}ms`);
+	};
 	return {
 		spawnNode: async (spawnOpts: Depth2SpawnOpts) => {
 			const { pid } = await pm.spawn({
@@ -183,6 +215,7 @@ function createProductionNodeAdapters(missionDir: string): {
 			});
 			return { pid };
 		},
+		waitForReady,
 		sendPackage: async (sendOpts: Depth2SendOpts) => {
 			const client = createChildNodeClient({ onValidationFailed: sendOpts.onValidationFailed });
 			try {
@@ -206,6 +239,8 @@ export interface SuperOrchestratorWireOptions {
 	createDepth2?: (opts: Depth2Options) => Depth2Handle;
 	/** DI: spawn узла (продакшн — process-manager). */
 	spawnNode?: (opts: Depth2SpawnOpts) => Promise<{ pid: number }>;
+	/** DI: ожидание готовности узла (продакшн — fetch-poll /api/health). */
+	waitForReady?: WaitForReady;
 	/** DI: отправка пакета узлу (продакшн — child-node-client). */
 	sendPackage?: (opts: Depth2SendOpts) => Promise<NodeReport>;
 	/** DI: kill узла (продакшн — process-manager). */
@@ -214,6 +249,8 @@ export interface SuperOrchestratorWireOptions {
 	guardOptions?: DepthWidthGuardOptions;
 	/** Deadline пакетов, мс (default 30 мин). */
 	deadlineMs?: number;
+	/** Общий таймаут readiness-wait для production-дефолта, мс (default 60с). */
+	readyTimeoutMs?: number;
 }
 
 export interface SuperOrchestratorWiring {
@@ -337,16 +374,18 @@ export default function superOrchestratorExtension(
 	/** Создание depth2-handle для missionDir (opts DI → production-дефолты). */
 	const createDepth2 = (missionDir: string): Depth2Handle => {
 		const budgetTotal = readMissionBudget(missionDir);
-		// Production-дефолт: реальный spawn/kill (process-manager) и
-		// sendPackage (child-node-client). DI (opts.*) переопределяет дефолты.
+		// Production-дефолт: реальный spawn/kill (process-manager),
+		// readiness-wait (fetch-poll /api/health) и sendPackage
+		// (child-node-client). DI (opts.*) переопределяет дефолты.
 		// In-process фабрикации completed НЕТ: при невозможности реального
 		// контура run падает, и handler отвечает {error}.
-		const production = createProductionNodeAdapters(missionDir);
+		const production = createProductionNodeAdapters(missionDir, opts?.readyTimeoutMs);
 		const depth2Options: Depth2Options = {
 			missionDir,
 			missionId: basename(missionDir),
 			budgetTotal,
 			spawnNode: opts?.spawnNode ?? production.spawnNode,
+			waitForReady: opts?.waitForReady ?? production.waitForReady,
 			sendPackage: opts?.sendPackage ?? production.sendPackage,
 			killNode: opts?.killNode ?? production.killNode,
 			...(opts?.guardOptions ? { guardOptions: opts.guardOptions } : {}),

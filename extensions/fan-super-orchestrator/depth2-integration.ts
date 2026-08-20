@@ -83,6 +83,13 @@ export interface Depth2SendOpts {
 	onValidationFailed?: (failure: ValidationFailureInfo) => void;
 }
 
+/** Колбэк готовности дочернего узла после успешного spawn: дожидается
+ *  момента, когда узел готов принимать пакеты (например, /api/health=200).
+ *  Бросает на таймаут — пайплайн трактует отказ как сетевую ошибку
+ *  (fail-запись, release порта, kill узла, run бросает). DI: прод —
+ *  fetch-poll /api/health в fan-super-orchestrator/index.ts. */
+export type WaitForReady = (port: number) => Promise<void>;
+
 /** Опции фабрики интеграции. */
 export interface Depth2Options {
 	/** Каталог миссии: mission-budget.json + tree-journal.jsonl в нём. */
@@ -93,6 +100,10 @@ export interface Depth2Options {
 	perHopCeiling?: number;
 	guardOptions?: DepthWidthGuardOptions;
 	spawnNode?: (opts: Depth2SpawnOpts) => Promise<{ pid: number }>;
+	/** DI: ожидание готовности дочернего узла после spawn и до sendPackage.
+	 *  Контракт: бросает на таймаут/ошибку; не возвращает успех, пока узел
+	 *  не примет пакеты. Не задан → пропускается (поведение прежнее). */
+	waitForReady?: WaitForReady;
 	sendPackage?: (opts: Depth2SendOpts) => Promise<NodeReport>;
 	killNode?: (id: string) => Promise<void>;
 	/** Default: <missionDir>/child-ports.json. */
@@ -264,6 +275,51 @@ export function createDepth2Integration(opts: Depth2Options): Depth2Handle {
 				pid,
 			});
 			activeNodes.set(nodeId, { correlationId });
+
+			// Readiness-wait: узел порождён, но процесс ещё бутается
+			// (расширения, провайдеры ~10s). Без паузы WS-коннект
+			// sendPackage мгновенно упадёт «Unable to connect». DI-опция;
+			// не задана — пропускается (поведение прежнее).
+			if (opts.waitForReady) {
+				try {
+					await opts.waitForReady(port);
+				} catch (readyError) {
+					// abort() во время ожидания → узел уже убит/журналирован
+					// в kill-цикле abort(); если ещё нет — узел всё ещё в
+					// activeNodes, abort() подхватит. Без дублирующего
+					// journal/kill: иначе двойная запись.
+					if (aborted) {
+						return;
+					}
+					// Иначе — та же политика что F2 (отказ sendPackage):
+					// fail-запись, освобождение порта, возврат аллокации,
+					// kill узла, run бросает.
+					journal.write({
+						event: "fail",
+						nodeId,
+						parentId: ROOT_NODE_ID,
+						correlationId,
+						depth: CHILD_DEPTH,
+					});
+					portPool.release(nodeId);
+					activeNodes.delete(nodeId);
+					aggregator.onNodeComplete(nodeId, allocation);
+					if (opts.killNode) {
+						try {
+							await opts.killNode(nodeId);
+						} catch {
+							/* best-effort */
+						}
+					}
+					throw readyError;
+				}
+				// Повторная проверка aborted после ожидания: kill-switch мог
+				// сработать, пока мы ждали готовности узла. Узел остаётся в
+				// activeNodes — abort() подхватит в kill-цикле (идемпотентно).
+				if (aborted) {
+					return;
+				}
+			}
 
 			if (aborted || !sendPackage) {
 				return;
