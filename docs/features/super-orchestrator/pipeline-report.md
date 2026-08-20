@@ -282,3 +282,7 @@
 ### #38 — Warn-throttle для RECURRING.md + паритет-проверка парсеров
 - **Статус:** open (verify-находки 2026-08-19, не блокируют)
 - **Контекст:** (a) console.warn «RECURRING.md has content but no parseable items» спамит каждый тик (60s) — нужен throttle/dedup по пути файла; также warn'ит на легитимное «все пункты checked». (b) Pre-existing: fan-mission парсер trim'ит строки, fan-scheduler — нет (indented пункты не детектятся scheduler'ом). (c) Дублирование парсера в двух пакетах — кандидат на общий модуль.
+
+### #39 — Блок-4 находки ручного тестирования (2026-08-20)
+- **Статус:** open
+- **Контекст:** (a) e2e-depth34.test.mjs — 2 теста падают на Windows-окружении (mock-node subprocess exit 1), подтверждено pre-existing stash-прогоном; разобрать перед мерджем. (b) /api/health на Bun-binary: Hono handler логирует 200, но Bun бросает «Expected a Response object (lightweight)» и отдаёт fallback-страницу — status 200, body невалиден; health-poll по status работает, но разобраться с адаптером. (c) Дочерний fan server наследует порт webhook'а (9090 busy → 9092 в логе) — расширения детей должны быть минимальными или порты изолированы.
