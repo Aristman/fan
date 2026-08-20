@@ -49,6 +49,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { initMission, writeMissionStatus } from "../file-state-manager.js";
+import { readMissionLoopState, writeLoopStateSync } from "../mission-loop.js";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Импорт модуля, который ещё не существует → ERR_MODULE_NOT_FOUND.
@@ -1392,5 +1393,116 @@ describe("F-11 / TC-F11-epic: /epic <text> — add EPIC item to ROADMAP", () => 
 		const raw = readFileSync(join(missionDir, "ROADMAP.md"), "utf8");
 		expect(raw).toContain("- [ ] [EPIC] Implement auth module");
 		expect(ctx.output.lines.join("\n")).toContain("EPIC added to ROADMAP.");
+	});
+});
+
+// ──────────────────────────────────────────────────────────────────────────────────
+// F-MISSION-DUTY: /idea и /epic — lazy-attach + сброс stale abort-артефактов
+// ──────────────────────────────────────────────────────────────────────────────────
+
+describe("F-11 / TC-F11-duty: /idea и /epic реактивируют и аттачат loop", () => {
+	let baseDir;
+	let missionDir;
+	let reg;
+
+	beforeEach(async () => {
+		baseDir = freshBaseDir();
+		missionDir = await initMission("duty-idea", { baseDir });
+		writeRoadmap(missionDir, ["# Roadmap", "", "- [x] done", ""]);
+	});
+
+	afterEach(() => {
+		rmSync(baseDir, { recursive: true, force: true });
+	});
+
+	function makeReactivatingCtx(foundStatus) {
+		const attachedLoop = makeMockMissionLoop();
+		const attachCalls = [];
+		const ctx = makeCtx({
+			missionLoop: null,
+			missionDir: undefined,
+			cwd: baseDir,
+			findAttachableMission: async () => ({ missionDir, status: foundStatus }),
+			attach: (dir) => {
+				attachCalls.push(dir);
+				ctx.missionLoop = attachedLoop;
+				ctx.missionDir = dir;
+				return attachedLoop;
+			},
+		});
+		ctx._attachCalls = attachCalls;
+		ctx._attachedLoop = attachedLoop;
+		return ctx;
+	}
+
+	function seedStaleAbortArtifacts(dir) {
+		writeFileSync(join(dir, ".mission-abort-signal"), JSON.stringify({ abortedByOperator: true, ts: Date.now() }), "utf8");
+		writeLoopStateSync(dir, {
+			currentIteration: 3,
+			lastStep: 0,
+			interrupted: true,
+			abortedByOperator: true,
+			budgetUsed: { tokens: 0, usd: 0 },
+		});
+	}
+
+	it("completed миссия без loop → /idea реактивирует, аттачит loop и чистит abort", async () => {
+		await writeMissionStatus(missionDir, "completed");
+		seedStaleAbortArtifacts(missionDir);
+
+		const ctx = makeReactivatingCtx("completed");
+		reg = makeMockRegister();
+		registerMissionSlashCommands(reg.register, ctx);
+		await reg.dispatch("/idea Add dark mode", ctx);
+
+		expect(ctx._attachCalls).toEqual([missionDir]);
+		expect(ctx.missionLoop).toBe(ctx._attachedLoop);
+		expect(ctx.missionDir).toBe(missionDir);
+
+		const { readMission } = await import("../file-state-manager.js");
+		const mission = await readMission(missionDir);
+		expect(mission.frontmatter.status).toBe("active");
+
+		expect(existsSync(join(missionDir, ".mission-abort-signal"))).toBe(false);
+		const loopState = await readMissionLoopState(missionDir);
+		expect(loopState.abortedByOperator).toBeFalsy();
+		expect(loopState.interrupted).toBeFalsy();
+		expect(ctx.output.lines.join("\n")).toContain("reactivated");
+	});
+
+	it("completed миссия без loop → /epic реактивирует, аттачит loop и чистит abort", async () => {
+		await writeMissionStatus(missionDir, "completed");
+		seedStaleAbortArtifacts(missionDir);
+
+		const ctx = makeReactivatingCtx("completed");
+		reg = makeMockRegister();
+		registerMissionSlashCommands(reg.register, ctx);
+		await reg.dispatch("/epic Implement auth module", ctx);
+
+		expect(ctx._attachCalls).toEqual([missionDir]);
+		expect(ctx.missionLoop).toBe(ctx._attachedLoop);
+		expect(ctx.missionDir).toBe(missionDir);
+
+		const { readMission } = await import("../file-state-manager.js");
+		const mission = await readMission(missionDir);
+		expect(mission.frontmatter.status).toBe("active");
+
+		expect(existsSync(join(missionDir, ".mission-abort-signal"))).toBe(false);
+		const loopState = await readMissionLoopState(missionDir);
+		expect(loopState.abortedByOperator).toBeFalsy();
+		expect(loopState.interrupted).toBeFalsy();
+		expect(ctx.output.lines.join("\n")).toContain("reactivated");
+	});
+
+	it("active миссия → /idea не аттачит заново", async () => {
+		const ctx = makeReactivatingCtx("active");
+		reg = makeMockRegister();
+		registerMissionSlashCommands(reg.register, ctx);
+		await reg.dispatch("/idea Add dark mode", ctx);
+
+		expect(ctx._attachCalls).toEqual([]);
+		expect(ctx.missionLoop).toBeNull();
+		expect(ctx.output.lines.join("\n")).toContain("Idea recorded.");
+		expect(ctx.output.lines.join("\n")).not.toContain("reactivated");
 	});
 });

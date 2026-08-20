@@ -343,6 +343,33 @@ function clearAbortSignal(missionDir: string): void {
 	}
 }
 
+/**
+ * F-MISSION-DUTY: сброс протухших abort-артефактов при явном рестарте/реактивации.
+ * Удаляет `.mission-abort-signal` и сбрасывает `abortedByOperator`/`interrupted`
+ * (plus recovery fields) в `.mission-loop.json`, чтобы первый тик не сгорал
+ * с результатом 'aborted'.
+ */
+export async function clearMissionAbortArtifacts(missionDir: string): Promise<void> {
+	clearAbortSignal(missionDir);
+	try {
+		const loopState = await readMissionLoopState(missionDir);
+		// F-MISSION-DUTY: сбрасываем только abort-артефакты. recovery-поля
+		// (iterationResult/pendingItem/committed) очищаем ТОЛЬКО если они были
+		// оставлены abort-рукой — иначе потеряем корректное восстановление после
+		// SIGKILL/rotation.
+		if (loopState.abortedByOperator === true) {
+			loopState.abortedByOperator = false;
+			loopState.interrupted = false;
+			loopState.iterationResult = undefined;
+			loopState.pendingItem = undefined;
+			loopState.committed = false;
+			writeLoopStateSync(missionDir, loopState);
+		}
+	} catch {
+		// best-effort
+	}
+}
+
 // ─── ROADMAP helpers ────────────────────────────────────────────────────────
 
 function markRoadmapDone(raw: string, lineIndex: number, itemText?: string): string {

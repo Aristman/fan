@@ -21,8 +21,7 @@ import {
 	writeMissionStatus,
 	writeRoadmap,
 } from "./file-state-manager.js";
-import type { MissionLoop } from "./mission-loop.js";
-import { readMissionLoopState } from "./mission-loop.js";
+import { clearMissionAbortArtifacts, type MissionLoop, readMissionLoopState } from "./mission-loop.js";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -154,6 +153,7 @@ async function lazyAttachForStart(ctx: SlashCtx): Promise<boolean> {
 		}
 		await resolveWriteStatus(ctx)(found.missionDir, "active");
 	}
+	await clearMissionAbortArtifacts(found.missionDir);
 	ctx.attach(found.missionDir);
 	return true;
 }
@@ -177,6 +177,7 @@ async function lazyAttachForResume(ctx: SlashCtx): Promise<boolean> {
 		return false;
 	}
 	await resolveWriteStatus(ctx)(found.missionDir, "active");
+	await clearMissionAbortArtifacts(found.missionDir);
 	ctx.attach(found.missionDir);
 	ctx.output("Mission resumed — loop attached");
 	return true;
@@ -258,6 +259,10 @@ async function handleIdeaCommand(rawArgs: string, ctx: SlashCtx): Promise<void> 
 	const currentStatus = String(mission.frontmatter.status);
 	if (currentStatus !== "active" && canTransition(currentStatus, "active")) {
 		await resolveWriteStatus(ctx)(missionDir, "active");
+		if (!ctx.missionLoop && ctx.attach) {
+			await clearMissionAbortArtifacts(missionDir);
+			ctx.attach(missionDir);
+		}
 		ctx.output("Idea recorded — mission reactivated, it will be scored on the next tick.");
 		return;
 	}
@@ -307,6 +312,10 @@ async function handleEpicCommand(rawArgs: string, ctx: SlashCtx): Promise<void> 
 	const currentStatus = String(mission.frontmatter.status);
 	if (currentStatus !== "active" && canTransition(currentStatus, "active")) {
 		await resolveWriteStatus(ctx)(missionDir, "active");
+		if (!ctx.missionLoop && ctx.attach) {
+			await clearMissionAbortArtifacts(missionDir);
+			ctx.attach(missionDir);
+		}
 		ctx.output("EPIC added to ROADMAP — mission reactivated, it will be decomposed on the next tick.");
 		return;
 	}

@@ -38,10 +38,11 @@ import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
 import type { KeyId } from "@seaagents/fan-tui";
 import { createOperatorDecisionPrompter, type OperatorDecisionUI } from "./decision-dialog.js";
 import { createDefaultRunAgent } from "./default-run-agent.js";
-import { readMission, writeMissionStatus } from "./file-state-manager.js";
+import { readMission, readRecurring, writeMissionStatus } from "./file-state-manager.js";
 import { createGitAdapter } from "./git-adapter.js";
 import { promoteAcceptedIdeas } from "./idea-promoter.js";
 import {
+	clearMissionAbortArtifacts,
 	type LoopState,
 	MissionLoop,
 	type MissionSessionRotator,
@@ -225,7 +226,7 @@ export function wireMission(fan: ExtensionAPI, opts?: MissionWireOptions): Missi
  */
 export async function findAttachableMission(
 	cwd: string,
-	accept: (status: string) => boolean = () => true,
+	accept: (status: string, missionDir: string) => boolean = () => true,
 ): Promise<{ missionDir: string; status: string } | null> {
 	const missionsRoot = join(cwd, "docs", "missions");
 	if (!existsSync(missionsRoot)) {
@@ -246,7 +247,7 @@ export async function findAttachableMission(
 		try {
 			const mission = await readMission(missionDir);
 			const status = String(mission.frontmatter.status);
-			if (accept(status)) {
+			if (accept(status, missionDir)) {
 				return { missionDir, status };
 			}
 		} catch {
@@ -541,9 +542,20 @@ export default function missionExtension(fan: ExtensionAPI): MissionWiring {
 			} catch {
 				currentSessionFile = undefined;
 			}
-			const found = await findAttachableMission(cwd, (status) => NON_TERMINAL_STATUSES.has(status));
+			// F-MISSION-DUTY: сначала не-терминальные; если их нет —
+			// completed-миссия с parseable recurring-пунктами аттачится как duty.
+			let found = await findAttachableMission(cwd, (status) => NON_TERMINAL_STATUSES.has(status));
+			if (!found) {
+				found = await findAttachableMission(
+					cwd,
+					(status, missionDir) => status === "completed" && readRecurring(missionDir).length > 0,
+				);
+			}
 			if (found) {
 				const attachedLoop = attach(found.missionDir);
+				// Явное/неявное восстановление: сбросить протухший abort-сигнал,
+				// иначе первый тик сгорит с результатом 'aborted'.
+				await clearMissionAbortArtifacts(found.missionDir);
 				await maybeResumeAfterRotation(found.missionDir, attachedLoop);
 				// F-MISSION-DIALOG (точка 2): recovery — миссия застряла в
 				// awaiting_decision до рестарта/ротации → показать диалог сразу.

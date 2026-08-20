@@ -942,3 +942,85 @@ describe("F-MISSION-INDEX / TC-11: батчинг вывода в ctx.ui.notify"
 		expect(logCalls).toEqual([["No active mission to stop — nothing attached."]]);
 	});
 });
+
+// ────────────────────────────────────────────────────────────────────────────
+// TC-F12: F-MISSION-DUTY — completed-миссия с RECURRING.md дежурит после рестарта
+// ────────────────────────────────────────────────────────────────────────────
+
+describe("F-MISSION-INDEX / TC-F12: session_start аттачит completed-миссии на дежурство", () => {
+	it("TC-F12a: active → аттачится как раньше", async () => {
+		const { baseDir, missionDir } = await makeTempMission("duty-active");
+		liveTempDirs.push(baseDir);
+
+		const fan = makeMockFan();
+		const handle = factory(fan);
+		liveWirings.push(handle);
+
+		await fan._emit("session_start", { type: "session_start", cwd: baseDir }, { cwd: baseDir, ui: {} });
+
+		expect(handle.getMissionLoop()).not.toBeNull();
+		const status = await handle.getMissionLoop().status();
+		expect(status).toBe("active");
+	});
+
+	it("TC-F12b: completed + RECURRING-пункт → loop аттачен (duty)", async () => {
+		const { baseDir, missionDir } = await makeTempMission("duty-completed");
+		liveTempDirs.push(baseDir);
+		await writeMissionStatus(missionDir, "completed");
+		writeFileSync(
+			join(missionDir, "RECURRING.md"),
+			"# Recurring tasks\n\n- [ ] Check inbox (interval: 30m)\n",
+			"utf8",
+		);
+
+		const fan = makeMockFan();
+		const handle = factory(fan);
+		liveWirings.push(handle);
+
+		await fan._emit("session_start", { type: "session_start", cwd: baseDir }, { cwd: baseDir, ui: {} });
+
+		expect(handle.getMissionLoop()).not.toBeNull();
+		const status = await handle.getMissionLoop().status();
+		expect(status).toBe("completed");
+	});
+
+	it("TC-F12c: completed БЕЗ RECURRING-пунктов → НЕ аттачится", async () => {
+		const { baseDir, missionDir } = await makeTempMission("duty-completed-no-recur");
+		liveTempDirs.push(baseDir);
+		await writeMissionStatus(missionDir, "completed");
+
+		const fan = makeMockFan();
+		const handle = factory(fan);
+		liveWirings.push(handle);
+
+		await fan._emit("session_start", { type: "session_start", cwd: baseDir }, { cwd: baseDir, ui: {} });
+
+		expect(handle.getMissionLoop()).toBeNull();
+	});
+
+	it("TC-F12d: приоритет — не-терминальная миссия выше completed-duty", async () => {
+		const { baseDir, missionDir } = await makeTempMission("duty-active-priority");
+		liveTempDirs.push(baseDir);
+		await writeMissionStatus(missionDir, "completed");
+		writeFileSync(
+			join(missionDir, "RECURRING.md"),
+			"# Recurring tasks\n\n- [ ] Check inbox (interval: 30m)\n",
+			"utf8",
+		);
+
+		// Вторая миссия — active, должна быть выбрана первой
+		const activeDir = await initMission("duty-real-active", { baseDir: join(baseDir, "docs", "missions") });
+		writeFileSync(join(activeDir, "ROADMAP.md"), "# Roadmap\n\n- [ ] active step\n", "utf8");
+
+		const fan = makeMockFan();
+		const handle = factory(fan);
+		liveWirings.push(handle);
+
+		await fan._emit("session_start", { type: "session_start", cwd: baseDir }, { cwd: baseDir, ui: {} });
+
+		const loop = handle.getMissionLoop();
+		expect(loop).not.toBeNull();
+		const status = await loop.status();
+		expect(status).toBe("active");
+	});
+});

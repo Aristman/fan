@@ -27,7 +27,9 @@ import {
 import {
 	MissionLoop,
 	createFileLock,
+	clearMissionAbortArtifacts,
 	readMissionLoopState,
+	writeLoopStateSync,
 } from "../mission-loop.js";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -1145,6 +1147,45 @@ describe("Integration: combined bug fixes", () => {
 			expect(deps2.executorCalls.length).toBe(2);
 			expect(r2.steps.iterate).toBe(true);
 			expect(r2.itemsExecuted).toBe(2);
+		} finally {
+			rmSync(baseDir, { recursive: true, force: true });
+		}
+	});
+
+	it("F-MISSION-DUTY: clearMissionAbortArtifacts → следующий tick не возвращает 'aborted'", async () => {
+		const baseDir = freshBaseDir();
+		const missionDir = await initMission("abort-artifacts", { baseDir });
+		writeRoadmapFile(missionDir, ["# Roadmap", "", "- [ ] work-a", ""]);
+
+		try {
+			// Симулируем остановленную ранее миссию, которую оператор реактивировал,
+			// но abort-артефакты не были зачищены (старый баг).
+			writeFileSync(
+				join(missionDir, ".mission-abort-signal"),
+				JSON.stringify({ abortedByOperator: true, ts: Date.now() }),
+				"utf8",
+			);
+			writeLoopStateSync(missionDir, {
+				currentIteration: 2,
+				lastStep: 0,
+				interrupted: true,
+				abortedByOperator: true,
+				budgetUsed: { tokens: 0, usd: 0 },
+			});
+
+			await clearMissionAbortArtifacts(missionDir);
+
+			expect(existsSync(join(missionDir, ".mission-abort-signal"))).toBe(false);
+			const loopState = await readMissionLoopState(missionDir);
+			expect(loopState.abortedByOperator).toBeFalsy();
+			expect(loopState.interrupted).toBeFalsy();
+
+			// Следующий тик должен выполнить работу, а не сгореть на abort.
+			const deps = makeDeps();
+			const loop = new MissionLoop({ missionDir, deps });
+			const result = await loop.tick();
+			expect(result.status).not.toBe("aborted");
+			expect(result.steps.iterate).toBe(true);
 		} finally {
 			rmSync(baseDir, { recursive: true, force: true });
 		}
