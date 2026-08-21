@@ -1,5 +1,5 @@
 # Documentation Manifest
-> Last updated: 2026-08-15 (этап 3 завершён)
+> Last updated: 2026-08-21 (super-orchestrator-v2 depth-4 SPEC updated)
 > Comprehensive index of all project documentation.
 > Maintainer: docs-impl agent
 
@@ -91,6 +91,7 @@
 | `docs/features/super-orchestrator/mission-validation-1/roadmap.md` | ✅ | Этап 1 roadmap — все 8 фич (F-16..F-22, F-48) ✅, добавлена секция «Этап 1 завершён» (2026-08-13) |
 | `docs/features/super-orchestrator/depth-and-dashboard-3/roadmap.md` | ✅ | Этап 3 roadmap — все 12 фич (F-36..F-47) ✅, + F-48.5 EPIC-делегирование (2026-08-15) |
 | `extensions/fan-super-orchestrator/README.md` | ✅ | Этап 3 ✅: 17 модулей, 716 тестов, EPIC-делегирование, phase-gates A3/B3/C3 |
+| `docs/features/super-orchestrator-v2/architecture.md` | ✅ | Depth-4 архитектура: 15 секций, port allocation (§12), transport pre-requisite (§13), diagnostics (§14), fail-fast (§15), Phase 0 gate |
 
 ## Backlogs
 | File | Status | Description |
@@ -125,4 +126,4 @@
 
 All 5 package READMEs have been created — status updated to ✅.
 
-Total: **61 tracked documents** (57 ✅, 4 ⚠️, 0 ❌)
+Total: **62 tracked documents** (58 ✅, 4 ⚠️, 0 ❌)
