@@ -1,4 +1,4 @@
-// F-C / TC-FC-1: Width pyramid constants + canSpawnBatch validation.
+// F-C / TC-FC-1: Width pyramid constants.
 //
 // Карточка: docs/features/super-orchestrator/super-orchestrator-v2/roadmap.md §F-C
 // Спека: docs/specs/spec_super-orchestrator_v3_2026-08-10.md §5
@@ -10,11 +10,10 @@
 //   3. batch > working[depth] → DENIED, reason="working_width_exceeded";
 //   4. иначе → ALLOWED.
 //
-// Для role="super-orchestrator" лимиты берутся на уровень выше
-// (depth-1): он координирует другие оркестраторы и нуждается в более
-// широком диапазоне. На depth=1 это даёт max[1]=12, working[1]=8;
-// working_width для super-orchestrator не проверяется (только max):
-// batch=11 при depth=2 (limits=depth=1) → ALLOWED, т.к. 11 ≤ max[1]=12.
+// Фаза F-D refactor: canSpawnBatch вынесен в can-spawn-batch.ts.
+// Здесь остаются ТОЛЬКО константы пирамиды; canSpawnBatch ре-экспортируется
+// для обратной совместимости с импортами вида
+// `import { canSpawnBatch } from "./width-pyramid.js"` (TC-FC-1, TC-FD-1b).
 
 /** Пирамида ширины: working (рабочая ширина) и max (жёсткий верх). */
 export const PYRAMID_WIDTH = {
@@ -27,69 +26,7 @@ export const PYRAMID_MIN_DEPTH = 1;
 /** Допустимая глубина пирамиды (верхняя граница = 4). */
 export const PYRAMID_MAX_DEPTH = 4;
 
-/** Опции canSpawnBatch. */
-export interface CanSpawnBatchOpts {
-	/** Глубина, НА КОТОРОЙ будут новые узлы (1–4). */
-	depth: number;
-	/** Размер пачки (сколько детей порождается одновременно). */
-	batch: number;
-	/** Роль родителя: 'super-orchestrator' управляет другими орк. */
-	role?: "super-orchestrator" | "orchestrator";
-	/** Профиль роли (зарезервировано для будущих расширений). */
-	profile?: string;
-}
-
-/** Решение canSpawnBatch. */
-export interface CanSpawnBatchResult {
-	allowed: boolean;
-	/** Причина отказа (undefined при allowed=true). */
-	reason?: "max_depth_exceeded" | "max_width_exceeded" | "working_width_exceeded";
-	/** Диагностические детали (для логов). */
-	details?: Record<string, unknown>;
-}
-
-/**
- * Проверить, допустима ли пачка `batch` новых узлов на глубине `depth`.
- * Для role="super-orchestrator" лимиты берутся на уровень выше
- * (depth-1, clamped до 1), и working_width не проверяется.
- */
-export function canSpawnBatch(opts: CanSpawnBatchOpts): CanSpawnBatchResult {
-	const { depth, batch, role } = opts;
-
-	// 1. Глубина вне [1, 4] — пирамида определена только для этого диапазона.
-	if (depth < PYRAMID_MIN_DEPTH || depth > PYRAMID_MAX_DEPTH) {
-		return {
-			allowed: false,
-			reason: "max_depth_exceeded",
-			details: { depth, valid: `${PYRAMID_MIN_DEPTH}..${PYRAMID_MAX_DEPTH}` },
-		};
-	}
-
-	// 2. Для super-orchestrator: лимиты на уровень выше (depth-1, ≥ 1),
-	//    working_width не проверяется — нуждается в более широком диапазоне.
-	const isSuperOrch = role === "super-orchestrator";
-	const effectiveDepth = isSuperOrch ? Math.max(PYRAMID_MIN_DEPTH, depth - 1) : depth;
-
-	const working = PYRAMID_WIDTH.working[effectiveDepth as 1 | 2 | 3 | 4];
-	const max = PYRAMID_WIDTH.max[effectiveDepth as 1 | 2 | 3 | 4];
-
-	// 3. Жёсткий верх (max) проверяется всегда.
-	if (batch > max) {
-		return {
-			allowed: false,
-			reason: "max_width_exceeded",
-			details: { batch, max, depth, effectiveDepth, role: role ?? null },
-		};
-	}
-
-	// 4. Рабочая ширина (working) — только для не super-orchestrator.
-	if (!isSuperOrch && batch > working) {
-		return {
-			allowed: false,
-			reason: "working_width_exceeded",
-			details: { batch, working, depth, effectiveDepth, role: role ?? null },
-		};
-	}
-
-	return { allowed: true };
-}
+// Re-export canSpawnBatch и связанные типы из can-spawn-batch.ts для
+// обратной совместимости (TC-FC-1c..1e, TC-FD-1b импортируют из width-pyramid.js).
+export { canSpawnBatch } from "./can-spawn-batch.js";
+export type { CanSpawnBatchOpts, CanSpawnBatchResult } from "./can-spawn-batch.js";

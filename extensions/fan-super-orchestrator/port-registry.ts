@@ -85,6 +85,8 @@ export interface TryAllocateOpts {
 	profile?: string;
 	/** Глубина узла (для логов/диагностики). */
 	depth?: number;
+	/** Пул портов: 'api' (default, 7001-7100) или 'webhook' (9090-9189). */
+	pool?: "api" | "webhook";
 }
 
 /**
@@ -340,16 +342,26 @@ export class PortRegistry {
 	private async tryAllocatePortLocked(opts: TryAllocateOpts): Promise<AllocationResult> {
 		const reg = await this.readOrInit();
 
-		// 1. Atomic cap check.
-		const totalActive = reg.current_state.active_nodes + reg.current_state.active_workers;
-		if (totalActive >= reg.global_caps.max_nodes_workers) {
-			return { allowed: false, error: "node_cap_exceeded" };
+		// 0. Выбираем пул: 'api' (default) или 'webhook' (9090-9189).
+		//    Webhook-узлы учитываются в active_webhooks (изолированы
+		//    от cap-а active_nodes+active_workers, чтобы webhook'и
+		//    не съедали квоту orchestrator'ов).
+		const poolName = opts.pool ?? "api";
+		const isWebhook = poolName === "webhook";
+		const pool = isWebhook ? reg.webhook_pool : reg.api_pool;
+
+		// 1. Atomic cap check (только api pool — webhooks имеют свой счётчик).
+		if (!isWebhook) {
+			const totalActive = reg.current_state.active_nodes + reg.current_state.active_workers;
+			if (totalActive >= reg.global_caps.max_nodes_workers) {
+				return { allowed: false, error: "node_cap_exceeded" };
+			}
 		}
 
-		// 2. Ищем первый свободный порт в api_pool.
-		const taken = new Set<number>(Object.values(reg.api_pool.allocated));
+		// 2. Ищем первый свободный порт в выбранном пуле.
+		const taken = new Set<number>(Object.values(pool.allocated));
 		let allocatedPort: number | null = null;
-		for (let port = reg.api_pool.range.start; port <= reg.api_pool.range.end; port++) {
+		for (let port = pool.range.start; port <= pool.range.end; port++) {
 			if (!taken.has(port)) {
 				allocatedPort = port;
 				break;
@@ -359,9 +371,12 @@ export class PortRegistry {
 			return { allowed: false, error: "port_range_exhausted" };
 		}
 
-		// 3. Фиксируем выделение и инкрементируем счётчик.
-		reg.api_pool.allocated[opts.nodeId] = allocatedPort;
-		if (opts.role === "worker") {
+		// 3. Фиксируем выделение и инкрементируем нужный счётчик.
+		pool.allocated[opts.nodeId] = allocatedPort;
+		if (isWebhook) {
+			// Webhook pool инкрементит active_webhooks (изолированно от api cap).
+			reg.current_state.active_webhooks++;
+		} else if (opts.role === "worker") {
 			reg.current_state.active_workers++;
 		} else {
 			reg.current_state.active_nodes++;
