@@ -1,6 +1,6 @@
 {
 	"name": "@fan/api-gateway",
-	"version": "1.5.1",
+	"version": "1.5.2",
 	"description": "FAN API Gateway — HTTP/WebSocket server for client connections",
 	"type": "module",
 	"main": "./dist/index.js",

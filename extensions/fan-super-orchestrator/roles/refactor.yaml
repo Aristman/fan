@@ -1,0 +1,11 @@
+id: refactor
+name: Refactoring Specialist
+description: Refactoring specialist role — рефакторинг без изменения поведения, debt cleanup
+allowed_depths: [2, 3]
+default_tools:
+  - code_research
+  - bash
+  - edit
+  - write
+  - delegate_task
+verification_approach: strict

@@ -16,7 +16,16 @@ export default defineConfig({
 		},
 	},
 	test: {
-		include: ["src/**/*.test.ts"],
+		// F-0 refactor verification tests live alongside the package's bun
+		// smoke tests in `test/` (originally only bun:test). They're vitest
+		// unit tests today (no spawn, no external services) and run via the
+		// explicit invocation `npx vitest run test/server-bootstrap.test.ts`.
+		include: ["src/**/*.test.ts", "test/**/*.test.ts"],
+		// `test/transport-smoke.test.ts` uses `bun:test` imports and is run
+		// exclusively via `bun test` (Phase 6 harness). Exclude it from vitest
+		// so the imported-file heuristic does not attempt to resolve
+		// `bun:test` from the vitest runtime.
+		exclude: ["**/transport-smoke.test.ts"],
 		globals: true,
 		testTimeout: 10_000,
 	},

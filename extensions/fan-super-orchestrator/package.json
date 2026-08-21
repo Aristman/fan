@@ -1,6 +1,6 @@
 {
 	"name": "fan-super-orchestrator",
-	"version": "0.3.2",
+	"version": "0.4.0",
 	"description": "Сверх-оркестратор FAN: HTTP-иерархия узлов fan server (порождение, аутентификация, бюджет, журнал дерева)",
 	"type": "module",
 	"private": true,

@@ -17,12 +17,42 @@ export interface WorkPackageContext {
 	constraints?: string[];
 }
 
-/** Пакет работ протокола L0 → L1. */
+/** Запись lineage (узел в иерархии от coordinator до родителя).
+ *  Pass-through для расширенного SpawnWorkPackage (фаза F-D):
+ *  в build-work-package.ts есть собственный LineageEntry, но work-package.ts
+ *  остаётся canonical для типа WorkPackage — pass-through тип определён здесь. */
+export interface LineageEntry {
+	correlationId: string;
+	url: string;
+	token: string;
+	role: "coordinator" | "super-orchestrator" | "orchestrator";
+	profile?: string;
+}
+
+/** Пакет работ протокола L0 → L1.
+ *  Поля после `depth` (role, role_profile, parent_*, lineage) — pass-through
+ *  для расширенного SpawnWorkPackage из build-work-package.ts. Они optional:
+ *  legacy depth-1 пакеты (createWorkPackage) их не используют; depth>0 пакеты
+ *  (buildWorkPackage) несут все поля. parseWorkPackage пробрасывает их как есть. */
 export interface WorkPackage {
 	task: string;
 	/** Формат: <mission-id>/L<N>/node-<M>. */
 	correlationId: string;
 	depth: number;
+	/** NEW (F-D): роль нового узла (super-orchestrator | orchestrator). */
+	role?: "super-orchestrator" | "orchestrator";
+	/** NEW (F-D): профиль роли. */
+	role_profile?: string;
+	/** NEW (F-D): correlation id родителя (для обратной связи через ReportChannel). */
+	parent_correlation_id?: string;
+	/** NEW (F-D): URL родителя (для отправки финального отчёта). */
+	parent_url?: string;
+	/** NEW (F-D): токен родителя (для аутентификации отчёта). */
+	parent_token?: string;
+	/** NEW (F-D): idempotency key (по нему родитель ждёт отчёт). */
+	parent_report_id?: string;
+	/** NEW (F-D): полная lineage от coordinator до parent. */
+	lineage?: LineageEntry[];
 	/** Дефолт 0. */
 	spawnBudget: number;
 	tokenBudget: number;
@@ -272,6 +302,31 @@ export function parseWorkPackage(message: string): WorkPackage | null {
 	}
 	if (data.context !== undefined) {
 		result.context = data.context as WorkPackageContext;
+	}
+	// Pass-through расширенных полей (F-D): role / role_profile / parent_* / lineage.
+	// Эти поля optional — legacy depth-1 пакеты их не несут; depth>0 пакеты
+	// (созданные через buildWorkPackage) несут все. parseWorkPackage не теряет ничего,
+	// что прислал дочерний узел, и не задаёт default'ов.
+	if (data.role !== undefined) {
+		result.role = data.role as "super-orchestrator" | "orchestrator";
+	}
+	if (data.role_profile !== undefined) {
+		result.role_profile = data.role_profile as string;
+	}
+	if (data.parent_correlation_id !== undefined) {
+		result.parent_correlation_id = data.parent_correlation_id as string;
+	}
+	if (data.parent_url !== undefined) {
+		result.parent_url = data.parent_url as string;
+	}
+	if (data.parent_token !== undefined) {
+		result.parent_token = data.parent_token as string;
+	}
+	if (data.parent_report_id !== undefined) {
+		result.parent_report_id = data.parent_report_id as string;
+	}
+	if (data.lineage !== undefined) {
+		result.lineage = data.lineage as LineageEntry[];
 	}
 	return result;
 }

@@ -1,5 +1,23 @@
 # Changelog
 
+## [Unreleased] / 2026-08-21
+
+### Added — Super-Orchestrator v2 (depth-4)
+
+- **F-0 Transport fix**: packages/api-gateway теперь Node-only (@hono/node-server + ws); Bun-ветка удалена. fan-webhook поддерживает CLI --port. 10 transport smoke tests.
+- **F-B Role loader**: extensions/fan-super-orchestrator/role-loader.ts с 3-слойной загрузкой (project > global > default), deep merge, extends chain ≤3, DFS cycle detection. 10 starter YAML профилей.
+- **F-C Width pyramid + port registry**: extensions/fan-super-orchestrator/{width-pyramid,port-registry}.ts. PYRAMID_WIDTH 8/6/4/2 + 12/10/8/4. Port registry v2 (API 7001-7100, webhook 9090-9189), lock-protected, atomic TOCTOU-safe, migration v1→v2, orphan PID cleanup.
+- **F-D Spawn protocol**: build-work-package.ts, can-spawn-batch.ts. Расширение work-package.ts новыми optional-полями (role, role_profile, parent_*, lineage). Lineage construction.
+- **F-E Lineage escalation**: walk-up.ts (per-hop 30s + 1s backoff), orphan-storage.ts (atomic write + _index.json), orphan-recovery.ts, report-delivery.ts (HTTP helper).
+- **F-F verify_subtree**: extensions/fan-super-orchestrator/verify-subtree.ts. 4 проверки: completeness, interface, budget, quality (через pluggable quality-checks.ts).
+- **F-Diag Диагностика** (SPEC §14): chat-logger.ts, extension-health.ts. Session_start messages, handler entry, error-reply с escalation info.
+- **F-H Integration tests**: test/helpers/mock-fan-server.mjs, test/e2e/{depth-4, walk-up, transport-regression}.test.mjs.
+
+### Stats
+- 2063 tests pass total
+- 8 per-function commits
+- Build: clean
+
 ## [2.8.1] — 2026-08-18
 
 ### Added

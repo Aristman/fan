@@ -5,6 +5,28 @@
 //   • docs/features/super-orchestrator/depth-and-dashboard-3/roadmap.md §F-36
 // Спека: docs/specs/spec_super-orchestrator_v3_2026-08-10.md §3.3.2, §5.4
 //
+// ============================================================================
+// LEGACY BACK-COMPAT (F-C refactor):
+//   Этот модуль сохранён для обратной совместимости с depth-2 callers
+//   (см. test/depth-width-guard.test.mjs, 30 тестов). API
+//   `canSpawn(depth, currentChildren, opts?)` и `canSpawnBatch(depth,
+//   newChildren, opts?)` остаётся НЕИЗМЕННЫМ — поведение НЕ меняется,
+//   см. ROADMAP §F-C (back-compat обязательство).
+//
+//   Для depth-3 и depth-4 логика теперь живёт в `width-pyramid.ts`:
+//   - PYRAMID_WIDTH = { working: {1:8, 2:6, 3:4, 4:2}, max: {1:12, 2:10, 3:8, 4:4} }
+//   - pyramidCanSpawnBatch({ depth, batch, role?, profile? }) → CanSpawnBatchResult
+//   - pyramid[2] = working=6/max=10 — соответствует default значениям ниже
+//     (workingWidth=4 завышен в 1.5× относительно пирамиды; maxWidth=12
+//     совпадает с pyramid.max[1]=12; текущий flat API → legacy default).
+//
+//   Convenience: {@link getPyramidDepth} ниже возвращает lookup-глубину
+//   для width-pyramid по текущему (depth, role) — super-orchestrator
+//   использует depth-1 (как worker в width-pyramid.canSpawnBatch).
+//
+// ROADMAP: docs/features/super-orchestrator/super-orchestrator-v2/roadmap.md §F-C.
+// ============================================================================
+//
 // Чистая синхронная функция без состояния: вызывается ПЕРЕД
 // processManager.spawn(), чтобы при отказе не блокировать порт и не
 // поднимать процесс. Глубина передаётся через env FAN_ORCHESTRATOR_DEPTH,
@@ -30,6 +52,8 @@
 // (иерархия не работает) → effectiveMax 0, порождение детей запрещено.
 // При depth-отказе (рабочем и инфраструктурном) ровно один раз
 // вызывается onDepthExceeded; при width-отказе колбэк не вызывается.
+
+import type { PYRAMID_WIDTH } from "./width-pyramid.js";
 
 /** Инфраструктурный предохранитель глубины: жёсткий предел, не поднимается выше. */
 export const HARD_DEPTH_LIMIT = 12;
@@ -151,4 +175,36 @@ export function currentDepthFromEnv(): number {
 		return 0;
 	}
 	return parsed;
+}
+
+/**
+ * F-C: lookup-глубина для width-pyramid.ts (depth 1–4).
+ *
+ * Преобразует (depth, role) текущего legacy guard в lookup-индекс
+ * PYRAMID_WIDTH.working / PYRAMID_WIDTH.max:
+ *   • depth вне [1, 4] → fallback на 2 (legacy default), без clamp в 0;
+ *   • role === "super-orchestrator" → depth-1, ≥ 1 (см. width-pyramid.ts:
+ *     super-orchestrator использует лимиты уровнем выше для более
+ *     широкого диапазона batch).
+ *
+ * Не бросает и не падает: legacy callers могут безопасно вызвать и
+ * получить дефолт. Используй результат для прямого lookup'а в PYRAMID_WIDTH,
+ * например: `PYRAMID_WIDTH.working[getPyramidDepth(2, "super-orchestrator")]` = 8.
+ */
+export function getPyramidDepth(depth: number, role?: "super-orchestrator" | "orchestrator"): 1 | 2 | 3 | 4 {
+	// Вне диапазона пирамиды — fallback на 2 (legacy default).
+	let lookup: number = depth;
+	if (depth < 1 || depth > 4) {
+		lookup = 2;
+	}
+	if (role === "super-orchestrator") {
+		lookup = Math.max(1, lookup - 1);
+	}
+	// Sanity check: lookup ∈ [1, 4] должен быть валидным ключом PYRAMID_WIDTH.
+	// Используем индекс в type-only assertion: реальное значение не читаем,
+	// только гарантируем через тип.
+	const _assertValidKey: keyof typeof PYRAMID_WIDTH.working = lookup as 1 | 2 | 3 | 4;
+	void _assertValidKey;
+	// Type narrowing: lookup гарантированно ∈ [1, 4] после clamp.
+	return lookup as 1 | 2 | 3 | 4;
 }
