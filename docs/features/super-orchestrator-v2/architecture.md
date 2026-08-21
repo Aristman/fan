@@ -535,26 +535,26 @@ Orch d=3 (backend)
 
 | Phase | Название | Блокирует | Зависит от |
 |---|---|---|---|
-| A | SPEC (этот документ) | B, C, D | — |
+| **0** | **Transport fix (Bun server: WS + Hono compat) + transport smoke test** | **A, B, C, D, E, F, H** | — |
+| A | SPEC (этот документ) | B, C | 0 |
 | B | Role loader (YAML schema, layered, extends) | D | A |
-| C | Width pyramid 8/6/4/2 + max 12/10/8/4 | D | A |
-| D | Spawn protocol (role, role_profile, lineage, depth в work-package) | E, F | B, C |
-| E | Lineage escalation (walk-up + orphan-reports + recovery) | H | D |
+| C | Width pyramid 8/6/4/2 + max 12/10/8/4 + port registry init | D | A |
+| D | Spawn protocol (role, role_profile, lineage, depth + port allocation) | E, F | B, C |
+| E | Lineage escalation (walk-up + orphan-reports + fail-fast) | H | D |
 | F | verify_subtree tool | H | D |
-| G | Transport fix (Bun server: WS upgrade + Hono compat) | H (разблокирует Block-4) | — (можно параллельно) |
-| H | Integration test (depth-4 flow с mock children) | merge | E, F, G |
+| H | Integration test (depth-4 flow с mock children) | merge | E, F |
 
 **Зависимости:**
 
 ```
-A ──→ B ──→ D ──→ E ──→ H ──→ merge
-A ──→ C ──↗   └──→ F ──↗
-G ──────────────────↗
+0 ──→ A ──→ B ──→ D ──→ E ──→ H ──→ merge
+        └──→ C ──↗   └──→ F ──↗
 ```
 
-Phase G (transport fix) не зависит от SPEC и может выполняться параллельно.
+Phase 0 (transport fix) — pre-requisite для всех остальных фаз.
 Бэклог #39 (b): Bun health-check отдаёт fallback-страницу вместо JSON —
 транспортный баг, блокирует Block-4 (EPIC delegation e2e).
+Без зелёного transport smoke test (§13.3) Phase B-H не стартуют.
 
 ---
 
@@ -566,6 +566,10 @@ Phase G (transport fix) не зависит от SPEC и может выполн
 - **Динамическое расширение каталога** через FAN Store (после стабилизации v2).
 - **Динамическая балансировка ширины** по фактическому потреблению (сейчас статическая пирамида).
 - **Hot-reload каталога ролей** без перезапуска супер-оркестратора.
+- **Migration существующих миссий** при включении port registry — однократный скан активных fan.exe + запись их PID/портов в реестр. Без миграции — port conflicts при первом depth-4 спавне в существующих миссиях.
+- **Cross-process port visibility** — реестр один на пользователя, но несколько fan.exe процессов одновременно. Нужен file-locking (flock) или SQLite-based registry вместо JSON-файла для concurrent safety.
+- **Port range exhaustion** — если миссия исчерпала свой range (depth-4 × 8 = больше 100) — нужен overflow в следующий range (расширяемый pool).
+- **Webhook port isolation** — webhook трафик может быть sensitive (Telegram tokens); проверять что webhook range не пересекается с API range при allocation.
 
 ---
 
@@ -584,3 +588,220 @@ Phase G (transport fix) не зависит от SPEC и может выполн
 | **Work package** | Пакет заданий: task, лимиты, lineage, depth, role. |
 | **Walk-up** | Протокол эскалации отчёта вверх по lineage при недоступности parent. |
 | **Pyramid width** | Убывающая ширина на каждом уровне: 8/6/4/2 (working), 12/10/8/4 (max). |
+| **Port registry** | Глобальный файл `~/.fan/agent/port-registry.json` с выделенными диапазонами и занятыми портами. |
+| **Mission port range** | Диапазон портов (API + webhook), выделенный миссии при init. |
+| **Orphan PID** | PID процесса, оставшийся в реестре после crash без cleanup. |
+| **Transport smoke test** | E2E-проверка HTTP/WS под Bun-binary, gate для Phase 0. |
+
+---
+
+## 12. Распределение портов
+
+### 12.1 Проблема
+
+- API: пул 7001-7099 (99 портов, глобально на ВСЕ миссии).
+- Webhook: скан 9090-9110 (20 портов, глобально).
+- При depth-4 (десятки одновременных процессов на миссию, несколько миссий параллельно) — упираемся в порты.
+- При перезапуске процессов — порт может быть ещё занят предыдущим инстансом (orphan PID).
+
+### 12.2 Стратегия: per-mission ranges + глобальный реестр
+
+| Ресурс | Стратегия | Диапазон |
+|---|---|---|
+| API порт | Per-mission range из глобального пула | 7001-19999 (~128 миссий × 100 портов) |
+| Webhook порт | Per-mission range из глобального пула | 9090-11999 (~128 миссий × 20 портов) |
+| OS PID | OS-назначение, реестр для dedup | — |
+| Health endpoint | = API port (`/api/health`) | — |
+
+### 12.3 Глобальный реестр
+
+Файл: `~/.fan/agent/port-registry.json`.
+
+```json
+{
+  "version": 1,
+  "api_pools": {
+    "mission-uuid-1": { "start": 7001, "end": 7099, "allocated": [7001, 7002] },
+    "mission-uuid-2": { "start": 7101, "end": 7199, "allocated": [7101] }
+  },
+  "webhook_pools": {
+    "mission-uuid-1": { "start": 9090, "end": 9109, "allocated": [9090] },
+    "mission-uuid-2": { "start": 9190, "end": 9209, "allocated": [] }
+  },
+  "orphan_pids": [12345, 67890]
+}
+```
+
+Атомарная запись (write to `.tmp`, rename).
+
+### 12.4 Lifecycle
+
+| Событие | Действие |
+|---|---|
+| `mission init` | Выделить range из глобального пула, записать в реестр |
+| `fan server --port N` спавн | PortPool проверяет реестр, помечает порт занятым |
+| `fan server` clean shutdown (SIGTERM) | Cleanup handler снимает порт с регистрации |
+| `fan server` SIGKILL / orphan | На следующем старте — сканирование `orphan_pids`, проверка `kill -0`, освобождение мёртвых |
+| `mission end` (завершение / archive) | Освободить range в реестре (пометить available для следующей миссии) |
+
+### 12.5 Per-process pool
+
+Существующий PortPool в `extensions/fan-super-orchestrator/port-pool.ts` расширяется:
+
+- `portRangeStart`/`portRangeEnd` уже есть, default 7001/7099.
+- В depth-4 конфигурации передаётся диапазон миссии (например 7101-7199).
+- Внутри миссии — линейный поиск свободного порта в её диапазоне.
+
+### 12.6 Webhook port (fan-webhook)
+
+Текущее: `start: 9090` (хотя сканирует 9090-9110). Заменить:
+
+- Принимать `port` из PortPool (mission webhook range).
+- Если не задан → запросить у реестра следующий свободный в mission webhook range.
+- Логировать фактический занятый порт (для диагностики).
+
+### 12.7 Что меняется в фазах
+
+| Фаза | Изменение |
+|---|---|
+| B (role loader) | Без изменений |
+| C (width pyramid) | + port registry init в mission init |
+| D (spawn protocol) | При спавне — port allocation через реестр (не рандом) |
+| G (transport) | + webhook port fix |
+
+---
+
+## 13. Транспортный слой (pre-requisite)
+
+### 13.1 Проблема (Block-4 из backlog #39)
+
+Текущая Bun-ветка `packages/api-gateway/src/http-server.ts:475-485`:
+
+```ts
+const server = bunGlobal.serve({ port, hostname: host, fetch: app.fetch });
+```
+
+Сломано на скомпилированном бинаре:
+
+- WS-обработчик не прикрепляется (он только в Node-ветке через `ws` package).
+- Hono-ответы несовместимы с этим Bun (`/api/health` отдаёт 200 с fallback-страницей «Welcome to Bun!»).
+
+Итог: дочерний узел по WebSocket недостижим. Depth-2+ делегирование невозможно на production-бинаре.
+
+### 13.2 Решение (Phase G → Phase 0)
+
+**Вариант A (рекомендуемый):** убрать Bun-ветку, всегда использовать `@hono/node-server` + `ws`. Bun поддерживает `node:http`; `ws` package работает под Bun.
+
+Изменения в `packages/api-gateway/src/http-server.ts`:
+
+- Удалить `if (hasBun)` ветку.
+- Всегда использовать `serve({fetch: app.fetch, port, hostname: host})` из `@hono/node-server`.
+- Под Bun (fan.exe) и под Node (dev) — один путь.
+
+**Проверки:**
+
+- `ws` и `@hono/node-server` зашиты в бинарь при `bun build --compile` (динамический import).
+- Smoke test под Bun-binary (см. §13.3).
+
+### 13.3 Transport smoke test (Phase 0 gate)
+
+Без зелёного smoke — Phase 0 не закрыта, Phase A-H не стартуют.
+
+```ts
+test("depth-4 transport smoke (Bun binary)", async () => {
+  const parent = await spawnFanServer({ port: 7001 });
+  await waitForReady(parent, 30_000);
+
+  // HTTP endpoint returns real JSON, not Bun fallback
+  const health = await fetch("http://127.0.0.1:7001/api/health");
+  const body = await health.json();
+  assert(body.status === "ok");
+  assert(health.headers.get("content-type")?.includes("application/json"));
+
+  // WS upgrade works
+  const ws = new WebSocket("ws://127.0.0.1:7001/api/ws");
+  await once(ws, "open");
+  ws.close();
+
+  await parent.kill();
+});
+```
+
+Прогон под `bun` runtime (не только Node). Проверяет реальный бинарь fan.exe.
+
+### 13.4 Webhook port fix
+
+В `extensions/fan-webhook/index.ts`:
+
+- Убрать hardcoded `9090`.
+- Принимать `port` из opts или реестра.
+- Default scan 9090-9110 → расширить до mission webhook range.
+
+---
+
+## 14. Диагностика (обязательное требование)
+
+### 14.1 Видимые сообщения в чат
+
+Каждый узел при `session_start` шлёт в чат:
+
+```
+[<correlation_id>] <role>:<role_profile> initialized, depth=N, lineage_len=M
+```
+
+При входе в handler (mission_delegate):
+
+```
+[handler:<correlation_id>] received packages=3, role_profile=backend
+```
+
+При error-reply:
+
+```
+[<correlation_id>] delegation failed: <error message>
+attempted escalation to grandparent=<correlation_id>
+```
+
+### 14.2 Extension health-check
+
+На `session_start`:
+
+- Smoke-проверка критичных init-функций (initCircuit для super-orch).
+- Если упало → видимая ошибка в чат + halt с actionable message («super-orchestrator не загрузился — проверьте ~/.fan/agent/extensions/fan-super-orchestrator/»).
+
+### 14.3 Логи в debug-консоль
+
+При каждом входе в handler:
+
+```ts
+console.error(`[fan-super-orchestrator] delegate handler entered: corr=${id}, packages=${n}`);
+```
+
+При каждой ошибке:
+
+```ts
+console.error(`[fan-super-orchestrator] error in handler:`, err);
+```
+
+---
+
+## 15. Fail-fast
+
+### 15.1 Per-hop timeout
+
+- Timeout на parent hop: 30 сек.
+- На каждом fail hop — backoff 1 сек, переход к следующему предку.
+- НЕ ждать 30 мин на parent перед эскалацией.
+
+### 15.2 Mission-loop timeout (fan-mission)
+
+- Если tick застрял на `await delegation reply` > 2 минут → запись в STATE.md blockers + видимое предупреждение в чат.
+- 2 минуты — настраиваемый параметр `DELEGATION_FAIL_FAST_MS`.
+
+### 15.3 Максимальное время на цепочку
+
+- Per-hop 30 сек × max hops (depth+1 ≤ 5) = 150 сек ≈ 2.5 мин.
+- С backoff (1 сек × 4 hops = 4 сек) ≈ 2.5 мин суммарно.
+- Если все hops exhausted — orphan-report + chat warning.
+
+**Сравнение с текущим:** текущая схема даёт до 30 мин × N hops (1.5-2 часа на depth-4). Новая — 2.5 мин + orphan-report.
