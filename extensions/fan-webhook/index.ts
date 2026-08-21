@@ -14,8 +14,9 @@
 //
 // Авто-подбор порта:
 //   opts.port задан → передаётся в startWebhookServer как ctx.port (число).
+//   CLI --port <n> (или --port=<n>) задан → Number(arg) передаётся как ctx.port.
 //   env FAN_WEBHOOK_PORT задан → Number(env) передаётся как ctx.port.
-//   Ни opts, ни env → ctx.port = undefined → авто-подбор (скан 9090–9110).
+//   Ничего не задано → ctx.port = undefined → авто-подбор (скан 9090–9110).
 
 import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
 
@@ -23,8 +24,40 @@ import type { WebhookServerHandle } from "./types.js";
 import { startWebhookServer } from "./webhook-server.js";
 
 export interface WebhookWireOptions {
-	/** Порт для bind. Число → явный порт (EADDRINUSE → reject). Не задан → авто-подбор (скан 9090–9110). */
+	/** Порт для bind. Число → явный порт (EADDRINUSE → reject). Не задан → CLI --port / env / авто-подбор. */
 	port?: number;
+}
+
+/** Валидный TCP-порт: конечное целое 0–65535. */
+function isValidPort(value: number | undefined): value is number {
+	return value !== undefined && Number.isFinite(value) && value >= 0 && value <= 65535;
+}
+
+/**
+ * F-0: читает порт из CLI-аргументов процесса (`--port 9095` или `--port=9095`).
+ * Невалидное/отсутствующее значение → undefined (fallback на env/авто-подбор).
+ */
+function readCliPort(argv: string[] = process.argv): number | undefined {
+	for (let i = 0; i < argv.length; i++) {
+		const arg = argv[i];
+		let raw: string | undefined;
+		if (arg === "--port") {
+			raw = argv[i + 1];
+		} else if (arg?.startsWith("--port=")) {
+			raw = arg.slice("--port=".length);
+		} else {
+			continue;
+		}
+		if (raw === undefined || raw === "") {
+			continue;
+		}
+		const parsed = Number(raw);
+		if (isValidPort(parsed)) {
+			return parsed;
+		}
+		console.warn(`[fan-webhook] invalid --port "${raw}", ignoring`);
+	}
+	return undefined;
 }
 
 export interface WebhookWiring {
@@ -41,11 +74,13 @@ export function wireWebhook(fan: ExtensionAPI, opts?: WebhookWireOptions): Webho
 	// Валидация env: не-число / NaN / вне диапазона 0–65535 → fallback на авто-скан.
 	const envPortRaw = process.env.FAN_WEBHOOK_PORT;
 	const envPort = envPortRaw !== undefined && envPortRaw !== "" ? Number(envPortRaw) : undefined;
-	const envPortValid = envPort !== undefined && Number.isFinite(envPort) && envPort >= 0 && envPort <= 65535;
+	const envPortValid = isValidPort(envPort);
 	if (envPortRaw && !envPortValid) {
 		console.warn(`[fan-webhook] invalid FAN_WEBHOOK_PORT "${envPortRaw}", falling back to auto-scan`);
 	}
-	const explicitPort = opts?.port ?? (envPortValid ? envPort : undefined);
+	// Приоритет: opts.port → CLI --port → env FAN_WEBHOOK_PORT → авто-подбор.
+	const cliPort = readCliPort();
+	const explicitPort = opts?.port ?? cliPort ?? (envPortValid ? envPort : undefined);
 
 	const start = async (): Promise<WebhookServerHandle | null> => {
 		if (handle) {

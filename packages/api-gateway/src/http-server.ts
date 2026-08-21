@@ -4,8 +4,12 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
-import { generateToken as createToken, isAuthDisabled, listTokens, revokeToken, tokenAuth } from "./auth.js";
+import { generateToken as createToken, listTokens, revokeToken, tokenAuth } from "./auth.js";
 import { getMissionBudget, getMissionStatus, getMissionTree, isValidMissionSlug } from "./mission-api.js";
+// Re-export startServer from extracted bootstrap module (F-0). Keeps the
+// existing public surface stable for callers importing from "@fan/api-gateway"
+// or "./http-server.js".
+export { startServer } from "./server-bootstrap.js";
 import type {
 	AnalyticsReportMeta,
 	ApiError,
@@ -34,7 +38,7 @@ import type {
 	UpdateModelSettingsRequest,
 	UpdateModelSettingsResponse,
 } from "./types.js";
-import { attachWebSocketHandler } from "./ws-handler.js";
+// Note: `attachWebSocketHandler` was moved to ./server-bootstrap.ts (F-0).
 
 // Version is passed via ServerOptions to avoid __dirname resolution issues
 // in compiled Bun binaries where __dirname points inside the runtime.
@@ -455,78 +459,12 @@ async function createApp(
 }
 
 // ============================================================================
-// Start Server
+// Start Server — extracted to ./server-bootstrap.ts (F-0)
 // ============================================================================
-
-export async function startServer(
-	modelManager: ModelManager,
-	sessionAdapter: SessionAdapter,
-	options: ServerOptions = {},
-): Promise<{ port: number; stop: () => Promise<void> }> {
-	const { port = 3456, host = "localhost" } = options;
-	const app = await createApp(modelManager, sessionAdapter, options);
-
-	// Dynamic import to support both Bun and Node.js
-	let stop: () => Promise<void>;
-
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const hasBun = typeof (globalThis as any).Bun !== "undefined";
-
-	if (hasBun) {
-		// Bun native serve
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		const bunGlobal = (globalThis as any).Bun as any;
-		const server = bunGlobal.serve({
-			port,
-			hostname: host,
-			fetch: app.fetch,
-		});
-		stop = async () => server.stop();
-	} else {
-		// Node.js — use @hono/node-server for proper body handling + raw Server for WebSocket upgrade
-		const { serve } = await import("@hono/node-server");
-
-		// serve() returns the raw http.Server (ServerType) which we need for WebSocket upgrade
-		const httpServer = serve({ fetch: app.fetch, port, hostname: host });
-
-		// F-07 fix (Blocker A): Proxy budget tracker that delegates to the active session's
-		// ModelManager. The ws-handler handles rebinding via sessionAdapter.onSessionChange.
-		// This proxy provides the initial subscription target (the startup modelManager).
-		const budgetTrackerProxy: { onAlert: (h: import("@fan/model-manager").BudgetAlertHandler) => () => void } = {
-			onAlert: (h) => {
-				const activeMM = sessionAdapter.getActiveModelManager?.() ?? modelManager;
-				if (activeMM) {
-					return activeMM.onBudgetAlert(h);
-				}
-				return () => {};
-			},
-		};
-
-		// Attach WebSocket handler (requires 'ws' package)
-		const wsHandler = attachWebSocketHandler({
-			server: httpServer as any,
-			sessionAdapter,
-			budgetTracker: budgetTrackerProxy,
-		});
-
-		stop = async () => {
-			wsHandler.close();
-			return new Promise<void>((resolve) => {
-				httpServer.close(() => resolve());
-			});
-		};
-	}
-
-	console.log(`[api-gateway] Server running at http://${host}:${port}`);
-	console.log(`[api-gateway] Health: http://${host}:${port}/api/health`);
-	console.log(`[api-gateway] Docs: http://${host}:${port}/api/health`);
-	// Единая проверка с tokenAuth (./auth.ts): иначе warn срабатывает при
-	// FAN_NO_AUTH=0 (или любой truthy-строке), хотя auth фактически включён.
-	if (isAuthDisabled()) {
-		console.warn(`[api-gateway] ⚠️  Auth disabled (FAN_NO_AUTH=${process.env.FAN_NO_AUTH})`);
-	}
-
-	return { port, stop };
-}
+//
+// `startServer` previously lived here; it was lifted into `server-bootstrap.ts`
+// to separate transport-layer wiring (HTTP server + WS upgrade + stop semantics)
+// from the Hono route graph built by `createApp`. The public surface is
+// preserved via `export { startServer } from "./server-bootstrap.js";` above.
 
 export { createApp };
