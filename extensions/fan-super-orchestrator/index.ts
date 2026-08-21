@@ -49,6 +49,37 @@ import { type Dirent, existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
 
+// F-Diag (REFACTOR, depth-2): подключение chat-logger / extension-health ─────
+//
+// Статус на этой фазе: GREEN (модули chat-logger.ts и extension-health.ts
+// реализованы и покрыты 9 unit-тестами в test/diagnostics.test.mjs), но
+// WIRING в этот index.ts НЕ выполнен — нет подходящих точек замены.
+//
+// Что проверялось (audit 2026-08-21):
+//   1. session_start hook (ниже): нет console.log/error на happy path,
+//      только console.warn в catch для провала session_start hook.
+//   2. handleDelegate entry (ниже): нет console.log/error при входе;
+//      console.warn только в catch для ошибок emit/sub-handler.
+//   3. error reply: использует emitReply(replyEvent, {error: <msg>}) —
+//      event-bus, не console.error.
+//
+// Существующие console.* в файле — только console.warn в 4 catch-блоках
+// (reply emit fail, startup reconciliation fail, depth2 abort fail,
+// session_start hook fail). Это best-effort warning, не diagnostic
+// event в формате SPEC §14. Заменять их на sendSessionStartMessage /
+// logHandlerEntry / formatErrorReply — нарушение контракта (те
+// вызываются в success-path, а здесь — fail-path).
+//
+// TODO(F-Diag-INTEG): когда green существующей инфраструктуры вырастет
+// до явных console.log в session_start/handler entry/error reply —
+// подключить хелперы:
+//   - session_start → sendSessionStartMessage({ correlationId, role:
+//     "super-orchestrator", roleProfile, depth, lineageLen, chatEmitter });
+//   - handleDelegate → logHandlerEntry({ correlationId, packages,
+//     roleProfile, chatEmitter });
+//   - error reply → formatErrorReply({ correlationId, error,
+//     attemptedEscalationTo });
+// Контракт см. в chat-logger.ts / extension-health.ts.
 import { createChildNodeClient } from "./child-node-client.js";
 import { canSpawnBatch, currentDepthFromEnv, type DepthWidthGuardOptions } from "./depth-width-guard.js";
 import {
