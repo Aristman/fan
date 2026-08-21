@@ -18,7 +18,7 @@ workers (`delegate_task`), не порождает новых узлов дер�
 
 - **Coordinator** (d=0) — UI, состояние миссии, ROADMAP, планировщик. Единственный экземпляр.
 - **Super-Orchestrator** (d=1..4) — декомпозиция work-package, верификация поддерева.
-- **Orchestrator** (d=2..5) — разбиение пакета на задачи, спавн in-session workers. Sink в дереве.
+- **Orchestrator** (d=2..4) — разбиение пакета на задачи, спавн in-session workers. Sink в дереве.
 
 **Текущее состояние (depth-2):**
 
@@ -29,7 +29,7 @@ workers (`delegate_task`), не порождает новых узлов дер�
 
 **Цели depth-4:**
 
-1. Рекурсивная декомпозиция до 4 уровней Super-Orch ниже Coordinator.
+1. Рекурсивная декомпозиция до 3 уровней Super-Orch (d=1..d=3) + Orchestrator-sink на d=4. Max node depth = 4.
 2. Каталог ролей с наследованием и трёхслойным приоритетом (проектный > глобальный > дефолтный).
 3. Пирамида ширины 8/6/4/2 с абсолютными потолками 12/10/8/4.
 4. Lineage-эскалация с walk-up протоколом и orphan-report storage.
@@ -535,7 +535,7 @@ Orch d=3 (backend)
 | Phase | Название | Блокирует | Зависит от |
 |---|---|---|---|
 | **0** | **Transport fix (Bun server: WS + Hono compat) + transport smoke test** | **B, C, D, E, F, H** | — |
-| A | SPEC (этот документ) | B, C | 0 |
+| A | SPEC (этот документ) | B, C | — |
 | B | Role loader (YAML schema, layered, extends) | D | A |
 | C | Width pyramid 8/6/4/2 + max 12/10/8/4 + port registry init | D | A |
 | D | Spawn protocol (role, role_profile, lineage, depth + port allocation) | E, F | B, C |
@@ -546,8 +546,8 @@ Orch d=3 (backend)
 **Зависимости:**
 
 ```
-0 ──→ A ──→ B ──→ D ──→ E ──→ H ──→ merge
-        └──→ C ──↗   └──→ F ──↗
+0 ──→ B ──→ D ──→ E ──→ H ──→ merge
+    └──→ C ──↗   └──→ F ──↗
 ```
 
 Phase 0 (transport fix) — pre-requisite для всех остальных фаз.
@@ -613,15 +613,15 @@ Phase 0 (transport fix) — pre-requisite для всех остальных ф�
 | Ресурс | Стратегия | Диапазон |
 |---|---|---|
 | API порт | Глобальный пул, выделяется per-node | 7001-7100 (100 портов = max 100 узлов) |
-| Webhook порт | Глобальный пул, выделяется per-node | 9090-9190 (100 портов = max 100 webhook-узлов) |
+| Webhook порт | Глобальный пул, выделяется per-node | 9090-9189 (100 портов = max 100 webhook-узлов) |
 | OS PID | OS-назначение, реестр для dedup | — |
 | Health endpoint | = API port (`/api/health`) | — |
 | Глобальный лимит узлов | Не более 100 узлов+воркеров одновременно | — |
-| Глобальный резерв портов | 256 всего (API + webhook + резерв 56) | — |
+| Глобальный резерв портов | 256 всего (API + webhook + резерв 55) | — |
 
 Глобальный лимит 100 узлов обусловлен потреблением памяти: ~300 MB × 100 = 30 GB (худший случай). Реальное потребление зависит от нагрузки, но cap защищает от runaway spawn. Учитываются и узлы (fan server процессы), и in-session workers (subagent'ы) — общий счётчик.
 
-API range (7001-7100, 100 портов) и webhook range (9090-9190, 100 портов) НЕ пересекаются: 200 портов в пределах 256-budget (56 в резерве для будущих расширений).
+API range (7001-7100, 100 портов) и webhook range (9090-9189, 100 портов) НЕ пересекаются: 200 портов в пределах 256-budget (55 в резерве для будущих расширений).
 
 ### 12.3 Глобальный реестр
 
@@ -644,7 +644,7 @@ API range (7001-7100, 100 портов) и webhook range (9090-9190, 100 пор�
     "allocated": { "node-id-1": 7001, "node-id-2": 7002 }
   },
   "webhook_pool": {
-    "range": { "start": 9090, "end": 9190 },
+    "range": { "start": 9090, "end": 9189 },
     "allocated": { "node-id-1": 9090 }
   },
   "orphan_pids": [12345, 67890]
@@ -653,12 +653,14 @@ API range (7001-7100, 100 портов) и webhook range (9090-9190, 100 пор�
 
 Атомарная запись (write to `.tmp`, rename).
 
+**Migration v1 → v2:** при обнаружении `version < 2` на старте — orphan-PID cleanup, пересоздать реестр с дефолтной v2-схемой (пустые `current_state` и `allocated`). Существующие активные процессы продолжают работу (не миграция in-place).
+
 ### 12.4 Lifecycle
 
 | Событие | Действие |
 |---|---|
 | `mission init` | Записать mission_id в реестр (range не выделяется — глобальный пул общий) |
-| `spawn request` (от parent к spawner) | **Проверка cap:** `active_nodes + active_workers + 1 ≤ 100`? Если нет — refuse с error `node_cap_exceeded`. Проверка свободного API+webhook порта. Если ОК — выделить порты, инкремент `active_nodes`, spawn |
+| `spawn request` (от parent к spawner) | **Атомарная операция (под lock-protected access к реестру):** (1) проверка `active_nodes + active_workers + 1 ≤ 100`; (2) проверка свободного API+webhook порта; (3) выделение портов; (4) инкремент `active_nodes`. Если любой шаг fails — rollback (освободить уже занятое) + refuse с error `node_cap_exceeded` или `port_unavailable`. Без атомарности — TOCTOU race: два одновременных spawn-запроса могут обойти cap. |
 | `fan server --port N` clean shutdown (SIGTERM) | Cleanup handler: декремент `active_nodes`, освобождение API+webhook портов |
 | `fan server` SIGKILL / orphan | На следующем старте: сканирование `orphan_pids`, проверка `kill -0`, освобождение мёртвых PID и портов |
 | Worker (in-session) start/stop | Инкремент/декремент `active_workers` (не занимает порт, но учитывается в общем лимите) |
@@ -669,7 +671,7 @@ API range (7001-7100, 100 портов) и webhook range (9090-9190, 100 пор�
 Существующий PortPool в `extensions/fan-super-orchestrator/port-pool.ts` расширяется:
 
 - `portRangeStart`/`portRangeEnd` уже есть, default 7001/7099.
-- В depth-4 конфигурации используется глобальный диапазон 7001-7100 (API) и 9090-9190 (webhook).
+- В depth-4 конфигурации используется глобальный диапазон 7001-7100 (API) и 9090-9189 (webhook).
 - PortPool запрашивает порт у глобального реестра через lock-protected read/write (file-locking через `proper-lockfile` или SQLite-based registry — см. §10).
 - Внутри процесса — линейный поиск свободного порта в выделенном диапазоне (после получения от реестра).
 
@@ -688,7 +690,7 @@ API range (7001-7100, 100 портов) и webhook range (9090-9190, 100 пор�
 | B (role loader) | Без изменений |
 | C (width pyramid) | + port registry init в mission init |
 | D (spawn protocol) | При спавне — port allocation через реестр (не рандом) |
-| 0 (transport) | + webhook port fix (учитывает новый webhook range 9090-9190) |
+| 0 (transport) | + webhook port fix (учитывает новый webhook range 9090-9189) |
 
 ---
 
