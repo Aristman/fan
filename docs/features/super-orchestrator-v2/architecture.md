@@ -45,7 +45,7 @@ workers (`delegate_task`), не порождает новых узлов дер�
 |---|---|---|---|
 | Coordinator | 0 | UI, mission state, ROADMAP, scheduler | Super-Orch (d=1) |
 | Super-Orchestrator | 1..4 | Декомпозирует work-package; верифицирует своё поддерево | Super-Orch (d+1) или Orch (d+1) |
-| Orchestrator | 2..5 | Разбивает пакет на задачи; спавнит in-session workers | in-session workers через `delegate_task` (без изменений) |
+| Orchestrator | 2..4 | Разбивает пакет на задачи; спавнит in-session workers | in-session workers через `delegate_task` (без изменений) |
 
 Workers — in-session subagent'ы, не узлы дерева. Depth не увеличивают.
 Порождаются через `delegate_task` (текущее поведение `fan-orchestrator`, обкатано на depth-2).
@@ -54,7 +54,8 @@ Workers — in-session subagent'ы, не узлы дерева. Depth не ув�
 
 - Coordinator — один, всегда d=0.
 - Depth limit: 4 уровня Super-Orch ниже Coordinator (d=1..d=4).
-- На d=4 Super-Orch спавнит ТОЛЬКО Orchestrator (d=5+ запрещён лимитом).
+- На d=3 Super-Orch спавнит ТОЛЬКО Orchestrator (d=4 = последний уровень, d>4 запрещён лимитом).
+- Super-Orch chain depth = 3 уровня (d=1, d=2, d=3). Глубже Super-Orch не бывает — на d=3 спавнит только Orch (sink).
 - Orchestrator — sink в дереве узлов. НЕ спавнит новые узлы.
 - Каждый Super-Orch верифицирует СВОЁ поддерево (§7).
 - `HARD_DEPTH_LIMIT = 12` (инфраструктурный предохранитель, `depth-width-guard.ts`) остаётся как аварийный стоп.
@@ -164,8 +165,7 @@ default_extensions: string[]   # id расширений по умолчанию
 
 - Наследник переопределяет любое поле.
 - Не указанные поля берутся из родителя (глубокий merge для вложенных объектов).
-- Цепочка `extends` ≤ 3 уровня.
-- Циклы детектируются при загрузке — конфигурационная ошибка, halt.
+- Цепочка `extends` ≤ 3 уровня. Циклы детектируются при загрузке: DFS с marking visited/current (стандартный алгоритм обнаружения циклов в ориентированном графе). Если найден цикл — конфиг-ошибка с понятным сообщением (путь цикла: A → B → A).
 
 ### 3.4 Стартовый каталог (10 профилей)
 
@@ -289,8 +289,7 @@ Child добавляет свой entry (формирует полный lineage
 4. child пишет orphan-report, завершается
 ```
 
-Per-hop timeout: 30 сек. Max hops = depth+1 (вся цепочка).
-После fail на каждом шаге — backoff 1 сек.
+Per-hop timeout: 30 сек. **Max hops = число предков в lineage = node depth.** Например, Orchestrator на d=4 имеет lineage [Coordinator d=0, Super-Orch d=1, Super-Orch d=2, Super-Orch d=3] — 4 предка → 4 hops. После fail на каждом шаге — backoff 1 сек.
 
 ### 6.4 Идемпотентность
 
@@ -535,7 +534,7 @@ Orch d=3 (backend)
 
 | Phase | Название | Блокирует | Зависит от |
 |---|---|---|---|
-| **0** | **Transport fix (Bun server: WS + Hono compat) + transport smoke test** | **A, B, C, D, E, F, H** | — |
+| **0** | **Transport fix (Bun server: WS + Hono compat) + transport smoke test** | **B, C, D, E, F, H** | — |
 | A | SPEC (этот документ) | B, C | 0 |
 | B | Role loader (YAML schema, layered, extends) | D | A |
 | C | Width pyramid 8/6/4/2 + max 12/10/8/4 + port registry init | D | A |
@@ -579,7 +578,9 @@ Phase 0 (transport fix) — pre-requisite для всех остальных ф�
 |---|---|
 | **Coordinator** | d=0, UI + планирование. Единственный экземпляр на миссию. |
 | **Super-Orchestrator** | Узел декомпозиции и делегирования. Depth 1..4. Верифицирует своё поддерево. |
-| **Orchestrator** | Sink-узел. Исполняет через in-session workers. Не спавнит узлы. |
+| **Orchestrator** | Sink-узел d=2..4. Исполняет через in-session workers. Не спавнит узлы. |
+| **Max node depth** | 4. Coordinator d=0, Super-Orch d=1..3, Orchestrator d=2..4. d>4 запрещён лимитом. |
+| **Super-Orch chain** | Максимум 3 уровня (d=1, d=2, d=3). На d=3 Super-Orch спавнит только Orch. |
 | **Worker** | In-session subagent (не узел дерева). Depth не увеличивает. |
 | **Lineage** | Цепочка предков с URL+token для эскалации. |
 | **Role profile** | Именованный профиль из каталога ролей (YAML). |
@@ -603,15 +604,24 @@ Phase 0 (transport fix) — pre-requisite для всех остальных ф�
 - Webhook: скан 9090-9110 (20 портов, глобально).
 - При depth-4 (десятки одновременных процессов на миссию, несколько миссий параллельно) — упираемся в порты.
 - При перезапуске процессов — порт может быть ещё занят предыдущим инстансом (orphan PID).
+- **Глобальное ограничение по памяти:** каждый экземпляр `fan` потребляет ~300 MB RAM. Без cap — неконтролируемое потребление.
+- **Глобальный лимит узлов:** не более **100 узлов + воркеров одновременно** (≈ 30 GB RAM при худшем случае).
+- **Глобальный резерв портов:** **256 портов всего** (API + webhook).
 
 ### 12.2 Стратегия: per-mission ranges + глобальный реестр
 
 | Ресурс | Стратегия | Диапазон |
 |---|---|---|
-| API порт | Per-mission range из глобального пула | 7001-19999 (~128 миссий × 100 портов) |
-| Webhook порт | Per-mission range из глобального пула | 9090-11999 (~128 миссий × 20 портов) |
+| API порт | Глобальный пул, выделяется per-node | 7001-7100 (100 портов = max 100 узлов) |
+| Webhook порт | Глобальный пул, выделяется per-node | 9090-9190 (100 портов = max 100 webhook-узлов) |
 | OS PID | OS-назначение, реестр для dedup | — |
 | Health endpoint | = API port (`/api/health`) | — |
+| Глобальный лимит узлов | Не более 100 узлов+воркеров одновременно | — |
+| Глобальный резерв портов | 256 всего (API + webhook + резерв 56) | — |
+
+Глобальный лимит 100 узлов обусловлен потреблением памяти: ~300 MB × 100 = 30 GB (худший случай). Реальное потребление зависит от нагрузки, но cap защищает от runaway spawn. Учитываются и узлы (fan server процессы), и in-session workers (subagent'ы) — общий счётчик.
+
+API range (7001-7100, 100 портов) и webhook range (9090-9190, 100 портов) НЕ пересекаются: 200 портов в пределах 256-budget (56 в резерве для будущих расширений).
 
 ### 12.3 Глобальный реестр
 
@@ -619,14 +629,23 @@ Phase 0 (transport fix) — pre-requisite для всех остальных ф�
 
 ```json
 {
-  "version": 1,
-  "api_pools": {
-    "mission-uuid-1": { "start": 7001, "end": 7099, "allocated": [7001, 7002] },
-    "mission-uuid-2": { "start": 7101, "end": 7199, "allocated": [7101] }
+  "version": 2,
+  "global_caps": {
+    "max_nodes_workers": 100,
+    "max_ports": 256
   },
-  "webhook_pools": {
-    "mission-uuid-1": { "start": 9090, "end": 9109, "allocated": [9090] },
-    "mission-uuid-2": { "start": 9190, "end": 9209, "allocated": [] }
+  "current_state": {
+    "active_nodes": 47,
+    "active_webhooks": 47,
+    "active_workers": 12
+  },
+  "api_pool": {
+    "range": { "start": 7001, "end": 7100 },
+    "allocated": { "node-id-1": 7001, "node-id-2": 7002 }
+  },
+  "webhook_pool": {
+    "range": { "start": 9090, "end": 9190 },
+    "allocated": { "node-id-1": 9090 }
   },
   "orphan_pids": [12345, 67890]
 }
@@ -638,19 +657,21 @@ Phase 0 (transport fix) — pre-requisite для всех остальных ф�
 
 | Событие | Действие |
 |---|---|
-| `mission init` | Выделить range из глобального пула, записать в реестр |
-| `fan server --port N` спавн | PortPool проверяет реестр, помечает порт занятым |
-| `fan server` clean shutdown (SIGTERM) | Cleanup handler снимает порт с регистрации |
-| `fan server` SIGKILL / orphan | На следующем старте — сканирование `orphan_pids`, проверка `kill -0`, освобождение мёртвых |
-| `mission end` (завершение / archive) | Освободить range в реестре (пометить available для следующей миссии) |
+| `mission init` | Записать mission_id в реестр (range не выделяется — глобальный пул общий) |
+| `spawn request` (от parent к spawner) | **Проверка cap:** `active_nodes + active_workers + 1 ≤ 100`? Если нет — refuse с error `node_cap_exceeded`. Проверка свободного API+webhook порта. Если ОК — выделить порты, инкремент `active_nodes`, spawn |
+| `fan server --port N` clean shutdown (SIGTERM) | Cleanup handler: декремент `active_nodes`, освобождение API+webhook портов |
+| `fan server` SIGKILL / orphan | На следующем старте: сканирование `orphan_pids`, проверка `kill -0`, освобождение мёртвых PID и портов |
+| Worker (in-session) start/stop | Инкремент/декремент `active_workers` (не занимает порт, но учитывается в общем лимите) |
+| `mission end` (завершение / archive) | Декремент `active_nodes` для всех узлов миссии, освобождение портов |
 
 ### 12.5 Per-process pool
 
 Существующий PortPool в `extensions/fan-super-orchestrator/port-pool.ts` расширяется:
 
 - `portRangeStart`/`portRangeEnd` уже есть, default 7001/7099.
-- В depth-4 конфигурации передаётся диапазон миссии (например 7101-7199).
-- Внутри миссии — линейный поиск свободного порта в её диапазоне.
+- В depth-4 конфигурации используется глобальный диапазон 7001-7100 (API) и 9090-9190 (webhook).
+- PortPool запрашивает порт у глобального реестра через lock-protected read/write (file-locking через `proper-lockfile` или SQLite-based registry — см. §10).
+- Внутри процесса — линейный поиск свободного порта в выделенном диапазоне (после получения от реестра).
 
 ### 12.6 Webhook port (fan-webhook)
 
@@ -667,7 +688,7 @@ Phase 0 (transport fix) — pre-requisite для всех остальных ф�
 | B (role loader) | Без изменений |
 | C (width pyramid) | + port registry init в mission init |
 | D (spawn protocol) | При спавне — port allocation через реестр (не рандом) |
-| G (transport) | + webhook port fix |
+| 0 (transport) | + webhook port fix (учитывает новый webhook range 9090-9190) |
 
 ---
 
@@ -728,6 +749,16 @@ test("depth-4 transport smoke (Bun binary)", async () => {
 ```
 
 Прогон под `bun` runtime (не только Node). Проверяет реальный бинарь fan.exe.
+
+**Regression risk:** Phase 0 затрагивает `packages/api-gateway/src/http-server.ts` (удаление Bun-ветки). Этот же модуль используется dashboard (Phase 6). Transport smoke test (§13.3) должен включать проверку dashboard-сценариев:
+- `GET /api/health` возвращает JSON (не Bun fallback).
+- `GET /api/sessions` возвращает список (требует auth, проверить с токеном).
+- `GET /api/models` возвращает список моделей.
+- WebSocket upgrade работает для session streaming.
+
+Без зелёного dashboard-smoke — Phase 0 не считается закрытой.
+
+**Readiness-wait:** существующий `waitForReady?: WaitForReady` DI в `extensions/fan-super-orchestrator/depth2-integration.ts` — обязательный шаг после spawn. Contract: `GET /api/health` возвращает 200 с JSON body. Реализация polls каждые 500ms с per-try timeout 3s, общий таймаут 60s. Если реестр/health endpoint сломан (Bun-bug) — waitForReady таймаутится, ошибка логируется, breaker срабатывает после 2 failures.
 
 ### 13.4 Webhook port fix
 
@@ -800,8 +831,8 @@ console.error(`[fan-super-orchestrator] error in handler:`, err);
 
 ### 15.3 Максимальное время на цепочку
 
-- Per-hop 30 сек × max hops (depth+1 ≤ 5) = 150 сек ≈ 2.5 мин.
-- С backoff (1 сек × 4 hops = 4 сек) ≈ 2.5 мин суммарно.
+- Per-hop 30 сек × max hops (max 4 для Orch на d=4) = 120 сек.
+- С backoff (1 сек × 3 transitions = 3 сек) ≈ 123 сек ≈ 2 мин суммарно (vs старое 30 мин × N).
 - Если все hops exhausted — orphan-report + chat warning.
 
 **Сравнение с текущим:** текущая схема даёт до 30 мин × N hops (1.5-2 часа на depth-4). Новая — 2.5 мин + orphan-report.
