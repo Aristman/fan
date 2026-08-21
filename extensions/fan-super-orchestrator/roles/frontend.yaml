@@ -1,0 +1,10 @@
+id: frontend
+name: Frontend Engineer
+description: Frontend developer role — UI, клиентская логика, компоненты, стили
+allowed_depths: [2, 3, 4]
+default_tools:
+  - code_research
+  - bash
+  - edit
+  - write
+verification_approach: standard

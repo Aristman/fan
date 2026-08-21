@@ -1,0 +1,12 @@
+id: backend
+name: Backend Engineer
+description: Backend developer role — серверная логика, API, БД, инфраструктура
+allowed_depths: [2, 3, 4]
+default_tools:
+  - code_research
+  - bash
+  - edit
+  - write
+  - delegate_task
+verification_approach: standard
+verification_threshold: 0.5
