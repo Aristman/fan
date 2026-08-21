@@ -11,12 +11,12 @@
 
 | Метрика | Значение |
 |---------|----------|
-| Всего функций | 8 |
+| Реализовано (✅) | 8 |
 | Этапов | 8 |
-| P0 (критические) | 1 (transport fix — блокер всех) |
-| P1 (высокие) | 3 (role loader, width + ports, spawn protocol) |
-| P2 (средние) | 3 (lineage escalation, verify_subtree, диагностика) |
-| P3 (низкие) | 1 (integration test — gate для merge) |
+| P0 (критические) | 1 ✅ (transport fix — блокер всех) |
+| P1 (высокие) | 3 ✅ (role loader, width + ports, spawn protocol) |
+| P2 (средние) | 3 ✅ (lineage escalation, verify_subtree, диагностика) |
+| P3 (низкие) | 1 ✅ (integration test — gate для merge) |
 
 ## Легенда
 
@@ -47,7 +47,7 @@
 **E2E-сценарий этапа:** запуск `fan.exe --port 7001 --host 127.0.0.1` под Bun runtime. Проверка: `GET /api/health` → 200 + JSON `{status:"ok"}`; `new WebSocket("ws://127.0.0.1:7001/api/ws")` → open event; `GET /api/sessions` с FAN_TOKEN → 200; `fan-webhook --port 9095` стартует на 9095, а не на hardcoded 9090.
 **Smoke-критерий этапа:** `bun test packages/api-gateway/test/transport-smoke.test.ts` → 0 fail, runtime = bun.
 
-#### ☐ F-0: Transport fix (Bun → @hono/node-server + ws)
+#### ✅ F-0: Transport fix (Bun → @hono/node-server + ws)
 - **Приоритет:** P0
 - **Слой:** [INTEG]
 - **Описание:** Удалить Bun-ветку (`if (hasBun)` блок в `packages/api-gateway/src/http-server.ts:475-485`), всегда использовать `@hono/node-server` + `ws`. WS-обработчик должен работать в compiled binary (fan.exe). Дополнительно: webhook port fix (убрать hardcoded `9090` в `extensions/fan-webhook/index.ts`), transport smoke test под Bun, dashboard regression smoke (4 endpoint'а).
@@ -84,7 +84,7 @@
 **E2E-сценарий этапа:** инициализация `fan-super-orchestrator` с пустым project слоем, дефолтным каталогом (`extensions/fan-super-orchestrator/roles/`). Проверка: 10 профилей загружены, schema валидна, extends в дефолте не имеют циклов. Дополнительно: пользовательский проект создаёт override для `backend` (allowed_depths: [3]) — merge работает, `pm` остаётся дефолтным.
 **Smoke-критерий этапа:** `bun test extensions/fan-super-orchestrator/test/role-loader.test.ts` → 0 fail, 10 профилей загружены.
 
-#### ☐ F-B: Role loader (YAML schema, 3-слойный merge, extends + cycle detection)
+#### ✅ F-B: Role loader (YAML schema, 3-слойный merge, extends + cycle detection)
 - **Приоритет:** P1
 - **Слой:** [DATA]
 - **Описание:** Модуль `extensions/fan-super-orchestrator/role-loader.ts`. Сканирует 3 слоя (`<project_root>/roles/`, `~/.fan/agent/roles/`, `extensions/fan-super-orchestrator/roles/`), merge по `id` с приоритетом сверху-вниз, deep merge для вложенных полей. Resolves `extends` цепочки (≤3 уровня), cycle detection через DFS (visited/current marking). 10 стартовых YAML-файлов в дефолтном каталоге (pm, architect, research, backend, frontend, mobile, qa, refactor, docs, devops).
@@ -123,7 +123,7 @@
 **E2E-сценарий этапа:** init миссии → registry создан с `version: 2`, `global_caps.max_nodes_workers: 100`. Concurrent spawn двух Super-Orch (parallel test) — один ALLOWED, второй REFUSED с `node_cap_exceeded` (race-free). После SIGKILL mock-процесса — следующий init удаляет orphan PID и освобождает порт.
 **Smoke-критерий этапа:** `bun test extensions/fan-super-orchestrator/test/port-registry.test.ts` → 0 fail; `bun test extensions/fan-super-orchestrator/test/width-pyramid.test.ts` → 0 fail.
 
-#### ☐ F-C: Width pyramid + port registry (cap, lock, atomic, migration)
+#### ✅ F-C: Width pyramid + port registry (cap, lock, atomic, migration)
 - **Приоритет:** P1
 - **Слой:** [DATA]
 - **Описание:** Расширяет существующий `extensions/fan-super-orchestrator/depth-width-guard.ts:119` (содержит `canSpawnBatch(depth, newChildren, opts?)` с flat `workingWidth=4`/`maxWidth=12` defaults, используется в `index.ts:429`, покрыт 10+ тестами `test/depth-width-guard.test.mjs`). Стратегия: **делегировать** старый `canSpawnBatch` новой пирамиде — `width-pyramid.ts` экспортирует `PYRAMID_WIDTH = { working: {1:8, 2:6, 3:4, 4:2}, max: {1:12, 2:10, 3:8, 4:4} }`; `depth-width-guard.ts` модифицируется для per-depth lookup (читает из `width-pyramid.ts`). Back-compat: существующие depth-2 вызовы продолжают работать (defaults = pyramid[2]). Новый модуль `extensions/fan-super-orchestrator/port-registry.ts` (schema v2, lock-protected access, atomic cap check). Расширяет существующий `port-pool.ts` для работы с глобальным реестром. Schema v2: `global_caps`, `current_state` (active_nodes/workers/webhooks), `api_pool` (7001-7100), `webhook_pool` (9090-9189), `orphan_pids`. Cap: 100 nodes+workers одновременно. Lock: file-locking через `proper-lockfile` или SQLite-based registry.
@@ -160,7 +160,7 @@
 **E2E-сценарий этапа:** Coordinator (d=0) → spawn Super-Orch pm (d=1, profile=pm, allowed_depths=[1]). pm (d=1) → spawn Super-Orch architect (d=2, profile=architect, allowed_depths=[1,2]). architect (d=2) → spawn Orch backend (d=3, profile=backend, allowed_depths=[2,3,4]). На каждом уровне — child процесс реально стартует через process-manager на allocated API+webhook портах; lineage включает всех предков.
 **Smoke-критерий этапа:** `bun test extensions/fan-super-orchestrator/test/spawn-protocol.test.ts` → 0 fail; TC-FD-1.b (canSpawnBatch для Super-Orch at depth=4) returns REFUSED с `super_orch_at_max_depth`; TC-FD-2 (real spawn с port allocation) запускает mock child fan server, lineage корректный.
 
-#### ☐ F-D: Spawn protocol (extended work-package + port allocation + lineage)
+#### ✅ F-D: Spawn protocol (extended work-package + port allocation + lineage)
 - **Приоритет:** P1
 - **Слой:** [INTEG]
 - **Описание:** Расширяет существующий `extensions/fan-super-orchestrator/work-package.ts` (содержит `WorkPackage` interface: task, correlationId, depth, spawnBudget, tokenBudget, costBudgetUsd, maxRetries, toolManifest, deadline; `parseWorkPackage()` и `validateWorkPackageFields()`). Стратегия: **расширить** `WorkPackage` interface новыми optional-полями (`role?: "super-orchestrator" | "orchestrator"`, `role_profile?: string`, `parent_correlation_id?: string`, `parent_url?: string`, `parent_token?: string`, `parent_report_id?: string`, `lineage?: Array<{...}>`). `parseWorkPackage()` сохраняет новые поля при наличии. `validateWorkPackageFields()` валидирует новые поля ТОЛЬКО для depth>0 пакетов (depth-1 пакеты — без них, back-compat). Расширяет `extensions/fan-super-orchestrator/depth2-integration.ts`. Новый `spawnNode(workPackage)` flow с port allocation через registry → process-manager.spawn (с `waitForReady` из Phase 0) → journal spawn → WS send. Построение lineage — parent добавляет свой entry к существующему lineage.
@@ -200,7 +200,7 @@
 Альтернативный сценарий: ВСЕ предки недоступны → orphan-report записан в `<mission_dir>/orphan-reports/`. Coordinator session_start → recovery scan → попытка доставить → файл удалён.
 **Smoke-критерий этапа:** walk-up успешен с первого hop; orphan-report atomic write создаёт `.tmp` и renames; idempotency по `parent_report_id`.
 
-#### ☐ F-E: Lineage escalation (walk-up + orphan-reports + recovery)
+#### ✅ F-E: Lineage escalation (walk-up + orphan-reports + recovery)
 - **Приоритет:** P2
 - **Слой:** [INTEG]
 - **Описание:** Модули `extensions/fan-super-orchestrator/walk-up.ts` (per-hop 30s timeout, 1s backoff, idempotency cache), `orphan-storage.ts` (atomic write через `.tmp` + rename, `_index.json` параллельный). Recovery hook на `session_start` (любого узла миссии) + `mission_rejoin` (Coordinator) сканирует `<mission_dir>/orphan-reports/` и пытается доставить.
@@ -237,7 +237,7 @@
 **E2E-сценарий этапа:** Super-Orch (d=1, profile=pm) агрегирует отчёты от 2 детей (Orch d=2). Вызов `verify_subtree(reports)` → проверка: все 2 отчёта есть (completeness ✓), интерфейсы согласованы (оба ссылаются на `/api/notifications` — consistent ✓), бюджет не превышен (cost < budget ✓), quality per pm.verification_approach ✓. Возврат `VerificationResult{issues:[], summary:{verified:true, total:2}}`. Integration: verify_subtree вызывается ДО отправки отчёта Coordinator'у.
 **Smoke-критерий этапа:** verify_subtree на пустых reports → `issues:[{kind:"no_reports"}]`; на валидах → `issues:[]`.
 
-#### ☐ F-F: verify_subtree tool (completeness + interface + budget + quality)
+#### ✅ F-F: verify_subtree tool (completeness + interface + budget + quality)
 - **Приоритет:** P2
 - **Слой:** [BIZ]
 - **Описание:** Модуль `extensions/fan-super-orchestrator/verify-subtree.ts`. Tool `verify_subtree(reports: NodeReport[]): VerificationResult`. Реализует 4 проверки: completeness (все ожидаемые отчёты present), interface consistency (cross-references между отчётами), budget (суммарный cost ≤ costBudget), quality (per `role_profile.verification_approach` — pluggable модули). Super-Orch реагирует на issues: retry/re-plan/escalate. Mandatory invocation после агрегации, ДО report to parent.
@@ -276,7 +276,7 @@
 **E2E-сценарий этапа:** spawn Super-Orch (d=2, profile=backend) под Bun-binary. Проверка: в чат приходит сообщение `[<correlation_id>] super-orchestrator:backend initialized, depth=2, lineage_len=2` в течение 1 секунды после spawn. При handler entry (mission_delegate) — `[handler:<corr>] received packages=N, role_profile=backend`. При error (mock timeout) — `[<corr>] delegation failed: <error>, attempted escalation to grandparent=<corr>`. Extension health-check проходит (initCircuit OK). При F-0 transport broken — видимый halt с actionable message.
 **Smoke-критерий этапа:** `bun test extensions/fan-super-orchestrator/test/diagnostics.test.ts` → 0 fail; session_start chat message отправлен в течение 1s; extension health-check проходит.
 
-#### ☐ F-Diag: Диагностика (SPEC §14)
+#### ✅ F-Diag: Диагностика (SPEC §14)
 - **Приоритет:** P2
 - **Слой:** [INTEG]
 - **Описание:** Реализует обязательные требования §14. (a) Chat messages на session_start: `[<corr>] <role>:<role_profile> initialized, depth=N, lineage_len=M` через `console.log` + visible-to-user API. (b) Handler entry: `[handler:<corr>] received packages=N, role_profile=...`. (c) Error-reply: `[<corr>] delegation failed: <error>; attempted escalation to grandparent=<corr>`. (d) Extension health-check на session_start: smoke initCircuit, halt с actionable message при failure. (e) `console.error` debug-логи на каждом handler entry/error.
@@ -314,7 +314,7 @@
 Альтернативный: walk-up e2e — spawn d=3 child, kill d=2 parent во время report delivery, дождаться walk-up + orphan recovery.
 **Smoke-критерий этапа:** Mock depth-2 happy path (Coordinator → Super-Orch → Orch) завершается за < 30 сек с mock-children. + полный e2e depth-4 (< 5 мин) — основной gate. Команда: `bun test extensions/fan-super-orchestrator/test/e2e/depth-2-smoke.test.ts` (быстрый) + `bun test extensions/fan-super-orchestrator/test/e2e/depth-4.test.ts` (gate).
 
-#### ☐ F-H: Integration tests (depth-4 e2e + walk-up e2e + mock infra)
+#### ✅ F-H: Integration tests (depth-4 e2e + walk-up e2e + mock infra)
 - **Приоритет:** P3
 - **Слой:** [TEST]
 - **Описание:** Mock-children infrastructure (тестовый helper: spin up N mock fan servers с заданным поведением). E2E тесты под Bun runtime: (a) depth-4 happy path — use case C из §8; (b) walk-up + orphan-reports — use case E из §8; (c) width pyramid test — use case D из §8 (192 workers peak, проверка что нет deadlock). CI integration — запуск e2e перед merge.
@@ -346,20 +346,20 @@
 ## Полный чеклист по приоритетам
 
 ### P0 — Критические
-- [ ] F-0 [INTEG]: Transport fix (Bun → @hono/node-server + ws + smoke)
+- [x] F-0 [INTEG]: Transport fix (Bun → @hono/node-server + ws + smoke)
 
 ### P1 — Высокие
-- [ ] F-B [DATA]: Role loader (YAML schema, 3-слойный merge, extends + cycle detection)
-- [ ] F-C [DATA]: Width pyramid + port registry (cap, lock, atomic, migration)
-- [ ] F-D [INTEG]: Spawn protocol (extended work-package + port allocation + lineage)
+- [x] F-B [DATA]: Role loader (YAML schema, 3-слойный merge, extends + cycle detection)
+- [x] F-C [DATA]: Width pyramid + port registry (cap, lock, atomic, migration)
+- [x] F-D [INTEG]: Spawn protocol (extended work-package + port allocation + lineage)
 
 ### P2 — Средние
-- [ ] F-E [INTEG]: Lineage escalation (walk-up + orphan-reports + recovery)
-- [ ] F-F [BIZ]: verify_subtree tool (completeness + interface + budget + quality)
-- [ ] F-Diag [INTEG]: Диагностика (SPEC §14) (chat messages + health-check + console.error)
+- [x] F-E [INTEG]: Lineage escalation (walk-up + orphan-reports + recovery)
+- [x] F-F [BIZ]: verify_subtree tool (completeness + interface + budget + quality)
+- [x] F-Diag [INTEG]: Диагностика (SPEC §14) (chat messages + health-check + console.error)
 
 ### P3 — Низкие
-- [ ] F-H [TEST]: Integration tests (depth-4 e2e + walk-up e2e + mock infra)
+- [x] F-H [TEST]: Integration tests (depth-4 e2e + walk-up e2e + mock infra)
 
 ---
 
@@ -436,15 +436,15 @@ F-0 ──→ F-B ──→ F-D ──→ F-E ──→ F-Diag ──→ F-H ─
 
 | Phase SPEC | Feature roadmap | Приоритет | Статус |
 |---|---|---|---|
-| 0 | F-0 | P0 | ☐ |
+| 0 | F-0 | P0 | ✅ |
 | A | — | — | ✅ (SPEC написан, коммит `45c69b3`) |
-| B | F-B | P1 | ☐ |
-| C | F-C | P1 | ☐ |
-| D | F-D | P1 | ☐ |
-| E | F-E | P2 | ☐ |
-| F | F-F | P2 | ☐ |
-| H | F-H | P3 | ☐ |
-| I | F-Diag | P2 | ☐ |
+| B | F-B | P1 | ✅ |
+| C | F-C | P1 | ✅ |
+| D | F-D | P1 | ✅ |
+| E | F-E | P2 | ✅ |
+| F | F-F | P2 | ✅ |
+| H | F-H | P3 | ✅ |
+| I | F-Diag | P2 | ✅ |
 
 ---
 
