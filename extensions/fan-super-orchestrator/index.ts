@@ -523,8 +523,8 @@ export default function superOrchestratorExtension(
 
 		const unsubDelegate =
 			typeof api.events?.on === "function"
-				? api.events.on(DELEGATE_CHANNEL, (data) => {
-						void handleDelegate(data);
+				? api.events.on(DELEGATE_CHANNEL, async (data) => {
+						await handleDelegate(data);
 					})
 				: () => {}; // нет EventBus (mock) — подписка не создаётся
 
