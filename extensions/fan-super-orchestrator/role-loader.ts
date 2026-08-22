@@ -24,6 +24,7 @@
 
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { DEFAULT_ROLE_CONFIG, type RoleConfig } from "./role-config.js";
 import { readYamlFile } from "./yaml-loader.js";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -45,6 +46,23 @@ export interface RoleProfile {
 }
 
 export type RoleCatalog = Map<string, RoleProfile>;
+
+/**
+ * Effective-конфиг для {@link getEffectiveExtensions}: плоская форма, удобная
+ * для runtime-вызовов (без чтения YAML). Содержит три независимых среза:
+ *   - excluded: extensions, которые нужно удалить из role.default_extensions;
+ *   - roleType: тип узла ("worker" | "super-orchestrator") — определяет,
+ *               применять ли required-список;
+ *   - required: extensions, которые нужно добавить (dedup) для указанного roleType.
+ *
+ * Производная от {@link RoleConfig} (nested YAML-форма), но не 1:1 — это
+ * развязка между persisted config и runtime-options.
+ */
+export interface EffectiveExtensionsConfig {
+	excluded?: string[];
+	roleType?: "worker" | "super-orchestrator";
+	required?: string[];
+}
 
 /** Поля-массивы, которые объединяются (concat) при merge, а не заменяются. */
 const LIST_CONCAT_KEYS = new Set(["default_tools", "default_extensions", "escalation_triggers"]);
@@ -334,3 +352,50 @@ export function getRoleProfile(catalog: RoleCatalog, id: string): RoleProfile {
 	}
 	return catalog.get(id)!;
 }
+
+// ─── F-2: Effective extensions (exclusions + required) ──────────────────────
+
+/**
+ * Вычислить финальный список extensions для spawned узла.
+ *
+ * Алгоритм (см. spec_recursive-orchestrator-spawn §F-2):
+ *   1. Берём role.default_extensions (если undefined → []).
+ *   2. Удаляем все элементы, присутствующие в config.excluded
+ *      (или в DEFAULT_ROLE_CONFIG.spawn.excluded_extensions, если config.excluded не задан).
+ *   3. Если config.roleType === "super-orchestrator" — добавляем в конец
+ *      config.required (или DEFAULT_ROLE_CONFIG.role["super-orchestrator"].required_extensions)
+ *      с dedup (уже-присутствующие в результате не дублируются).
+ *
+ * Порядок: сначала exclusions (сохраняя порядок role.default_extensions),
+ * затем required (в порядке required-списка). Dedup сохраняет первое вхождение.
+ *
+ * @param role   - RoleProfile (после merge + extends resolve).
+ * @param config - effective-конфиг (excluded/roleType/required). Если undefined —
+ *                 функция возвращает role.default_extensions as-is (back-compat).
+ * @returns Финальный массив extensions без дубликатов.
+ */
+export function getEffectiveExtensions(role: RoleProfile, config?: EffectiveExtensionsConfig): string[] {
+	const base = Array.isArray(role.default_extensions) ? role.default_extensions : [];
+
+	// Excluded: из config или DEFAULT_ROLE_CONFIG.spawn.excluded_extensions.
+	const excludedList = config?.excluded ?? DEFAULT_ROLE_CONFIG.spawn.excluded_extensions;
+	const excludedSet = new Set(excludedList);
+	const filtered = base.filter((ext) => !excludedSet.has(ext));
+
+	// Required только для super-orchestrator roleType.
+	if (config?.roleType === "super-orchestrator") {
+		const requiredList = config.required ?? DEFAULT_ROLE_CONFIG.role["super-orchestrator"].required_extensions;
+		const seen = new Set(filtered);
+		for (const r of requiredList) {
+			if (!seen.has(r)) {
+				filtered.push(r);
+				seen.add(r);
+			}
+		}
+	}
+
+	return filtered;
+}
+
+// Re-export RoleConfig для удобства (consumers могут импортировать из role-loader.ts).
+export type { RoleConfig };
