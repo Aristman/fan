@@ -37,6 +37,16 @@ export interface SpawnOptions {
 	token?: string;
 	/** Имя узла (FAN_NODE_NAME); передаётся в seedNodeToken для уникальности в глобальной БД. */
 	nodeName?: string;
+	/** F-1: Роль узла (FAN_NODE_ROLE). Default — "worker" (env vars не добавляются).
+	 *  При role="super-orchestrator" дочерний узел опознаётся как SO
+	 *  и получает env для обратной связи с родителем. */
+	role?: "worker" | "super-orchestrator";
+	/** F-1: Профиль роли (FAN_NODE_ROLE_PROFILE); имеет смысл только при role=super-orchestrator. */
+	roleProfile?: string;
+	/** F-1: URL родительского fan server (FAN_PARENT_NODE_URL); для обратной связи SO. */
+	parentUrl?: string;
+	/** F-1: Bearer token родителя (FAN_PARENT_NODE_TOKEN); для обратной связи SO. */
+	parentToken?: string;
 }
 
 export interface SpawnResult {
@@ -218,6 +228,29 @@ export function createProcessManager(options: ProcessManagerOptions): ProcessMan
 		});
 	}
 
+	/** F-1: Сформировать role-aware env vars (FAN_NODE_ROLE и связанные).
+	 *  Возвращает Record с 4 env vars только при role=super-orchestrator;
+	 *  role=worker или undefined → {} (back-compat, ничего не добавляется).
+	 *  Optional поля (roleProfile/parentUrl/parentToken) включаются через
+	 *  `!== undefined` guards — отсутствующее поле НЕ попадает в env.
+	 *  Композируется с buildSpawnEnv через spread в extraEnv. */
+	function buildRoleEnv(opts: SpawnOptions): Record<string, string> {
+		if (opts.role !== "super-orchestrator") {
+			return {};
+		}
+		const env: Record<string, string> = { FAN_NODE_ROLE: "super-orchestrator" };
+		if (opts.roleProfile !== undefined) {
+			env.FAN_NODE_ROLE_PROFILE = opts.roleProfile;
+		}
+		if (opts.parentUrl !== undefined) {
+			env.FAN_PARENT_NODE_URL = opts.parentUrl;
+		}
+		if (opts.parentToken !== undefined) {
+			env.FAN_PARENT_NODE_TOKEN = opts.parentToken;
+		}
+		return env;
+	}
+
 	async function spawn(opts: SpawnOptions): Promise<SpawnResult> {
 		const existing = nodes.get(opts.id);
 		if (existing && existing.status !== "stopped") {
@@ -225,7 +258,14 @@ export function createProcessManager(options: ProcessManagerOptions): ProcessMan
 		}
 		const port = portPool.allocate(opts.id); // исчерпание пула → явная ошибка
 		const extraArgs = opts.args ?? [];
-		const extraEnv = opts.env ?? {};
+		const baseExtraEnv = opts.env ?? {};
+		// F-1: role-aware spawn. При role=super-orchestrator мерджим 4 env vars
+		// в extraEnv (FAN_NODE_ROLE, FAN_NODE_ROLE_PROFILE, FAN_PARENT_NODE_URL,
+		// FAN_PARENT_NODE_TOKEN). Worker / role не задан → ничего не добавляется.
+		// Мердж в extraEnv гарантирует, что restart() сохранит role env
+		// (restart читает node.extraEnv и передаёт его в launch()).
+		const roleEnv = buildRoleEnv(opts);
+		const extraEnv = { ...baseExtraEnv, ...roleEnv };
 		const child = launch(port, extraArgs, extraEnv, opts.token, opts.nodeName);
 		const node: ManagedNode = {
 			id: opts.id,
