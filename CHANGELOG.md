@@ -1,5 +1,36 @@
 # Changelog
 
+## [Unreleased] / 2026-08-22
+
+### Added — Recursive Orchestrator Spawn (depth-4 в реальных процессах)
+
+- **F-1 Role-aware spawn**: `extensions/fan-super-orchestrator/process-manager.ts` расширен `SpawnOptions.role`, `roleProfile`, `parentUrl`, `parentToken`. При `role=super-orchestrator` передаются env vars: `FAN_NODE_ROLE`, `FAN_NODE_ROLE_PROFILE`, `FAN_PARENT_NODE_URL`, `FAN_PARENT_NODE_TOKEN`. Worker path unchanged (back-compat). Helper `buildRoleEnv(opts)` для композиции с `buildSpawnEnv`.
+- **F-2 Role profile `default_extensions` + exclusions config**: `extensions/fan-super-orchestrator/role-config.ts` (NEW) с `RoleConfig` (nested YAML) + `DEFAULT_ROLE_CONFIG` (store_search, store_install excluded; delegate_task required для super-orchestrator) + `loadRoleConfig`. `getEffectiveExtensions(role, config)` в `role-loader.ts` с dedup через Set.
+- **F-3 HTTP delegation endpoint**: `packages/api-gateway/src/mission-delegate-schema.ts` (NEW) + `auth-mission-delegate.ts` (NEW). Endpoint `POST /api/mission-delegate` зарегистрирован ДО `tokenAuth` (как `/api/health`). Авторизация через `Authorization: Bearer <FAN_NODE_TOKEN>` (constant-time `timingSafeEqual`). Payload validation ДО event emission. EventEmitter singleton `apiEvents` для F-5 subscribers.
+- **F-4 Role-aware launchChild**: `extensions/fan-super-orchestrator/routes/launch-child.ts` (NEW). `launchChildForRole(ctx)` switch: worker → `process-manager.spawn()`; super-orchestrator → HTTP POST `/api/mission-delegate` через `httpDelegate` DI. Fail-fast: SO без `roleProfile` → throws Error ДО side effects. `TreeJournalEntry.via?` (`"spawn" | "http_delegate"`, optional для back-compat).
+- **F-5 Spawned SO init**: `extensions/fan-super-orchestrator/wiring/spawned-orchestrator.ts` (NEW). `session_start` hook branching по `process.env.FAN_NODE_ROLE`: SO → `initRecursiveCircuit` (circuit + role profile load + `handleDelegateRecursive` no-op + journal abort event в shutdown); worker → `initCircuit` (back-compat). `handleDelegateRecursive` trivial async no-op (delegation через HTTP к parent, не in-process depth2).
+- **F-6 Integration test depth-4 e2e**: `extensions/fan-super-orchestrator/chain-manager.ts` (NEW) + `mock-fan-server.mjs` extended с `chainPropagation="auto"` + `parentNodeId` option. Real HTTP между mock fan server processes. 3 e2e теста: depth-4 happy path (Coord → SO → SO → worker), walk-up cascade при crash mid-chain, leaf-first graceful shutdown ≤1s.
+- **Smoke test**: `extensions/fan-super-orchestrator/test/smoke-recursive-spawn.test.mjs` (7 sub-tests, 151ms): spawn-role, spawn-worker, role-config, effective-extensions, endpoint-mock, endpoint-validation, tree-journal-via.
+
+### Security
+
+- **FAN_NODE_TOKEN** передаётся через `process.env`, не через HTTP body. Constant-time comparison (`timingSafeEqual`). Length-mismatch explicit guard (no RangeError).
+- **Payload validation** ДО event emission — no leak через invalid auth/payload.
+- **Tool manifest isolation**: spawned SO НЕ получает `store_search`, `store_install` (DEFAULT_ROLE_CONFIG exclusions). `delegate_task` required для `role=super-orchestrator`.
+- **Recursion cap depth=4**: `can-spawn-batch.ts` enforces `super_orch_at_max_depth` rule (depth=4 → REFUSED для SO; worker — SINK).
+- **Abort propagation**: shutdown для recursive circuit пишет `abort` event в journal ДО cleanup.
+
+### Stats
+
+- 21 новых TDD-теста (5+4+5+3+5+3) + 7 smoke sub-tests = 28 tests для фичи
+- 6 per-function commits + 1 spec/roadmap commit + 1 docs commit
+- 848 tests pass total (841 super-orchestrator + 7 smoke) + 148 api-gateway + 897 fan-mission + 64 fan-webhook + 85 fan-scheduler = 2042 tests pass
+- Build: clean (10/10 packages)
+- No regressions: 0 lines changed в packages/coding-agent от feature pipeline
+- Refactor: extract `role-config.ts`, `mission-delegate-schema.ts`, `auth-mission-delegate.ts`, `routes/launch-child.ts`, `wiring/spawned-orchestrator.ts`, `chain-manager.ts` для лучшей тестируемости и изоляции concerns
+- Dead code elimination в chain-manager.ts (-154 строки) post-verify
+- flan-super-orchestrator 0.4.1 → 0.5.0 (recursive spawn)
+
 ## [Unreleased] / 2026-08-21
 
 ### Added — Super-Orchestrator v2 (depth-4)
