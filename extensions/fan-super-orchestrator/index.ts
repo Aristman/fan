@@ -94,7 +94,14 @@ import { clean } from "./message-sanitizer.js";
 import type { NodeReport } from "./node-report.js";
 import { createProcessManager } from "./process-manager.js";
 import { reconcile } from "./startup-reconciliation.js";
+import type { RoleProfile } from "./role-loader.js";
 import { createTreeJournal, type TreeJournal } from "./tree-journal.js";
+import {
+	initRecursiveCircuit,
+	ROLE_SUPER_ORCHESTRATOR,
+	shutdownRecursiveCircuit,
+	type RecursiveCircuit,
+} from "./wiring/spawned-orchestrator.js";
 
 // ─── Константы и типы событий ───────────────────────────────────────────────
 
@@ -105,6 +112,10 @@ export const DELEGATE_CHANNEL = "mission_delegate";
 export function delegateResultChannel(correlationId: string): string {
 	return `mission_delegate_result:${correlationId}`;
 }
+
+/** F-5: маркер роли spawned super-orchestrator (см. process-manager.ts buildSpawnEnv).
+ *  Re-exported из wiring/spawned-orchestrator.ts (source of truth после F-5 рефакторинга). */
+export { ROLE_SUPER_ORCHESTRATOR } from "./wiring/spawned-orchestrator.js";
 
 /** Deadline пакетов по умолчанию (30 минут). */
 const DEFAULT_DEADLINE_MS = 30 * 60 * 1000;
@@ -289,6 +300,12 @@ export interface SuperOrchestratorWiring {
 	getActiveMissionDir(): string | null;
 	/** Abort активных depth2-handle + отписка. Идемпотентно. */
 	shutdown(): Promise<void>;
+	/** F-5: true — circuit инициализирован в recursive-режиме (spawned SO),
+	 *  false — worker/legacy flow (initCircuit, без handleDelegateRecursive). */
+	isRecursive(): boolean;
+	/** F-5: role profile текущего контура (после loadRoleCatalog), либо undefined
+	 *  если role profile не загружался (worker flow или нет FAN_NODE_ROLE_PROFILE). */
+	getRoleProfile(): RoleProfile | undefined;
 }
 
 // ─── Валидация и маппинг ────────────────────────────────────────────────────
@@ -384,6 +401,10 @@ export default function superOrchestratorExtension(
 		missionDir: string;
 		journal: TreeJournal;
 		unsubDelegate: () => void;
+		/** F-5: true — recursive (initRecursiveCircuit), false — worker (initCircuit). */
+		isRecursive: boolean;
+		/** F-5: role profile (после loadRoleCatalog), undefined если не загружался. */
+		roleProfile?: RoleProfile;
 	} | null = null;
 	// In-flight depth2-handle: цель kill-switch в session_shutdown.
 	const activeHandles = new Set<Depth2Handle>();
@@ -528,14 +549,21 @@ export default function superOrchestratorExtension(
 					})
 				: () => {}; // нет EventBus (mock) — подписка не создаётся
 
-		circuit = { missionDir, journal, unsubDelegate };
+		circuit = { missionDir, journal, unsubDelegate, isRecursive: false };
 	};
 
-	/** Снять контур: отписка + kill-switch всех активных узлов. */
+	/** Снять контур: отписка + kill-switch всех активных узлов.
+	 *  F-5: для recursive circuit ПЕРЕД cleanup пишем abort event в journal
+	 *  (graceful shutdown spawned SO — TC-F5-5). Делегирует abort-event
+	 *  в wiring/spawned-orchestrator.ts (extract F-5). */
 	const shutdownCircuit = async (): Promise<void> => {
 		const current = circuit;
 		circuit = null;
 		if (current) {
+			// F-5: recursive circuit → journal abort event (spawned SO graceful shutdown).
+			if (current.isRecursive) {
+				await shutdownRecursiveCircuit(current as RecursiveCircuit);
+			}
 			try {
 				current.unsubDelegate();
 			} catch {
@@ -562,7 +590,26 @@ export default function superOrchestratorExtension(
 					return;
 				}
 				const mission = findActiveMission(cwd);
-				if (mission) {
+				if (!mission) {
+					return;
+				}
+				// F-5: role check — spawned SO (recursive) vs worker (existing).
+				// FAN_NODE_ROLE=super-orchestrator → recursive init (separate circuit
+				// с handleDelegateRecursive + role profile). Иначе — existing flow.
+				if (process.env.FAN_NODE_ROLE === ROLE_SUPER_ORCHESTRATOR) {
+					circuit = initRecursiveCircuit({
+						api,
+						missionDir: mission.dir,
+						existingCircuit: circuit as RecursiveCircuit | null,
+						onReplace: (old) => {
+							try {
+								old.unsubDelegate();
+							} catch {
+								// best-effort: старый unsubscribe может бросить (защита от race).
+							}
+						},
+					});
+				} else {
 					initCircuit(mission.dir);
 				}
 			} catch (err) {
@@ -578,5 +625,11 @@ export default function superOrchestratorExtension(
 	return {
 		getActiveMissionDir: () => circuit?.missionDir ?? null,
 		shutdown: shutdownCircuit,
+		// F-5: recursive wiring — true для spawned SO, false для worker / legacy.
+		isRecursive: () => circuit?.isRecursive === true,
+		// F-5: role profile текущего контура (после loadRoleCatalog),
+		// undefined если role profile не загружался (worker flow или
+		// FAN_NODE_ROLE_PROFILE не задан / каталог недоступен).
+		getRoleProfile: () => circuit?.roleProfile,
 	};
 }
