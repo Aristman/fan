@@ -56,6 +56,10 @@ export interface TreeJournalEntry {
 	 *  причина валидации манифеста; validation_failed, F-38: ошибки схемы
 	 *  отклонённого межагентного сообщения). */
 	diag?: string;
+	/** F-4: канал порождения узла. "spawn" — локальный child_process.spawn
+	 *  (worker, existing path); "http_delegate" — HTTP POST /api/mission-delegate
+	 *  в родительский fan server (super-orchestrator, recursive wiring). */
+	via?: "spawn" | "http_delegate";
 }
 
 /** Узел восстановленного дерева. */
@@ -124,6 +128,7 @@ export function createTreeJournal(filePath: string): TreeJournal {
 			if (entry.pid !== undefined) full.pid = entry.pid;
 			if (entry.usage !== undefined) full.usage = entry.usage;
 			if (entry.diag !== undefined) full.diag = entry.diag;
+			if (entry.via !== undefined) full.via = entry.via;
 
 			const fd = openSync(filePath, "a");
 			try {

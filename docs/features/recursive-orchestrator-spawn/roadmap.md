@@ -4,6 +4,8 @@
 > **Источник:** `docs/specs/spec_recursive-orchestrator-spawn_2026-08-22.md` (500 строк, 15 секций)
 > **Версия SKILL:** 1.3.0
 > **Функций / Этапов:** 6 / 6 (лимит: 15 / 8)
+**Версия:** 0.1.0 (Шипчено: 2026-08-22)
+**Статус:** ✅ Все 6 функций реализованы и закоммичены
 
 > ⚠️ **Предупреждения:** нет. 60% инфраструктуры уже реализовано в depth-4 v2 pipeline (commits `c985dbb`...`cf5879f`, branch `FAN/feature/super-orchestrator-v2`).
 
@@ -49,7 +51,7 @@
 **E2E-сценарий этапа:** Spawn SO с role=super-orchestrator → env содержит `FAN_NODE_ROLE=super-orchestrator`, `FAN_NODE_ROLE_PROFILE=pm`, `FAN_PARENT_NODE_URL/TOKEN`, `FAN_ORCHESTRATOR_DEPTH=N+1`. Spawn worker без role (default) → env НЕ содержит `FAN_NODE_ROLE`. Проверка через `child_process.spawn` mock (env var captures).
 **Smoke-критерий этапа:** `bun test extensions/fan-super-orchestrator/test/role-spawn.test.mjs → 6 pass`. Все существующие worker-spawn тесты не сломаны (back-compat).
 
-#### ☐ F-1: Role-aware spawn в process-manager
+#### ✅ F-1: Role-aware spawn в process-manager
 - **Приоритет:** P0
 - **Слой:** [INTEG]
 - **Описание:** Расширить `process-manager.spawn()` параметром `role: "worker" | "super-orchestrator"` (default `"worker"`). Добавить env vars `FAN_NODE_ROLE`, `FAN_NODE_ROLE_PROFILE`, `FAN_PARENT_NODE_URL`, `FAN_PARENT_NODE_TOKEN`. Worker spawn (default) сохраняет существующее поведение. SO spawn передаёт дополнительные env vars для recursive wiring.
@@ -86,7 +88,7 @@
 **E2E-сценарий этапа:** Загрузить role profile `pm.yaml` с `default_extensions: [mission, scheduler, delegate_task]`. Если в role-config.excluded есть `mission` → финальный список = `[scheduler, delegate_task]`. Если role=super-orchestrator → к финальному списку добавляется `delegate_task` (always required).
 **Smoke-критерий этапа:** `bun test extensions/fan-super-orchestrator/test/role-extensions.test.mjs → 6 pass`. Все 14 role-loader tests не сломаны.
 
-#### ☐ F-2: Role profile `default_extensions` + exclusions config
+#### ✅ F-2: Role profile `default_extensions` + exclusions config
 - **Приоритет:** P1
 - **Слой:** [DATA]
 - **Описание:** Расширить `RoleProfile` interface полем `default_extensions?: string[]`. В `loadRoleCatalog` при merge учитывать LIST_CONCAT для `default_extensions`. Добавить `role-config.yaml` (или .json) с `spawn.excluded_extensions` (default: `[store_search, store_install]`) и `role.super-orchestrator.required_extensions` (default: `[delegate_task]`). Функция `getEffectiveExtensions(role, config)` возвращает финальный список extensions для spawned узла.
@@ -123,7 +125,7 @@
 **E2E-сценарий этапа:** Spawn mock SO с `FAN_NODE_TOKEN=test-token`. Parent отправляет `POST /api/mission-delegate` с `Authorization: Bearer test-token`, payload с `packages`. Endpoint emit `mission_delegate` event, in-process handler ловит. Response: 200 + ack. Без токена — 401. С невалидным payload — 400.
 **Smoke-критерий этапа:** `bun test packages/api-gateway/test/mission-delegate-endpoint.test.ts → 4 pass`. Все 143 api-gateway tests не сломаны.
 
-#### ☐ F-3: HTTP delegation endpoint `POST /api/mission-delegate`
+#### ✅ F-3: HTTP delegation endpoint `POST /api/mission-delegate`
 - **Приоритет:** P0
 - **Слой:** [API]
 - **Описание:** Добавить endpoint `POST /api/mission-delegate` в `packages/api-gateway/src/http-server.ts`. Авторизация через `Authorization: Bearer <FAN_NODE_TOKEN>` (сравнивается с `process.env.FAN_NODE_TOKEN`). Payload: `{ parentCorrelationId, role, role_profile, depth, packages, lineage, parentReportId }`. Emit `api.events.emit("mission_delegate", payload)`. Response: 200 с `{ status: "queued", parentReportId }` или 202 (accepted).
@@ -164,7 +166,7 @@
 **E2E-сценарий этапа:** Mock depth-2 integration с work-package `{ role: "super-orchestrator", role_profile: "pm", depth: 1, packages: [...] }`. Вызвать `launchChild`. Ожидаем: HTTP POST на `/api/mission-delegate` (mock fetch проверяет URL и payload), NOT worker spawn (`cpSpawn` не вызван). Mock response — 200 + ack. Для worker role — existing path (cpSpawn для `fan server`).
 **Smoke-критерий этапа:** `bun test extensions/fan-super-orchestrator/test/role-launch-child.test.mjs → 5 pass`. 35 existing depth2-integration tests PASS.
 
-#### ☐ F-4: Role-aware launchChild (HTTP для SO, spawn для worker)
+#### ✅ F-4: Role-aware launchChild (HTTP для SO, spawn для worker)
 - **Приоритет:** P1
 - **Слой:** [INTEG]
 - **Описание:** Расширить `Depth2SpawnOpts` полем `role` (from work-package). В `launchChild` switch: role=worker → existing `process-manager.spawn()` (back-compat). role=super-orchestrator → HTTP POST `/api/mission-delegate` через переиспользованный `child-node-client.ts`. Tree-journal spawn entry: `via: "spawn" | "http_delegate"`.
@@ -201,7 +203,7 @@
 **E2E-сценарий этапа:** Spawn mock fan server с env `FAN_NODE_ROLE=super-orchestrator`. В `session_start` hook создаётся circuit (missionDir, journal), register handler для `mission_delegate` event. После init, parent отправляет POST `/api/mission-delegate` → handler срабатывает → emit processed event → response ack.
 **Smoke-критерий этапа:** `bun test extensions/fan-super-orchestrator/test/spawned-so-wiring.test.mjs → 5 pass`. 821 super-orch tests не сломаны.
 
-#### ☐ F-5: Spawned SO init в session_start (recursive wiring)
+#### ✅ F-5: Spawned SO init в session_start (recursive wiring)
 - **Приоритет:** P0
 - **Слой:** [INTEG]
 - **Описание:** В `extensions/fan-super-orchestrator/index.ts` session_start hook: проверить `process.env.FAN_NODE_ROLE`. Если `super-orchestrator` → recursive init: (a) init circuit (mission-loop lite, tree-journal, budget aggregator), (b) register delegate handler `api.events.on("mission_delegate", handleDelegateRecursive)`, (c) load role profile через `loadRoleCatalog` (d) init `child-node-client` для отправки дочерним worker'ам. Если role=worker или undefined → existing path (no changes).
@@ -247,7 +249,7 @@
 **E2E-сценарий этапа:** Test setup: запустить 3 spawned fan server процесса (depth 1, 2, 3). Parent (mock) отправляет delegation в depth=1. depth=1 спавнит depth=2 через HTTP. depth=2 спавнит worker через process-manager. Worker выполняет задачу, отправляет report вверх по chain. Проверка: tree-journal.jsonl содержит 3 spawn entries + 3 complete entries с правильными parent_id.
 **Smoke-критерий этапа:** `bun test extensions/fan-super-orchestrator/test/e2e/recursive-spawn.test.mjs → 3 pass`. Все остальные tests не сломаны.
 
-#### ☐ F-6: Integration test (depth-4 chain с recursive spawned SO)
+#### ✅ F-6: Integration test (depth-4 chain с recursive spawned SO)
 - **Приоритет:** P0
 - **Слой:** [TEST]
 - **Описание:** E2E тест с реальными `fan server` subprocess: depth-1 SO спавнит depth-2 SO (recursive), который спавнит worker. Mock-children infrastructure (existing из F-H phase в depth-4 v2 pipeline) переиспользуется. Тесты: (a) full depth-4 happy path, (b) crash mid-chain → walk-up escalation, (c) graceful shutdown всей цепочки.
@@ -280,14 +282,14 @@
 ## Полный чеклист по приоритетам
 
 ### P0 — Критические
-- [ ] F-1 [INTEG]: Role-aware spawn в process-manager (env vars)
-- [ ] F-3 [API]: HTTP delegation endpoint `POST /api/mission-delegate`
-- [ ] F-5 [INTEG]: Spawned SO init в session_start (recursive wiring)
-- [ ] F-6 [TEST]: Integration test (depth-4 e2e с recursive spawned SO)
+- [x] F-1 [INTEG]: Role-aware spawn в process-manager (env vars) — ✅ c39566e
+- [x] F-3 [API]: HTTP delegation endpoint `POST /api/mission-delegate` — ✅ c29c049
+- [x] F-5 [INTEG]: Spawned SO init в session_start (recursive wiring) — ✅ 7912684
+- [x] F-6 [TEST]: Integration test (depth-4 e2e с recursive spawned SO) — ✅ a086aa0
 
 ### P1 — Высокие
-- [ ] F-2 [DATA]: Role profile `default_extensions` + exclusions config
-- [ ] F-4 [INTEG]: Role-aware launchChild в depth2-integration
+- [x] F-2 [DATA]: Role profile `default_extensions` + exclusions config — ✅ 14ea4ef
+- [x] F-4 [INTEG]: Role-aware launchChild в depth2-integration — ✅ 2504946
 
 ### P2 — Средние
 (нет)

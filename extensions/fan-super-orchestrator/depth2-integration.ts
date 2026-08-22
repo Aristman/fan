@@ -40,14 +40,27 @@ import {
 import { computeChildAllocation, createMissionBudgetStore } from "./budget-coordinator.js";
 import type { ValidationFailureInfo } from "./child-node-client.js";
 import { canSpawn, type DepthWidthGuardOptions } from "./depth-width-guard.js";
-import { validateDepth } from "./message-sanitizer.js";
-import { generateNodeToken } from "./node-auth.js";
-import { type NodeReport, totalUsage } from "./node-report.js";
+import { type NodeReport } from "./node-report.js";
 import { PortPool } from "./port-pool.js";
 import { reconcile } from "./startup-reconciliation.js";
 import { InvalidToolManifestError, validateManifest } from "./tool-manifest.js";
 import { createTreeJournal, type TreeJournal } from "./tree-journal.js";
-import { buildToolArgs, createWorkPackage, makeCorrelationId, type WorkPackage } from "./work-package.js";
+import { buildToolArgs, makeCorrelationId, type WorkPackage } from "./work-package.js";
+import {
+	CHILD_DEPTH,
+	ROOT_DEPTH,
+	ROOT_NODE_ID,
+	launchChildForRole,
+	type HttpDelegate,
+	type LaunchChildContext,
+	type LaunchChildChildInfo,
+	type LaunchChildSpawnOpts,
+	type WaitForReady,
+} from "./routes/launch-child.js";
+
+// F-4 Refactor: HttpDelegate переехал в ./routes/launch-child.js. Re-export
+// для back-compat внешних импортов (Depth2Options.httpDelegate сохраняет тип).
+export type { HttpDelegate };
 
 /** Опции запуска depth-2 контура. */
 export interface Depth2RunOptions {
@@ -61,6 +74,23 @@ export interface Depth2RunOptions {
 	toolManifest?: string[];
 	/** ISO-8601 deadline, общий для всех пакетов. */
 	deadline: string;
+	/** F-4: роль дочернего узла. Default "worker" — process-manager.spawn
+	 *  (existing path). "super-orchestrator" — HTTP POST /api/mission-delegate
+	 *  в родительский fan server (recursive wiring). */
+	role?: "worker" | "super-orchestrator";
+	/** F-4: профиль роли (FAN_NODE_ROLE_PROFILE); mandatory при role=super-orchestrator.
+	 *  Для worker — игнорируется. */
+	roleProfile?: string;
+	/** F-4: URL родительского fan server (FAN_PARENT_NODE_URL); используется
+	 *  при role=super-orchestrator для HTTP delegation. Default — пустая
+	 *  строка + `/api/mission-delegate` (test/dev path). */
+	parentUrl?: string;
+	/** F-4: Bearer token родителя (FAN_PARENT_NODE_TOKEN); используется при
+	 *  role=super-orchestrator для Authorization: Bearer <token>. */
+	parentToken?: string;
+	/** F-4: work packages для SO delegation (MissionDelegatePayload.packages);
+	 *  required при role=super-orchestrator. */
+	packages?: unknown[];
 }
 
 /** Параметры spawn-вызова (DI; прод — process-manager F-23). */
@@ -83,12 +113,8 @@ export interface Depth2SendOpts {
 	onValidationFailed?: (failure: ValidationFailureInfo) => void;
 }
 
-/** Колбэк готовности дочернего узла после успешного spawn: дожидается
- *  момента, когда узел готов принимать пакеты (например, /api/health=200).
- *  Бросает на таймаут — пайплайн трактует отказ как сетевую ошибку
- *  (fail-запись, release порта, kill узла, run бросает). DI: прод —
- *  fetch-poll /api/health в fan-super-orchestrator/index.ts. */
-export type WaitForReady = (port: number) => Promise<void>;
+// F-4 Refactor: WaitForReady re-exported из ./routes/launch-child.js
+// через `export type { WaitForReady }` ниже (для стабильности публичного API).
 
 /** Опции фабрики интеграции. */
 export interface Depth2Options {
@@ -106,6 +132,9 @@ export interface Depth2Options {
 	waitForReady?: WaitForReady;
 	sendPackage?: (opts: Depth2SendOpts) => Promise<NodeReport>;
 	killNode?: (id: string) => Promise<void>;
+	/** F-4: HTTP-делегат для role=super-orchestrator. Default — globalThis.fetch
+	 *  (NODE 18+). Тесты мокают через vi.spyOn(globalThis, "fetch"). */
+	httpDelegate?: HttpDelegate;
 	/** Default: <missionDir>/child-ports.json. */
 	portsFile?: string;
 	/** Default: <missionDir>/pids. */
@@ -131,22 +160,14 @@ export interface Depth2Handle {
 	abort(): Promise<void>;
 }
 
-/** Корень дерева depth-2 (L0). */
-const ROOT_NODE_ID = "L0";
-/** Глубина корня (L0). */
-const ROOT_DEPTH = 0;
-/** Глубина порождаемых детей. */
-const CHILD_DEPTH = 1;
+// F-4 Refactor: константы ROOT_NODE_ID/ROOT_DEPTH/CHILD_DEPTH, функция
+// depthFromCorrelationId и globalFetchDelegate переехали в ./routes/launch-child.js
+// (нужны только role-routing pipeline). Внешние симптомы не меняются.
 
-/** Извлекает глубину узла из correlationId (<mission>/L<N>/node-<M>);
- *  null — correlationId не парсится (глубина неизвестна). */
-function depthFromCorrelationId(correlationId: unknown): number | null {
-	if (typeof correlationId !== "string") {
-		return null;
-	}
-	const match = /\/L(\d+)\/node-\d+$/.exec(correlationId);
-	return match === null ? null : Number(match[1]);
-}
+// F-4 Refactor: WaitForReady re-export для стабильности публичного API
+// (используется в Depth2Options.waitForReady). Изначальный export type
+// удалён вместе с переездом в routes/launch-child.ts.
+export type { WaitForReady };
 
 /** Handle depth-2 интеграции поверх модулей фаз A/B. */
 export function createDepth2Integration(opts: Depth2Options): Depth2Handle {
@@ -161,7 +182,7 @@ export function createDepth2Integration(opts: Depth2Options): Depth2Handle {
 	const aggregator: BudgetAggregator = createBudgetAggregator(budgetStore);
 	const portPool = new PortPool(portsFile);
 
-	let aborted = false;
+	let aborted = { value: false };
 	/** Активные (порождённые, не завершённые) узлы: kill-switch цель. */
 	const activeNodes = new Map<string, { correlationId: string }>();
 	/** In-flight spawnNode промисы: abort дожидается перед kill-циклом. */
@@ -199,225 +220,60 @@ export function createDepth2Integration(opts: Depth2Options): Depth2Handle {
 		const spawnArgs = buildToolArgs(manifest);
 		const reports: Array<{ nodeId: string; report: NodeReport }> = [];
 
-		const spawnNode = opts.spawnNode;
-		const sendPackage = opts.sendPackage;
-
-		// Пайплайн одного ребёнка: guard → allocate → spawn → журнал → пакет →
-		// отчёт → usage → complete → возврат аллокации. Флаг aborted проверяется
-		// между шагами: после abort() новые spawn/send не стартуют, пришедший
-		// отчёт как complete не записывается.
+		// F-4 Refactor: role-aware spawn-pipeline (worker spawn → wait → send →
+		// report → complete) и SO HTTP delegation переехали в
+		// ./routes/launch-child.js. Здесь остаётся только orchestration: guard →
+		// role_profile validation → allocate → context-build → launchChildForRole.
 		async function launchChild(index: number): Promise<void> {
 			const nodeId = `L1/node-${index + 1}`;
+			// F-4: резолв role из runOpts. Default "worker" — back-compat с
+			// existing path (process-manager.spawn).
+			const childRole: LaunchChildChildInfo["childRole"] = runOpts.role ?? "worker";
 
 			const decision = canSpawn(CHILD_DEPTH, index, opts.guardOptions);
 			if (!decision.allowed) {
 				throw new Error(`${decision.reason}: depth-2 fan-out stopped at ${nodeId}`);
+			}
+			// F-4: fail-fast валидация role_profile для super-orchestrator.
+			// Без roleProfile SO не имеет смысла (нет профиля роли для recursive
+			// wiring → spawned узел не сможет инициализировать circuit). Throw
+			// ДО allocate/spawn — никаких side-effects на диск/journal/порт.
+			if (childRole === "super-orchestrator" && !runOpts.roleProfile) {
+				throw new Error("role_profile required for super-orchestrator");
 			}
 			if (!aggregator.allocate(nodeId, allocation)) {
 				throw new Error(
 					`Budget exhausted: cannot allocate ${allocation.tokens} tokens / ${allocation.usd} USD for ${nodeId}`,
 				);
 			}
-			if (aborted) {
-				return;
-			}
-			if (!spawnNode) {
-				throw new Error("spawnNode is not configured (DI required)");
-			}
-
-			const port = portPool.allocate(nodeId);
-			const token = generateNodeToken();
-			let pid: number;
-			const spawnPromise = spawnNode({ id: nodeId, port, token, nodeName: nodeId, args: spawnArgs });
-			pendingSpawns.add(spawnPromise);
-			try {
-				({ pid } = await spawnPromise);
-			} catch (error) {
-				// Аллокация НЕ возвращается (потрачена на попытку), порт — освобождаем.
-				portPool.release(nodeId);
-				throw error;
-			} finally {
-				pendingSpawns.delete(spawnPromise);
-			}
-
-			// F1: abort() вызван во время ожидания spawnNode — узел родился
-			// после kill-цикла. Убиваем сразу, не продолжая пайплайн.
-			if (aborted) {
-				if (opts.killNode) {
-					try {
-						await opts.killNode(nodeId);
-					} catch {
-						/* best-effort */
-					}
-				}
-				const corrId = makeCorrelationId(opts.missionId, CHILD_DEPTH, index + 1);
-				journal.write({
-					event: "abort",
-					nodeId,
-					parentId: ROOT_NODE_ID,
-					correlationId: corrId,
-					depth: CHILD_DEPTH,
-				});
-				portPool.release(nodeId);
+			if (aborted.value) {
 				return;
 			}
 
 			const correlationId = makeCorrelationId(opts.missionId, CHILD_DEPTH, index + 1);
 			const task = runOpts.childTasks?.[index] ?? `${runOpts.task} — часть ${index + 1}`;
-			journal.write({
-				event: "spawn",
-				nodeId,
-				parentId: ROOT_NODE_ID,
-				correlationId,
-				task,
-				depth: CHILD_DEPTH,
-				port,
-				pid,
-			});
-			activeNodes.set(nodeId, { correlationId });
+			const child: LaunchChildChildInfo = { index, nodeId, task, childRole };
 
-			// Readiness-wait: узел порождён, но процесс ещё бутается
-			// (расширения, провайдеры ~10s). Без паузы WS-коннект
-			// sendPackage мгновенно упадёт «Unable to connect». DI-опция;
-			// не задана — пропускается (поведение прежнее).
-			if (opts.waitForReady) {
-				try {
-					await opts.waitForReady(port);
-				} catch (readyError) {
-					// abort() во время ожидания → узел уже убит/журналирован
-					// в kill-цикле abort(); если ещё нет — узел всё ещё в
-					// activeNodes, abort() подхватит. Без дублирующего
-					// journal/kill: иначе двойная запись.
-					if (aborted) {
-						return;
-					}
-					// Иначе — та же политика что F2 (отказ sendPackage):
-					// fail-запись, освобождение порта, возврат аллокации,
-					// kill узла, run бросает.
-					journal.write({
-						event: "fail",
-						nodeId,
-						parentId: ROOT_NODE_ID,
-						correlationId,
-						depth: CHILD_DEPTH,
-					});
-					portPool.release(nodeId);
-					activeNodes.delete(nodeId);
-					aggregator.onNodeComplete(nodeId, allocation);
-					if (opts.killNode) {
-						try {
-							await opts.killNode(nodeId);
-						} catch {
-							/* best-effort */
-						}
-					}
-					throw readyError;
-				}
-				// Повторная проверка aborted после ожидания: kill-switch мог
-				// сработать, пока мы ждали готовности узла. Узел остаётся в
-				// activeNodes — abort() подхватит в kill-цикле (идемпотентно).
-				if (aborted) {
-					return;
-				}
-			}
-
-			if (aborted || !sendPackage) {
-				return;
-			}
-			const workPackage = createWorkPackage({
-				task,
+			// F-4 Refactor: build LaunchChildContext (mutable refs на activeNodes,
+			// pendingSpawns, reports, aborted) и delegate role-routing в
+			// ./routes/launch-child.js::launchChildForRole. Логика 1:1 как inline.
+			const ctx: LaunchChildContext = {
+				runOpts,
+				opts,
+				manifest,
+				spawnArgs,
+				allocation,
+				aggregator,
+				journal,
+				portPool,
+				aborted,
+				pendingSpawns,
+				activeNodes,
+				reports,
+				child,
 				correlationId,
-				depth: CHILD_DEPTH,
-				tokenBudget: allocation.tokens,
-				costBudgetUsd: allocation.usd,
-				toolManifest: manifest,
-				deadline: runOpts.deadline,
-			});
-			let report: NodeReport;
-			try {
-				// F-38: колбэк граничной валидации клиента → журнал миссии
-				// (validation_failed). DI-реализация sendPackage, создающая
-				// child-node-client внутри, пробрасывает колбэк в клиент.
-				const onValidationFailed = (failure: ValidationFailureInfo): void => {
-					journal.write({
-						event: "validation_failed",
-						nodeId: failure.nodeId ?? nodeId,
-						parentId: ROOT_NODE_ID,
-						correlationId: failure.correlationId ?? correlationId,
-						depth: CHILD_DEPTH,
-						diag: failure.diag,
-					});
-				};
-				report = await sendPackage({ port, token, workPackage, onValidationFailed });
-				// F-38: validateDepth на границе приёма отчёта. Зафиксированная точка:
-				// здесь известны обе глубины — ожидаемая (ROOT_DEPTH + 1) и фактическая
-				// (L<N> в correlationId отчёта, присланного транспортом). В клиенте
-				// (child-node-client) проверка была бы мёртвой: отчёт собирается из
-				// meta пакета, поэтому его глубина тривиально совпадает с ожидаемой.
-				const reportDepth = depthFromCorrelationId(report?.correlationId);
-				const depthCheck =
-					reportDepth === null
-						? {
-								valid: false,
-								errors: [
-									{
-										field: "correlationId",
-										message: `cannot parse depth from report correlationId: ${String(report?.correlationId)}`,
-									},
-								],
-							}
-						: validateDepth(ROOT_DEPTH, reportDepth);
-				if (!depthCheck.valid) {
-					const diag = depthCheck.errors.map((issue) => `${issue.field}: ${issue.message}`).join("; ");
-					journal.write({
-						event: "validation_failed",
-						nodeId,
-						parentId: ROOT_NODE_ID,
-						correlationId,
-						depth: CHILD_DEPTH,
-						diag,
-					});
-					throw new Error(`Incoming node report rejected by boundary validation: ${diag}`);
-				}
-			} catch (sendError) {
-				// F2: отказ sendPackage — fail-запись, очистка, возврат аллокации.
-				journal.write({
-					event: "fail",
-					nodeId,
-					parentId: ROOT_NODE_ID,
-					correlationId,
-					depth: CHILD_DEPTH,
-				});
-				portPool.release(nodeId);
-				activeNodes.delete(nodeId);
-				aggregator.onNodeComplete(nodeId, allocation);
-				if (opts.killNode) {
-					try {
-						await opts.killNode(nodeId);
-					} catch {
-						/* best-effort */
-					}
-				}
-				throw sendError;
-			}
-			if (aborted) {
-				return; // kill-switch сработал до отчёта — complete не пишем
-			}
-
-			const usage = totalUsage(report);
-			aggregator.recordUsage(nodeId, usage);
-			journal.write({
-				event: "complete",
-				nodeId,
-				parentId: ROOT_NODE_ID,
-				correlationId,
-				depth: CHILD_DEPTH,
-				usage: { tokens: usage.inputTokens + usage.outputTokens, usd: usage.costUsd },
-			});
-			aggregator.onNodeComplete(nodeId, allocation);
-			activeNodes.delete(nodeId);
-			portPool.release(nodeId);
-			reports.push({ nodeId, report });
+			};
+			await launchChildForRole(ctx);
 		}
 
 		// 3. Конкурентный fan-out: все дети стартуют без ожидания отчётов.
@@ -433,10 +289,10 @@ export function createDepth2Integration(opts: Depth2Options): Depth2Handle {
 	}
 
 	async function abort(): Promise<void> {
-		if (aborted) {
+		if (aborted.value) {
 			return; // идемпотентность
 		}
-		aborted = true;
+		aborted.value = true;
 
 		// F1: дожидаемся in-flight spawnNode промисов. Узлы, чей spawn
 		// разрешился во время abort, либо убиваются самопроверкой флага

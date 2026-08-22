@@ -1,11 +1,14 @@
+import { EventEmitter } from "node:events";
 import { join } from "node:path";
 import type { ModelManager, RoutingRuleData } from "@fan/model-manager";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
+import { verifyNodeToken } from "./auth-mission-delegate.js";
 import { generateToken as createToken, listTokens, revokeToken, tokenAuth } from "./auth.js";
 import { getMissionBudget, getMissionStatus, getMissionTree, isValidMissionSlug } from "./mission-api.js";
+import { validateMissionDelegatePayload } from "./mission-delegate-schema.js";
 // Re-export startServer from extracted bootstrap module (F-0). Keeps the
 // existing public surface stable for callers importing from "@fan/api-gateway"
 // or "./http-server.js".
@@ -140,6 +143,23 @@ function classifyErrorCode(err: unknown): string {
 }
 
 // ============================================================================
+// F-3: Mission Delegate Event Bus (singleton)
+// ============================================================================
+
+/** Singleton EventEmitter for in-process mission_delegate events.
+ *  The /api/mission-delegate endpoint emits here; spawned super-orchestrators
+ *  (F-5) subscribe here via api.events.on("mission_delegate", handler).
+ *  Exported as a module-level singleton so that consumers in the same
+ *  Node.js process (super-orchestrator extensions, walk-up handlers) can
+ *  both emit and receive without an explicit dependency injection. */
+export const apiEvents: EventEmitter = new EventEmitter();
+
+// ============================================================================
+// F-3: Mission Delegate Auth + Validation helpers — extracted (see
+// ./auth-mission-delegate.ts and ./mission-delegate-schema.ts).
+// ============================================================================
+
+// ============================================================================
 // Create Hono App
 // ============================================================================
 
@@ -168,7 +188,43 @@ async function createApp(
 		return c.json(resp);
 	});
 
-	// --- All /api/ routes require auth (except health) ---
+	// --- F-3: Mission Delegate (no DB tokenAuth — uses FAN_NODE_TOKEN env) ---
+	// Registered BEFORE `app.use("/api/*", tokenAuth)` so super-orchestrator
+	// parents can POST delegation without holding a DB-backed client token.
+	// Auth is FAN_NODE_TOKEN-based (per-process shared secret), payload is
+	// validated, then `api.events.emit("mission_delegate", payload)` fires.
+	app.post("/api/mission-delegate", async (c) => {
+		// 1. Auth: Authorization: Bearer <FAN_NODE_TOKEN> (per-node shared secret).
+		//    Discriminated union from auth-mission-delegate.ts distinguishes
+		//    "no header at all" (missing_token) from "header present but wrong"
+		//    (invalid_token). Both → 401.
+		const auth = verifyNodeToken(c.req.header("Authorization"), process.env.FAN_NODE_TOKEN);
+		if (!auth.ok) {
+			return c.json({ error: auth.error }, 401);
+		}
+
+		// 2. Parse body
+		let body: unknown;
+		try {
+			body = await c.req.json();
+		} catch {
+			return c.json({ error: "invalid_payload", field: "body" }, 400);
+		}
+
+		// 3. Validate schema
+		const validation = validateMissionDelegatePayload(body);
+		if (!validation.ok) {
+			return c.json({ error: "invalid_payload", field: validation.field }, 400);
+		}
+
+		// 4. Emit event (subscribers are spawned SO session_start wiring — F-5)
+		apiEvents.emit("mission_delegate", validation.payload);
+
+		// 5. Acknowledge
+		return c.json({ status: "queued", parentReportId: validation.payload.parentReportId }, 200);
+	});
+
+	// --- All /api/ routes require auth (except health + mission-delegate) ---
 	app.use("/api/*", tokenAuth);
 
 	// --- Sessions ---
