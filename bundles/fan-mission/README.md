@@ -10,10 +10,10 @@
 
 | Extension | Версия | Что даёт |
 |-----------|--------|----------|
-| **fan-mission** | 0.10.8 | 7-шаговый цикл миссии (FSM), файловое хранилище (`MISSION.md`, `ROADMAP.md`, `STATE.md`, `BACKLOG.md`, `DECISIONS.md`), тиковый мост к scheduler, 13 шаблонов миссий (`templates/default`, `templates/refactor`), scoring идей, метрики, slash-команды |
-| **fan-scheduler** | 0.3.1 | Периодическое пробуждение миссионного контура (setInterval/cron), доставка tick-промпта в `actions.sendMessage` как `followUp` (I4 heartbeat) |
-| **fan-super-orchestrator** | 0.5.2 | HTTP-иерархия узлов `fan server`: порождение дочерних узлов, аутентификация, бюджет, журнал дерева (`tree-journal`), рекурсивный spawn с depth-4 и role-aware маршрутизацией (10 role profiles в `roles/*.yaml`) |
-| **fan-webhook** | 0.2.0 | Микро-Hono сервер, принимающий POST-запросы от внешних систем (CI, git-push, мониторинг) и маршрутизирующий их как `steer`/`followUp`-сообщения в активную миссию |
+| **fan-mission** | 1.0.0 | 7-шаговый цикл миссии (FSM), файловое хранилище (`MISSION.md`, `ROADMAP.md`, `STATE.md`, `BACKLOG.md`, `DECISIONS.md`), тиковый мост к scheduler, 13 шаблонов миссий (`templates/default`, `templates/refactor`), scoring идей, метрики, slash-команды |
+| **fan-scheduler** | 1.0.0 | Периодическое пробуждение миссионного контура (setInterval/cron), доставка tick-промпта в `actions.sendMessage` как `followUp` (I4 heartbeat) |
+| **fan-super-orchestrator** | 1.0.0 | HTTP-иерархия узлов `fan server`: порождение дочерних узлов, аутентификация, бюджет, журнал дерева (`tree-journal`), рекурсивный spawn с depth-4 и role-aware маршрутизацией (10 role profiles в `roles/*.yaml`) |
+| **fan-webhook** | 1.0.0 | Микро-Hono сервер, принимающий POST-запросы от внешних систем (CI, git-push, мониторинг) и маршрутизирующий их как `steer`/`followUp`-сообщения в активную миссию |
 
 **Связи между расширениями:**
 
