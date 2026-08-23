@@ -515,18 +515,6 @@ export async function readState(missionDir: string): Promise<MissionState> {
 		throw new MissionNotFound(missionDir);
 	}
 	let raw = readFileSync(statePath, "utf8");
-	const byteLen = Buffer.byteLength(raw, "utf8");
-	if (byteLen > MAX_STATE_BYTES) {
-		// ralph-loop incident fix: an oversized STATE.md must NOT kill the tick —
-		// a throw here wedges fresh-mode missions (dead tick skips session
-		// rotation, every subsequent tick dies on the same file). Truncate to
-		// the limit and warn instead of throwing StateFileTooLarge. The class
-		// stays exported for compatibility (writeState still throws it).
-		console.warn(
-			`[fan-mission] STATE.md is ${byteLen} bytes (limit ${MAX_STATE_BYTES}) — truncating for read; archive or compact the file`,
-		);
-		raw = Buffer.from(raw, "utf8").subarray(0, MAX_STATE_BYTES).toString("utf8");
-	}
 
 	const sections = parseSections(raw);
 	const done = sections.get("Сделано");
@@ -539,6 +527,26 @@ export async function readState(missionDir: string): Promise<MissionState> {
 	if (nextSteps === undefined) missing.push("Следующие шаги");
 	if (missing.length > 0) {
 		throw new InvalidStateSchema(missing);
+	}
+
+	// F-10 fix: section-aware truncation instead of byte-level truncation.
+	// Byte-level truncation (raw.subarray(0, MAX_STATE_BYTES)) could cut a
+	// section header mid-line, causing InvalidStateSchema on the next tick.
+	// Here we truncate the *content* of sections (keeping headers intact)
+	// so the resulting file always parses successfully.
+	const byteLen = Buffer.byteLength(raw, "utf8");
+	if (byteLen > MAX_STATE_BYTES) {
+		console.warn(
+			`[fan-mission] STATE.md is ${byteLen} bytes (limit ${MAX_STATE_BYTES}) — truncating content of sections; archive or compact the file`,
+		);
+		raw = truncateStateSections(done, blockers, nextSteps, MAX_STATE_BYTES);
+		// Re-parse the truncated content to get the final items.
+		const truncatedSections = parseSections(raw);
+		return {
+			done: truncatedSections.get("Сделано") ?? [],
+			blockers: truncatedSections.get("Блокеры") ?? [],
+			nextSteps: truncatedSections.get("Следующие шаги") ?? [],
+		};
 	}
 
 	return { done: done!, blockers: blockers!, nextSteps: nextSteps! };
@@ -946,6 +954,85 @@ function parseSections(content: string): Map<string, string[]> {
 		result.set(header, items);
 	}
 	return result;
+}
+
+// ─── STATE.md truncation helpers (F-10) ────────────────────────────────────
+
+/**
+ * Truncate sections content to fit within maxBytes while preserving all
+ * section headers. This prevents InvalidStateSchema errors that occur when
+ * byte-level truncation cuts a section header mid-line.
+ *
+ * Strategy:
+ *   1. Always preserve `## Следующие шаги` and `## Блокеры` completely
+ *   2. Truncate `## Сделано` items if needed (keep the most recent ones)
+ *   3. If still over limit, truncate `## Следующие шаги` items
+ *   4. If still over limit, truncate `## Блокеры` items (rare — usually small)
+ */
+function truncateStateSections(
+	done: string[],
+	blockers: string[],
+	nextSteps: string[],
+	maxBytes: number,
+): string {
+	const lines: string[] = [];
+	lines.push("## Сделано");
+	for (const item of done) lines.push(`- ${sanitizeItem(item)}`);
+	lines.push("");
+	lines.push("## Блокеры");
+	for (const item of blockers) lines.push(`- ${sanitizeItem(item)}`);
+	lines.push("");
+	lines.push("## Следующие шаги");
+	for (const item of nextSteps) lines.push(`- ${sanitizeItem(item)}`);
+	lines.push("");
+
+	let content = lines.join("\n");
+	let byteLen = Buffer.byteLength(content, "utf8");
+
+	// Step 1: Truncate done items (keep most recent)
+	if (byteLen > maxBytes && done.length > 0) {
+		// Remove oldest done items until under limit
+		while (byteLen > maxBytes && done.length > 1) {
+			done.shift(); // remove oldest
+			content = buildSections(done, blockers, nextSteps);
+			byteLen = Buffer.byteLength(content, "utf8");
+		}
+	}
+
+	// Step 2: Truncate nextSteps items if still over
+	if (byteLen > maxBytes && nextSteps.length > 0) {
+		while (byteLen > maxBytes && nextSteps.length > 1) {
+			nextSteps.shift();
+			content = buildSections(done, blockers, nextSteps);
+			byteLen = Buffer.byteLength(content, "utf8");
+		}
+	}
+
+	// Step 3: Truncate blockers items if still over (rare)
+	if (byteLen > maxBytes && blockers.length > 0) {
+		while (byteLen > maxBytes && blockers.length > 1) {
+			blockers.shift();
+			content = buildSections(done, blockers, nextSteps);
+			byteLen = Buffer.byteLength(content, "utf8");
+		}
+	}
+
+	return content;
+}
+
+/** Build sections string from items arrays. */
+function buildSections(done: string[], blockers: string[], nextSteps: string[]): string {
+	const lines: string[] = [];
+	lines.push("## Сделано");
+	for (const item of done) lines.push(`- ${sanitizeItem(item)}`);
+	lines.push("");
+	lines.push("## Блокеры");
+	for (const item of blockers) lines.push(`- ${sanitizeItem(item)}`);
+	lines.push("");
+	lines.push("## Следующие шаги");
+	for (const item of nextSteps) lines.push(`- ${sanitizeItem(item)}`);
+	lines.push("");
+	return lines.join("\n");
 }
 
 // ─── STATE.md size preflight & archiving (P1-5) ────────────────────────────

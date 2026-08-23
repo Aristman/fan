@@ -334,6 +334,48 @@ describe("F-08 / TC-F08-1: STATE.md парсинг и лимит 5 KB", () => {
 		await expect(readState(missionDir)).resolves.toBeDefined();
 	});
 
+	// F-10 fix: section-aware truncation — headers always preserved.
+	it("TC-F08-1.edge-f10: truncation never cuts section headers (sections always parse)", async () => {
+		const missionDir = await initMission("auth-refactor", { baseDir });
+		// Create content where truncation would normally cut a section header.
+		// "## Сделано" is huge, "## Блокеры" and "## Следующие шаги" are at the end.
+		const doneItems = Array.from({ length: 200 }, (_, i) => `- item-${i} with some text to fill space`);
+		const content = [
+			"## Сделано",
+			...doneItems,
+			"",
+			"## Блокеры",
+			"- blocker-1",
+			"",
+			"## Следующие шаги",
+			"- next-step-1",
+		].join("\n");
+		expect(Buffer.byteLength(content, "utf8")).toBeGreaterThan(MAX_STATE_BYTES);
+		writeRawState(missionDir, content);
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+		try {
+			const state = await readState(missionDir);
+			// All sections must be present and non-empty after truncation
+			expect(state.done.length).toBeGreaterThan(0);
+			expect(state.blockers).toEqual(["blocker-1"]);
+			expect(state.nextSteps).toEqual(["next-step-1"]);
+			// Truncated content must be under limit
+			const truncatedContent = [
+				"## Сделано",
+				...state.done.map((i) => `- ${i}`),
+				"",
+				"## Блокеры",
+				...state.blockers.map((i) => `- ${i}`),
+				"",
+				"## Следующие шаги",
+				...state.nextSteps.map((i) => `- ${i}`),
+			].join("\n");
+			expect(Buffer.byteLength(truncatedContent, "utf8")).toBeLessThanOrEqual(MAX_STATE_BYTES);
+		} finally {
+			warnSpy.mockRestore();
+		}
+	});
+
 	// ralph-loop incident fix: семантика truncate+warn вместо throw (см. выше).
 	it("TC-F08-1.edge: STATE.md 5121 байт (1 байт сверх лимита) -> truncate + warn", async () => {
 		const missionDir = await initMission("auth-refactor", { baseDir });
