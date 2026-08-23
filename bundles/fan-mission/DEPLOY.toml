@@ -1,0 +1,42 @@
+# DEPLOY.toml — FAN Package Deployment Manifest
+# Schema version: 1
+
+# Bundle: 4 extensions packaged together for one-click install.
+# fan-super-orchestrator requires roles/*.yaml at runtime — those files are
+# inside extensions/fan-super-orchestrator/roles/ and matched by the
+# `extensions/**/*.yaml` pattern below (no special carve-out needed at the
+# root level; super-orchestrator's own DEPLOY.toml does NOT list roles/ but
+# the bundle copies them because role-loader.ts requires them at runtime).
+
+[package]
+name = "fan-mission"
+type = "bundle"
+
+include = [
+    "extensions/**/*.ts",
+    "extensions/**/*.yaml",
+    "extensions/**/*.json",
+    "package.json",
+    "README.md",
+]
+
+exclude = [
+    "**/node_modules/",
+    "**/*.test.ts",
+    "**/*.test.mjs",
+    "**/*.spec.ts",
+    "**/vitest.config.*",
+    ".env",
+    ".env.*",
+    "dist/",
+    "*.lock",
+    ".git/",
+    ".DS_Store",
+    "**/test/**",
+    "**/tsconfig.json",
+    ".fan/",
+    "**/argv-*.txt",
+    "**/env-*.txt",
+]
+
+preserve = []

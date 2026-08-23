@@ -1,0 +1,9 @@
+id: research
+name: Research Analyst
+description: Research analyst role — исследование кодовой базы, web search, синтез
+allowed_depths: [2, 3]
+default_tools:
+  - code_research
+  - web_search
+  - web_reader
+verification_approach: lenient

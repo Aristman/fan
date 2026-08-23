@@ -1,0 +1,8 @@
+id: pm
+name: Project Manager
+description: Project manager role — координация, планирование, делегирование задач
+allowed_depths: [1]
+default_tools:
+  - mission
+  - scheduler
+verification_approach: standard

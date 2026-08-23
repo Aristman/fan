@@ -1,0 +1,10 @@
+id: qa
+name: QA Engineer
+description: QA engineer role — тестирование, верификация, автоматизация проверок
+allowed_depths: [2, 3, 4]
+default_tools:
+  - bash
+  - edit
+  - auto-tests
+verification_approach: strict
+verification_threshold: 0.8

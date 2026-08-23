@@ -1,0 +1,10 @@
+id: docs
+name: Documentation Writer
+description: Documentation writer role — создание и поддержка технической документации
+allowed_depths: [3, 4]
+default_tools:
+  - code_research
+  - web_search
+  - edit
+  - write
+verification_approach: lenient
