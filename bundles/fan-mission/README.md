@@ -105,6 +105,34 @@ done
 | `fan-super-orchestrator` | `~/.fan/agent/extensions/fan-super-orchestrator/role-config.yaml` | `spawn.excluded_extensions`, `role.<role>.required_extensions` |
 | `fan-webhook` | `~/.fan/agent/extensions/fan-webhook/config.json` | Порт webhook-сервера, allowlist источников |
 
+### Бюджет миссии и дочерних узлов
+
+В бюджетной модели бандла действуют два разных уровня:
+
+| Уровень | Лимит | Где настраивается |
+|---------|-------|-------------------|
+| **L0 (главный процесс миссии)** | Не ограничен | `budget_tokens` / `budget_usd` в frontmatter `MISSION.md` — информационные поля; enforcement отсутствует. Расход трекается в `.mission-loop.json` (`budgetUsed`) и отображается в mission-widget. Статус `budget_exhausted` остаётся в типах и FSM для обратной совместимости со старыми миссиями, но L0 его больше не выставляет. |
+| **L1+ (дочерние узлы fan-super-orchestrator)** | `childBudgetTokens` на ребёнка | `childBudgetTokens` (wire option) → env `FAN_CHILD_BUDGET_TOKENS` → default `1_000_000`. Применяется per-hop и к L1, и к рекурсивно-порождённым L2–L4 (см. `fan-super-orchestrator/index.ts` → `resolveChildBudgetTokens`). |
+
+#### Переменные окружения
+
+| Переменная | Назначение | Default |
+|------------|------------|---------|
+| `FAN_CHILD_BUDGET_TOKENS` | Лимит токенов на дочерний узел супер-оркестратора. Используется, если wire option `childBudgetTokens` не передан. Невалидные/неположительные значения игнорируются. | `1_000_000` |
+
+#### Программный конфиг (wire option)
+
+```ts
+// Владелец узла передаёт childBudgetTokens при инициализации супер-оркестратора.
+// Приоритет: wire option > env > default.
+import { resolveChildBudgetTokens } from "@fan/fan-super-orchestrator";
+const perChildLimit = resolveChildBudgetTokens(opts.childBudgetTokens); // → number
+```
+
+#### Поведение `budget_usd`
+
+`budget_usd` в `MISSION.md` остаётся USD-пулом для аллокации детей: super-orchestrator распределяет USD между дочерними узлами, наследуя общий пул. Это поле трактуется как информационное для L0 (сам процесс миссии не ограничен) и как мягкий пул для L1+.
+
 ---
 
 ## Документация

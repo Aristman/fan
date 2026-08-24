@@ -26,6 +26,7 @@
 //   • Используются и для role-routing, и для журнальных записей, и для
 //     validateDepth (F-38) на границе приёма отчёта.
 
+import { join } from "node:path";
 import { canSpawn, type DepthWidthGuardOptions } from "../depth-width-guard.js";
 import type { ValidationFailureInfo } from "../child-node-client.js";
 import { validateDepth } from "../message-sanitizer.js";
@@ -113,6 +114,14 @@ export interface LaunchChildSendOpts {
  *  fetch-poll /api/health в fan-super-orchestrator/index.ts. */
 export type WaitForReady = (port: number) => Promise<void>;
 
+/** F-2 fix: exit-инфо ребёнка для диагностики преждевременной смерти.
+ *  Возвращает {code, signal} если процесс уже завершился, null если ещё жив.
+ *  DI: прод — process-manager.getExitInfo в fan-super-orchestrator/index.ts;
+ *  не задан — диагностические diag-события не пишутся (best-effort). */
+export type GetNodeExitInfo = (
+	id: string,
+) => { code: number | null; signal: string | null } | null;
+
 /** F-4: роль дочернего узла. */
 export type ChildRole = "worker" | "super-orchestrator";
 
@@ -147,6 +156,8 @@ export interface LaunchChildOptionsLike {
 	sendPackage?: (opts: LaunchChildSendOpts) => Promise<NodeReport>;
 	killNode?: (id: string) => Promise<void>;
 	waitForReady?: WaitForReady;
+	/** F-2 fix: узнать exit-инфо ребёнка для diag event. Optional. */
+	getNodeExitInfo?: GetNodeExitInfo;
 	guardOptions?: DepthWidthGuardOptions;
 }
 
@@ -225,6 +236,42 @@ export async function launchChildForRole(ctx: LaunchChildContext): Promise<void>
 		return;
 	}
 	await launchWorkerChild(ctx);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// F-2 fix: diag event helper + log-path resolver.
+// ────────────────────────────────────────────────────────────────────────────
+
+/** F-2 fix: путь к лог-файлу stdout/stderr ребёнка (по конвенции process-manager:
+ *  <missionDir>/logs/child-<sanitized-id>.log). Используется launchWorkerChild
+ *  для diag event при преждевременной смерти ребёнка. */
+function childLogPathFor(missionDir: string, nodeId: string): string {
+	return join(missionDir, "logs", `child-${nodeId.split("/").join("-")}.log`);
+}
+
+/** F-2 fix: написать diag event в журнал, если ребёнок уже мёртв
+ *  (getNodeExitInfo возвращает non-null). Без DI — no-op. */
+function writeDiagIfDead(opts: LaunchChildOptionsLike, journal: TreeJournal, ctx: {
+	nodeId: string;
+	correlationId: string;
+	diag: string;
+}): boolean {
+	const exitInfo = opts.getNodeExitInfo?.(ctx.nodeId) ?? null;
+	if (exitInfo === null) {
+		return false;
+	}
+	journal.write({
+		event: "diag",
+		nodeId: ctx.nodeId,
+		parentId: ROOT_NODE_ID,
+		correlationId: ctx.correlationId,
+		depth: CHILD_DEPTH,
+		diag: `${ctx.diag}: code=${exitInfo.code ?? "null"}, signal=${exitInfo.signal ?? "null"}`,
+		exitCode: exitInfo.code,
+		signal: exitInfo.signal,
+		logPath: childLogPathFor(opts.missionDir, ctx.nodeId),
+	});
+	return true;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -317,6 +364,14 @@ export async function launchWorkerChild(ctx: LaunchChildContext): Promise<void> 
 			if (aborted.value) {
 				return;
 			}
+			// F-2 fix: если ребёнок умер до того, как /api/health ответил 200,
+			// пишем diag event с exitCode/signal/logPath ДО fail event для
+			// постмортемной диагностики (раньше stderr терялся — stdio:"ignore").
+			writeDiagIfDead(opts, journal, {
+				nodeId,
+				correlationId,
+				diag: "child exited before readiness wait completed",
+			});
 			// Иначе — та же политика что F2 (отказ sendPackage):
 			// fail-запись, освобождение порта, возврат аллокации,
 			// kill узла, run бросает.
@@ -406,6 +461,13 @@ export async function launchWorkerChild(ctx: LaunchChildContext): Promise<void> 
 			throw new Error(`Incoming node report rejected by boundary validation: ${diag}`);
 		}
 	} catch (sendError) {
+		// F-2 fix: если ребёнок умер во время/после sendPackage —
+		// diag event с exit info ДО fail event.
+		writeDiagIfDead(opts, journal, {
+			nodeId,
+			correlationId,
+			diag: "child exited during sendPackage",
+		});
 		// F2: отказ sendPackage — fail-запись, очистка, возврат аллокации.
 		journal.write({
 			event: "fail",

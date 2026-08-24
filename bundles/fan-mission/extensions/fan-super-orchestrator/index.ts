@@ -8,7 +8,8 @@
 //      <cwd>/docs/missions/*/MISSION.md frontmatter status, подход
 //      fan-scheduler findActiveMission — БЕЗ импорта fan-mission) → init
 //      контура: tree-journal.jsonl в missionDir (createTreeJournal),
-//      бюджет миссии из frontmatter, startup-reconciliation (best-effort),
+//      лимит бюджета дочерних узлов из конфига (childBudgetTokens),
+//      startup-reconciliation (best-effort),
 //      подписка fan.events.on("mission_delegate", handler);
 //   2. mission_delegate → guard canSpawnBatch (depth из FAN_ORCHESTRATOR_DEPTH,
 //      batch = packages.length) → depth2-integration.run (journal/budget/
@@ -92,7 +93,7 @@ import {
 } from "./depth2-integration.js";
 import { clean } from "./message-sanitizer.js";
 import type { NodeReport } from "./node-report.js";
-import { createProcessManager } from "./process-manager.js";
+import { createProcessManager, isOwnChildPid } from "./process-manager.js";
 import { reconcile } from "./startup-reconciliation.js";
 import type { RoleProfile } from "./role-loader.js";
 import { createTreeJournal, type TreeJournal } from "./tree-journal.js";
@@ -192,7 +193,10 @@ export function findActiveMission(cwd: string): { dir: string; status: string } 
 	return null;
 }
 
-/** Бюджет миссии из frontmatter (budget_tokens/budget_usd; absent → 0). */
+/** Бюджет миссии из frontmatter (budget_tokens/budget_usd; absent → 0).
+ *  Бюджетная модель (2026-08): budget_tokens больше НЕ ограничивает детей —
+ *  лимит дочернего узла задаётся конфигом childBudgetTokens (см. ниже);
+ *  из frontmatter используется только budget_usd (USD-пул миссии). */
 function readMissionBudget(missionDir: string): { tokens: number; usd: number } {
 	const tokens = Number(readMissionFrontmatterField(missionDir, "budget_tokens"));
 	const usd = Number(readMissionFrontmatterField(missionDir, "budget_usd"));
@@ -200,6 +204,31 @@ function readMissionBudget(missionDir: string): { tokens: number; usd: number } 
 		tokens: Number.isFinite(tokens) ? tokens : 0,
 		usd: Number.isFinite(usd) ? usd : 0,
 	};
+}
+
+/** Лимит токенов на дочерний узел по умолчанию. */
+export const DEFAULT_CHILD_BUDGET_TOKENS = 1_000_000;
+
+/** Env-переменная лимита бюджета дочерних узлов (токены). */
+export const CHILD_BUDGET_TOKENS_ENV = "FAN_CHILD_BUDGET_TOKENS";
+
+/**
+ * Резолв лимита бюджета дочерних узлов (токены на ребёнка).
+ * Приоритет: wire option childBudgetTokens → env FAN_CHILD_BUDGET_TOKENS →
+ * default 1_000_000. Невалидные/неположительные значения игнорируются.
+ */
+export function resolveChildBudgetTokens(override?: number): number {
+	if (typeof override === "number" && Number.isFinite(override) && override > 0) {
+		return Math.floor(override);
+	}
+	const raw = process.env[CHILD_BUDGET_TOKENS_ENV];
+	if (raw !== undefined && raw !== "") {
+		const parsed = Number(raw);
+		if (Number.isFinite(parsed) && parsed > 0) {
+			return Math.floor(parsed);
+		}
+	}
+	return DEFAULT_CHILD_BUDGET_TOKENS;
 }
 
 // ─── Production-адаптеры узлов (реальный контур, FIX F-48.5) ─────────────
@@ -226,6 +255,8 @@ function createProductionNodeAdapters(
 	waitForReady: WaitForReady;
 	sendPackage: (opts: Depth2SendOpts) => Promise<NodeReport>;
 	killNode: (id: string) => Promise<void>;
+	/** F-2 fix: exit-инфо ребёнка для diag event. */
+	getNodeExitInfo: (id: string) => { code: number | null; signal: string | null } | null;
 } {
 	const pm = createProcessManager({
 		portsFile: join(missionDir, "child-ports.json"),
@@ -271,6 +302,9 @@ function createProductionNodeAdapters(
 			}
 		},
 		killNode: (id: string) => pm.kill(id),
+		// F-2 fix: ProcessManager.getExitInfo — для launchWorkerChild
+		// (см. writeDiagIfDead в routes/launch-child.ts).
+		getNodeExitInfo: (id: string) => pm.getExitInfo(id),
 	};
 }
 
@@ -293,6 +327,9 @@ export interface SuperOrchestratorWireOptions {
 	deadlineMs?: number;
 	/** Общий таймаут readiness-wait для production-дефолта, мс (default 60с). */
 	readyTimeoutMs?: number;
+	/** Лимит бюджета дочернего узла, токены (per-hop ceiling).
+	 *  Приоритет: эта опция → env FAN_CHILD_BUDGET_TOKENS → default 1_000_000. */
+	childBudgetTokens?: number;
 }
 
 export interface SuperOrchestratorWiring {
@@ -425,7 +462,17 @@ export default function superOrchestratorExtension(
 
 	/** Создание depth2-handle для missionDir (opts DI → production-дефолты). */
 	const createDepth2 = (missionDir: string): Depth2Handle => {
-		const budgetTotal = readMissionBudget(missionDir);
+		// Бюджетная модель (2026-08): L0 не ограничен, MISSION.md budget_tokens
+		// больше НЕ является источником лимита детей. Токен-пул миссии для
+		// аллокации — unlimited (tokens: 0 → computeChildAllocation выдаёт
+		// каждому ребёнку сразу per-hop ceiling); лимит дочернего узла —
+		// childBudgetTokens (wire option → env FAN_CHILD_BUDGET_TOKENS → 1М).
+		// USD-пул по-прежнему из frontmatter budget_usd (без потолка на
+		// ребёнка, делится пропорционально). Поведение детей при исчерпании
+		// лимита (остановка/фейл узла) не меняется.
+		const missionBudget = readMissionBudget(missionDir);
+		const budgetTotal = { tokens: 0, usd: missionBudget.usd };
+		const childBudgetTokens = resolveChildBudgetTokens(opts?.childBudgetTokens);
 		// Production-дефолт: реальный spawn/kill (process-manager),
 		// readiness-wait (fetch-poll /api/health) и sendPackage
 		// (child-node-client). DI (opts.*) переопределяет дефолты.
@@ -436,10 +483,13 @@ export default function superOrchestratorExtension(
 			missionDir,
 			missionId: basename(missionDir),
 			budgetTotal,
+			perHopCeiling: childBudgetTokens,
 			spawnNode: opts?.spawnNode ?? production.spawnNode,
 			waitForReady: opts?.waitForReady ?? production.waitForReady,
 			sendPackage: opts?.sendPackage ?? production.sendPackage,
 			killNode: opts?.killNode ?? production.killNode,
+			// F-2 fix: getNodeExitInfo для diag event при преждевременной смерти.
+			getNodeExitInfo: production.getNodeExitInfo,
 			...(opts?.guardOptions ? { guardOptions: opts.guardOptions } : {}),
 		};
 		const factory = opts?.createDepth2 ?? createDepth2Integration;
@@ -534,10 +584,18 @@ export default function superOrchestratorExtension(
 
 		// Startup-reconciliation: зачистка orphan-портов/PID прошлой сессии.
 		// Best-effort: ошибки сверки не блокируют подписку на делегирование.
+		// F-1 fix: isOwnChild защищает собственных детей этого процесса
+		// (activeChildPids реестр в process-manager.ts) от SIGTERM/SIGKILL.
+		// Без предиката reconcile считает ЛЮБОЙ живой PID сиротой — на
+		// retry-итерациях миссии убивает только что заспавненных детей.
+		// На session_start реестр ещё пуст (дети спавнятся в handleDelegate),
+		// значит preserve-семантика для crash-recovery (сироты прошлой
+		// сессии по-прежнему чистятся) сохраняется.
 		void reconcile({
 			portsFile: join(missionDir, "child-ports.json"),
 			pidDir: join(missionDir, "pids"),
 			journal,
+			isOwnChild: isOwnChildPid,
 		}).catch((err) => {
 			console.warn("[fan-super-orchestrator] startup reconciliation failed:", err);
 		});

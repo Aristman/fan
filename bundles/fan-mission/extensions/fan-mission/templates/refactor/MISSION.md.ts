@@ -1,5 +1,9 @@
 // Refactor MISSION.md template — tailored for code refactoring missions.
 // Fields {{slug}}, {{mission_id}}, {{now}} are replaced at init time.
+//
+// budget_tokens/budget_usd — ИНФОРМАЦИОННЫЕ поля (обязательные по схеме
+// frontmatter, backward compat): L0 бюджетом НЕ ограничен. Лимит дочерних
+// узлов — конфиг fan-super-orchestrator (childBudgetTokens, default 1_000_000).
 
 export const MISSION_MD = `---
 mission_id: {{mission_id}}
@@ -7,6 +11,7 @@ created: {{now}}
 status: active
 metric_type: code_complexity_reduction
 metric_command: npx complexity-report --format json
+# Информационные поля: L0 бюджетом не ограничен; лимит детей — childBudgetTokens (fan-super-orchestrator)
 budget_tokens: 300000
 budget_usd: 5.00
 max_depth: 3

@@ -3,7 +3,14 @@
 // Stateless recovery via `.mission-loop.json` (survives process crashes between ticks).
 //
 // Deep-fix (P0-1..P2-9): per-step journal, abort signal, atomic step 6,
-// budget_usd enforcement, STATE.md auto-archiving, file-lock, CRLF preservation.
+// STATE.md auto-archiving, file-lock, CRLF preservation.
+//
+// Бюджетная модель (2026-08): L0 (главный процесс миссии) — бюджет НЕ
+// ограничен: budget_tokens/budget_usd из frontmatter MISSION.md трактуются
+// как информационные поля, enforcement отсутствует (L0 никогда не переходит
+// в budget_exhausted). Трекинг расхода (budgetUsed в .mission-loop.json)
+// сохраняется для отображения. Лимиты действуют только для дочерних узлов
+// (fan-super-orchestrator: childBudgetTokens, default 1_000_000).
 
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
@@ -775,8 +782,11 @@ export class MissionLoop {
 
 			const mission = await readMission(this.missionDir);
 			const missionStatus = String(mission.frontmatter.status) as MissionStatus;
-			const budgetTokens = Number(mission.frontmatter.budget_tokens) || 0;
-			const budgetUsd = Number(mission.frontmatter.budget_usd) || 0;
+			// L0 — бюджет НЕ ограничен: frontmatter budget_tokens/budget_usd
+			// трактуются как информационные поля. Расход трекается в
+			// loopState.budgetUsed (см. .mission-loop.json). Enforcement
+			// полностью удалён — лимиты действуют только для дочерних узлов
+			// (см. fan-super-orchestrator: childBudgetTokens, default 1_000_000).
 
 			// ralph-loop (S3): session mode — resolved once per tick (frontmatter
 			// is immutable after init). Resolved here, before the completed
@@ -802,8 +812,6 @@ export class MissionLoop {
 					loopState,
 					steps,
 					currentIteration,
-					budgetTokens,
-					budgetUsd,
 					roadmapRaw,
 					missionState,
 					"completed",
@@ -1054,20 +1062,7 @@ export class MissionLoop {
 					// committed before advancing lastStep to 6. If the full tick completed,
 					// pendingItem is also cleared, so we never enter this branch.
 				} else {
-					// P1-4 + P2-7: Budget preflight BEFORE executor
 					steps.iterate = true;
-
-					// P2 fix: budget=0 / missing = unlimited (no limit).
-					// Only check preflight when budget > 0 (explicit limit set).
-					const tokensRemaining = budgetTokens - loopState.budgetUsed.tokens;
-					const usdRemaining = budgetUsd - loopState.budgetUsed.usd;
-					const tokensPreflightFail = budgetTokens > 0 && tokensRemaining <= 0;
-					const usdPreflightFail = budgetUsd > 0 && usdRemaining <= 0;
-					if (tokensPreflightFail || usdPreflightFail) {
-						resultStatus = "budget_exhausted";
-						await writeMissionStatus(this.missionDir, "budget_exhausted");
-						return this.finishTickNoIterate(loopState, steps, currentIteration, resultStatus, currentItem);
-					}
 
 					// P0-2: abort check before expensive work
 					if (this.isAborted()) {
@@ -1217,10 +1212,10 @@ export class MissionLoop {
 				loopState.budgetCountedFor = nextItem.text;
 				this.journalStep(loopState, 5);
 
-				// P1-4: check both token and USD limits
-				const tokensExceeded = budgetTokens > 0 && loopState.budgetUsed.tokens > budgetTokens;
-				const usdExceeded = budgetUsd > 0 && loopState.budgetUsed.usd > budgetUsd;
-				const budgetExceededPostHoc = tokensExceeded || usdExceeded;
+				// L0 budget unlimited by design — post-hoc exhaustion невозможен.
+				// Параметр budgetExceeded в doStep6Commit / appendBacklogEntry
+				// удалён; статус `budget_exhausted` остаётся в типах для back-compat
+				// со старыми миссиями (см. MissionStatus, FSM file-state-manager.ts).
 
 				let isSuccess = iterResult.status === "COMPLETE";
 				let isBlockOrFail = iterResult.status === "BLOCKED" || iterResult.status === "FAILED";
@@ -1247,14 +1242,6 @@ export class MissionLoop {
 					}
 				}
 
-				// P2-7: budget exceeded AFTER successful iteration → commit first, then status
-				if (budgetExceededPostHoc && !isSuccess) {
-					resultStatus = "budget_exhausted";
-				} else if (budgetExceededPostHoc && isSuccess) {
-					// Will set budget_exhausted AFTER commit
-					resultStatus = "active"; // temporarily — will change after commit
-				}
-
 				lastCompletedStep = 5;
 
 				// ── Step 6: Commit ─────────────────────────────────────────────
@@ -1266,14 +1253,7 @@ export class MissionLoop {
 					iterResult,
 					isSuccess,
 					isBlockOrFail,
-					budgetExceededPostHoc,
 				);
-
-				// P3-d: deduplicated — single branch for budget_exhausted after commit
-				if (budgetExceededPostHoc) {
-					resultStatus = "budget_exhausted";
-					await writeMissionStatus(this.missionDir, "budget_exhausted");
-				}
 
 				// P0-1: Clear iteration result INSIDE step 6 (before advancing lastStep)
 				// This ensures that if we crash between step 6 and step 7,
@@ -1302,9 +1282,6 @@ export class MissionLoop {
 					isBlockOrFail,
 					costUsd,
 					iterStatus: iterResult.status,
-					budgetExhausted: budgetExceededPostHoc,
-					budgetUsed: loopState.budgetUsed,
-					budgetTokens,
 					...(infraSkip ? { skipBacklog: true } : {}),
 				});
 
@@ -1393,13 +1370,11 @@ export class MissionLoop {
 
 			// ── R2: Recur-phase (RECURRING.md) ─────────────────────────────
 			// Runs after the one-shot loop: executes due recurring items.
-			// Does NOT run step 7 ideas. Budget is still enforced.
+			// Does NOT run step 7 ideas. L0 budget unlimited — только трекинг.
 			const recurResult = await this.runRecurPhase(
 				loopState,
 				steps,
 				currentIteration,
-				budgetTokens,
-				budgetUsd,
 				roadmapRaw,
 				missionState,
 				resultStatus,
@@ -1897,55 +1872,19 @@ export class MissionLoop {
 	}
 
 	/**
-	 * Finish a tick without running the executor (budget preflight exhausted).
-	 * Writes backlog entry and returns.
-	 */
-	private async finishTickNoIterate(
-		loopState: LoopState,
-		steps: TickSteps,
-		currentIteration: number,
-		resultStatus: MissionStatus,
-		currentItem: string | undefined,
-	): Promise<TickResult> {
-		steps.iterate = false;
-		steps.verify = false;
-		steps.commit = false;
-		steps.backlog = true;
-
-		const now = await this.deps.clock.now();
-		await this.appendBacklogEntry(loopState, now, currentIteration, {
-			text: "Budget exhausted before iteration",
-			isSuccess: false,
-			isBlockOrFail: false,
-			costUsd: 0,
-			budgetExhausted: true,
-			budgetUsed: loopState.budgetUsed,
-		});
-
-		loopState.lastStep = 7;
-		loopState.interrupted = false;
-		writeLoopStateSync(this.missionDir, loopState);
-
-		return {
-			iteration: currentIteration,
-			steps,
-			status: resultStatus,
-			item: currentItem,
-		};
-	}
-
-	/**
 	 * R2: Execute due recurring items from RECURRING.md.
 	 * Called after the one-shot while-loop (active tick) or as the sole
 	 * work phase for completed missions (дежурство).
 	 *
+	 * L0 budget unlimited by design — никакого enforcement, только
+	 * трекинг расхода в loopState.budgetUsed.
+	 *
 	 * For each due item:
-	 * 1. Budget preflight (same as step 4)
-	 * 2. executor.runIteration with recurring: true prompt
-	 * 3. Budget counting (metrics)
-	 * 4. STATE.md update (done/blockers)
-	 * 5. Git commit (STATE.md only, ROADMAP untouched)
-	 * 6. markRecurringRun + writeRecurringState (AFTER any outcome)
+	 * 1. executor.runIteration with recurring: true prompt
+	 * 2. Budget counting (metrics)
+	 * 3. STATE.md update (done/blockers)
+	 * 4. Git commit (STATE.md only, ROADMAP untouched)
+	 * 5. markRecurringRun + writeRecurringState (AFTER any outcome)
 	 *
 	 * Does NOT run step 7 ideas (runIdeaHooks).
 	 * Returns TickResult with updated status/itemsExecuted.
@@ -1954,8 +1893,6 @@ export class MissionLoop {
 		loopState: LoopState,
 		steps: TickSteps,
 		currentIteration: number,
-		budgetTokens: number,
-		budgetUsd: number,
 		roadmapRaw: string,
 		missionState: MissionState,
 		initialStatus: MissionStatus,
@@ -1982,24 +1919,9 @@ export class MissionLoop {
 		for (const item of recurItems) {
 			if (!isRecurringDue(item, recurState, nowMs)) continue;
 
-			// Budget preflight (same logic as step 4)
-			const tokensRemaining = budgetTokens - loopState.budgetUsed.tokens;
-			const usdRemaining = budgetUsd - loopState.budgetUsed.usd;
-			const tokensPreflightFail = budgetTokens > 0 && tokensRemaining <= 0;
-			const usdPreflightFail = budgetUsd > 0 && usdRemaining <= 0;
-			if (tokensPreflightFail || usdPreflightFail) {
-				resultStatus = "budget_exhausted";
-				await writeMissionStatus(this.missionDir, "budget_exhausted");
-				writeRecurringState(this.missionDir, recurState);
-				writeLoopStateSync(this.missionDir, loopState);
-				return {
-					iteration: currentIteration,
-					steps,
-					status: resultStatus,
-					item: currentItem,
-					itemsExecuted,
-				};
-			}
+			// L0 budget unlimited by design — budgetTokens/budgetUsd == 0,
+			// никакого enforcement. Трекинг расхода в loopState.budgetUsed
+			// сохраняется (см. writeLoopStateSync ниже).
 
 			// Abort check before expensive work
 			if (this.isAborted()) {
@@ -2091,14 +2013,9 @@ export class MissionLoop {
 			itemsExecuted++;
 			currentItem = item.text;
 
-			// Check budget post-hoc
-			const tokensExceeded = budgetTokens > 0 && loopState.budgetUsed.tokens > budgetTokens;
-			const usdExceeded = budgetUsd > 0 && loopState.budgetUsed.usd > budgetUsd;
-			if (tokensExceeded || usdExceeded) {
-				resultStatus = "budget_exhausted";
-				await writeMissionStatus(this.missionDir, "budget_exhausted");
-				break;
-			}
+			// L0 budget unlimited — post-hoc exhaustion невозможен (см. комментарий выше).
+			// Ранний break по budget_exhausted удалён: статус остаётся только в типах
+			// для обратной совместимости со старыми миссиями.
 
 			// Re-check mission status (may have changed during execution)
 			try {
@@ -2224,7 +2141,6 @@ export class MissionLoop {
 		iterResult: IterationResult,
 		isSuccess: boolean,
 		isBlockOrFail: boolean,
-		budgetExceeded: boolean,
 	): Promise<void> {
 		const currentState = await readState(this.missionDir);
 		const newDone = [...currentState.done];
@@ -2258,11 +2174,11 @@ export class MissionLoop {
 					newBlockers.push(reason);
 				}
 			}
-		} else if (budgetExceeded) {
-			newBlockers.push(
-				`Budget exhausted: used ${loopState.budgetUsed.tokens} tokens / $${loopState.budgetUsed.usd.toFixed(2)}`,
-			);
 		}
+		// L0 budget unlimited by design — ветка `budget_exhausted` удалена:
+		// параметр budgetExceeded всегда был false, она никогда не срабатывала.
+		// Статус `budget_exhausted` сохранён в MissionStatus и FSM для back-compat
+		// со старыми миссиями (см. file-state-manager.ts, mission-widget.ts).
 
 		const stateChanged =
 			JSON.stringify([newDone, newBlockers, newNextSteps]) !==
@@ -2314,11 +2230,6 @@ export class MissionLoop {
 			loopState.committed = true;
 			writeLoopStateSync(this.missionDir, loopState);
 		}
-
-		// Persist budget_exhausted status (blocker already written above)
-		if (budgetExceeded) {
-			await writeMissionStatus(this.missionDir, "budget_exhausted");
-		}
 	}
 
 	/**
@@ -2334,9 +2245,6 @@ export class MissionLoop {
 			isBlockOrFail: boolean;
 			costUsd: number;
 			iterStatus?: string;
-			budgetExhausted?: boolean;
-			budgetUsed?: { tokens: number; usd: number };
-			budgetTokens?: number;
 			/** 0.7.2: if true, skip writing to BACKLOG (infra error) */
 			skipBacklog?: boolean;
 		},
@@ -2348,17 +2256,10 @@ export class MissionLoop {
 
 		const { appendBacklog } = await import("./file-state-manager.js");
 
-		let idea: string;
-		if (opts.budgetExhausted && !opts.isSuccess) {
-			const used = opts.budgetUsed;
-			idea = used
-				? `Budget exhausted: ${used.tokens} tokens / $${used.usd.toFixed(2)}`
-				: `Budget exhausted: ${opts.text}`;
-		} else if (opts.isSuccess) {
-			idea = `Completed: ${opts.text}`;
-		} else {
-			idea = `Iteration ${currentIteration}: ${opts.iterStatus ?? opts.text}`;
-		}
+		// L0 budget unlimited — ветка `budgetExhausted` удалена (всегда false).
+		const idea = opts.isSuccess
+			? `Completed: ${opts.text}`
+			: `Iteration ${currentIteration}: ${opts.iterStatus ?? opts.text}`;
 
 		await appendBacklog(this.missionDir, {
 			id: randomUUID().slice(0, 8),

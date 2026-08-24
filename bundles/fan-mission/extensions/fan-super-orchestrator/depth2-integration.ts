@@ -41,6 +41,7 @@ import { computeChildAllocation, createMissionBudgetStore } from "./budget-coord
 import type { ValidationFailureInfo } from "./child-node-client.js";
 import { canSpawn, type DepthWidthGuardOptions } from "./depth-width-guard.js";
 import { type NodeReport } from "./node-report.js";
+import { isOwnChildPid } from "./process-manager.js";
 import { PortPool } from "./port-pool.js";
 import { reconcile } from "./startup-reconciliation.js";
 import { InvalidToolManifestError, validateManifest } from "./tool-manifest.js";
@@ -132,6 +133,10 @@ export interface Depth2Options {
 	waitForReady?: WaitForReady;
 	sendPackage?: (opts: Depth2SendOpts) => Promise<NodeReport>;
 	killNode?: (id: string) => Promise<void>;
+	/** F-2 fix: узнать exit-инфо ребёнка для diag event при преждевременной
+	 *  смерти. null = процесс ещё жив. Не задан — diag event не пишется
+	 *  (best-effort). Прод — process-manager.getExitInfo в index.ts. */
+	getNodeExitInfo?: (id: string) => { code: number | null; signal: string | null } | null;
 	/** F-4: HTTP-делегат для role=super-orchestrator. Default — globalThis.fetch
 	 *  (NODE 18+). Тесты мокают через vi.spyOn(globalThis, "fetch"). */
 	httpDelegate?: HttpDelegate;
@@ -192,7 +197,14 @@ export function createDepth2Integration(opts: Depth2Options): Depth2Handle {
 		const startedAt = Date.now();
 
 		// 1. Стартовая сверка: зачистка orphan-записей portsFile прошлой сессии.
-		await reconcile({ portsFile, pidDir, journal });
+		// F-1 fix: isOwnChild защищает собственных детей этого процесса
+		// (activeChildPids реестр в process-manager.ts) от убийства.
+		// reconcile вызывается ДО allocate/spawn в этом же run, поэтому
+		// реестр ещё пуст для НОВОГО spawn-round — все "живые" PID в
+		// portsFile = сироты прошлой сессии (crash-recovery preserved).
+		// Параллельные run() из соседнего depth2-handle используют тот же
+		// реестр, поэтому их дети будут защищены от этой сверки.
+		await reconcile({ portsFile, pidDir, journal, isOwnChild: isOwnChildPid });
 
 		// 2. Единообразная аллокация: от состояния на старт, plannedChildren = children.
 		const allocation = computeChildAllocation(aggregator.state(), runOpts.children, opts.perHopCeiling);

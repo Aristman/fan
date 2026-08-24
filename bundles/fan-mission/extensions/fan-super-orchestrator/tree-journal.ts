@@ -23,7 +23,9 @@ import { dirname } from "node:path";
 
 /** Тип события журнала дерева (orphan_cleanup — startup-reconciliation, F-33;
  * tool_blocked — отказы манифеста инструментов, F-37; validation_failed —
- * отклонение невалидного межагентного сообщения граничной валидацией, F-38). */
+ * отклонение невалидного межагентного сообщения граничной валидацией, F-38;
+ * diag — диагностическое событие преждевременной смерти ребёнка с
+ * exitCode/signal/logPath, F-2 fix). */
 export type TreeJournalEventType =
 	| "spawn"
 	| "complete"
@@ -31,7 +33,8 @@ export type TreeJournalEventType =
 	| "abort"
 	| "orphan_cleanup"
 	| "tool_blocked"
-	| "validation_failed";
+	| "validation_failed"
+	| "diag";
 
 /** Потреблённые ресурсы в записи журнала. */
 export interface TreeJournalUsage {
@@ -54,8 +57,17 @@ export interface TreeJournalEntry {
 	usage?: TreeJournalUsage;
 	/** Диагностика отказа (tool_blocked, F-37: "tool '<name>' not in manifest" /
 	 *  причина валидации манифеста; validation_failed, F-38: ошибки схемы
-	 *  отклонённого межагентного сообщения). */
+	 *  отклонённого межагентного сообщения; diag, F-2 fix: причина
+	 *  преждевременной смерти ребёнка, например "child exited before
+	 *  readiness wait completed"). */
 	diag?: string;
+	/** F-2 fix: код выхода ребёнка (diag event). null — процесс убит сигналом. */
+	exitCode?: number | null;
+	/** F-2 fix: сигнал, по которому завершился ребёнок (diag event). */
+	signal?: string | null;
+	/** F-2 fix: путь к лог-файлу stdout/stderr ребёнка (diag event)
+	 *  — помогает постмортемному анализу причин смерти. */
+	logPath?: string;
 	/** F-4: канал порождения узла. "spawn" — локальный child_process.spawn
 	 *  (worker, existing path); "http_delegate" — HTTP POST /api/mission-delegate
 	 *  в родительский fan server (super-orchestrator, recursive wiring). */
@@ -128,6 +140,9 @@ export function createTreeJournal(filePath: string): TreeJournal {
 			if (entry.pid !== undefined) full.pid = entry.pid;
 			if (entry.usage !== undefined) full.usage = entry.usage;
 			if (entry.diag !== undefined) full.diag = entry.diag;
+			if (entry.exitCode !== undefined) full.exitCode = entry.exitCode;
+			if (entry.signal !== undefined) full.signal = entry.signal;
+			if (entry.logPath !== undefined) full.logPath = entry.logPath;
 			if (entry.via !== undefined) full.via = entry.via;
 
 			const fd = openSync(filePath, "a");
