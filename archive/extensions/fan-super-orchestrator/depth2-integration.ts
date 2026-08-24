@@ -47,9 +47,7 @@ import {
 	type HttpDelegate,
 	type LaunchChildChildInfo,
 	type LaunchChildContext,
-	type LaunchChildSpawnOpts,
 	launchChildForRole,
-	ROOT_DEPTH,
 	ROOT_NODE_ID,
 	type WaitForReady,
 } from "./routes/launch-child.js";

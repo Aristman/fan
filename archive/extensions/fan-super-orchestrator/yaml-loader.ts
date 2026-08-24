@@ -170,7 +170,7 @@ function preprocess(rawLines: string[]): Line[] {
 }
 
 /** Count leading whitespace (spaces). */
-function countIndent(line: string): number {
+function _countIndent(line: string): number {
 	let i = 0;
 	while (i < line.length && line[i] === " ") i++;
 	return i;

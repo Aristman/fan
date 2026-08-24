@@ -2,7 +2,7 @@
 // completed + unchecked ROADMAP items → reactivate (active)
 // completed without unchecked items → hint message (no InvalidTransitionError)
 
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";

@@ -28,7 +28,7 @@
 
 import type { BudgetAggregator, BudgetAmount } from "../budget-aggregator.js";
 import type { ValidationFailureInfo } from "../child-node-client.js";
-import { canSpawn, type DepthWidthGuardOptions } from "../depth-width-guard.js";
+import type { DepthWidthGuardOptions } from "../depth-width-guard.js";
 import { validateDepth } from "../message-sanitizer.js";
 import { generateNodeToken } from "../node-auth.js";
 import type { NodeReport } from "../node-report.js";

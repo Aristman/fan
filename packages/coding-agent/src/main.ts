@@ -538,7 +538,7 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 				const resolved = resolvePath(reportsDir, name);
 				const resolvedDir = resolvePath(reportsDir);
 				// Path traversal protection
-				if (!resolved.startsWith(resolvedDir + "/") && !resolved.startsWith(resolvedDir + "\\")) {
+				if (!resolved.startsWith(`${resolvedDir}/`) && !resolved.startsWith(`${resolvedDir}\\`)) {
 					continue;
 				}
 				try {

@@ -427,7 +427,7 @@ describe("Phase A e2e — interrupt core (F-01 abort + F-03 watchdog)", () => {
 		sessionId: string;
 		cleanup: () => void;
 	} | null = null;
-	let adapter: SessionAdapter | null = null;
+	let _adapter: SessionAdapter | null = null;
 	let port = 0;
 	let server: Server | null = null;
 	let wsHandler: { close: () => void } | null = null;
@@ -450,7 +450,7 @@ describe("Phase A e2e — interrupt core (F-01 abort + F-03 watchdog)", () => {
 			/* ignore */
 		}
 		harness = null;
-		adapter = null;
+		_adapter = null;
 	});
 
 	/**
@@ -525,7 +525,7 @@ describe("Phase A e2e — interrupt core (F-01 abort + F-03 watchdog)", () => {
 
 		const sessionId = session.sessionId;
 		const liveAdapter = makeLiveSessionAdapter(session, sessionId);
-		adapter = liveAdapter;
+		_adapter = liveAdapter;
 
 		// Build the real HTTP+WS stack:
 		//   1. createApp gives us a Hono app (REST routes).
