@@ -124,6 +124,9 @@ export interface ChildLike {
 
 export interface SpawnCommandOptions {
 	detached: boolean;
+	/** F-26 fix: windowsHide=true предотвращает всплытие консольных окон
+	 *  на Windows при detached:true (вывод уже идёт в pipe → child-*.log). */
+	windowsHide?: boolean;
 	/** F-2 fix: production — ["ignore","pipe","pipe"] для логирования;
 	 *  unit-tests могут использовать "ignore" (FakeChild без потоков). */
 	stdio: "ignore" | Array<"ignore" | "pipe">;
@@ -286,6 +289,7 @@ export function createProcessManager(options: ProcessManagerOptions): ProcessMan
 		// F-2 fix: pipe stdout/stderr чтобы ProcessManager мог логировать в файл.
 		const child = spawnFn(serverCommand.command, args, {
 			detached: true,
+			windowsHide: true,
 			stdio: ["ignore", "pipe", "pipe"],
 			env: {
 				...process.env,

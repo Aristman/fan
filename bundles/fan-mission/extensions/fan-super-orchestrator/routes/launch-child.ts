@@ -250,12 +250,18 @@ function childLogPathFor(missionDir: string, nodeId: string): string {
 }
 
 /** F-2 fix: написать diag event в журнал, если ребёнок уже мёртв
- *  (getNodeExitInfo возвращает non-null). Без DI — no-op. */
-function writeDiagIfDead(opts: LaunchChildOptionsLike, journal: TreeJournal, ctx: {
+ *  (getNodeExitInfo возвращает non-null). Без DI — no-op.
+ *  F-26 fix: async — даём событию exit (macrotask) шанс сработать
+ *  до чтения exitInfo. При reject sendPackage (microtask) exit handler
+ *  ещё не отработал → exitInfo null → diag терялся. Пауза ~100ms
+ *  даёт Node.js цикл обработать exit event. */
+async function writeDiagIfDead(opts: LaunchChildOptionsLike, journal: TreeJournal, ctx: {
 	nodeId: string;
 	correlationId: string;
 	diag: string;
-}): boolean {
+}): Promise<boolean> {
+	// F-26: даём macrotask (child.on('exit')) шанс сработать.
+	await new Promise((resolve) => setTimeout(resolve, 100));
 	const exitInfo = opts.getNodeExitInfo?.(ctx.nodeId) ?? null;
 	if (exitInfo === null) {
 		return false;
@@ -367,7 +373,7 @@ export async function launchWorkerChild(ctx: LaunchChildContext): Promise<void> 
 			// F-2 fix: если ребёнок умер до того, как /api/health ответил 200,
 			// пишем diag event с exitCode/signal/logPath ДО fail event для
 			// постмортемной диагностики (раньше stderr терялся — stdio:"ignore").
-			writeDiagIfDead(opts, journal, {
+			await writeDiagIfDead(opts, journal, {
 				nodeId,
 				correlationId,
 				diag: "child exited before readiness wait completed",
@@ -463,7 +469,7 @@ export async function launchWorkerChild(ctx: LaunchChildContext): Promise<void> 
 	} catch (sendError) {
 		// F-2 fix: если ребёнок умер во время/после sendPackage —
 		// diag event с exit info ДО fail event.
-		writeDiagIfDead(opts, journal, {
+		await writeDiagIfDead(opts, journal, {
 			nodeId,
 			correlationId,
 			diag: "child exited during sendPackage",

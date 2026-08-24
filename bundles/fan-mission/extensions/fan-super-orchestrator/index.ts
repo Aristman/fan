@@ -591,14 +591,26 @@ export default function superOrchestratorExtension(
 		// На session_start реестр ещё пуст (дети спавнятся в handleDelegate),
 		// значит preserve-семантика для crash-recovery (сироты прошлой
 		// сессии по-прежнему чистятся) сохраняется.
-		void reconcile({
-			portsFile: join(missionDir, "child-ports.json"),
-			pidDir: join(missionDir, "pids"),
-			journal,
-			isOwnChild: isOwnChildPid,
-		}).catch((err) => {
-			console.warn("[fan-super-orchestrator] startup reconciliation failed:", err);
-		});
+		//
+		// F-26 fix: дочерние узлы (depth > 0) НЕ выполняют reconcile.
+		// У worker-ребёнка module-level реестр activeChildPids пуст (новый
+		// процесс), поэтому isOwnChildPid()=false для всех PID → reconcile
+		// считает ЛЮБОЙ живой PID в общем pidDir сиротой и шлёт SIGTERM,
+		// убивая всех детей миссии (включая себя). Reconcile — функция
+		// только L0 (корневой оркестратор); SO-дети используют
+		// initRecursiveCircuit (без reconcile) и безопасны.
+		if (currentDepthFromEnv() > 0) {
+			console.warn("[fan-super-orchestrator] skipping startup reconcile in child node (depth > 0)");
+		} else {
+			void reconcile({
+				portsFile: join(missionDir, "child-ports.json"),
+				pidDir: join(missionDir, "pids"),
+				journal,
+				isOwnChild: isOwnChildPid,
+			}).catch((err) => {
+				console.warn("[fan-super-orchestrator] startup reconciliation failed:", err);
+			});
+		}
 
 		const unsubDelegate =
 			typeof api.events?.on === "function"
