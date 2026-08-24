@@ -13,10 +13,18 @@
  * Modes use this class and add their own I/O layer on top.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { ModelManager } from "@fan/model-manager";
-import type { Agent, AgentEvent, AgentMessage, AgentState, AgentTool, ThinkingLevel } from "@seaagents/fan-agent-core";
+import {
+	type Agent,
+	type AgentEvent,
+	type AgentMessage,
+	type AgentState,
+	type AgentTool,
+	QueueOverflowError,
+	type ThinkingLevel,
+} from "@seaagents/fan-agent-core";
 import type { AssistantMessage, ImageContent, Message, Model, TextContent } from "@seaagents/fan-ai";
 import { isContextOverflow, modelsAreEqual, resetApiProviders, supportsXhigh } from "@seaagents/fan-ai";
 import { getDocsPath } from "../config.js";
@@ -61,6 +69,8 @@ import {
 	type TurnStartEvent,
 	wrapRegisteredTools,
 } from "./extensions/index.js";
+import { ensureGitExcludes, gitCheckoutCommit, gitCommitAll, isInsideGitWorkTree } from "./git-checkpoint-helper.js";
+import { LoopDetector, normalizeErrorText } from "./loop-detector.js";
 import type { BashExecutionMessage, CustomMessage } from "./messages.js";
 import type { ModelRegistry } from "./model-registry.js";
 import { expandPromptTemplate, type PromptTemplate } from "./prompt-templates.js";
@@ -74,6 +84,7 @@ import { buildSystemPrompt } from "./system-prompt.js";
 import { type BashOperations, createLocalBashOperations } from "./tools/bash.js";
 import { createAllToolDefinitions } from "./tools/index.js";
 import { createToolDefinitionFromAgentTool, wrapToolDefinition } from "./tools/tool-definition-wrapper.js";
+import { WatchdogTimer } from "./watchdog-timer.js";
 
 // ============================================================================
 // Skill Block Parsing
@@ -85,6 +96,42 @@ export interface ParsedSkillBlock {
 	location: string;
 	content: string;
 	userMessage: string | undefined;
+}
+
+// ============================================================================
+// Checkpoint API types (F-45)
+// ============================================================================
+
+/** Summary entry returned by listCheckpoints() */
+export interface CheckpointInfo {
+	label: string;
+	timestamp: string;
+	gitCommit?: string;
+	iteration?: number;
+}
+
+/** Full checkpoint state persisted at .fan/checkpoints/<slug>/<label>.json */
+export interface CheckpointState extends CheckpointInfo {
+	sessionId: string;
+	treeLeafId?: string;
+	messages: AgentMessage[];
+}
+
+/**
+ * Extract the first text content from a tool result (used to read error messages).
+ */
+function extractErrorText(result: unknown): string | undefined {
+	if (!result || typeof result !== "object") return undefined;
+	const r = result as { content?: unknown };
+	if (!Array.isArray(r.content)) return undefined;
+	for (const block of r.content) {
+		if (block && typeof block === "object" && (block as { type?: string }).type === "text") {
+			const raw = (block as { text: string }).text;
+			// Normalize volatile fragments for loop-detector signature stability.
+			return normalizeErrorText(raw);
+		}
+	}
+	return undefined;
 }
 
 /**
@@ -120,7 +167,22 @@ export type AgentSessionEvent =
 			errorMessage?: string;
 	  }
 	| { type: "auto_retry_start"; attempt: number; maxAttempts: number; delayMs: number; errorMessage: string }
-	| { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string };
+	| { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string }
+	| { type: "watchdog_timeout"; tool: string; reason: string; elapsedMs: number; toolCallId: string }
+	| { type: "loop_detected"; reason: "loop_detected"; tool: string; error: string; count: number }
+	| { type: "drain_started" }
+	| { type: "drain_completed" }
+	| { type: "drain_cancelled" }
+	| { type: "drain_resumed" }
+	// F-46: per-iteration budget ceiling exceeded. The run is stopped before the
+	// next API call (I1 drain semantics); the session stays usable.
+	| {
+			type: "iteration_budget_exceeded";
+			tokensUsed: number;
+			costUsed: number;
+			remaining: number;
+			message: string;
+	  };
 
 /** Listener function for agent session events */
 export type AgentSessionEventListener = (event: AgentSessionEvent) => void;
@@ -262,6 +324,34 @@ export class AgentSession {
 	private _bashAbortController: AbortController | undefined = undefined;
 	private _pendingBashMessages: BashExecutionMessage[] = [];
 
+	// Watchdog timer state (per-toolCallId)
+	private _watchdog: WatchdogTimer;
+
+	// Loop detector state (F-04)
+	private _loopDetector: LoopDetector;
+	private _loopDetectorFired = false;
+
+	// Drain flag (F-05) — graceful pause for super-orchestrator
+	//
+	// State model (strict 1:1:1 drain_started → drain_completed | drain_cancelled):
+	//   idle → draining → drained → (resume | prompt) → idle
+	//   idle → draining → (cancel) → idle  (drain_cancelled)
+	//
+	//   _drainAfterCurrentTurn = true  → "draining"  (turn in flight, abort pending)
+	//   _drainStopPending      = true  → abort was fired on turn_end; drain_completed is owed
+	//   _isDrained             = true  → "drained"   (drain_completed emitted, standing by)
+	//
+	//   setDrainAfterCurrentTurn(true)  emits drain_started
+	//   agent_end of drained run        emits drain_completed (via _drainStopPending || _drainAfterCurrentTurn)
+	//   setDrainAfterCurrentTurn(false) emits drain_cancelled (if drain was active)
+	//   resume()                        emits drain_resumed
+	//
+	//   isDraining is true ONLY in the "draining" state.
+	//   After drain_completed the session is "drained" — prompt() works, resume() is optional.
+	private _drainAfterCurrentTurn = false;
+	private _drainStopPending = false;
+	private _isDrained = false;
+
 	// Extension system
 	private _extensionRunner: ExtensionRunner | undefined = undefined;
 	private _turnIndex = 0;
@@ -309,6 +399,18 @@ export class AgentSession {
 		this._baseToolsOverride = config.baseToolsOverride;
 		this._sessionStartEvent = config.sessionStartEvent ?? { type: "session_start", reason: "startup" };
 		this._modelManager = config.modelManager;
+
+		this._watchdog = new WatchdogTimer({
+			onTimeout: (e) => this._onWatchdogTimeout(e.toolCallId, e.toolName, e.elapsedMs),
+			getTimeoutMs: () => this.settingsManager.getWatchdogTimeoutMs(),
+			isEnabled: () => this.settingsManager.isWatchdogEnabled(),
+		});
+
+		this._loopDetector = new LoopDetector({
+			onLoopDetected: (diag) => this._onLoopDetected(diag),
+			getThreshold: () => this.settingsManager.getLoopDetectorThreshold(),
+			isEnabled: () => this.settingsManager.isLoopDetectorEnabled(),
+		});
 
 		// Always subscribe to agent events for internal handling
 		// (session persistence, extensions, auto-compaction, retry logic)
@@ -447,6 +549,54 @@ export class AgentSession {
 		// and waitForRetry() can miss the in-flight retry.
 		this._createRetryPromiseForAgentEnd(event);
 
+		// F-05 drain: synchronously abort the agent after turn_end when draining,
+		// so the inner agent-loop sees signal.aborted before the next LLM call.
+		// Latch _drainStopPending so that drain_completed is emitted on agent_end
+		// even if resume() clears _drainAfterCurrentTurn in between (P4 race fix).
+		if (event.type === "turn_end" && this._drainAfterCurrentTurn) {
+			this._drainStopPending = true;
+			this.agent.abort();
+		}
+
+		// F-46 iteration budget: synchronous hooks. They MUST run here (not in the
+		// queued _processAgentEvent) for the same reason as the F-05 drain abort:
+		// the agent-loop checks the abort signal right after emitting turn_end, so
+		// the exceedance decision has to be made before the next microtask hop.
+		//
+		// Iteration model: one agent-loop turn == one iteration of the loop.
+		// Usage is aggregated per assistant message (every API call of the turn)
+		// and checked at the iteration boundaries:
+		//   agent_start / turn_start → check leftovers, then reset (fresh window)
+		//   message_end (assistant)  → trackIterationUsage(tokens, cost)
+		//   turn_end                 → check this turn's usage
+		//
+		// Behavior on exceed (roadmap §F-46, I1 drain): emit
+		// `iteration_budget_exceeded` (log/event for tree-journal / I2 steer
+		// escalation), resetIteration() and abort — the loop ends cleanly via
+		// agent_end BEFORE the next API call. The session is NOT crashed: the
+		// next prompt() starts fresh (counters already reset). Global and
+		// iteration budgets are independent; whichever fires first wins.
+		if (this._modelManager) {
+			if (event.type === "agent_start" || event.type === "turn_start") {
+				if (!this._modelManager.checkIterationBudget().allowed) {
+					this._onIterationBudgetExceeded();
+				} else {
+					this._modelManager.resetIteration();
+				}
+			} else if (event.type === "message_end" && event.message.role === "assistant") {
+				const assistantMsg = event.message as AssistantMessage;
+				const totalTokens = assistantMsg.usage?.totalTokens ?? 0;
+				const totalCost = assistantMsg.usage?.cost?.total ?? 0;
+				if (totalTokens > 0 || totalCost > 0) {
+					this._modelManager.trackIterationUsage(totalTokens, totalCost);
+				}
+			} else if (event.type === "turn_end" && !this._drainStopPending) {
+				if (!this._modelManager.checkIterationBudget().allowed) {
+					this._onIterationBudgetExceeded();
+				}
+			}
+		}
+
 		this._agentEventQueue = this._agentEventQueue.then(
 			() => this._processAgentEvent(event),
 			() => this._processAgentEvent(event),
@@ -509,11 +659,31 @@ export class AgentSession {
 			}
 		}
 
+		// Reset loop detector on each new user prompt so one-shot
+		// firing does not permanently disable detection.
+		// This runs independently of the extension system.
+		if (event.type === "agent_start") {
+			this._loopDetector.reset();
+			this._loopDetectorFired = false;
+		}
+
 		// Emit to extensions first
 		await this._emitExtensionEvent(event);
 
 		// Notify all listeners
 		this._emit(event);
+
+		// Watchdog integration: arm/reset/cancel based on tool lifecycle events.
+		if (event.type === "tool_execution_start") {
+			this._watchdog.arm(event.toolCallId, event.toolName);
+			this._loopDetector.onToolStart(event.toolCallId, event.toolName, event.args);
+		} else if (event.type === "tool_execution_update") {
+			this._watchdog.reset(event.toolCallId);
+		} else if (event.type === "tool_execution_end") {
+			this._watchdog.cancel(event.toolCallId);
+			const errorText = event.isError ? extractErrorText(event.result) : undefined;
+			this._loopDetector.onToolEnd(event.toolCallId, event.isError, errorText);
+		}
 
 		// Handle session persistence
 		if (event.type === "message_end") {
@@ -569,13 +739,27 @@ export class AgentSession {
 			}
 		}
 
+		// F-05 drain: emit drain_completed BEFORE retry/compaction checks.
+		// The orchestrator must not wait for LLM summarization (compaction) to
+		// learn that the drain finished.  Uses _drainStopPending (latched at
+		// turn_end) OR _drainAfterCurrentTurn (blocker fix: drain set in the
+		// turn_end→agent_end window, after the last turn_end already fired).
+		// After emission, reset flags and enter "drained" state (_isDrained = true).
+		if (event.type === "agent_end" && (this._drainStopPending || this._drainAfterCurrentTurn)) {
+			this._drainAfterCurrentTurn = false;
+			this._drainStopPending = false;
+			this._isDrained = true;
+			this._emit({ type: "drain_completed" });
+		}
+
 		// Check auto-retry and auto-compaction after agent completes
 		if (event.type === "agent_end" && this._lastAssistantMessage) {
 			const msg = this._lastAssistantMessage;
 			this._lastAssistantMessage = undefined;
 
 			// Check for retryable errors first (overloaded, rate limit, server errors)
-			if (this._isRetryableError(msg)) {
+			// F-05 P3: skip retry when draining — go straight to drain_completed.
+			if (this._isRetryableError(msg) && !this._drainAfterCurrentTurn && !this._isDrained) {
 				const didRetry = await this._handleRetryableError(msg);
 				if (didRetry) return; // Retry was initiated, don't proceed to compaction
 			}
@@ -730,7 +914,128 @@ export class AgentSession {
 	 * Remove all listeners and disconnect from agent.
 	 * Call this when completely done with the session.
 	 */
+	// =========================================================================
+	// Watchdog Timer
+	// =========================================================================
+
+	/** Handler invoked when a per-tool watchdog timer fires. */
+	private _onWatchdogTimeout(toolCallId: string, tool: string, elapsedMs: number): void {
+		this._emit({
+			type: "watchdog_timeout",
+			tool,
+			reason: "watchdog_timeout",
+			elapsedMs,
+			toolCallId,
+		});
+
+		// Abort the in-flight agent run so the hung tool is interrupted.
+		this.agent.abort();
+	}
+
+	// =========================================================================
+	// Iteration budget (F-46)
+	// =========================================================================
+
+	/**
+	 * F-46: iteration budget exceeded — emit the diagnostic event, reset the
+	 * per-iteration counters and abort the run so the agent-loop stops BEFORE
+	 * the next API call (I1 drain semantics, same abort pattern as F-05 drain
+	 * and the loop detector). The run ends cleanly via agent_end; the session
+	 * stays usable — the next prompt() starts a fresh iteration window.
+	 */
+	private _onIterationBudgetExceeded(): void {
+		const modelManager = this._modelManager;
+		if (!modelManager) return;
+
+		const { remaining } = modelManager.checkIterationBudget();
+		const usage = modelManager.getIterationUsage();
+		modelManager.resetIteration();
+
+		const message = `Iteration budget exceeded: ${usage.tokensUsed} / ${usage.tokenLimit || "∞"} tokens, $${usage.costUsed.toFixed(2)} / $${usage.usdLimit ? usage.usdLimit.toFixed(2) : "∞"} — stopping before the next API call (F-46)`;
+
+		this._emit({
+			type: "iteration_budget_exceeded",
+			tokensUsed: usage.tokensUsed,
+			costUsed: usage.costUsed,
+			remaining,
+			message,
+		});
+
+		// Forward to extensions (F-46 consumers, e.g. fan-mission
+		// default-run-agent, distinguish a budget abort from a generic one).
+		// Fire-and-forget: this hook is synchronous — it runs inside
+		// _handleAgentEvent before the agent-loop's next microtask hop.
+		if (this._extensionRunner) {
+			void this._extensionRunner
+				.emit({
+					type: "iteration_budget_exceeded",
+					tokensUsed: usage.tokensUsed,
+					costUsed: usage.costUsed,
+					remaining,
+					message,
+				})
+				.catch(() => {});
+		}
+
+		try {
+			this.agent.abort();
+		} catch {
+			/* agent may already be disposed */
+		}
+	}
+
+	// =========================================================================
+	// Loop Detector (F-04)
+	// =========================================================================
+
+	/**
+	 * Handler invoked when the loop detector fires.
+	 *
+	 * Synchronous: emits the `loop_detected` event and aborts the agent
+	 * immediately (mirrors `_onWatchdogTimeout`).  The `tool_execution_end`
+	 * event has already been delivered to listeners before this hook runs
+	 * (see _processAgentEvent ordering).
+	 *
+	 * Additionally injects a steer message forbidding the failed approach
+	 * so the next context window is aware of the ban.
+	 */
+	private _onLoopDetected(diag: { reason: "loop_detected"; tool: string; error: string; count: number }): void {
+		if (this._loopDetectorFired) return;
+		this._loopDetectorFired = true;
+
+		this._emit({
+			type: "loop_detected",
+			reason: diag.reason,
+			tool: diag.tool,
+			error: diag.error,
+			count: diag.count,
+		});
+
+		// Abort the in-flight agent run so the loop is interrupted.
+		try {
+			this.agent.abort();
+		} catch {
+			/* agent may already be disposed */
+		}
+
+		// Inject a steer message banning the failed approach so the
+		// next context knows not to repeat it.
+		const banMessage = `Подход «${diag.tool} с этими аргументами» приводит к одной и той же ошибке ${diag.count} раз подряд. ЗАПРЕЩЕНО повторять этот подход. Выбери другой.`;
+		try {
+			this.agent.steer({
+				role: "user",
+				content: [{ type: "text", text: banMessage }],
+				timestamp: Date.now(),
+			});
+		} catch (e) {
+			if (!(e instanceof QueueOverflowError)) throw e;
+			/* steering queue full — silently drop the ban message */
+		}
+	}
+
 	dispose(): void {
+		this._watchdog.dispose();
+		this._loopDetector.dispose();
 		this._disconnectFromAgent();
 		this._eventListeners = [];
 	}
@@ -992,6 +1297,17 @@ export class AgentSession {
 			expandedText = expandPromptTemplate(expandedText, [...this.promptTemplates]);
 		}
 
+		// F-05 P2: reject prompt while actively draining.
+		// After drain completes (drained state), prompt() is allowed — it clears _isDrained.
+		if (this._drainAfterCurrentTurn) {
+			throw new Error("Session is draining (F-05). Wait for drain_completed, then call resume() or prompt() again.");
+		}
+
+		// If session was drained, transition to idle — new prompt resets the state.
+		if (this._isDrained) {
+			this._isDrained = false;
+		}
+
 		// If streaming, queue via steer() or followUp() based on option
 		if (this.isStreaming) {
 			if (!options?.streamingBehavior) {
@@ -1200,8 +1516,6 @@ export class AgentSession {
 	 * Internal: Queue a steering message (already expanded, no extension command check).
 	 */
 	private async _queueSteer(text: string, images?: ImageContent[]): Promise<void> {
-		this._steeringMessages.push(text);
-		this._emitQueueUpdate();
 		const content: (TextContent | ImageContent)[] = [{ type: "text", text }];
 		if (images) {
 			content.push(...images);
@@ -1211,14 +1525,14 @@ export class AgentSession {
 			content,
 			timestamp: Date.now(),
 		});
+		this._steeringMessages.push(text);
+		this._emitQueueUpdate();
 	}
 
 	/**
 	 * Internal: Queue a follow-up message (already expanded, no extension command check).
 	 */
 	private async _queueFollowUp(text: string, images?: ImageContent[]): Promise<void> {
-		this._followUpMessages.push(text);
-		this._emitQueueUpdate();
 		const content: (TextContent | ImageContent)[] = [{ type: "text", text }];
 		if (images) {
 			content.push(...images);
@@ -1228,6 +1542,8 @@ export class AgentSession {
 			content,
 			timestamp: Date.now(),
 		});
+		this._followUpMessages.push(text);
+		this._emitQueueUpdate();
 	}
 
 	/**
@@ -1362,6 +1678,99 @@ export class AgentSession {
 	/** Get pending follow-up messages (read-only) */
 	getFollowUpMessages(): readonly string[] {
 		return this._followUpMessages;
+	}
+
+	// =========================================================================
+	// Drain Flag (F-05) — Graceful pause for super-orchestrator
+	// =========================================================================
+
+	/**
+	 * Set the drain flag. When `true`, the current in-flight tool call completes
+	 * normally but no new turn begins afterwards. Idempotent — repeated calls
+	 * with `true` are no-ops.
+	 *
+	 * State model (F-05):
+	 *   idle → draining → drained → (resume | prompt) → idle
+	 *
+	 * When called with `true`:
+	 *   - If already draining/drained → no-op
+	 *   - If agent is streaming → enter "draining" (abort at next turn_end)
+	 *   - If agent is idle → skip draining, go straight to "drained"
+	 *     (drain_started + drain_completed emitted synchronously)
+	 */
+	setDrainAfterCurrentTurn(value: boolean): void {
+		if (value) {
+			// Idempotent: already draining or drained → no-op
+			if (this._drainAfterCurrentTurn || this._isDrained) return;
+
+			this._drainAfterCurrentTurn = true;
+			this._emit({ type: "drain_started" });
+
+			if (!this.isStreaming) {
+				// No active turn — skip "draining" phase, go straight to "drained".
+				// drain_completed is emitted here; drain_started ↔ drain_completed 1:1.
+				this._drainAfterCurrentTurn = false;
+				this._isDrained = true;
+				this._emit({ type: "drain_completed" });
+			}
+			// else: streaming → abort will fire at turn_end, agent_end emits drain_completed
+		} else {
+			// Explicit cancel — revoke the drain request.
+			//
+			// Semantics (1:1:1 drain_started → drain_completed | drain_cancelled):
+			//   If drain_started was emitted and the abort has NOT yet latched
+			//   (_drainStopPending is false), emit drain_cancelled — clean cancel.
+			//   If the abort already latched (_drainStopPending is true), the
+			//   agent is already stopping and agent_end WILL emit drain_completed.
+			//   In that case we do NOT clear _drainStopPending (would break 1:1:1)
+			//   and do NOT emit drain_cancelled (drain_completed is the terminal).
+			const wasDraining = this._drainAfterCurrentTurn;
+			const abortAlreadyLatched = this._drainStopPending;
+
+			if (wasDraining && !abortAlreadyLatched) {
+				// Clean cancel: abort hasn't fired, no terminal event owed.
+				this._drainAfterCurrentTurn = false;
+				this._isDrained = false;
+				this._emit({ type: "drain_cancelled" });
+			}
+			// If abortAlreadyLatched: don't touch flags — agent_end will emit
+			// drain_completed.  Cancel is effectively a no-op in this window.
+			// If !wasDraining: drain was idle (no-op) or already drained (no-op).
+		}
+	}
+
+	/** Whether the drain flag is currently set. */
+	get drainAfterCurrentTurn(): boolean {
+		return this._drainAfterCurrentTurn;
+	}
+
+	/**
+	 * Alias for `drainAfterCurrentTurn` — true only in the "draining" state.
+	 * False in "drained" state (turn finished, abort already processed).
+	 */
+	get isDraining(): boolean {
+		return this._drainAfterCurrentTurn;
+	}
+
+	/**
+	 * Clear the drain flag so new turns can begin again.
+	 * Emits `drain_resumed` for observability (P5).
+	 *
+	 * If called while "draining" (turn still in flight), the drain is cancelled —
+	 * the turn_end handler will NOT abort because _drainAfterCurrentTurn is now false.
+	 * If called while "drained", transitions to idle and emits drain_resumed.
+	 */
+	resume(): void {
+		const wasDrainingOrDrained = this._drainAfterCurrentTurn || this._isDrained;
+		this._drainAfterCurrentTurn = false;
+		// NOTE: _drainStopPending is intentionally NOT cleared here.
+		// If the abort already fired at turn_end, the agent_end handler must
+		// still emit drain_completed (P4 race fix).  Clearing _drainAfterCurrentTurn
+		// is enough to prevent the abort from firing on a future turn_end.
+		this._isDrained = false;
+		if (wasDrainingOrDrained) {
+			this._emit({ type: "drain_resumed" });
+		}
 	}
 
 	get resourceLoader(): ResourceLoader {
@@ -1992,12 +2401,18 @@ export class AgentSession {
 					this.agent.state.messages = messages.slice(0, -1);
 				}
 
-				setTimeout(() => {
-					this.agent.continue().catch(() => {});
-				}, 100);
-			} else if (this.agent.hasQueuedMessages()) {
+				// F-05 drain-guard: skip retry continuation when draining/drained
+				// (same guard as the queued-messages branch below).
+				if (!this._drainAfterCurrentTurn && !this._isDrained) {
+					setTimeout(() => {
+						this.agent.continue().catch(() => {});
+					}, 100);
+				}
+			} else if (this.agent.hasQueuedMessages() && !this._drainAfterCurrentTurn && !this._isDrained) {
 				// Auto-compaction can complete while follow-up/steering/custom messages are waiting.
 				// Kick the loop so queued messages are actually delivered.
+				// F-05 P6: skip kick when draining or drained — messages stay queued
+				// and are delivered after resume + next prompt.
 				setTimeout(() => {
 					this.agent.continue().catch(() => {});
 				}, 100);
@@ -2178,6 +2593,9 @@ export class AgentSession {
 				},
 				appendEntry: (customType, data) => {
 					this.sessionManager.appendCustomEntry(customType, data);
+				},
+				getCustomEntries: (customType) => {
+					return this.sessionManager.getCustomEntries(customType);
 				},
 				setSessionName: (name) => {
 					this.sessionManager.appendSessionInfo(name);
@@ -2415,7 +2833,7 @@ export class AgentSession {
 
 		const err = message.errorMessage;
 		// Match: overloaded_error, provider returned error, rate limit, 429, 500, 502, 503, 504, service unavailable, network/connection errors, fetch failed, request ended without sending chunks, terminated, retry delay exceeded
-		return /overloaded|provider.?returned.?error|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server.?error|internal.?error|network.?error|connection.?error|connection.?refused|other side closed|fetch failed|upstream.?connect|reset before headers|socket hang up|ended without|timed? out|timeout|terminated|retry delay/i.test(
+		return /overloaded|provider.?returned.?error|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server.?error|internal.?error|network.?error|connection.?error|connection.?refused|other side closed|fetch failed|upstream.?connect|reset before headers|socket hang up|socket.*closed|closed.*unexpectedly|ended without|timed? out|timeout|terminated|retry delay/i.test(
 			err,
 		);
 	}
@@ -2654,6 +3072,163 @@ export class AgentSession {
 	 */
 	setSessionName(name: string): void {
 		this.sessionManager.appendSessionInfo(name);
+	}
+
+	// =========================================================================
+	// Checkpoint API (F-45)
+	// =========================================================================
+
+	/**
+	 * Create an explicit checkpoint (roadmap §F-45).
+	 *
+	 * Creates a git commit with message `checkpoint:<label>` (when inside a git
+	 * work tree) and persists the session state to
+	 * `.fan/checkpoints/<slug>/<label>.json`. Works without git — `gitCommit`
+	 * is then undefined.
+	 *
+	 * @throws if the label is empty, already exists, or the git commit fails
+	 */
+	async checkpoint(label: string): Promise<{ label: string; gitCommit?: string }> {
+		const trimmedLabel = label?.trim() ?? "";
+		if (trimmedLabel.length === 0) {
+			throw new Error("Checkpoint label must not be empty");
+		}
+
+		const dir = this._checkpointsDir();
+		const file = join(dir, `${trimmedLabel}.json`);
+		if (existsSync(file)) {
+			throw new Error(`Checkpoint "${trimmedLabel}" already exists`);
+		}
+
+		// Git commit (skipped when not inside a git work tree)
+		let gitCommit: string | undefined;
+		if (await isInsideGitWorkTree(this._cwd)) {
+			await ensureGitExcludes(this._cwd, this._checkpointGitExcludes());
+			gitCommit = await gitCommitAll(this._cwd, `checkpoint:${trimmedLabel}`);
+		}
+
+		const iterationMatch = /^iteration-(\d+)$/.exec(trimmedLabel);
+		const state: CheckpointState = {
+			label: trimmedLabel,
+			sessionId: this.sessionId,
+			iteration: iterationMatch ? Number.parseInt(iterationMatch[1]!, 10) : undefined,
+			timestamp: new Date().toISOString(),
+			gitCommit,
+			treeLeafId: this.sessionManager.getLeafId() ?? undefined,
+			messages: [...this.messages],
+		};
+
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(file, JSON.stringify(state, null, 2), "utf-8");
+
+		return { label: trimmedLabel, gitCommit };
+	}
+
+	/**
+	 * Restore a checkpoint created by checkpoint() (roadmap §F-45).
+	 *
+	 * Rolls git back to the checkpoint commit (`git checkout <commit>`, plain
+	 * checkout — never a forced reset) and restores the session state: when the
+	 * recorded tree leaf still exists in the current session file the session
+	 * tree is branched back to it; otherwise the messages snapshot from the
+	 * checkpoint file is applied directly.
+	 *
+	 * @throws if the checkpoint does not exist, is corrupted, or git refuses the checkout
+	 */
+	async restoreCheckpoint(label: string): Promise<void> {
+		const trimmedLabel = label?.trim() ?? "";
+		const file = join(this._checkpointsDir(), `${trimmedLabel}.json`);
+		if (trimmedLabel.length === 0 || !existsSync(file)) {
+			throw new Error(`Checkpoint "${label}" not found`);
+		}
+
+		let state: CheckpointState;
+		try {
+			state = JSON.parse(readFileSync(file, "utf-8")) as CheckpointState;
+		} catch (err) {
+			throw new Error(
+				`Checkpoint "${trimmedLabel}" is corrupted: ${err instanceof Error ? err.message : String(err)}`,
+			);
+		}
+
+		// 1. Git rollback (only when the checkpoint recorded a commit)
+		if (state.gitCommit && (await isInsideGitWorkTree(this._cwd))) {
+			await gitCheckoutCommit(this._cwd, state.gitCommit);
+		}
+
+		// 2. Session state restore
+		if (state.treeLeafId && this.sessionManager.getEntry(state.treeLeafId)) {
+			this.sessionManager.branch(state.treeLeafId);
+			this.agent.state.messages = this.sessionManager.buildSessionContext().messages;
+		} else if (Array.isArray(state.messages)) {
+			this.agent.state.messages = [...state.messages];
+		}
+	}
+
+	/**
+	 * List available checkpoints for the current working directory,
+	 * sorted by timestamp (newest first). Survives AgentSession re-creation
+	 * because checkpoints are persisted on disk.
+	 */
+	async listCheckpoints(): Promise<CheckpointInfo[]> {
+		const dir = this._checkpointsDir();
+		if (!existsSync(dir)) {
+			return [];
+		}
+
+		const checkpoints: CheckpointInfo[] = [];
+		for (const name of readdirSync(dir)) {
+			if (!name.endsWith(".json")) continue;
+			try {
+				const parsed = JSON.parse(readFileSync(join(dir, name), "utf-8")) as Partial<CheckpointState>;
+				checkpoints.push({
+					label: typeof parsed.label === "string" ? parsed.label : name.slice(0, -".json".length),
+					timestamp: typeof parsed.timestamp === "string" ? parsed.timestamp : "",
+					gitCommit: typeof parsed.gitCommit === "string" ? parsed.gitCommit : undefined,
+					iteration: typeof parsed.iteration === "number" ? parsed.iteration : undefined,
+				});
+			} catch {
+				// Skip corrupted checkpoint files
+			}
+		}
+
+		checkpoints.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+		return checkpoints;
+	}
+
+	/** Checkpoint storage directory: .fan/checkpoints/<slug> under the session cwd. */
+	private _checkpointsDir(): string {
+		return join(this._cwd, ".fan", "checkpoints", this._checkpointSlug());
+	}
+
+	/**
+	 * Slug for the checkpoint subdirectory, derived from the working directory
+	 * (mission scope). Falls back to the session id when cwd has no usable name.
+	 */
+	private _checkpointSlug(): string {
+		const sanitized = basename(this._cwd)
+			.trim()
+			.replace(/[^\w.-]+/g, "-")
+			.replace(/^\.+|\.+$/g, "")
+			.replace(/^-+|-+$/g, "");
+		return sanitized.length > 0 ? sanitized : this.sessionId;
+	}
+
+	/**
+	 * Patterns excluded from git tracking for checkpoint commits. Keeps FAN
+	 * state files (checkpoint store + session JSONL) out of commits so git
+	 * checkout during restore never conflicts with internal bookkeeping.
+	 */
+	private _checkpointGitExcludes(): string[] {
+		const excludes = [".fan/"];
+		const sessionFile = this.sessionManager.getSessionFile();
+		if (sessionFile) {
+			const rel = relative(this._cwd, sessionFile);
+			if (rel.length > 0 && !rel.startsWith("..") && !isAbsolute(rel)) {
+				excludes.push(rel);
+			}
+		}
+		return excludes;
 	}
 
 	// =========================================================================

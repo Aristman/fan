@@ -84,15 +84,30 @@ export declare class TaskManager {
     get size(): number;
     /**
      * Serialize tasks for session persistence.
+     * Full per-task snapshot including links, owner, timestamps and metadata.
      */
     serialize(): Array<{
         id: string;
+        type: string;
         status: string;
         description: string;
-        agentType: string;
+        agentType?: string;
+        parentTaskId?: string;
+        owner?: string;
+        blocks: string[];
+        blockedBy: string[];
+        createdAt?: string;
+        updatedAt?: string;
         result?: string;
         error?: string;
+        metadata?: Record<string, unknown>;
     }>;
+    /**
+     * Replace the current task board from snapshot entries (see serialize()).
+     * Skips garbage entries (never throws). in_progress tasks are restored as
+     * pending with metadata.recovered = true; blocks/blockedBy links are rebuilt.
+     */
+    deserialize(entries: unknown): void;
     private getTaskOrThrow;
     private validateTransition;
     private unblockDependents;

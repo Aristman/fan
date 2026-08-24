@@ -1,5 +1,498 @@
 # Changelog
 
+## [Unreleased] / 2026-08-22
+
+### Added — Recursive Orchestrator Spawn (depth-4 в реальных процессах)
+
+- **F-1 Role-aware spawn**: `extensions/fan-super-orchestrator/process-manager.ts` расширен `SpawnOptions.role`, `roleProfile`, `parentUrl`, `parentToken`. При `role=super-orchestrator` передаются env vars: `FAN_NODE_ROLE`, `FAN_NODE_ROLE_PROFILE`, `FAN_PARENT_NODE_URL`, `FAN_PARENT_NODE_TOKEN`. Worker path unchanged (back-compat). Helper `buildRoleEnv(opts)` для композиции с `buildSpawnEnv`.
+- **F-2 Role profile `default_extensions` + exclusions config**: `extensions/fan-super-orchestrator/role-config.ts` (NEW) с `RoleConfig` (nested YAML) + `DEFAULT_ROLE_CONFIG` (store_search, store_install excluded; delegate_task required для super-orchestrator) + `loadRoleConfig`. `getEffectiveExtensions(role, config)` в `role-loader.ts` с dedup через Set.
+- **F-3 HTTP delegation endpoint**: `packages/api-gateway/src/mission-delegate-schema.ts` (NEW) + `auth-mission-delegate.ts` (NEW). Endpoint `POST /api/mission-delegate` зарегистрирован ДО `tokenAuth` (как `/api/health`). Авторизация через `Authorization: Bearer <FAN_NODE_TOKEN>` (constant-time `timingSafeEqual`). Payload validation ДО event emission. EventEmitter singleton `apiEvents` для F-5 subscribers.
+- **F-4 Role-aware launchChild**: `extensions/fan-super-orchestrator/routes/launch-child.ts` (NEW). `launchChildForRole(ctx)` switch: worker → `process-manager.spawn()`; super-orchestrator → HTTP POST `/api/mission-delegate` через `httpDelegate` DI. Fail-fast: SO без `roleProfile` → throws Error ДО side effects. `TreeJournalEntry.via?` (`"spawn" | "http_delegate"`, optional для back-compat).
+- **F-5 Spawned SO init**: `extensions/fan-super-orchestrator/wiring/spawned-orchestrator.ts` (NEW). `session_start` hook branching по `process.env.FAN_NODE_ROLE`: SO → `initRecursiveCircuit` (circuit + role profile load + `handleDelegateRecursive` no-op + journal abort event в shutdown); worker → `initCircuit` (back-compat). `handleDelegateRecursive` trivial async no-op (delegation через HTTP к parent, не in-process depth2).
+- **F-6 Integration test depth-4 e2e**: `extensions/fan-super-orchestrator/chain-manager.ts` (NEW) + `mock-fan-server.mjs` extended с `chainPropagation="auto"` + `parentNodeId` option. Real HTTP между mock fan server processes. 3 e2e теста: depth-4 happy path (Coord → SO → SO → worker), walk-up cascade при crash mid-chain, leaf-first graceful shutdown ≤1s.
+- **Smoke test**: `extensions/fan-super-orchestrator/test/smoke-recursive-spawn.test.mjs` (7 sub-tests, 151ms): spawn-role, spawn-worker, role-config, effective-extensions, endpoint-mock, endpoint-validation, tree-journal-via.
+
+### Security
+
+- **FAN_NODE_TOKEN** передаётся через `process.env`, не через HTTP body. Constant-time comparison (`timingSafeEqual`). Length-mismatch explicit guard (no RangeError).
+- **Payload validation** ДО event emission — no leak через invalid auth/payload.
+- **Tool manifest isolation**: spawned SO НЕ получает `store_search`, `store_install` (DEFAULT_ROLE_CONFIG exclusions). `delegate_task` required для `role=super-orchestrator`.
+- **Recursion cap depth=4**: `can-spawn-batch.ts` enforces `super_orch_at_max_depth` rule (depth=4 → REFUSED для SO; worker — SINK).
+- **Abort propagation**: shutdown для recursive circuit пишет `abort` event в journal ДО cleanup.
+
+### Stats
+
+- 21 новых TDD-теста (5+4+5+3+5+3) + 7 smoke sub-tests = 28 tests для фичи
+- 6 per-function commits + 1 spec/roadmap commit + 1 docs commit
+- 848 tests pass total (841 super-orchestrator + 7 smoke) + 148 api-gateway + 897 fan-mission + 64 fan-webhook + 85 fan-scheduler = 2042 tests pass
+- Build: clean (10/10 packages)
+- No regressions: 0 lines changed в packages/coding-agent от feature pipeline
+- Refactor: extract `role-config.ts`, `mission-delegate-schema.ts`, `auth-mission-delegate.ts`, `routes/launch-child.ts`, `wiring/spawned-orchestrator.ts`, `chain-manager.ts` для лучшей тестируемости и изоляции concerns
+- Dead code elimination в chain-manager.ts (-154 строки) post-verify
+- flan-super-orchestrator 0.4.1 → 0.5.0 (recursive spawn)
+
+## [Unreleased] / 2026-08-21
+
+### Added — Super-Orchestrator v2 (depth-4)
+
+- **F-0 Transport fix**: packages/api-gateway теперь Node-only (@hono/node-server + ws); Bun-ветка удалена. fan-webhook поддерживает CLI --port. 10 transport smoke tests.
+- **F-B Role loader**: extensions/fan-super-orchestrator/role-loader.ts с 3-слойной загрузкой (project > global > default), deep merge, extends chain ≤3, DFS cycle detection. 10 starter YAML профилей.
+- **F-C Width pyramid + port registry**: extensions/fan-super-orchestrator/{width-pyramid,port-registry}.ts. PYRAMID_WIDTH 8/6/4/2 + 12/10/8/4. Port registry v2 (API 7001-7100, webhook 9090-9189), lock-protected, atomic TOCTOU-safe, migration v1→v2, orphan PID cleanup.
+- **F-D Spawn protocol**: build-work-package.ts, can-spawn-batch.ts. Расширение work-package.ts новыми optional-полями (role, role_profile, parent_*, lineage). Lineage construction.
+- **F-E Lineage escalation**: walk-up.ts (per-hop 30s + 1s backoff), orphan-storage.ts (atomic write + _index.json), orphan-recovery.ts, report-delivery.ts (HTTP helper).
+- **F-F verify_subtree**: extensions/fan-super-orchestrator/verify-subtree.ts. 4 проверки: completeness, interface, budget, quality (через pluggable quality-checks.ts).
+- **F-Diag Диагностика** (SPEC §14): chat-logger.ts, extension-health.ts. Session_start messages, handler entry, error-reply с escalation info.
+- **F-H Integration tests**: test/helpers/mock-fan-server.mjs, test/e2e/{depth-4, walk-up, transport-regression}.test.mjs.
+
+### Stats
+- 2063 tests pass total
+- 8 per-function commits
+- Build: clean
+
+## [2.8.1] — 2026-08-18
+
+### Added
+- **session_mode: fresh (ralph loop): fresh session per iteration.** Каждая итерация миссии выполняется в новой сессии агента — входные токены не растут линейно с историей (инцидент: 334k на N=5 при лимите 700k). Ротация через `fan.newSession({parentSession})` на границе тика после полного персистирования состояния. Автопродолжение: `resumeAfterRotation` флаг в `.mission-loop.json` → `session_start` подхватывает и запускает следующий тик. `rotatingGuard` защищает от `abort()` при `session_shutdown` (без guard ротация убивает миссию). Graceful degradation: rotator недоступен/отменён → fallback в persistent на этот тик (warn). Имена сессий: `mission/<slug>/iter-N` (через `setSessionName`). `FRESH_SESSION_SECTION` в промпте: указание агенту не искать prior chat context, записывать nextState в STATE.md. ExtensionAPI расширен: `newSession(options?: { parentSession?: string }): Promise<{ cancelled: boolean }>` (types.ts, loader.ts, runner.ts; default fail-safe `cancelled:true`). Шаблоны миссий (default, refactor) получают `session_mode: fresh` в frontmatter. fan-mission 0.9.0 → 0.10.0, fan-coding-agent 2.7.5 → 2.8.0 (minor — ExtensionAPI += newSession).
+
+### Changed
+- **Шаблоны миссий шипят `session_mode: fresh`.** Новые миссии по умолчанию создаются с fresh-режимом (каждая итерация = новая сессия). Отсутствие поля = persistent (обратная совместимость, 0.10.0 не ломает запущенные миссии). Flip дефолта «отсутствует → fresh» запланирован на 0.11.0 после bake-in.
+- **fan-scheduler 0.3.0: дежурство completed-миссий + базовый polling 60s (R3).** Планировщик тикает миссии со статусом `active` ИЛИ `completed` с непустым RECURRING.md (хотя бы один unchecked-пункт); completed без recurring — пропуск, как раньше. Базовый интервал polling: 300s → 60s (дешёвый no-op тик — без LLM-вызовов, loop сам решает, что подоспело). Per-mission `tick_interval_ms` из frontmatter MISSION.md (валидное число ≥ 1000) троттлит тики конкретной миссии (in-memory lastTickTs; cron-конфиг обгоняет интервал и не троттлится). `findActiveMission` возвращает completed-миссию на дежурстве, если не-терминальных нет.
+- **fan-mission 0.9.0: recurring переехали в RECURRING.md (R2).** Повторяющиеся задачи больше не хранятся как `(recur)`-пункты в ROADMAP. Новый файл `RECURRING.md` с per-item интервалами `(interval: Ns/m/h/d)`. Авто-миграция legacy `(recur)`-пунктов из ROADMAP в RECURRING.md при первом тике. Completed-миссия продолжает исполнять подоспевшие recurring (дежурство). Бюджет действует и на дежурные recurring. FSM: `completed → budget_exhausted` разрешён. Вариант A.
+
+## [2.8.1] — 2026-08-18
+
+### Changed
+- **fan-mission 0.8.0: тик исполняет roadmap непрерывно до стоп-условия.** `tick()` обрабатывает все one-shot пункты подряд, затем recur-пункты по одному разу за тик. Стоп-условия: все пункты исполнены (completed/yield), BLOCKED/FAILED (break), статус миссии изменился (break). `TickResult.itemsExecuted` — количество исполненных пунктов за тик.
+
+## [0.7.4] - 2026-08-18
+
+### Fixed
+- **STATE.md schema violation**: Added explicit guidance in prompt-builder that STATE.md sections must use exact Russian names ("## Сделано", "## Блокеры", "## Следующие шаги"). Previously agents would sometimes write English names or incorrect translations, causing InvalidStateSchema errors during commit phase.
+
+## [2.8.1] — 2026-08-15
+
+### Added
+
+- **Описание миссии при init + bootstrap-планирование Goal→ROADMAP.**
+  Раньше `fan mission init` создавал шаблон с пустым `## Goal`, и оператору
+  приходилось править MISSION.md/ROADMAP.md руками; bootstrap-пункт выполнялся
+  и миссия молча становилась `completed`. Теперь описание задаётся при init:
+  CLI принимает позициональные аргументы (`fan mission init <slug>
+  [описание...]` — остаток слов склеивается в описание), новая slash-команда
+  `/mission:init <slug> [описание]` (extensions/fan-mission/slash-commands.ts)
+  при отсутствии описания и наличии TUI запрашивает диалоги Goal
+  (обязательный) / Scope / Constraints; без UI (RPC/headless) создаёт миссию
+  без описания. Описание подставляется в секцию `## Goal` шаблона MISSION.md
+  (новая переменная `{{description}}`; init без описания работает как раньше).
+  Bootstrap-планирование (extensions/fan-mission/prompt-builder.ts,
+  mission-loop.ts): если текущий пункт — bootstrap («Bootstrap mission:…»,
+  первый пункт ROADMAP) и Goal непустой, в Guidance промпта добавляется
+  указание декомпозировать Goal в unchecked-пункты ROADMAP.md; если после
+  этого в ROADMAP не осталось unchecked-пунктов, Goal непуст и ROADMAP валиден
+  (есть checked-пункты) — тик не завершает миссию `completed`, а запускает
+  planning-итерацию на синтетическом пункте «Plan: decompose mission Goal
+  into ROADMAP items» (пустой Goal → `completed` как раньше; ROADMAP без
+  парсящихся пунктов → `failed` как в 0.4.1). Шаг 6 перечитывает ROADMAP с
+  диска перед отметкой пункта (правки executor'а — новые пункты — больше не
+  затираются снапшотом шага 2) и пропускает git-commit, если менять нечего.
+  Существующая миссия в `/mission:init` → ошибка через output (аналог
+  MissionAlreadyExistsError из CLI). Тесты — init с описанием в
+  `file-state-manager.test.mjs`, CLI-склейка в
+  `packages/coding-agent/test/cli/mission-command.test.ts`, `/mission:init`
+  в `slash-commands.test.mjs`, guidance в `prompt-builder.test.mjs`,
+  planning-итерация в `mission-loop-planning.test.mjs`.
+  fan-mission 0.6.3 → 0.7.0, fan-coding-agent 2.7.4 → 2.7.5.
+
+- **Промоушн одобренных идей BACKLOG→ROADMAP (задача D).**
+  Скорер идей (F-20) ставил идеям статус ROADMAP в BACKLOG.md, но в
+  физический ROADMAP.md они не попадали — одобренные идеи никогда не
+  исполнялись. Новый модуль `extensions/fan-mission/idea-promoter.ts`
+  (шаг 7 контура): идеи со статусом ROADMAP добавляются в ROADMAP.md как
+  unchecked-пункты `- [ ] <текст> (idea:<id>)`, затем получают статус
+  PROMOTED (дедупликация по маркеру `(idea:<id>)`, ≤3 промоушна за тик,
+  ≤50 пунктов в roadmap). DECIDE-идеи: ответ оператора «да» через
+  `/mission:decide` переводит идею DECIDE→ROADMAP, промоушн на следующем
+  тике; сама `/mission:decide` теперь вызывает `loop.resolveDecision()`
+  (раньше — sendMessage followUp без FSM-перехода). Попутно исправлен
+  regex accept-ответа: `\b` не работает с кириллицей → lookahead
+  `(?=[\s,.!?:;]|$)`. Тесты — `idea-promoter.test.mjs` (20).
+  fan-mission 0.7.0 → 0.7.1.
+
+- **Recurring-пункты `(recur)` для миссий-вахт.**
+  Миссии типа «вахта» (watch-loop: «Проверяй почту и сообщай в Telegram о
+  важных письмах») требовали повторяющегося исполнения одного и того же
+  пункта ROADMAP, но выполненный пункт помечался `[x]` → миссия завершалась
+  `completed` после первой проверки. Новый маркер `(recur)` в тексте пункта
+  ROADMAP (регистронезависимый): `parseFirstUnchecked` по-прежнему возвращает
+  такой пункт (он остаётся `[ ]`), а `markRoadmapDone` — no-op (строка не
+  меняется на `[x]`). Миссия с recur-пунктами живёт вечно: тики исполняют
+  recur каждый раз, обычные пункты выполняются и помечаются `[x]` как раньше,
+  когда кончаются — recur продолжает. Planning-ветка не срабатывает, пока
+  recur unchecked (это корректно — миссия не завершается). Шаг 6: git commit
+  происходит если изменился STATE.md ИЛИ ROADMAP.md (для recur — только
+  STATE.md). Guidance в промпте (prompt-builder.ts): «This is a RECURRING
+  task (recur): it stays on the ROADMAP unchecked — perform the work for
+  this tick only, report results, do NOT mark or remove the item.». Экспорт:
+  `RECUR_MARKER`, `isRecurringItem(text)` из file-state-manager.ts. Тесты —
+  `mission-loop-recurring.test.mjs` ( recur не [x], два тика подряд,
+  обычный+recur, только-recur не completed, guidance в промпте, регрессия
+  обычных пунктов). fan-mission 0.7.2 → 0.7.3.
+
+### Fixed
+
+- **Вывод slash-команд `/mission:*` рендерился в строку ввода TUI.**
+  `slashCtx.output` в fan-mission был `console.log` (TODO fallback) — вывод
+  команд печатался в область редактора вместо диалога. Обёртка
+  `fan.registerCommand` (extensions/fan-mission/index.ts) теперь батчит строки
+  `output()` в буфер и после handler делает ОДИН `ctx.ui.notify` (TUI
+  `showStatus` ЗАМЕНЯЕТ предыдущий status-текст, поэтому построчный notify
+  потерял бы все строки, кроме последней — `/mission:status` выводит 4
+  строки). Тип уведомления — `error`, если хотя бы одна строка начинается с
+  `Error:`, иначе `info` (серое служебное сообщение в диалоге). Без UI
+  (тесты, RPC) — прежний fallback построчно в `console.log`. Контракт
+  `SlashCtx.output` не изменён (slash-commands.test.mjs мокирует его напрямую).
+  Тесты — блок `TC-11` в `index-wiring.test.mjs`.
+  fan-mission 0.6.1 → 0.6.2.
+
+- **lazy-attach: `/mission:start|resume|status` подхватывают контур в запущенной сессии без рестарта fan.**
+  Миссионный контур аттачился только в `session_start`: если миссию остановили
+  (`status: aborted`) или она стала active после старта сессии (через CLI
+  `fan mission`), запущенный TUI оставался без контура — `/mission:status`
+  выводил "No active mission (mission loop is not attached)", виджет F9 был
+  пуст, единственным выходом был рестарт fan. Скан миссий извлечён из
+  `session_start` в переиспользуемый `findAttachableMission(cwd, accept?)`
+  (extensions/fan-mission/index.ts), и команды аттачат контур лениво:
+  `/mission:start` находит миссию (любой статус кроме `completed`), при
+  необходимости делает разрешённый FSM-переход в `active`, аттачит loop и
+  выполняет tick (для `completed` — отказ с подсказкой `fan mission init`,
+  без миссии — "No mission found in <cwd> — run `fan mission init <slug>`
+  first"); `/mission:resume` возобновляет `paused`-миссию; `/mission:status`
+  аттачит любую не-completed миссию read-only. stop/pause/steer/decide без
+  изменений (требуют аттаченный loop). ТИКЕТ-14 мост (scheduler → tick) и
+  виджет F9 подхватываются автоматически — они читают loop через замыкания.
+  `SlashCtx` расширен полями `cwd`/`findAttachableMission`/`attach`/
+  `writeStatus` (slash-commands.ts). Тесты — блок `TC-F11-lazy` в
+  `extensions/fan-mission/test/slash-commands.test.mjs`, `TC-10` в
+  `index-wiring.test.mjs`, `TC-8` в `extensions-load.test.mjs`.
+  fan-mission 0.5.0 → 0.6.0.
+
+- **CLI `fan mission start` не работал ни из одного статуса (бэклог #26).**
+  В `missionStart` проверка `canTransition` была инвертирована: переход,
+  разрешённый FSM, бросал `InvalidTransitionError`, а недоступная ветка
+  падала на безусловный `throw` ниже — обе ветки бросали, и
+  `writeMissionStatus` не вызывалась никогда. Исправлено на канонический
+  паттерн (`if (!canTransition) throw; writeMissionStatus; log`): start
+  корректно переводит `aborted`/`failed`/`budget_exhausted`/`paused` →
+  `active`, из терминального `completed` — `InvalidTransitionError`, при уже
+  `active` — сообщение без записи. Устаревшая подсказка про F-09 заменена на
+  указание `/mission:start`. Тесты — P-5 блок в
+  `packages/coding-agent/test/cli/mission-command.test.ts`.
+  fan-coding-agent 2.7.2 → 2.7.3.
+
+- **Терминальный UX миссии: `completed`-миссия больше не молчит.**
+  Миссия с полностью вычеркнутым ROADMAP переходила в `completed`, после чего
+  пользователь получал молчание или ложные сообщения: `/mission:status` без
+  аттача выводил "No active mission" (lazy-скан исключал `completed`),
+  `/mission:start` молча выходил из tick (терминальный статус — no-op в
+  mission-loop), `/mission:stop` падал с сырым `InvalidTransitionError`
+  (completed → aborted запрещён FSM), виджет F9 был пуст (терминальные статусы
+  скрывались), а после рестарта fan `/mission:start` лгал "No mission found".
+  Исправлено: дефолтный `accept` в `findAttachableMission` находит миссию
+  ЛЮБОГО статуса (политика переходов — на уровне команд; session_start-путь
+  со строгим фильтром не-терминальных не изменён, регрессия TC-10b зелёная);
+  `/mission:status` лениво аттачит read-only миссию любого статуса и показывает
+  реальный `completed`; `/mission:start` без аттача на `completed` выводит
+  подсказку "Mission \<slug\> is completed. Add new unchecked items to
+  ROADMAP.md and run /mission:start, or create a new mission: fan mission init
+  \<new-slug\>" (без attach), а с аттаченным loop — "Mission is \<status\> —
+  tick skipped." + ту же подсказку для `completed`; `/mission:stop` сообщает
+  "Mission already \<status\>." на терминальном статусе и "Mission stopped
+  (status: aborted)." при успешной остановке (FSM-ошибки не глотаются);
+  виджет F9 рендерит строку терминального статуса (`○ завершена │ Итерация: N`)
+  вместо пустого виджета. Тесты — блок `TC-F11-terminal-ux` в
+  `extensions/fan-mission/test/slash-commands.test.mjs`, `TC-10d/TC-10e` в
+  `index-wiring.test.mjs`, обновлённый `TC-F12-2` в `mission-widget.test.mjs`.
+  fan-mission 0.6.0 → 0.6.1.
+
+- **Регрессия F-46: дефолтный per-iteration budget ломал интерактивные сессии.**
+  `createAgentSession` применял roadmap-дефолты (100k токенов / $5.00 на
+  итерацию), если в settings.json не заданы `budget.iterationTokenLimit` /
+  `budget.iterationCostLimit`: в длинных сессиях один turn с большим контекстом
+  превышал 100k totalTokens → хук `turn_end` вызывал `agent.abort()` и ход
+  обрывался после первого же tool call. Лимиты стали opt-in: без явных
+  настроек — 0 (безлимит), бюджетом основного агента является контекстное окно
+  модели; миссионный контур задаёт лимиты через settings.json.
+  Регрессионный тест — `packages/coding-agent/test/sdk-iteration-budget-defaults.test.ts`.
+  fan-coding-agent 2.7.0 → 2.7.1.
+
+- **CLI `fan mission` не находил file-state-manager вне монорепо.**
+  `loadFileStateManager()` искал модуль только по `FAN_MISSION_DIR` и
+  монорепо-путям (`<root>/extensions/fan-mission`): у deployed-бинаря в
+  произвольном проекте ни один кандидат не существовал →
+  `MissionExtensionMissingError("file-state-manager module not found")`.
+  Добавлены runtime discovery paths (как в `core/extensions/loader.ts`):
+  project-local `<cwd>/.fan/extensions/fan-mission/` и global
+  `<agentDir>/extensions/fan-mission/` — с приоритетом выше монорепо-путей.
+  Регрессионный тест — `packages/coding-agent/test/cli/mission-command-deployed.test.ts`.
+  fan-coding-agent 2.7.1 → 2.7.2.
+
+- **Ложный `completed` миссии при `*`-маркерах ROADMAP.**
+  `parseFirstUnchecked` / `markRoadmapDone` / `isRoadmapItemChecked`
+  (extensions/fan-mission/mission-loop.ts) принимали только `-`-маркер:
+  ROADMAP с пунктами `* [ ] Задача` (валидный markdown, пользовательский файл)
+  → `parseFirstUnchecked` возвращал `null` → шаг 3 контура решал «All items
+  done» → миссия завершалась `completed` с iteration 0, пустым журналом и
+  нулевой работой (фабрикация результата). Все три функции принимают оба
+  маркера `-` и `*`; `markRoadmapDone` сохраняет исходный маркер списка.
+  Дополнительная защита: ROADMAP вообще без парсящихся чеклист-пунктов
+  (ни checked, ни unchecked) → статус `failed` с диагностикой
+  "ROADMAP contains no parseable checklist items" вместо ложного `completed`.
+  Регрессионные тесты — `extensions/fan-mission/test/mission-loop-star-marker.test.mjs`.
+  fan-mission 0.4.0 → 0.4.1.
+
+### Improved
+
+- **Обогащение промпта исполнения миссионного пункта контекстом (prompt-builder).**
+  Промпт шага 4 (iterate) mission-loop был просто `Execute mission item: <text>`
+  (+ steer): агент получал задание без контекста миссии и тратил итерацию на
+  rediscovery (memory_search → find → чтение всех файлов миссии → исследование
+  проекта), а также не знал протокол отчёта `<promise>`. Новый модуль
+  `extensions/fan-mission/prompt-builder.ts` (`buildExecutionPrompt`) собирает
+  контекстный промпт: агенту передаются MISSION.md (body без frontmatter),
+  ROADMAP (текущий пункт помечен `▶ `), STATE.md, BACKLOG.md (если непустой),
+  протокол отчёта `<promise>COMPLETE|BLOCKED|DECIDE|FAILED</promise>` и guidance
+  («не перечитывай предоставленные файлы, работай напрямую»). Защита от
+  разросшегося состояния: каждая секция ≤ 4000 символов, общий промпт ≤ 20000
+  (обрезка с `...[truncated]`). Первая строка `Execute mission item: <text>`
+  сохранена для совместимости. EPIC-путь делегирования не затронут.
+  Тесты — `extensions/fan-mission/test/prompt-builder.test.mjs`.
+  fan-mission 0.4.1 → 0.5.0.
+
+## [2.8.0] — 2026-08-15
+
+### Сверх-оркестратор FAN — Этап 1 «Валидация миссионного контура» завершён
+
+Закрытие roadmap `docs/features/super-orchestrator/mission-validation-1/roadmap.md`:
+все 8 фич (F-16..F-22 + F-48) реализованы, phase-gate фаз A/B/C пройдены
+(интеграционные коммиты [`aecc3c6`](https://github.com/seaagents/fan/commit/aecc3c6)
+и [`fd615ba`](https://github.com/seaagents/fan/commit/fd615ba); фаза C — покрытие
+компонентами F-22/F-48 без отдельного коммита), verify final 2085+ тестов зелёные.
+Подробный отчёт — `docs/features/super-orchestrator/pipeline-report.md`.
+
+**Фаза A «Протокол результатов» (F-16..F-18):**
+
+- **Расширение `fan-mission`** — парсер тегов обещаний `promise-parser.ts`
+  (`<promise>COMPLETE|BLOCKED|DECIDE|FAILED</promise>`, теги в code-блоках
+  игнорируются) в [`c347059`](https://github.com/seaagents/fan/commit/c347059);
+  DECIDE-прерывание: статус `awaiting_decision`, `resolveDecision`,
+  `decideTimeoutMs` (1h) → abort в [`f4119e0`](https://github.com/seaagents/fan/commit/f4119e0);
+  лестница верификации `verification-ladder.ts` + `verification-config.ts`
+  (5 ступеней, tree-kill таймаут) в [`0c42990`](https://github.com/seaagents/fan/commit/0c42990).
+- **Phase-gate A** — интеграция протокола результатов в контур
+  ([`aecc3c6`](https://github.com/seaagents/fan/commit/aecc3c6)): маршрутизация 4
+  тегов через `parsePromise` (приоритет над `iterResult.status`), лестница DI в
+  шаге 5, эскалация I3 (`onEscalate`).
+
+**Фаза B «Идеи и метрики» (F-19..F-21):**
+
+- **Расширение `fan-mission`** — генератор идей `idea-generator.ts` (протокол 5
+  вопросов, порог 3 итераций, дедупликация) в [`6d27769`](https://github.com/seaagents/fan/commit/6d27769);
+  скорер идей `idea-scorer.ts` (формула 0.3/0.2/0.2/0.3, пороги 0.7/0.5,
+  REJECTED → ADR) в [`8875b58`](https://github.com/seaagents/fan/commit/8875b58);
+  сбор метрик `metrics-collector.ts` (`metrics.jsonl`, `failureRate`/`prematureRate`)
+  в [`97ca862`](https://github.com/seaagents/fan/commit/97ca862).
+- **Phase-gate B** — интеграция идей/метрик в контур
+  ([`fd615ba`](https://github.com/seaagents/fan/commit/fd615ba)): `metricsCollector`
+  на каждой итерации, `ideaGenerator`/`ideaScorer` после шага 7, DECIDE скорера
+  через `enterAwaitingDecision`.
+
+**Фаза C «Валидация» (F-22, F-48):**
+
+- **Расширение `fan-mission`** — валидационный suite с реальными модулями (mock
+  только LLM/runCommand/executor): 4 тега e2e, скоринг, метрики 6 итераций
+  (failureRate 1/6 < 0.2 MAST), ladder-fail в [`ca344a3`](https://github.com/seaagents/fan/commit/ca344a3).
+- **Расширение `fan-orchestrator`** — персистентность таск-листа: `TaskManager`
+  `serialize`/`deserialize` в session JSONL custom entries, snapshot на
+  `TaskCreate`/`TaskUpdate`/`TaskClear`/`cancel_task`, restore на session start,
+  `in_progress`→`pending`+`recovered` (новый core API `getCustomEntries`) в
+  [`db133a2`](https://github.com/seaagents/fan/commit/db133a2).
+- **Phase-gate C** — production-валидация этапа 1 (без отдельного коммита):
+  сценарий 1 (F-22), сценарий 2 (mock LLM → генерация → скоринг →
+  ROADMAP/DECIDE/REJECTED), сценарий 3 (персистентность F-48). Smoke-критерии
+  этапа 1 (I0 <1c, I2 <500мс, DECIDE блокирует контур, failureRate <20%,
+  prematureRate <15%, build зелёный + unit-тесты) — PASS.
+
+**Тесты:** fan-mission 475, fan-orchestrator 186 (158 + 28 новых F-48),
+coding-agent 1190 (1 pre-existing flake `agent-session-concurrent` steering),
+итого 2085+ зелёные.
+
+**Следующий шаг:** этап 2 `http-hierarchy-2` (F-23..F-35, 13 фич).
+
+### Сверх-оркестратор FAN — Этап 0 «Миссионный контур» завершён
+
+Закрытие roadmap `docs/features/super-orchestrator/mission-loop-0/roadmap.md`:
+все 15 фич (F-01..F-15) реализованы, phase-gate фазы A пройден
+([`31f605e`](https://github.com/seaagents/fan/commit/31f605e)), verify final
+2100+ тестов зелёные, smoke `e2e-phase-a-interrupts` 3/3 PASS. Подробный
+отчёт — `docs/features/super-orchestrator/pipeline-report.md`.
+
+**Фаза A «Ядро прерываний» (F-01..F-07):**
+
+- **`fan-coding-agent`/`api-gateway`/`agent`** — REST+WS abort (`f0a83af`),
+  лимиты очередей + `QueueOverflowError` (`42360a6`), `WatchdogTimer` для
+  зависших tool call (`bb273e3`), `LoopDetector` для повторных ошибок
+  (`7a41f82`), drain state-машина `idle→draining→drained→idle` (`cb66834`),
+  REST+WS drain endpoint (`94c659d`), `budget_alert` WS-продюсер с порогами
+  80%/95%/100% и дедупликацией по периоду (`41fcf61`).
+
+**Фаза B «Контур миссии» (F-08..F-12):**
+
+- **Расширение `fan-mission`** — `file-state-manager.ts` (MISSION/ROADMAP/STATE/
+  BACKLOG/DECISIONS, FSM статусов, лимит STATE.md 5 KB, immutable MISSION.md)
+  в [`6e51409`](https://github.com/seaagents/fan/commit/6e51409);
+  7-шаговый mission loop с crash recovery и file-lock в [`dcdde97`](https://github.com/seaagents/fan/commit/dcdde97).
+- **`fan-coding-agent` CLI** — `fan mission init|start|stop|status|pause|resume`
+  + `--template <T>` (default + refactor), `InvalidTransitionError` в
+  [`665a392`](https://github.com/seaagents/fan/commit/665a392); slash-команды
+  `/mission:*` (start/stop/pause/resume/status/steer/decide, 7 шт.) в
+  [`0fb7284`](https://github.com/seaagents/fan/commit/0fb7284); TUI-виджет
+  статуса миссии (Alt+M) в [`5fd84c1`](https://github.com/seaagents/fan/commit/5fd84c1).
+
+**Фаза C «Внешние триггеры и интеграция» (F-13..F-15):**
+
+- **Расширение `fan-scheduler`** — cron-планировщик тиков I4, 5-field cron со
+  строгой валидацией, resilience к падениям `sendMessage` в
+  [`a972f23`](https://github.com/seaagents/fan/commit/a972f23).
+- **Расширение `fan-webhook`** — Hono-сервер на порту 9090, event-router
+  для steer/followUp в [`d9ef7d1`](https://github.com/seaagents/fan/commit/d9ef7d1).
+- **Интеграция** — 22 интеграционных теста + 5 фикстур в
+  `extensions/fan-mission/test/fixtures/mission/sample/`, общение расширений
+  через файловые сигналы `.mission-steer-queue.json` и `.mission-drain-flag`
+  в [`d5c3b42`](https://github.com/seaagents/fan/commit/d5c3b42).
+
+**Следующий шаг:** этап 1 `mission-validation-1` (F-16..F-22) + F-48
+(персистентность таск-листа оркестратора).
+
+### Сверх-оркестратор FAN — развёртывание и автопилот миссий
+
+**Entry-point wiring расширений (E-1..E-6):**
+
+- **`fan-orchestrator`** — git-adapter в [`89d4b0b`](https://github.com/seaagents/fan/commit/89d4b0b),
+  session-executor в [`5fc3590`](https://github.com/seaagents/fan/commit/5fc3590)
+- **`fan-webhook`** — entry-point в [`f94b55f`](https://github.com/seaagents/fan/commit/f94b55f)
+- **`fan-scheduler`** — entry-point в [`2d0d436`](https://github.com/seaagents/fan/commit/2d0d436)
+- **`fan-mission`** — entry-point: MissionLoop + 7 slash-команд + виджет
+  в [`415b3d2`](https://github.com/seaagents/fan/commit/415b3d2);
+  integration load test в [`72882c1`](https://github.com/seaagents/fan/commit/72882c1)
+
+**Доводка:**
+
+- Виджет F9 через `ctx.ui.setWidget` в [`f94669b`](https://github.com/seaagents/fan/commit/f94669b)
+  (fan-mission 0.1.3)
+- Scheduler без холостых тиков в [`cf45deb`](https://github.com/seaagents/fan/commit/cf45deb)
+  (fan-scheduler 0.1.1)
+- Webhook подсказка `FAN_WEBHOOK_PORT` в [`a183566`](https://github.com/seaagents/fan/commit/a183566)
+
+**TICKET-12 production runAgent:** захват реального результата итерации
+(agent_end, usage, FAILED-теги, таймаут 30 мин) в [`f120db5`](https://github.com/seaagents/fan/commit/f120db5)
+(fan-mission 0.2.0)
+
+**TICKET-14 авто-тик:** мост scheduler→missionLoop.tick() через EventBus
+`mission_tick` в [`3a32fb4`](https://github.com/seaagents/fan/commit/3a32fb4)
+(scheduler 0.2.0 + mission 0.3.0)
+
+**fan-webhook multi-instance:** авто-подбор порта 9090–9110 когда порт не задан
+явно в [`ec658d1`](https://github.com/seaagents/fan/commit/ec658d1) (0.1.3)
+
+### Сверх-оркестратор FAN — Этап 2 «HTTP-иерархия узлов» завершён
+
+**Фаза A «Управление процессами и аутентификация»:**
+
+- **`fan-super-orchestrator`** — process-manager
+  ([`be8c75d`](https://github.com/seaagents/fan/commit/be8c75d): spawn/kill/health,
+  PortPool), node-auth
+  ([`60411db`](https://github.com/seaagents/fan/commit/60411db): FAN_NODE_TOKEN +
+  сидинг в api-gateway auth.ts + main.ts), depth-width-guard
+  ([`18de279`](https://github.com/seaagents/fan/commit/18de279)),
+  message-sanitizer ([`02dce72`](https://github.com/seaagents/fan/commit/02dce72))
+- **Phase-gate A** — [`fe1f6d8`](https://github.com/seaagents/fan/commit/fe1f6d8)
+  (11/11 реальный fan server)
+
+**Фаза B «Рабочие пакеты и бюджет»:**
+
+- **`fan-super-orchestrator`** — work-package
+  ([`34192ab`](https://github.com/seaagents/fan/commit/34192ab)),
+  node-report ([`5bd41c9`](https://github.com/seaagents/fan/commit/5bd41c9)),
+  child-node-client ([`0a90f49`](https://github.com/seaagents/fan/commit/0a90f49):
+  REST+WS reconnect), budget-aggregator
+  ([`5a78656`](https://github.com/seaagents/fan/commit/5a78656)),
+  budget-coordinator ([`c1fce7a`](https://github.com/seaagents/fan/commit/c1fce7a):
+  mission-budget.json, min(0.8×remaining/n, ceiling), инвариант
+  Σallocated ≤ budget_total), tree-journal
+  ([`6af95ac`](https://github.com/seaagents/fan/commit/6af95ac): JSONL+fsync),
+  startup-reconciliation ([`6ab3d96`](https://github.com/seaagents/fan/commit/6ab3d96))
+- **Phase-gate B** — [`571076b`](https://github.com/seaagents/fan/commit/571076b)
+  (26/26)
+
+**Фаза C «Глубина 2»:**
+
+- **`fan-super-orchestrator`** — depth2-integration
+  ([`ebd309f`](https://github.com/seaagents/fan/commit/ebd309f): MVP глубины 2:
+  L0 → 3–4×L1 на реальных процессах, kill-switch 0.3с),
+  иерархические тесты ([`61cd0ee`](https://github.com/seaagents/fan/commit/61cd0ee))
+- **Phase-gate C** — [`060cf82`](https://github.com/seaagents/fan/commit/060cf82)
+  (20/20)
+
+**Итог:** 457 тестов расширения + 57 e2e-проверок; verify final PASS;
+отчёт [`b4a97e1`](https://github.com/seaagents/fan/commit/b4a97e1).
+
+### Сверх-оркестратор FAN — Этап 3 завершён — пайплайн закрыт полностью (48/48 + F-48.5)
+
+**Фаза A «Глубина 3–4, манифесты, санитизация» (F-36..F-38):**
+
+- **F-36** глубина 3–4 в [`d3fa7ed`](https://github.com/seaagents/fan/commit/d3fa7ed)
+  (maxWorkingDepth дефолт 4, предохранитель 12, FAN_ORCHESTRATOR_DEPTH)
+- **F-37** манифесты инструментов в [`8e89bcc`](https://github.com/seaagents/fan/commit/8e89bcc)
+  (--tools enforcement на дочернем, tool_blocked)
+- **F-38** полная санитизация границ в [`2c8d0b5`](https://github.com/seaagents/fan/commit/2c8d0b5)
+  (4 валидатора, cycle-защита, validation_failed)
+- **Phase-gate A** — [`50da3f3`](https://github.com/seaagents/fan/commit/50da3f3) (17/17)
+
+**Фаза B «Mission API и CLI» (F-39..F-42, F-47):**
+
+- **F-47** Mission API в [`72b9fc4`](https://github.com/seaagents/fan/commit/72b9fc4)
+  (GET /api/missions/:id/status|tree|budget + WS mission_event, slug traversal
+  hardening)
+- **F-39** mission-tree в [`9b57fb5`](https://github.com/seaagents/fan/commit/9b57fb5)
+- **F-40** mission-status+log в [`a4e2567`](https://github.com/seaagents/fan/commit/a4e2567)
+- **F-41** mission-budget в [`ace89c3`](https://github.com/seaagents/fan/commit/ace89c3)
+- **F-42** CLI `fan mission tree` в [`bfac439`](https://github.com/seaagents/fan/commit/bfac439)
+- Parity-фикс [`36b1773`](https://github.com/seaagents/fan/commit/36b1773)
+- **Phase-gate B** — [`b24122d`](https://github.com/seaagents/fan/commit/b24122d) (12/12)
+
+**Фаза C «Checkpoint, бюджет на итерацию, wiring» (F-43..F-46, F-48.5):**
+
+- **F-45** Checkpoint API в [`039b241`](https://github.com/seaagents/fan/commit/039b241)
+  (git commit + state-файл, restore без --hard)
+- **F-46** бюджет на итерацию в [`c07cfc8`](https://github.com/seaagents/fan/commit/c07cfc8)
+  (100k/$5 на turn, iteration_budget_exceeded → FAILED-тег в fan-mission)
+- **F-48.5** wiring EPIC-делегирование в [`6a9eb6d`](https://github.com/seaagents/fan/commit/6a9eb6d)
+  ([EPIC] → декомпозиция → mission_delegate → реальные дочерние fan server →
+  синтез; verify поймал и предотвратил ложный COMPLETE)
+- **F-44** e2e в [`7d171cb`](https://github.com/seaagents/fan/commit/7d171cb)
+- **F-43** гайд `docs/guides/missions.md` в [`8e3d142`](https://github.com/seaagents/fan/commit/8e3d142)
+- **Phase-gate C** — [`3498a9f`](https://github.com/seaagents/fan/commit/3498a9f) (32/32)
+
+**Итог:** тесты super-orch 716 / mission 585 / api-gateway 137 / dashboard 98 /
+model-manager 53 / coding-agent 1244; e2e gates 118/118; verify final PASS;
+бэклог #22–#29 (minor) в pipeline-report.
+
+**Версии релиза** [`4d89d81`](https://github.com/seaagents/fan/commit/4d89d81) +
+[`d56a7ed`](https://github.com/seaagents/fan/commit/d56a7ed): FAN 2.8.0,
+fan-coding-agent 2.7.0, @fan/api-gateway 1.5.0, @fan/dashboard 1.1.0,
+@fan/model-manager 1.2.0, fan-mission 0.4.0, fan-super-orchestrator 0.3.0
+(fan-scheduler 0.2.0, fan-webhook 0.1.3 без изменений в этапе 3).
+
 ## [2.5.1] — 2026-08-09
 
 ### Исправлено

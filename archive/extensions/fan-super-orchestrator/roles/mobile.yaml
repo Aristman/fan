@@ -1,0 +1,10 @@
+id: mobile
+name: Mobile Developer
+description: Mobile developer role — iOS/Android нативная и кросс-платформенная разработка
+allowed_depths: [2, 3, 4]
+default_tools:
+  - code_research
+  - bash
+  - edit
+  - write
+verification_approach: standard

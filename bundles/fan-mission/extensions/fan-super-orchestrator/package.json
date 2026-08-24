@@ -1,0 +1,28 @@
+{
+	"name": "fan-super-orchestrator",
+	"version": "1.2.1",
+	"description": "Сверх-оркестратор FAN: HTTP-иерархия узлов fan server (порождение, аутентификация, бюджет, журнал дерева)",
+	"type": "module",
+	"private": true,
+	"scripts": {
+		"test": "vitest run"
+	},
+	"fan": {
+		"name": "fan-super-orchestrator",
+		"type": "extension",
+		"displayName": "FAN Super Orchestrator",
+		"description": "Сверх-оркестратор FAN: HTTP-иерархия узлов fan server (порождение, аутентификация, бюджет, журнал дерева).",
+		"version": "1.2.1",
+		"author": "FAN Team",
+		"tags": [
+			"orchestrator",
+			"hierarchy",
+			"http",
+			"budget",
+			"tree-journal"
+		]
+	},
+	"devDependencies": {
+		"vitest": "^3.2.4"
+	}
+}

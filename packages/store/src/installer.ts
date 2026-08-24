@@ -610,19 +610,42 @@ export class ArchiveInstaller {
 
 			onProgress?.("detecting", "Detecting package structure...");
 			const { dir: sourceDir } = await this.findWrapperDir(extractDir);
+			const detectedType = (await this.detectType(sourceDir)) ?? pkg.type;
 
-			const backup = await this.backupExisting(targetDir);
+			if (detectedType === "bundle") {
+				// Bundles contain multiple resources (extensions/skills/themes) spread
+				// across real target directories. Re-sync each component with replace
+				// semantics so removed files don't linger.
+				//
+				// NOTE: update of a bundle is DESTRUCTIVE for each component's target
+				// directory — the bundle is the source of truth, managed by the store.
+				// User files inside component directories are not expected.
+				// On failure, a best-effort rollback from backups is attempted.
+				const installedResources = await this.syncBundleComponents(sourceDir, pkg.scope ?? "user", onProgress, {
+					replace: true,
+				});
+				if (installedResources.length === 0) {
+					throw new Error(
+						"Bundle contains no installable resources (extensions/, skills/, themes/ directories empty or missing)",
+					);
+				}
+			} else {
+				const backup = await this.backupExisting(targetDir);
 
-			try {
-				onProgress?.("installing", `Updating files for ${pkg.name}...`);
-				await this.mergeCopy(sourceDir, targetDir);
-				await this.applyUpdateCleanup(targetDir);
+				try {
+					onProgress?.("installing", `Updating files for ${pkg.name}...`);
+					await this.mergeCopy(sourceDir, targetDir);
+					await this.applyUpdateCleanup(targetDir);
 
-				onProgress?.("installing", `Installing dependencies for ${pkg.name}...`);
-				await this.installDeps(targetDir, onProgress);
-			} catch (err) {
-				await this.restoreBackup(targetDir, backup);
-				throw err;
+					onProgress?.("installing", `Installing dependencies for ${pkg.name}...`);
+					await this.installDeps(targetDir, onProgress);
+				} catch (err) {
+					await this.restoreBackup(targetDir, backup);
+					throw err;
+				}
+
+				// Success — clean up backup
+				await this.cleanupBackup(backup);
 			}
 
 			onProgress?.("saving", "Updating package metadata...");
@@ -633,9 +656,6 @@ export class ArchiveInstaller {
 				downloadUrl: repoPkg.downloadUrl,
 				hash: repoPkg.hash,
 			});
-
-			// Success — clean up backup
-			await this.cleanupBackup(backup);
 
 			const updated = this.db.getPackage(pkg.name);
 			onProgress?.("done", `Updated ${pkg.name} to v${repoPkg.version}`);
@@ -776,42 +796,9 @@ export class ArchiveInstaller {
 		const pkgName = pkg?.name ?? (await this.detectName(extractedDir, "extension"));
 		const bundleVersion = pkg?.version ?? "unknown";
 
-		const installedResources: Array<{ type: ResourceType; path: string; name: string }> = [];
-
-		for (const type of ["extension", "skill", "theme"] as const) {
-			const subDir = join(extractedDir, `${type}s`);
-			if (!existsSync(subDir)) continue;
-
-			const entries = await readdir(subDir);
-			for (const entry of entries) {
-				const entryPath = join(subDir, entry);
-				let isDir = false;
-				try {
-					isDir = (await stat(entryPath)).isDirectory();
-				} catch {
-					// ignore
-				}
-				if (!isDir) continue;
-
-				onProgress?.("installing", `Installing ${entry} (${type})...`);
-				const targetDir = this.getTargetDirectory(type, scope, entry);
-				const backup = await this.backupExisting(targetDir);
-				try {
-					await mkdir(dirname(targetDir), { recursive: true });
-					await cp(entryPath, targetDir, { recursive: true });
-					if (type === "extension") {
-						onProgress?.("installing", `Installing dependencies for ${entry}...`);
-						await this.installDeps(targetDir, onProgress);
-					}
-				} catch (err) {
-					await this.restoreBackup(targetDir, backup);
-					throw err;
-				}
-				installedResources.push({ type, path: targetDir, name: entry });
-				// Success — clean up backup
-				await this.cleanupBackup(backup);
-			}
-		}
+		const installedResources = await this.syncBundleComponents(extractedDir, scope, onProgress, {
+			replace: false,
+		});
 
 		if (installedResources.length === 0) {
 			throw new Error(
@@ -837,6 +824,80 @@ export class ArchiveInstaller {
 		this.db.savePackage(installedPkg);
 		onProgress?.("done", `Installed bundle ${pkgName}`);
 		return installedPkg;
+	}
+
+	/**
+	 * Sync bundle components (extensions/skills/themes) from an extracted source
+	 * directory to their real target directories.
+	 *
+	 * @param replace When true, removes the existing target before copying so that
+	 *   files deleted in the new bundle version don't linger (used by update).
+	 *   When false, overlays on top (used by initial install).
+	 */
+	private async syncBundleComponents(
+		extractedDir: string,
+		scope: "user" | "project",
+		onProgress: ProgressCallback | undefined,
+		opts: { replace: boolean },
+	): Promise<Array<{ type: ResourceType; path: string; name: string }>> {
+		const installedResources: Array<{ type: ResourceType; path: string; name: string }> = [];
+		// Track backups for all components so we can do all-or-nothing rollback.
+		// Backups are only cleaned after ALL components succeed.
+		const backups: Array<{ targetDir: string; backupPath: string | undefined }> = [];
+
+		for (const type of ["extension", "skill", "theme"] as const) {
+			const subDir = join(extractedDir, `${type}s`);
+			if (!existsSync(subDir)) continue;
+
+			const entries = await readdir(subDir);
+			for (const entry of entries) {
+				const entryPath = join(subDir, entry);
+				let isDir = false;
+				try {
+					isDir = (await stat(entryPath)).isDirectory();
+				} catch {
+					// ignore
+				}
+				if (!isDir) continue;
+
+				const action = opts.replace ? "Updating" : "Installing";
+				onProgress?.("installing", `${action} ${entry} (${type})...`);
+				const targetDir = this.getTargetDirectory(type, scope, entry);
+				const backup = await this.backupExisting(targetDir);
+				backups.push({ targetDir, backupPath: backup });
+				try {
+					if (opts.replace && existsSync(targetDir)) {
+						await rm(targetDir, { recursive: true, force: true });
+					}
+					await mkdir(dirname(targetDir), { recursive: true });
+					await cp(entryPath, targetDir, { recursive: true });
+					if (type === "extension") {
+						onProgress?.("installing", `Installing dependencies for ${entry}...`);
+						await this.installDeps(targetDir, onProgress);
+					}
+				} catch (err) {
+					// Best-effort rollback of ALL previously processed components
+					// (including the one that just failed — restore what we can).
+					for (const { targetDir: t, backupPath: b } of backups) {
+						try {
+							await this.restoreBackup(t, b);
+						} catch (restoreErr) {
+							// Log but don't swallow the original error
+							console.error(`[syncBundleComponents] rollback failed for ${t}:`, restoreErr);
+						}
+					}
+					throw err;
+				}
+				installedResources.push({ type, path: targetDir, name: entry });
+			}
+		}
+
+		// All components succeeded — clean up all backups
+		for (const { backupPath } of backups) {
+			await this.cleanupBackup(backupPath);
+		}
+
+		return installedResources;
 	}
 
 	/**

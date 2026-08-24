@@ -10,6 +10,7 @@ import type {
 	BudgetTrackerOptions,
 	FallbackChainOptions,
 	FallbackResult,
+	IterationBudgetCheckResult,
 	ModelRoute,
 	ModelSettingData,
 	ProviderRouterOptions,
@@ -158,6 +159,31 @@ export class ModelManager {
 
 	async isBudgetExceeded(provider: string, period: string = "daily"): Promise<boolean> {
 		return this.budget.isExceeded(provider, period);
+	}
+
+	// --- F-46: Per-Iteration Budget ---
+
+	/**
+	 * F-46: Track usage for the current iteration (synchronous, in-memory).
+	 * Independent from the global DB-backed budgets.
+	 */
+	trackIterationUsage(tokens: number, cost = 0): void {
+		this.budget.trackIterationUsage(tokens, cost);
+	}
+
+	/** F-46: Check the per-iteration ceiling. `{ allowed, remaining }`. */
+	checkIterationBudget(): IterationBudgetCheckResult {
+		return this.budget.checkIterationBudget();
+	}
+
+	/** F-46: Reset per-iteration counters (iteration boundary). Global usage untouched. */
+	resetIteration(): void {
+		this.budget.resetIteration();
+	}
+
+	/** F-46: Snapshot of current per-iteration usage and limits (0 = unlimited). */
+	getIterationUsage(): { tokensUsed: number; costUsed: number; tokenLimit: number; usdLimit: number } {
+		return this.budget.getIterationUsage();
 	}
 
 	// --- Routing Management ---

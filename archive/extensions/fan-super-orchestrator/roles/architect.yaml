@@ -1,0 +1,9 @@
+id: architect
+name: System Architect
+description: System architect role — проектирование архитектуры, декомпозиция на подсистемы
+allowed_depths: [1, 2]
+default_tools:
+  - code_research
+  - delegate_task
+  - plan
+verification_approach: standard

@@ -16,6 +16,7 @@ import { type Args, type Mode, parseArgs, printHelp } from "./cli/args.js";
 import { processFileArguments } from "./cli/file-processor.js";
 import { buildInitialMessage } from "./cli/initial-message.js";
 import { listModels } from "./cli/list-models.js";
+import { handleMissionCommand } from "./cli/mission-command.js";
 import { cleanupOldBinaries, handleUpdateCommand } from "./cli/self-update.js";
 import { selectSession } from "./cli/session-picker.js";
 import { getAgentDir, getModelsPath, isBunBinary, VERSION } from "./config.js";
@@ -197,6 +198,19 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 	// Session-mutating requests await whenReady() which resolves after bindExtensions completes.
 	let _bindPromise: Promise<void> = Promise.resolve();
 
+	// F-07: Session change callbacks — used by the WS budget_alert producer to rebind
+	// to the new session's ModelManager after every newSession/switchSession.
+	const _sessionChangeCallbacks: Array<() => void> = [];
+	function notifySessionChange() {
+		for (const cb of _sessionChangeCallbacks) {
+			try {
+				cb();
+			} catch {
+				/* ignore rebind errors */
+			}
+		}
+	}
+
 	// Bind extensions to the current runtime session so they receive session_start event.
 	// Must be called after every switchSession/newSession since a new AgentSession is created.
 	async function bindSessionExtensions(): Promise<void> {
@@ -333,6 +347,7 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 		bindSessionExtensions();
 		diskCacheTime = 0; // invalidate cache after switch
 		resubscribeAfterSwitch();
+		notifySessionChange();
 		return true;
 	}
 
@@ -388,6 +403,7 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 			bindSessionExtensions();
 			diskCacheTime = 0;
 			resubscribeAfterSwitch();
+			notifySessionChange();
 			return {
 				id: runtime.session.sessionId,
 				title: opts?.title || runtime.session.sessionName || "New Session",
@@ -522,7 +538,7 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 				const resolved = resolvePath(reportsDir, name);
 				const resolvedDir = resolvePath(reportsDir);
 				// Path traversal protection
-				if (!resolved.startsWith(resolvedDir + "/") && !resolved.startsWith(resolvedDir + "\\")) {
+				if (!resolved.startsWith(`${resolvedDir}/`) && !resolved.startsWith(`${resolvedDir}\\`)) {
 					continue;
 				}
 				try {
@@ -534,9 +550,52 @@ function createSessionAdapter(runtime: AgentSessionRuntime): SessionAdapter {
 			return null;
 		},
 
+		// --- abortSession (F-01): abort active generation for the given session ---
+		async abortSession(id: string, reason?: string) {
+			const abortReason = reason ?? "operator";
+			if (id === runtime.session.sessionId) {
+				console.info(`[session-adapter] Aborting session ${id} (reason: ${abortReason})`);
+				runtime.session.clearQueue();
+				// Fire-and-forget: don't await abort completion (REST must respond <1s)
+				runtime.session.abort().catch((err: unknown) => {
+					console.warn(
+						`[session-adapter] Abort failed for session ${id}:`,
+						err instanceof Error ? err.message : err,
+					);
+				});
+				return true;
+			}
+			console.info(`[session-adapter] Abort requested for non-active session ${id} (reason: ${abortReason})`);
+			const diskSessions = await loadDiskSessions();
+			return diskSessions.some((s) => s.id === id);
+		},
+
+		// --- drainSession (F-06): gracefully drain active generation for the given session ---
+		async drainSession(id: string) {
+			if (id === runtime.session.sessionId) {
+				console.info(`[session-adapter] Draining session ${id}`);
+				runtime.session.setDrainAfterCurrentTurn(true);
+				return true;
+			}
+			console.info(`[session-adapter] Drain requested for non-active session ${id}`);
+			const diskSessions = await loadDiskSessions();
+			return diskSessions.some((s) => s.id === id);
+		},
+
 		bindSessionExtensions,
 		whenReady() {
 			return _bindPromise;
+		},
+
+		// F-07: Expose active session ID and ModelManager for WS budget_alert producer
+		getActiveSessionId() {
+			return runtime.session.sessionId;
+		},
+		getActiveModelManager() {
+			return runtime.session.modelManager;
+		},
+		onSessionChange(callback: () => void) {
+			_sessionChangeCallbacks.push(callback);
 		},
 	};
 }
@@ -899,6 +958,10 @@ export async function main(args: string[]) {
 	}
 
 	if (await handlePackageCommand(args)) {
+		return;
+	}
+
+	if (await handleMissionCommand(args)) {
 		return;
 	}
 
@@ -1267,6 +1330,15 @@ export async function main(args: string[]) {
 		bindPromise.catch((err) => {
 			console.error("[fan] Extension binding failed (server continues):", err);
 		});
+		// F-24: дочерний узел сверх-оркестратора — сидим FAN_NODE_TOKEN в ClientToken store
+		if (process.env.FAN_NODE_TOKEN) {
+			try {
+				const { seedNodeToken } = await import("@fan/api-gateway");
+				await seedNodeToken(process.env.FAN_NODE_TOKEN, process.env.FAN_NODE_NAME);
+			} catch (err) {
+				console.error("[fan] Failed to seed FAN_NODE_TOKEN:", err);
+			}
+		}
 		const { startServer } = await import("@fan/api-gateway");
 		const { port, stop } = await startServer(modelManager, adapter, {
 			port: parsed.port || 3456,

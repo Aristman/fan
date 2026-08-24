@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Use vi.hoisted to create stable mock references that persist across getPrismaClient() calls
 const { mockClientToken } = vi.hoisted(() => ({
@@ -31,6 +31,8 @@ const mockSessionAdapter = {
 	whenReady: vi.fn().mockResolvedValue(undefined),
 	listAnalyticsReports: vi.fn().mockResolvedValue([]),
 	readAnalyticsReport: vi.fn().mockResolvedValue(null),
+	abortSession: vi.fn().mockResolvedValue(true),
+	drainSession: vi.fn().mockResolvedValue(true),
 };
 
 vi.mock("@fan/model-manager", () => ({
@@ -59,6 +61,7 @@ beforeAll(() => {
 });
 
 import type { ModelManager } from "@fan/model-manager";
+import { isAuthDisabled } from "../auth.js";
 import { createApp } from "../http-server.js";
 
 /** Type helper — Hono's Response.json() returns unknown in test types */
@@ -468,5 +471,38 @@ describe("HTTP Server", () => {
 			const res = await app.request("/random-path");
 			expect(res.status).toBe(404);
 		});
+	});
+});
+
+// ─── F-49: misleading FAN_NO_AUTH warn при FAN_NO_AUTH=0/прочих truthy ────
+
+describe("F-49: FAN_NO_AUTH warn gated by isAuthDisabled()", () => {
+	const prevAuth = process.env.FAN_NO_AUTH;
+
+	beforeEach(() => {
+		// Никаких побочных эффектов: только переключение FAN_NO_AUTH.
+	});
+
+	afterEach(() => {
+		if (prevAuth === undefined) {
+			delete process.env.FAN_NO_AUTH;
+		} else {
+			process.env.FAN_NO_AUTH = prevAuth;
+		}
+	});
+
+	it("isAuthDisabled: FAN_NO_AUTH=0 → false (warn НЕ должен печататься)", () => {
+		process.env.FAN_NO_AUTH = "0";
+		expect(isAuthDisabled()).toBe(false);
+	});
+
+	it("isAuthDisabled: FAN_NO_AUTH='' → false", () => {
+		process.env.FAN_NO_AUTH = "";
+		expect(isAuthDisabled()).toBe(false);
+	});
+
+	it("isAuthDisabled: FAN_NO_AUTH='yes' → false", () => {
+		process.env.FAN_NO_AUTH = "yes";
+		expect(isAuthDisabled()).toBe(false);
 	});
 });

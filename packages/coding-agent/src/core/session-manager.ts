@@ -1110,6 +1110,28 @@ export class SessionManager {
 	}
 
 	/**
+	 * Get custom entries (appended via appendCustomEntry) in insertion order.
+	 * Read counterpart to appendCustomEntry — lets extensions read back the
+	 * state they persisted in the current session.
+	 *
+	 * @param customType Optional filter; when provided only entries with this customType are returned.
+	 * @returns Array of { customType, data, timestamp }. Empty array when nothing matches.
+	 */
+	getCustomEntries<T = unknown>(customType?: string): Array<{ customType: string; data: T; timestamp?: string }> {
+		const result: Array<{ customType: string; data: T; timestamp?: string }> = [];
+		for (const entry of this.fileEntries) {
+			if (entry.type !== "custom") continue;
+			if (customType !== undefined && entry.customType !== customType) continue;
+			result.push({
+				customType: entry.customType,
+				data: entry.data as T,
+				timestamp: entry.timestamp,
+			});
+		}
+		return result;
+	}
+
+	/**
 	 * Get the session as a tree structure. Returns a shallow defensive copy of all entries.
 	 * A well-formed session has exactly one root (first entry with parentId === null).
 	 * Orphaned entries (broken parent chain) are also returned as roots.

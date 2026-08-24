@@ -1,18 +1,36 @@
 import type { IncomingMessage, Server } from "node:http";
+import type { BudgetAlert, BudgetAlertHandler } from "@fan/model-manager";
 import type { WebSocket as WsWebSocket } from "ws";
 import { isAuthDisabled, validateToken } from "./auth.js";
 import type { SessionAdapter } from "./http-server.js";
-import type { WsIncomingMessage, WsOutgoingMessage } from "./types.js";
+import type { WsBudgetAlert, WsIncomingMessage, WsMissionEvent, WsOutgoingMessage } from "./types.js";
 
 // ============================================================================
 // Types
 // ============================================================================
+
+/** Structural type for budget tracker — accepts BudgetTracker or any compatible object. */
+export interface BudgetTrackerLike {
+	onAlert(handler: BudgetAlertHandler): () => void;
+}
+
+/** Structural type for mission journal write subscription (F-47).
+ *  Compatible with TreeJournal.onJournalWrite (fan-super-orchestrator, F-32).
+ *  Returns an unsubscribe function. */
+export interface MissionJournalLike {
+	onJournalWrite(callback: (entry: Record<string, unknown>) => void): () => void;
+}
 
 export interface WsHandlerOptions {
 	server: Server;
 	sessionAdapter: SessionAdapter;
 	/** Path prefix for WebSocket connections. Default: "/api/ws/" */
 	pathPrefix?: string;
+	/** Budget tracker for broadcasting budget_alert events to WS clients (F-07). */
+	budgetTracker?: BudgetTrackerLike;
+	/** F-47: mission journal hook — every journal write broadcasts mission_event
+	 *  to all connected WS clients. */
+	missionJournal?: MissionJournalLike;
 }
 
 interface ClientConnection {
@@ -26,7 +44,7 @@ interface ClientConnection {
 // ============================================================================
 
 export function attachWebSocketHandler(options: WsHandlerOptions): { close: () => void } {
-	const { server, sessionAdapter, pathPrefix = "/api/ws/" } = options;
+	const { server, sessionAdapter, pathPrefix = "/api/ws/", budgetTracker, missionJournal } = options;
 
 	// Map: sessionId → Set of connected clients
 	const sessionClients = new Map<string, Set<ClientConnection>>();
@@ -45,6 +63,125 @@ export function attachWebSocketHandler(options: WsHandlerOptions): { close: () =
 				client.ws.send(data);
 			}
 		}
+	}
+
+	// F-07: Broadcast budget_alert to ALL connected WS clients (system-wide, not per-session)
+	function broadcastBudgetAlert(message: WsBudgetAlert): void {
+		const data = JSON.stringify(message);
+		for (const [, clients] of sessionClients) {
+			for (const client of clients) {
+				if (client.ws.readyState === 1) {
+					client.ws.send(data);
+				}
+			}
+		}
+	}
+
+	// F-47: Broadcast mission_event to ALL connected WS clients (system-wide)
+	function broadcastMissionEvent(message: WsMissionEvent): void {
+		const data = JSON.stringify(message);
+		for (const [, clients] of sessionClients) {
+			for (const client of clients) {
+				if (client.ws.readyState === 1) {
+					client.ws.send(data);
+				}
+			}
+		}
+	}
+
+	// F-07: Register budget alert handler + dedup with reset detection.
+	// Dedup key: provider|period|alertType — but we track usage to detect budget resets.
+	// When tokensUsed or costUsed decreases (autoReset), the dedup entry is cleared so
+	// alerts in the new budget period can fire again.
+	const firedAlerts = new Map<string, { tokensUsed: number; costUsed: number }>();
+	let currentAlertHandler: BudgetAlertHandler | undefined;
+	let budgetUnsub: (() => void) | undefined;
+
+	function registerBudgetHandler(handler: BudgetAlertHandler) {
+		currentAlertHandler = handler;
+		if (budgetTracker) {
+			budgetUnsub = budgetTracker.onAlert(handler);
+		}
+	}
+
+	// F-07 (Blocker A): Rebind budget alert subscription to the active session's ModelManager
+	// after every newSession/switchSession. Without this, the handler stays subscribed to a
+	// dead ModelManager and alerts from new sessions are silently dropped.
+	function rebindBudgetAlerts() {
+		if (!currentAlertHandler) return;
+		budgetUnsub?.();
+		budgetUnsub = undefined;
+		firedAlerts.clear(); // New session → clean dedup state
+		const activeMM = sessionAdapter.getActiveModelManager?.();
+		if (activeMM) {
+			budgetUnsub = activeMM.onBudgetAlert(currentAlertHandler);
+		}
+	}
+
+	// Register the session change callback for automatic rebinding
+	sessionAdapter.onSessionChange?.(rebindBudgetAlerts);
+
+	// F-47: WS-producer — subscribe to mission journal writes (if provided).
+	// missionId: entry.missionId field, else first segment of correlationId.
+	let journalUnsub: (() => void) | undefined;
+	if (missionJournal) {
+		journalUnsub = missionJournal.onJournalWrite((entry) => {
+			if (typeof entry !== "object" || entry === null) {
+				return;
+			}
+			const missionId =
+				typeof entry.missionId === "string"
+					? entry.missionId
+					: typeof entry.correlationId === "string"
+						? entry.correlationId.split("/")[0]
+						: "unknown";
+			broadcastMissionEvent({
+				type: "mission_event",
+				missionId,
+				event: typeof entry.event === "string" ? entry.event : "unknown",
+				nodeId: typeof entry.nodeId === "string" ? entry.nodeId : "",
+				timestamp: typeof entry.timestamp === "string" ? entry.timestamp : new Date().toISOString(),
+				entry,
+			});
+		});
+	}
+
+	if (budgetTracker) {
+		registerBudgetHandler((alert: BudgetAlert) => {
+			const alertType = alert.type; // BudgetAlert.type → mapped to alertType in WS envelope
+			const dedupKey = `${alert.provider}|${alert.period}|${alertType}`;
+
+			const prev = firedAlerts.get(dedupKey);
+			if (prev) {
+				// Detect budget reset: usage decreased → new period started
+				if (alert.tokensUsed < prev.tokensUsed || alert.costUsed < prev.costUsed) {
+					firedAlerts.delete(dedupKey);
+				} else {
+					// Same period — update to track max usage (needed for future reset detection)
+					firedAlerts.set(dedupKey, {
+						tokensUsed: Math.max(prev.tokensUsed, alert.tokensUsed),
+						costUsed: Math.max(prev.costUsed, alert.costUsed),
+					});
+					return; // Same period, same alert type → deduplicated
+				}
+			}
+			firedAlerts.set(dedupKey, { tokensUsed: alert.tokensUsed, costUsed: alert.costUsed });
+
+			// Use active session's ID, fall back to "system" for system-wide alerts
+			const sessionId = sessionAdapter.getActiveSessionId?.() ?? "system";
+
+			broadcastBudgetAlert({
+				type: "budget_alert",
+				sessionId,
+				timestamp: new Date().toISOString(),
+				alert: {
+					provider: alert.provider,
+					period: alert.period,
+					alertType,
+					message: alert.message,
+				},
+			});
+		});
 	}
 
 	function removeClient(client: ClientConnection): void {
@@ -159,8 +296,23 @@ export function attachWebSocketHandler(options: WsHandlerOptions): { close: () =
 							ws.send(
 								JSON.stringify({ type: "pong", sessionId: connSessionId, timestamp: new Date().toISOString() }),
 							);
+						} else if (msg.type === "abort") {
+							// F-01: abort active generation for the connected session
+							sessionAdapter.abortSession(connSessionId).catch((err: unknown) => {
+								console.warn(
+									`[ws-handler] Abort failed for session ${connSessionId}:`,
+									err instanceof Error ? err.message : err,
+								);
+							});
+						} else if (msg.type === "drain") {
+							// F-06: drain (graceful stop) for the connected session
+							sessionAdapter.drainSession(connSessionId).catch((err: unknown) => {
+								console.warn(
+									`[ws-handler] Drain failed for session ${connSessionId}:`,
+									err instanceof Error ? err.message : err,
+								);
+							});
 						}
-						// Other message types can be handled here in the future
 					} catch {
 						// Ignore malformed messages
 					}
@@ -190,6 +342,22 @@ export function attachWebSocketHandler(options: WsHandlerOptions): { close: () =
 			if (cleanupDone) return;
 			cleanupDone = true;
 			server.off("upgrade", handleUpgrade);
+			// Unsubscribe from budget alerts
+			if (budgetUnsub) {
+				try {
+					budgetUnsub();
+				} catch {
+					/* ignore */
+				}
+			}
+			// F-47: Unsubscribe from mission journal
+			if (journalUnsub) {
+				try {
+					journalUnsub();
+				} catch {
+					/* ignore */
+				}
+			}
 			// Close all client connections
 			for (const [, clients] of sessionClients) {
 				for (const client of clients) {

@@ -475,6 +475,63 @@ fan list                      # List installed packages
 fan config                    # Enable/disable package resources
 ```
 
+### Mission Commands
+
+Requires the `fan-mission` extension (auto-discovered from `extensions/fan-mission/`).
+Manages long-running autonomous missions with file-based state tracking
+(MISSION.md, STATE.md, ROADMAP.md, BACKLOG.md, DECISIONS.md under `docs/missions/<slug>/`).
+
+```bash
+fan mission init <slug> [--template <T>]   # Initialize a new mission
+fan mission start                          # Start the active mission
+fan mission stop                           # Abort the current mission (I0)
+fan mission status                         # Show mission state and progress
+fan mission pause                          # Pause the active mission (I1/drain)
+fan mission resume                         # Resume a paused/aborted mission
+```
+
+`fan mission init` accepts a `--template <T>` flag selecting the file-template
+bundle used to scaffold the mission directory. Built-in templates: `default`,
+`refactor` (selectable in `extensions/fan-mission/templates/`).
+
+**Slash equivalents** (inside TUI): `/mission:start`, `/mission:stop`,
+`/mission:pause`, `/mission:resume`, `/mission:status`, `/mission:steer <msg>`
+(I2), `/mission:decide <answer>` (I3).
+
+**Trigger extensions:** `fan-scheduler` (cron-ticks, I4) and `fan-webhook`
+(HTTP webhook on port 9090, I2/I3) are installed alongside `fan-mission` and
+wake the mission loop on external events.
+
+Mission state machine: `active → paused → completed | aborted | failed |
+budget_exhausted` (FSM enforced in `extensions/fan-mission/file-state-manager.ts`).
+Re-running `init` on an existing slug returns exit code 1.
+
+**Promise protocol (result routing):** Each iteration ends with a `<promise>` tag
+parsed by `extensions/fan-mission/promise-parser.ts` that routes the result:
+
+- `COMPLETE` — success, proceed to verification
+- `BLOCKED:<reason>` — blocker logged to `STATE.md`, escalation
+- `DECIDE:<question>` — loop blocks in `awaiting_decision` until the operator
+  answers via `/mission:decide <answer>`; configurable `decideTimeoutMs`
+  (default 1h) aborts with `decide_timeout`
+- `FAILED:<reason>` — retry/escalation
+
+Tags inside fenced code blocks are ignored; when several appear, the last valid
+tag wins; no tag → `unknown` + I3 escalation.
+
+**Verification ladder:** After each iteration, `verification-ladder.ts` runs
+configurable stages (default: `typecheck → linters → build → tests → acceptance`)
+with per-stage `timeoutMs` (`verification-config.ts`). A failed stage yields
+`FAILED` with a diagnosis (tool output tail). Timeouts hard-kill the process tree
+(`taskkill /T /F` on Windows, `SIGKILL` process-group on POSIX). See
+`docs/specs/spec_super-orchestrator_v3_2026-08-10.md` §3.1.3, §3.2.4.
+
+**Orchestrator task board persistence:** The `fan-orchestrator` extension's
+`TaskManager` survives FAN restarts — task snapshots are written to session JSONL
+on `TaskCreate`/`TaskUpdate`/`TaskClear`/`cancel_task` and restored on session
+start; tasks left `in_progress` come back as `pending` with `recovered: true`
+(the worker likely died during the previous run).
+
 ### Modes
 
 | Flag | Description |

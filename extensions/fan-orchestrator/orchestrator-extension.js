@@ -27,6 +27,7 @@ import { isDangerousCommand } from "./permissions.js";
 import { logAuditDecision } from "./audit.js";
 import { getFinalOutput, runSingleAgent } from "./subagent-runner.js";
 import { TaskManager } from "./task-manager.js";
+import { restoreTasks, writeTaskSnapshot } from "./task-persistence.js";
 import { activeWorkers, finalizeWorker, genWorkerId, getWorker, listWorkers, pruneOldWorkers, registerWorker, resetSlots, updateWorker } from "./workers.js";
 import { PipelineState } from "./pipeline-state.js";
 import * as path from "node:path";
@@ -230,6 +231,8 @@ export const orchestratorExtension = (fan) => {
     });
     fan.on("session_start", async (_event, ctx) => {
         lastCtx = ctx;
+        // F-48: restore persisted task board before building the coordinator prompt
+        restoreTasks(fan, taskManager);
         // Warn if no config
         if (!configInitialized && ctx.ui.notify) {
             ctx.ui.notify("⚠️ Orchestrator config not found. Run /orchestrator init to configure.", "warn");
@@ -362,6 +365,8 @@ export const orchestratorExtension = (fan) => {
             event.toolName === "TaskUpdate" ||
             event.toolName === "TaskClear" ||
             event.toolName === "cancel_task") {
+            // F-48: persist the task board after every task mutation
+            writeTaskSnapshot(fan, taskManager);
             queueMicrotask(() => {
                 updateTaskWidget(ctx);
             });

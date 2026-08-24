@@ -14,6 +14,7 @@ import { classifyComplexity, formatComplexityResult, DIRECT_TASK_RULES, DELEGATE
 import { resolveWorkerModel, resolveWorkerTemperature } from "./config.js";
 import { formatUsageStats, formatToolPreview, getDisplayItems, getFinalOutput, MAX_CONCURRENCY, MAX_PARALLEL_TASKS, mapWithConcurrencyLimit, runSingleAgent, } from "./subagent-runner.js";
 import { acquireSlot, getWorker, releaseSlot, updateWorker } from "./workers.js";
+import { collectProjectContext, mergeContext, truncate, PREVIOUS_OUTPUT_LIMIT } from "./context-builder.js";
 const COLLAPSED_ITEM_COUNT = 10;
 const MAX_LIVE_TOOLS = 9;
 const AGENT_ICONS = {
@@ -25,6 +26,25 @@ const AGENT_ICONS = {
 const WRITE_WORKER_TYPES = new Set(["implement", "bug-fix", "tests-impl", "docs-impl"]);
 function getAgentIcon(agentName) {
     return AGENT_ICONS[agentName] ?? "🤖";
+}
+/** Build the 📋 ctx indicator for renderCall (only for fields the coordinator passed). */
+function formatContextIndicator(context) {
+    if (!context || typeof context !== "object")
+        return "";
+    const parts = [];
+    if (context.parentSummary)
+        parts.push("summary");
+    const fileCount = Array.isArray(context.relevantFiles) ? context.relevantFiles.length : 0;
+    if (fileCount > 0)
+        parts.push(`${fileCount} file${fileCount !== 1 ? "s" : ""}`);
+    if (context.previousFindings)
+        parts.push("findings");
+    const constraintCount = Array.isArray(context.constraints) ? context.constraints.length : 0;
+    if (constraintCount > 0)
+        parts.push(`${constraintCount} constraint${constraintCount !== 1 ? "s" : ""}`);
+    if (parts.length === 0)
+        return "";
+    return `📋 ctx: ${parts.join(", ")}`;
 }
 function toWorkerType(agent) {
     // readOnly агенты получают свой слот (параллельные)
@@ -147,15 +167,44 @@ function classifyTaskByDescription(description) {
  */
 export function registerOrchestratorTools(fan, taskManager, config, workerLifecycle) {
     // ---- delegate_task ----
+    /**
+     * Relevant file entry: plain path string or {path, lines?, purpose?}.
+     * Forward-compatible contract with super-orchestrator v3 work_package.context
+     * (spec_super-orchestrator_v3_2026-08-10.md §3.3.2).
+     */
+    const RelevantFileSchema = Type.Union([
+        Type.String({ description: "File path" }),
+        Type.Object({
+            path: Type.String({ description: "File path" }),
+            lines: Type.Optional(Type.String({ description: "Line range, e.g. \"10-42\"" })),
+            purpose: Type.Optional(Type.String({ description: "Why this file matters for the task" })),
+        }),
+    ]);
+    /**
+     * WorkerContextSchema — context injected into the worker prompt.
+     * parentSummary / relevantFiles / constraints form the forward-compatible contract
+     * with super-orchestrator v3 work_package.context (spec_super-orchestrator_v3_2026-08-10.md §3.3.2).
+     * previousFindings / gitState / projectTree are an optional FAN-specific superset.
+     */
+    const WorkerContextSchema = Type.Object({
+        parentSummary: Type.Optional(Type.String({ description: "Forward-compatible contract with super-orchestrator v3 work_package.context. Condensed summary of everything the worker needs to know (goal, decisions, background)." })),
+        relevantFiles: Type.Optional(Type.Array(RelevantFileSchema, { description: "Forward-compatible contract with super-orchestrator v3 work_package.context. Files the worker should know about (path or {path, lines, purpose})." })),
+        previousFindings: Type.Optional(Type.String({ description: "Optional superset. Condensed findings from previous workers (explore/plan reports). Summarize, do not paste raw reports." })),
+        constraints: Type.Optional(Type.Array(Type.String(), { description: "Forward-compatible contract with super-orchestrator v3 work_package.context. Rules the worker must follow (conventions, forbidden changes, compatibility requirements)." })),
+        gitState: Type.Optional(Type.String({ description: "Optional superset. Current git state. Auto-collected when omitted." })),
+        projectTree: Type.Optional(Type.String({ description: "Optional superset. Project directory tree. Auto-collected when omitted." })),
+    }, { description: "Optional context injected into the worker prompt (between the agent prompt and the task). Forward-compatible contract with super-orchestrator v3 work_package.context." });
     const TaskItem = Type.Object({
         agent: Type.String({ description: "Name of the agent to invoke" }),
         task: Type.String({ description: "Task to delegate to the agent" }),
         cwd: Type.Optional(Type.String({ description: "Working directory for the agent process" })),
+        context: Type.Optional(WorkerContextSchema),
     });
     const ChainItem = Type.Object({
         agent: Type.String({ description: "Name of the agent to invoke" }),
         task: Type.String({ description: "Task with optional {previous} placeholder for prior output" }),
         cwd: Type.Optional(Type.String({ description: "Working directory for the agent process" })),
+        context: Type.Optional(WorkerContextSchema),
     });
     const AgentScopeSchema = StringEnum(["user", "project", "both"], {
         description: 'Which agent directories to use. Default: "user". Use "both" to include project-local agents.',
@@ -169,6 +218,7 @@ export function registerOrchestratorTools(fan, taskManager, config, workerLifecy
         agentScope: Type.Optional(AgentScopeSchema),
         confirmProjectAgents: Type.Optional(Type.Boolean({ description: "Prompt before running project-local agents. Default: true.", default: true })),
         cwd: Type.Optional(Type.String({ description: "Working directory for the agent process (single mode)" })),
+        context: Type.Optional(WorkerContextSchema),
     });
     fan.registerTool({
         name: "delegate_task",
@@ -178,6 +228,8 @@ export function registerOrchestratorTools(fan, taskManager, config, workerLifecy
             "Modes: single (agent + task), parallel (tasks array), chain (sequential with {previous} placeholder).",
             "Built-in agents: explore (fast recon), plan (implementation plans), implement (general-purpose), verify (code review).",
             'Default agent scope is "user". Set agentScope: "both" to include project-local agents from .fan/agents/.',
+            "Each task may carry an optional 'context' object (parentSummary, relevantFiles, previousFindings, constraints) injected into the worker prompt —",
+            "pass condensed knowledge there instead of pasting large texts into the task; it saves tokens.",
         ].join(" "),
         promptSnippet: `## Orchestrator Mode
 You have access to the \`delegate_task\` tool for spawning specialized subagents.
@@ -196,7 +248,8 @@ Each subagent runs in an isolated context window — it cannot see the main conv
 4. Always explore before implementing
 5. Verify after implementation
 6. Workers cannot see each other — pass context via {previous} in chains
-7. Keep task descriptions self-contained and specific`,
+7. Keep task descriptions self-contained and specific
+8. Use the optional \`context\` parameter (parentSummary, relevantFiles, previousFindings, constraints) to inject condensed knowledge into workers — it saves tokens instead of pasting large texts into the task`,
         parameters: DelegateParams,
         async execute(_toolCallId, params, signal, onUpdate, ctx) {
             const agentScope = params.agentScope ?? "user";
@@ -206,6 +259,20 @@ Each subagent runs in an isolated context window — it cannot see the main conv
             for (const a of agents) {
                 const resolved = resolveWorkerModel(a.name, config, config.providerMode);
                 if (resolved) a.model = resolved;
+            }
+            // Auto-collect project context (git state + tree) once per delegate_task call.
+            // Respects contextEnrichment.enabled (default true). collectProjectContext never throws.
+            let autoContext = undefined;
+            if (config.contextEnrichment?.enabled !== false) {
+                try {
+                    autoContext = collectProjectContext(ctx.cwd, {
+                        includeGitState: config.contextEnrichment?.includeGitState !== false,
+                        includeProjectTree: config.contextEnrichment?.includeProjectTree !== false,
+                    });
+                }
+                catch {
+                    autoContext = undefined;
+                }
             }
             const confirmProjectAgents = params.confirmProjectAgents ?? true;
             const hasChain = (params.chain?.length ?? 0) > 0;
@@ -262,6 +329,17 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                 for (let i = 0; i < params.chain.length; i++) {
                     const step = params.chain[i];
                     const taskWithContext = step.task.replace(/\{previous\}/g, previousOutput);
+                    // Build per-step context: explicit step context wins, auto fills gitState/projectTree.
+                    // Chain no-duplication rule: do NOT inject previousOutput into previousFindings when the
+                    // task uses the {previous} placeholder (the output is already inlined in the task text).
+                    const usesPreviousPlaceholder = step.task.includes("{previous}");
+                    let stepContext = mergeContext(step.context, autoContext);
+                    if (previousOutput && !usesPreviousPlaceholder && i > 0) {
+                        stepContext = {
+                            ...(stepContext ?? {}),
+                            previousFindings: stepContext?.previousFindings ?? truncate(previousOutput, PREVIOUS_OUTPUT_LIMIT),
+                        };
+                    }
                     const chainUpdate = onUpdate
                         ? (partial) => {
                             const currentResult = Array.isArray(partial.details)
@@ -292,7 +370,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                     updateWorker(chainWorkerId, { abortController: chainAbort });
                     let result;
                     try {
-                        result = await runSingleAgent(ctx.cwd, agents, step.agent, taskWithContext, chainWorkerTemperature, step.cwd, i + 1, chainAbort.signal, chainUpdate);
+                        result = await runSingleAgent(ctx.cwd, agents, step.agent, taskWithContext, chainWorkerTemperature, step.cwd, i + 1, chainAbort.signal, chainUpdate, undefined, stepContext);
                     } catch (workerErr) {
                         const msg = workerErr instanceof Error ? workerErr.message : String(workerErr);
                         const now = Date.now();
@@ -438,7 +516,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                                 allResults[index] = { ...allResults[index], ..._cr, exitCode: -1 };
                                 emitParallelUpdate();
                             }
-                        });
+                        }, undefined, mergeContext(t.context, autoContext));
                     } catch (workerErr) {
                         const msg = workerErr instanceof Error ? workerErr.message : String(workerErr);
                         const now = Date.now();
@@ -516,7 +594,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                 updateWorker(workerId, { abortController: singleAbort });
                 let result;
                 try {
-                    result = await runSingleAgent(ctx.cwd, agents, params.agent, params.task, workerTemperature, params.cwd, undefined, singleAbort.signal, singleUpdate);
+                    result = await runSingleAgent(ctx.cwd, agents, params.agent, params.task, workerTemperature, params.cwd, undefined, singleAbort.signal, singleUpdate, undefined, mergeContext(params.context, autoContext));
                 } catch (workerErr) {
                     const msg = workerErr instanceof Error ? workerErr.message : String(workerErr);
                     const now = Date.now();
@@ -570,6 +648,9 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                     const cleanTask = step.task.replace(/\{previous\}/g, "").trim();
                     const preview = cleanTask.length > 50 ? `${cleanTask.slice(0, 50)}...` : cleanTask;
                     text += `\n  ${theme.fg("muted", `${i + 1}.`)} ${getAgentIcon(step.agent)} ${theme.fg("accent", step.agent)}${theme.fg("dim", ` ${preview}`)}`;
+                    const ctxIndicator = formatContextIndicator(step.context);
+                    if (ctxIndicator)
+                        text += `\n     ${theme.fg("muted", ctxIndicator)}`;
                 }
                 if (args.chain.length > 5)
                     text += `\n  ${theme.fg("muted", `... +${args.chain.length - 5} more`)}`;
@@ -580,6 +661,9 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                 for (const t of args.tasks.slice(0, 5)) {
                     const preview = (t.task || "").length > 50 ? `${(t.task || "").slice(0, 50)}...` : (t.task || "(no description)");
                     text += `\n  ${getAgentIcon(t.agent)} ${theme.fg("accent", t.agent)}${theme.fg("dim", ` ${preview}`)}`;
+                    const ctxIndicator = formatContextIndicator(t.context);
+                    if (ctxIndicator)
+                        text += `\n     ${theme.fg("muted", ctxIndicator)}`;
                 }
                 if (args.tasks.length > 5)
                     text += `\n  ${theme.fg("muted", `... +${args.tasks.length - 5} more`)}`;
@@ -592,6 +676,9 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                 const preview = (args.task || "").length > 80 ? `${(args.task || "").slice(0, 80)}...` : (args.task || "");
                 text += `\n  ${theme.fg("dim", `ЗАДАЧА: ${preview}`)}`;
             }
+            const ctxIndicator = formatContextIndicator(args.context);
+            if (ctxIndicator)
+                text += `\n  ${theme.fg("muted", ctxIndicator)}`;
             return new Text(text, 0, 0);
         },
         renderResult(result, { expanded }, theme) {

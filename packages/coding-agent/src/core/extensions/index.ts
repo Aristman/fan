@@ -62,6 +62,7 @@ export type {
 	ExtensionFactory,
 	ExtensionFlag,
 	ExtensionHandler,
+	ExtensionNewSessionOptions,
 	// Runtime
 	ExtensionRuntime,
 	ExtensionShortcut,
@@ -80,6 +81,7 @@ export type {
 	InputEvent,
 	InputEventResult,
 	InputSource,
+	IterationBudgetExceededEvent,
 	KeybindingsManager,
 	LoadExtensionsResult,
 	LsToolCallEvent,

@@ -1,9 +1,20 @@
+import { EventEmitter } from "node:events";
+import { join } from "node:path";
 import type { ModelManager, RoutingRuleData } from "@fan/model-manager";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { generateToken as createToken, listTokens, revokeToken, tokenAuth } from "./auth.js";
+import { verifyNodeToken } from "./auth-mission-delegate.js";
+import { getMissionBudget, getMissionStatus, getMissionTree, isValidMissionSlug } from "./mission-api.js";
+import { validateMissionDelegatePayload } from "./mission-delegate-schema.js";
+
+// Re-export startServer from extracted bootstrap module (F-0). Keeps the
+// existing public surface stable for callers importing from "@fan/api-gateway"
+// or "./http-server.js".
+export { startServer } from "./server-bootstrap.js";
+
 import type {
 	AnalyticsReportMeta,
 	ApiError,
@@ -32,7 +43,8 @@ import type {
 	UpdateModelSettingsRequest,
 	UpdateModelSettingsResponse,
 } from "./types.js";
-import { attachWebSocketHandler } from "./ws-handler.js";
+
+// Note: `attachWebSocketHandler` was moved to ./server-bootstrap.ts (F-0).
 
 // Version is passed via ServerOptions to avoid __dirname resolution issues
 // in compiled Bun binaries where __dirname points inside the runtime.
@@ -66,6 +78,16 @@ export interface SessionAdapter {
 	listAnalyticsReports(): Promise<AnalyticsReportMeta[]>;
 	/** Read a single analytics report by name */
 	readAnalyticsReport(name: string): Promise<string | null>;
+	/** Abort active generation for a session. Returns true if session exists, false if not found. */
+	abortSession(id: string, reason?: string): Promise<boolean>;
+	/** Drain a session (graceful stop after current turn). Returns true if session exists, false if not found. */
+	drainSession(id: string): Promise<boolean>;
+	/** Get the currently active session ID. Optional — used for system-wide WS events. */
+	getActiveSessionId?(): string;
+	/** Get the currently active ModelManager (may change after session switch/create). Optional. */
+	getActiveModelManager?(): ModelManager | undefined;
+	/** Register a callback invoked after every session switch/create (for rebinding WS budget alerts). */
+	onSessionChange?(callback: () => void): void;
 }
 
 // ============================================================================
@@ -77,6 +99,8 @@ export interface ServerOptions {
 	host?: string;
 	dashboardDir?: string; // Path to dashboard dist directory. If provided, serves the dashboard.
 	version?: string; // Application version (passed from caller to avoid __dirname issues in compiled binaries)
+	/** F-47: Directory containing mission folders <slug>/ (default: <cwd>/docs/missions). */
+	missionsDir?: string;
 }
 
 // ============================================================================
@@ -122,6 +146,23 @@ function classifyErrorCode(err: unknown): string {
 }
 
 // ============================================================================
+// F-3: Mission Delegate Event Bus (singleton)
+// ============================================================================
+
+/** Singleton EventEmitter for in-process mission_delegate events.
+ *  The /api/mission-delegate endpoint emits here; spawned super-orchestrators
+ *  (F-5) subscribe here via api.events.on("mission_delegate", handler).
+ *  Exported as a module-level singleton so that consumers in the same
+ *  Node.js process (super-orchestrator extensions, walk-up handlers) can
+ *  both emit and receive without an explicit dependency injection. */
+export const apiEvents: EventEmitter = new EventEmitter();
+
+// ============================================================================
+// F-3: Mission Delegate Auth + Validation helpers — extracted (see
+// ./auth-mission-delegate.ts and ./mission-delegate-schema.ts).
+// ============================================================================
+
+// ============================================================================
 // Create Hono App
 // ============================================================================
 
@@ -133,6 +174,7 @@ async function createApp(
 	options: ServerOptions = {},
 ): Promise<Hono> {
 	if (options.version) _version = options.version;
+	const missionsDir = options.missionsDir ?? join(process.cwd(), "docs", "missions");
 	const app = new Hono();
 
 	// Middleware
@@ -149,7 +191,43 @@ async function createApp(
 		return c.json(resp);
 	});
 
-	// --- All /api/ routes require auth (except health) ---
+	// --- F-3: Mission Delegate (no DB tokenAuth — uses FAN_NODE_TOKEN env) ---
+	// Registered BEFORE `app.use("/api/*", tokenAuth)` so super-orchestrator
+	// parents can POST delegation without holding a DB-backed client token.
+	// Auth is FAN_NODE_TOKEN-based (per-process shared secret), payload is
+	// validated, then `api.events.emit("mission_delegate", payload)` fires.
+	app.post("/api/mission-delegate", async (c) => {
+		// 1. Auth: Authorization: Bearer <FAN_NODE_TOKEN> (per-node shared secret).
+		//    Discriminated union from auth-mission-delegate.ts distinguishes
+		//    "no header at all" (missing_token) from "header present but wrong"
+		//    (invalid_token). Both → 401.
+		const auth = verifyNodeToken(c.req.header("Authorization"), process.env.FAN_NODE_TOKEN);
+		if (!auth.ok) {
+			return c.json({ error: auth.error }, 401);
+		}
+
+		// 2. Parse body
+		let body: unknown;
+		try {
+			body = await c.req.json();
+		} catch {
+			return c.json({ error: "invalid_payload", field: "body" }, 400);
+		}
+
+		// 3. Validate schema
+		const validation = validateMissionDelegatePayload(body);
+		if (!validation.ok) {
+			return c.json({ error: "invalid_payload", field: validation.field }, 400);
+		}
+
+		// 4. Emit event (subscribers are spawned SO session_start wiring — F-5)
+		apiEvents.emit("mission_delegate", validation.payload);
+
+		// 5. Acknowledge
+		return c.json({ status: "queued", parentReportId: validation.payload.parentReportId }, 200);
+	});
+
+	// --- All /api/ routes require auth (except health + mission-delegate) ---
 	app.use("/api/*", tokenAuth);
 
 	// --- Sessions ---
@@ -253,6 +331,28 @@ async function createApp(
 		return c.json(resp);
 	});
 
+	// --- Abort (F-01) ---
+	app.post("/api/sessions/:id/abort", async (c) => {
+		await sessionAdapter.whenReady?.();
+		const id = c.req.param("id");
+		const result = await sessionAdapter.abortSession(id);
+		if (!result) {
+			return c.json({ error: "Session not found", code: "NOT_FOUND" } satisfies ApiError, 404);
+		}
+		return c.json({ status: "aborted" }, 202);
+	});
+
+	// --- Drain (F-06) ---
+	app.post("/api/sessions/:id/drain", async (c) => {
+		await sessionAdapter.whenReady?.();
+		const id = c.req.param("id");
+		const result = await sessionAdapter.drainSession(id);
+		if (!result) {
+			return c.json({ error: "Session not found", code: "NOT_FOUND" } satisfies ApiError, 404);
+		}
+		return c.json({ status: "draining" }, 202);
+	});
+
 	// --- Analytics ---
 
 	app.get("/api/analytics/reports", async (c) => {
@@ -331,6 +431,45 @@ async function createApp(
 		return c.json(resp);
 	});
 
+	// --- Missions (F-47) ---
+	// Self-contained reader of docs/missions/<slug>/ artifacts (MISSION.md
+	// frontmatter, tree-journal.jsonl, mission-budget.json) — see mission-api.ts.
+	app.get("/api/missions/:id/status", (c) => {
+		const slug = c.req.param("id");
+		if (!isValidMissionSlug(slug)) {
+			return c.json({ error: `Invalid mission slug: ${slug}`, code: "BAD_REQUEST" } satisfies ApiError, 400);
+		}
+		const status = getMissionStatus(missionsDir, slug);
+		if (!status) {
+			return c.json({ error: `Mission '${slug}' not found`, code: "NOT_FOUND" } satisfies ApiError, 404);
+		}
+		return c.json(status);
+	});
+
+	app.get("/api/missions/:id/tree", (c) => {
+		const slug = c.req.param("id");
+		if (!isValidMissionSlug(slug)) {
+			return c.json({ error: `Invalid mission slug: ${slug}`, code: "BAD_REQUEST" } satisfies ApiError, 400);
+		}
+		const tree = getMissionTree(missionsDir, slug);
+		if (!tree) {
+			return c.json({ error: `Mission '${slug}' not found`, code: "NOT_FOUND" } satisfies ApiError, 404);
+		}
+		return c.json(tree);
+	});
+
+	app.get("/api/missions/:id/budget", (c) => {
+		const slug = c.req.param("id");
+		if (!isValidMissionSlug(slug)) {
+			return c.json({ error: `Invalid mission slug: ${slug}`, code: "BAD_REQUEST" } satisfies ApiError, 400);
+		}
+		const budget = getMissionBudget(missionsDir, slug);
+		if (!budget) {
+			return c.json({ error: `Mission '${slug}' not found`, code: "NOT_FOUND" } satisfies ApiError, 404);
+		}
+		return c.json(budget);
+	});
+
 	// --- Dashboard static serving (optional) ---
 	let dashboardServed = false;
 	if (options.dashboardDir) {
@@ -379,59 +518,12 @@ async function createApp(
 }
 
 // ============================================================================
-// Start Server
+// Start Server — extracted to ./server-bootstrap.ts (F-0)
 // ============================================================================
-
-export async function startServer(
-	modelManager: ModelManager,
-	sessionAdapter: SessionAdapter,
-	options: ServerOptions = {},
-): Promise<{ port: number; stop: () => Promise<void> }> {
-	const { port = 3456, host = "localhost" } = options;
-	const app = await createApp(modelManager, sessionAdapter, options);
-
-	// Dynamic import to support both Bun and Node.js
-	let stop: () => Promise<void>;
-
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const hasBun = typeof (globalThis as any).Bun !== "undefined";
-
-	if (hasBun) {
-		// Bun native serve
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		const bunGlobal = (globalThis as any).Bun as any;
-		const server = bunGlobal.serve({
-			port,
-			hostname: host,
-			fetch: app.fetch,
-		});
-		stop = async () => server.stop();
-	} else {
-		// Node.js — use @hono/node-server for proper body handling + raw Server for WebSocket upgrade
-		const { serve } = await import("@hono/node-server");
-
-		// serve() returns the raw http.Server (ServerType) which we need for WebSocket upgrade
-		const httpServer = serve({ fetch: app.fetch, port, hostname: host });
-
-		// Attach WebSocket handler (requires 'ws' package)
-		const wsHandler = attachWebSocketHandler({ server: httpServer as any, sessionAdapter });
-
-		stop = async () => {
-			wsHandler.close();
-			return new Promise<void>((resolve) => {
-				httpServer.close(() => resolve());
-			});
-		};
-	}
-
-	console.log(`[api-gateway] Server running at http://${host}:${port}`);
-	console.log(`[api-gateway] Health: http://${host}:${port}/api/health`);
-	console.log(`[api-gateway] Docs: http://${host}:${port}/api/health`);
-	if (process.env.FAN_NO_AUTH) {
-		console.warn(`[api-gateway] ⚠️  Auth disabled (FAN_NO_AUTH=${process.env.FAN_NO_AUTH})`);
-	}
-
-	return { port, stop };
-}
+//
+// `startServer` previously lived here; it was lifted into `server-bootstrap.ts`
+// to separate transport-layer wiring (HTTP server + WS upgrade + stop semantics)
+// from the Hono route graph built by `createApp`. The public surface is
+// preserved via `export { startServer } from "./server-bootstrap.js";` above.
 
 export { createApp };

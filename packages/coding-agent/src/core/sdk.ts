@@ -248,8 +248,20 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		thinkingLevel = "off";
 	}
 
-	// Create or use provided ModelManager
-	const modelManager = options.modelManager ?? new ModelManager();
+	// Create or use provided ModelManager.
+	// F-46: the per-iteration budget is OPT-IN. When settings.json has no
+	// `budget.iterationTokenLimit` / `budget.iterationCostLimit`, limits are 0
+	// (unlimited) — for the main agent the model context window is the
+	// effective budget; the mission loop opts in via settings.json when needed.
+	const budgetSettings = settingsManager?.getBudgetConfig() ?? {};
+	const modelManager =
+		options.modelManager ??
+		new ModelManager({
+			budget: {
+				iterationBudgetTokens: budgetSettings.iterationTokenLimit ?? 0,
+				iterationBudgetUsd: budgetSettings.iterationCostLimit ?? 0,
+			},
+		});
 
 	// Sync settings to DB if settingsManager is available
 	if (settingsManager && options.modelManager === undefined) {

@@ -1,4 +1,4 @@
-export { BudgetTracker } from "./budget.js";
+export { BudgetTracker, DEFAULT_ITERATION_BUDGET_TOKENS, DEFAULT_ITERATION_BUDGET_USD } from "./budget.js";
 export * as db from "./db.js";
 export { FallbackChain } from "./fallback.js";
 export type { ModelManagerOptions, ResolvedTaskRoute } from "./model-manager.js";
@@ -13,6 +13,7 @@ export type {
 	FallbackChainOptions,
 	FallbackConfig,
 	FallbackResult,
+	IterationBudgetCheckResult,
 	ModelRoute,
 	ModelSettingData,
 	ProviderRouterOptions,

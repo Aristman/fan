@@ -1,0 +1,13 @@
+{
+	"meta": { "nodeId": "L1/node-1", "correlationId": "mission-fixture/L1/node-1" },
+	"text": "Рефакторинг middleware завершён.\nИзменено: 2 файла, добавлены тесты.\nVERDICT: PASS",
+	"usage": { "inputTokens": 20000, "outputTokens": 10000, "costUsd": 3 },
+	"children": [
+		{
+			"meta": { "nodeId": "L2/node-1", "correlationId": "mission-fixture/L2/node-1" },
+			"text": "Дочерняя подзадача (валидация сессий) выполнена.\nVERDICT: PASS",
+			"usage": { "inputTokens": 100, "outputTokens": 50, "costUsd": 0.01 },
+			"children": []
+		}
+	]
+}

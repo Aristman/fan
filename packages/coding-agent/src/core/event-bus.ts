@@ -3,6 +3,7 @@ import { EventEmitter } from "node:events";
 export interface EventBus {
 	emit(channel: string, data: unknown): void;
 	on(channel: string, handler: (data: unknown) => void): () => void;
+	listenerCount(channel: string): number;
 }
 
 export interface EventBusController extends EventBus {
@@ -44,6 +45,7 @@ export function createEventBus(): EventBusController {
 				emitter.off(channel, safeHandler);
 			};
 		},
+		listenerCount: (channel) => emitter.listenerCount(channel),
 		clear: () => {
 			emitter.removeAllListeners();
 			lastEvents.clear();

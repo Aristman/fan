@@ -43,6 +43,16 @@ export interface MarkdownSettings {
 	codeBlockIndent?: string; // default: "  "
 }
 
+export interface WatchdogSettings {
+	enabled?: boolean; // default: true
+	timeoutMs?: number; // default: 720000 (12 minutes)
+}
+
+export interface LoopDetectorSettings {
+	enabled?: boolean; // default: true
+	threshold?: number; // default: 2 — consecutive identical errors before firing
+}
+
 export type TransportSetting = Transport;
 
 /**
@@ -109,6 +119,10 @@ export interface Settings {
 		dailyCostLimit?: number;
 		monthlyTokenLimit?: number;
 		monthlyCostLimit?: number;
+		/** F-46: per-iteration token ceiling (0/unset = unlimited; opt-in) */
+		iterationTokenLimit?: number;
+		/** F-46: per-iteration USD ceiling (0/unset = unlimited; opt-in) */
+		iterationCostLimit?: number;
 	};
 
 	terminal?: TerminalSettings;
@@ -122,6 +136,8 @@ export interface Settings {
 	showHardwareCursor?: boolean; // Show terminal cursor while still positioning it for IME
 	markdown?: MarkdownSettings;
 	sessionDir?: string; // Custom session storage directory (same format as --session-dir CLI flag)
+	watchdog?: WatchdogSettings;
+	loopDetector?: LoopDetectorSettings;
 }
 
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
@@ -703,6 +719,39 @@ export class SettingsManager {
 		};
 	}
 
+	/** Default watchdog timeout in milliseconds (12 minutes). */
+	static readonly DEFAULT_WATCHDOG_TIMEOUT_MS = 720000;
+
+	getWatchdogTimeoutMs(): number {
+		const raw = this.settings.watchdog?.timeoutMs;
+		if (raw !== undefined && (!Number.isFinite(raw) || raw < 1)) {
+			console.warn(
+				`[settings-manager] Invalid watchdog timeoutMs (${raw}), falling back to default ${SettingsManager.DEFAULT_WATCHDOG_TIMEOUT_MS} ms`,
+			);
+			return SettingsManager.DEFAULT_WATCHDOG_TIMEOUT_MS;
+		}
+		return raw ?? SettingsManager.DEFAULT_WATCHDOG_TIMEOUT_MS;
+	}
+
+	isWatchdogEnabled(): boolean {
+		return this.settings.watchdog?.enabled !== false;
+	}
+
+	/** Default loop detector threshold (consecutive identical errors). */
+	static readonly DEFAULT_LOOP_DETECTOR_THRESHOLD = 2;
+
+	getLoopDetectorThreshold(): number {
+		const raw = this.settings.loopDetector?.threshold;
+		if (raw !== undefined && (!Number.isFinite(raw) || raw < 1)) {
+			return SettingsManager.DEFAULT_LOOP_DETECTOR_THRESHOLD;
+		}
+		return raw ?? SettingsManager.DEFAULT_LOOP_DETECTOR_THRESHOLD;
+	}
+
+	isLoopDetectorEnabled(): boolean {
+		return this.settings.loopDetector?.enabled !== false;
+	}
+
 	getHideThinkingBlock(): boolean {
 		return this.settings.hideThinkingBlock ?? false;
 	}
@@ -1065,6 +1114,8 @@ export class SettingsManager {
 		dailyCostLimit?: number;
 		monthlyTokenLimit?: number;
 		monthlyCostLimit?: number;
+		iterationTokenLimit?: number;
+		iterationCostLimit?: number;
 	} {
 		return this.settings.budget ?? {};
 	}
@@ -1074,6 +1125,8 @@ export class SettingsManager {
 		dailyCostLimit?: number;
 		monthlyTokenLimit?: number;
 		monthlyCostLimit?: number;
+		iterationTokenLimit?: number;
+		iterationCostLimit?: number;
 	}): void {
 		this.globalSettings.budget = config;
 		this.markModified("budget");

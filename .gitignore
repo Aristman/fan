@@ -57,3 +57,7 @@ packages/orchestrator/src/config.json
 
 # FAN Store archives
 bundles/*.tar.gz
+
+# e2e debug dumps (mock-node argv/env)
+archive/extensions/fan-super-orchestrator/argv-*.txt
+archive/extensions/fan-super-orchestrator/env-*.txt

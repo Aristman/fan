@@ -21,6 +21,7 @@ import type {
 	Extension,
 	ExtensionAPI,
 	ExtensionFactory,
+	ExtensionNewSessionOptions,
 	ExtensionRuntime,
 	LoadExtensionsResult,
 	MessageRenderer,
@@ -106,6 +107,7 @@ export function createExtensionRuntime(): ExtensionRuntime {
 		sendMessage: notInitialized,
 		sendUserMessage: notInitialized,
 		appendEntry: notInitialized,
+		getCustomEntries: notInitialized,
 		setSessionName: notInitialized,
 		getSessionName: notInitialized,
 		setLabel: notInitialized,
@@ -118,6 +120,9 @@ export function createExtensionRuntime(): ExtensionRuntime {
 		setModel: () => Promise.reject(new Error("Extension runtime not initialized")),
 		getThinkingLevel: notInitialized,
 		setThinkingLevel: notInitialized,
+		// Fail-safe default: without a host binding (runner.bindCommandContext),
+		// newSession is an honest refusal, not a silent success.
+		newSession: async () => ({ cancelled: true }),
 		flagValues: new Map(),
 		pendingProviderRegistrations: [],
 		// Pre-bind: queue registrations so bindCore() can flush them once the
@@ -221,8 +226,16 @@ export function createExtensionAPI(
 			runtime.sendUserMessage(content, options);
 		},
 
+		newSession(options?: ExtensionNewSessionOptions) {
+			return runtime.newSession(options);
+		},
+
 		appendEntry(customType: string, data?: unknown): void {
 			runtime.appendEntry(customType, data);
+		},
+
+		getCustomEntries(customType?: string) {
+			return runtime.getCustomEntries(customType);
 		},
 
 		setSessionName(name: string): void {
@@ -400,8 +413,7 @@ export async function loadExtensions(paths: string[], cwd: string, eventBus?: Ev
 	for (const extPath of paths) {
 		const { extension, error } = await loadExtension(extPath, cwd, resolvedEventBus, runtime);
 		const extDirName = path.basename(path.dirname(extPath));
-		const extLabel =
-			extDirName === "src" ? path.basename(path.dirname(path.dirname(extPath))) : extDirName;
+		const extLabel = extDirName === "src" ? path.basename(path.dirname(path.dirname(extPath))) : extDirName;
 		time(`ext:${extLabel}/${path.basename(extPath)}`);
 
 		if (error) {

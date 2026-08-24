@@ -1,5 +1,12 @@
 import * as db from "./db.js";
-import type { BudgetAlert, BudgetAlertHandler, BudgetConfig, BudgetStatus, BudgetTrackerOptions } from "./types.js";
+import type {
+	BudgetAlert,
+	BudgetAlertHandler,
+	BudgetConfig,
+	BudgetStatus,
+	BudgetTrackerOptions,
+	IterationBudgetCheckResult,
+} from "./types.js";
 
 const DEFAULT_THRESHOLDS = {
 	warning: 0.8,
@@ -7,12 +14,31 @@ const DEFAULT_THRESHOLDS = {
 	exceeded: 1.0,
 };
 
+/**
+ * F-46 roadmap defaults for the per-iteration budget.
+ *
+ * BudgetTracker itself treats `0`/`undefined` as unlimited (see red-test
+ * contract in __tests__/budget-iteration.test.ts); integration layers
+ * (coding-agent SDK) apply these defaults when constructing the tracker.
+ */
+export const DEFAULT_ITERATION_BUDGET_TOKENS = 100_000;
+export const DEFAULT_ITERATION_BUDGET_USD = 5.0;
+
 export class BudgetTracker {
 	private dbAdapter: BudgetTrackerOptions["db"];
 	private alertHandler?: BudgetAlertHandler;
 	private thresholds: { warning: number; critical: number; exceeded: number };
 	private loaded = false;
 	private budgetCache: Map<string, any> = new Map();
+
+	// F-46: per-iteration budget state (in-memory only, independent from the
+	// DB-backed global budgets). `0` = unlimited.
+	private iterationTokenLimit: number;
+	private iterationUsdLimit: number;
+	private iterationTokensUsed = 0;
+	private iterationCostUsed = 0;
+	/** Dedupe: the "exceeded" alert fires once per exceeded episode (until resetIteration). */
+	private iterationExceededAlerted = false;
 
 	constructor(options?: BudgetTrackerOptions) {
 		this.dbAdapter = options?.db;
@@ -22,6 +48,8 @@ export class BudgetTracker {
 			critical: options?.thresholds?.critical ?? DEFAULT_THRESHOLDS.critical,
 			exceeded: options?.thresholds?.exceeded ?? DEFAULT_THRESHOLDS.exceeded,
 		};
+		this.iterationTokenLimit = options?.iterationBudgetTokens ?? 0;
+		this.iterationUsdLimit = options?.iterationBudgetUsd ?? 0;
 	}
 
 	/** Load budget data from DB */
@@ -306,6 +334,84 @@ export class BudgetTracker {
 	async reload(): Promise<void> {
 		this.loaded = false;
 		await this.load();
+	}
+
+	// --- F-46: per-iteration budget -----------------------------------------
+
+	/**
+	 * F-46: Track usage for the current iteration (synchronous, in-memory only).
+	 *
+	 * Aggregates every API call that belongs to the current iteration until
+	 * {@link resetIteration} is called at the iteration boundary. Does NOT
+	 * touch the DB-backed global budgets — global and iteration budgets are
+	 * independent limits; whichever fires first wins.
+	 */
+	trackIterationUsage(tokens: number, cost = 0): void {
+		// Sanitize: non-finite or negative values are clamped to 0 so a bad
+		// caller cannot poison the counters with NaN (which would silently
+		// disable the limit: NaN >= limit is always false).
+		const safeTokens = Number.isFinite(tokens) && tokens > 0 ? tokens : 0;
+		const safeCost = Number.isFinite(cost) && cost > 0 ? cost : 0;
+		this.iterationTokensUsed += safeTokens;
+		this.iterationCostUsed += safeCost;
+	}
+
+	/**
+	 * F-46: Check whether the current iteration is within its budget ceiling.
+	 *
+	 * Both ceilings are checked; the first exceeded one wins (`allowed=false`).
+	 * `remaining` reports the tightest enabled limit (Infinity when unlimited).
+	 * On the first check that observes an exceedance, fires an `exceeded`
+	 * BudgetAlert (deduped until {@link resetIteration}).
+	 */
+	checkIterationBudget(): IterationBudgetCheckResult {
+		const tokenLimit = this.iterationTokenLimit;
+		const usdLimit = this.iterationUsdLimit;
+
+		const tokenRemaining = tokenLimit > 0 ? tokenLimit - this.iterationTokensUsed : Number.POSITIVE_INFINITY;
+		const usdRemaining = usdLimit > 0 ? usdLimit - this.iterationCostUsed : Number.POSITIVE_INFINITY;
+		const remaining = Math.min(tokenRemaining, usdRemaining);
+
+		const tokensExceeded = tokenLimit > 0 && this.iterationTokensUsed >= tokenLimit;
+		const usdExceeded = usdLimit > 0 && this.iterationCostUsed >= usdLimit;
+		const allowed = !tokensExceeded && !usdExceeded;
+
+		if (!allowed && !this.iterationExceededAlerted && this.alertHandler) {
+			this.iterationExceededAlerted = true;
+			const alert: BudgetAlert = {
+				provider: "iteration",
+				period: "iteration",
+				type: "exceeded",
+				message: `Iteration budget exceeded: ${this.iterationTokensUsed} / ${tokenLimit || "∞"} tokens, $${this.iterationCostUsed.toFixed(2)} / $${usdLimit ? usdLimit.toFixed(2) : "∞"}`,
+				tokensUsed: this.iterationTokensUsed,
+				tokensLimit: tokenLimit > 0 ? tokenLimit : undefined,
+				costUsed: this.iterationCostUsed,
+				costLimit: usdLimit > 0 ? usdLimit : undefined,
+			};
+			this.alertHandler(alert);
+		}
+
+		return { allowed, remaining };
+	}
+
+	/**
+	 * F-46: Reset the per-iteration counters (called at the iteration boundary).
+	 * Does NOT reset global (DB-backed) budget usage.
+	 */
+	resetIteration(): void {
+		this.iterationTokensUsed = 0;
+		this.iterationCostUsed = 0;
+		this.iterationExceededAlerted = false;
+	}
+
+	/** F-46: Snapshot of the current per-iteration usage and configured limits (0 = unlimited). */
+	getIterationUsage(): { tokensUsed: number; costUsed: number; tokenLimit: number; usdLimit: number } {
+		return {
+			tokensUsed: this.iterationTokensUsed,
+			costUsed: this.iterationCostUsed,
+			tokenLimit: this.iterationTokenLimit,
+			usdLimit: this.iterationUsdLimit,
+		};
 	}
 
 	/** Set alert handler */

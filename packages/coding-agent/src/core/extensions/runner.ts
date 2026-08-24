@@ -252,6 +252,7 @@ export class ExtensionRunner {
 		this.runtime.sendMessage = actions.sendMessage;
 		this.runtime.sendUserMessage = actions.sendUserMessage;
 		this.runtime.appendEntry = actions.appendEntry;
+		this.runtime.getCustomEntries = actions.getCustomEntries;
 		this.runtime.setSessionName = actions.setSessionName;
 		this.runtime.getSessionName = actions.getSessionName;
 		this.runtime.setLabel = actions.setLabel;
@@ -313,6 +314,9 @@ export class ExtensionRunner {
 	}
 
 	bindCommandContext(actions?: ExtensionCommandContextActions): void {
+		// Delegate through the mutable handler field so the API slot always
+		// tracks the currently bound (or reset) newSession handler.
+		this.runtime.newSession = (opts) => this.newSessionHandler(opts);
 		if (actions) {
 			this.waitForIdleFn = actions.waitForIdle;
 			this.newSessionHandler = actions.newSession;

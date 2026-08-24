@@ -1,0 +1,17 @@
+{
+	"task": "fixture: валидный пакет работ L1 (по спеке §3.3.2)",
+	"correlationId": "mission-fixture/L1/node-1",
+	"depth": 1,
+	"spawnBudget": 0,
+	"tokenBudget": 26666,
+	"costBudgetUsd": 2.6667,
+	"maxRetries": 2,
+	"toolManifest": ["read", "write", "bash"],
+	"deadline": "2026-12-31T23:59:59.000Z",
+	"verificationCommand": "npm test",
+	"context": {
+		"parentSummary": "L0 декомпозировал эпик на 3 части; эта — первая.",
+		"relevantFiles": ["src/auth/middleware.ts", "src/auth/session.ts"],
+		"constraints": ["не менять публичный API", "покрыть изменения тестами"]
+	}
+}

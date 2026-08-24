@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FAN — Fast Agents Network · Презентация для руководства</title>
+<style>
+  :root {
+    --bg: oklch(0.13 0.02 260);
+    --bg2: oklch(0.17 0.03 260);
+    --card: oklch(0.20 0.03 260);
+    --border: oklch(0.30 0.04 260);
+    --text: oklch(0.93 0.01 260);
+    --muted: oklch(0.65 0.03 260);
+    --accent: oklch(0.68 0.16 260);
+    --accent2: oklch(0.75 0.14 200);
+    --good: oklch(0.75 0.15 150);
+    --warn: oklch(0.80 0.15 85);
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { height:100%; background:var(--bg); color:var(--text);
+    font-family:"Segoe UI", system-ui, -apple-system, sans-serif; overflow:hidden; }
+
+  .deck { width:100vw; height:100vh; position:relative; }
+  .slide { position:absolute; inset:0; display:none; flex-direction:column;
+    justify-content:center; padding:6vh 7vw; }
+  .slide.active { display:flex; animation:fade .35s ease; }
+  @keyframes fade { from{opacity:0; transform:translateY(12px);} to{opacity:1; transform:none;} }
+
+  .kicker { color:var(--accent); font-size:1.05rem; font-weight:600;
+    letter-spacing:.18em; text-transform:uppercase; margin-bottom:1.2rem; }
+  h1 { font-size:clamp(2.6rem,5.5vw,4.6rem); line-height:1.05; font-weight:800; }
+  h2 { font-size:clamp(2rem,4vw,3.4rem); line-height:1.1; font-weight:800; margin-bottom:1.6rem; }
+  .sub { color:var(--muted); font-size:clamp(1.05rem,1.6vw,1.4rem); margin-top:1.2rem; max-width:60ch; line-height:1.5; }
+  .accent { color:var(--accent); }
+  .accent2 { color:var(--accent2); }
+
+  .grid { display:grid; gap:1.2rem; }
+  .g2 { grid-template-columns:1fr 1fr; }
+  .g3 { grid-template-columns:repeat(3,1fr); }
+  .g4 { grid-template-columns:repeat(4,1fr); }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:16px;
+    padding:1.4rem 1.6rem; }
+  .card h3 { font-size:1.05rem; margin-bottom:.5rem; }
+  .card p { color:var(--muted); font-size:.95rem; line-height:1.5; }
+
+  .bignum { font-size:clamp(2.6rem,5vw,4.2rem); font-weight:800; color:var(--accent); line-height:1; }
+  .bignum-label { color:var(--muted); font-size:.95rem; margin-top:.5rem; }
+
+  ul.clean { list-style:none; }
+  ul.clean li { padding:.55rem 0 .55rem 1.8rem; position:relative; font-size:clamp(1rem,1.5vw,1.3rem); color:var(--text); }
+  ul.clean li::before { content:"▸"; color:var(--accent); position:absolute; left:0; }
+  ul.clean li small { color:var(--muted); }
+
+  .timeline { display:flex; flex-direction:column; gap:0; margin-top:.5rem; }
+  .tl-item { display:flex; gap:1.2rem; padding:.7rem 0; border-left:2px solid var(--border); padding-left:1.4rem; position:relative; }
+  .tl-item::before { content:""; position:absolute; left:-7px; top:1.15rem; width:12px; height:12px;
+    border-radius:50%; background:var(--accent); }
+  .tl-item .tl-date { color:var(--accent2); font-weight:700; min-width:7.5rem; font-size:.95rem; }
+  .tl-item .tl-text { color:var(--text); font-size:1rem; }
+  .tl-item .tl-text small { color:var(--muted); display:block; }
+
+  .badge { display:inline-block; background:var(--bg2); border:1px solid var(--border);
+    color:var(--muted); border-radius:999px; padding:.35rem .9rem; font-size:.85rem; margin:.2rem .2rem 0 0; }
+  .badge.hot { color:var(--accent); border-color:var(--accent); }
+
+  .check { color:var(--good); font-weight:700; }
+
+  table.t { width:100%; border-collapse:collapse; font-size:.95rem; }
+  table.t th { text-align:left; color:var(--accent); padding:.55rem .8rem; border-bottom:1px solid var(--border); font-size:.85rem; text-transform:uppercase; letter-spacing:.08em; }
+  table.t td { padding:.55rem .8rem; border-bottom:1px solid var(--bg2); color:var(--text); vertical-align:top; }
+  table.t td small { color:var(--muted); }
+
+  .arch { display:flex; flex-direction:column; gap:.55rem; max-width:62rem; margin:0 auto; width:100%; }
+  .arch-layer { background:var(--card); border:1px solid var(--border); border-radius:14px;
+    padding:.9rem 1.4rem; display:flex; align-items:center; gap:1.2rem; }
+  .arch-layer .icon { font-size:1.6rem; }
+  .arch-layer .ttl { font-weight:700; font-size:1.05rem; white-space:nowrap; min-width:11rem; }
+  .arch-layer .desc { color:var(--muted); font-size:.9rem; }
+  .arch-arrow { text-align:center; color:var(--accent); font-size:1rem; line-height:1; }
+  .arch-row { display:grid; grid-template-columns:1fr 1fr 1fr; gap:.55rem; }
+  .arch-row .arch-layer { flex-direction:column; align-items:flex-start; gap:.3rem; padding:.8rem 1.1rem; }
+  .arch-row .ttl { min-width:0; font-size:.95rem; }
+
+  .mermaid { background:var(--bg2); border:1px solid var(--border); border-radius:16px;
+    padding:1.5rem; display:flex; justify-content:center; align-items:center; }
+
+  .nav { position:fixed; bottom:2.2vh; left:50%; transform:translateX(-50%);
+    display:flex; gap:.5rem; align-items:center; z-index:10; }
+  .nav button { background:var(--card); border:1px solid var(--border); color:var(--text);
+    border-radius:10px; padding:.45rem .9rem; cursor:pointer; font-size:1rem; }
+  .nav button:hover { border-color:var(--accent); color:var(--accent); }
+  .counter { color:var(--muted); font-size:.85rem; min-width:4.5rem; text-align:center; }
+  .hint { position:fixed; bottom:2.4vh; right:2vw; color:var(--muted); font-size:.75rem; z-index:10; }
+  .logo { position:fixed; top:3vh; right:3vw; color:var(--muted); font-size:.8rem;
+    letter-spacing:.15em; z-index:10; }
+  .logo b { color:var(--accent); }
+
+  .quote { font-size:clamp(1.4rem,2.4vw,2.1rem); line-height:1.4; max-width:34ch; font-weight:600; }
+
+  @media print {
+    html, body { overflow:visible; }
+    .slide { position:relative; display:flex !important; page-break-after:always; height:100vh; }
+    .nav, .hint, .logo { display:none; }
+  }
+</style>
+</head>
+<body>
+<div class="logo">FAN <b>·</b> Fast Agents Network</div>
+<div class="deck" id="deck">
+
+  <!-- 1. Титул -->
+  <section class="slide">
+    <div class="kicker">Презентация проекта · август 2026</div>
+    <h1>FAN — локальная AI-платформа<br>для разработки</h1>
+    <p class="sub">Fast Agents Network: многоагентный ИИ-ассистент, который живёт на машине разработчика, а не в чужом облаке. Читает и пишет код, запускает тесты, чинит баги, пишет документацию — автономно.</p>
+  </section>
+
+  <!-- 2. Проблема + решение -->
+  <section class="slide">
+    <div class="kicker">Контекст и решение</div>
+    <h2>Разработчикам нужен ИИ.<br>Но корпоративный код — не для чужих серверов.</h2>
+    <div class="grid g3" style="margin-top:1.6rem">
+      <div class="card"><h3>🔒 Приватность</h3><p>Облачные AI-ассистенты отправляют код и контекст на сторонние серверы. Для многих компаний это неприемлемо.</p></div>
+      <div class="card"><h3>🧩 Фрагментация</h3><p>Инструменты разрознены: чат в браузере, плагин в IDE, CLI — у каждого свой контекст и свои ограничения.</p></div>
+      <div class="card"><h3>💸 Неконтролируемые расходы</h3><p>Токены сгорают без лимитов и прозрачности. Никто не знает, сколько стоит одна решённая задача.</p></div>
+    </div>
+    <div class="card" style="margin-top:1.2rem; border-color:var(--accent)">
+      <h3 style="color:var(--accent)">FAN закрывает все три боли</h3>
+      <p>Один локальный рантайм объединяет терминал, веб-панель и IDE. Данные не покидают машину, расходы на ИИ — под контролем.</p>
+      <div style="margin-top:.6rem">
+        <span class="badge hot">100% локальные данные</span>
+        <span class="badge hot">Многоагентный оркестратор</span>
+        <span class="badge hot">20+ ИИ-провайдеров</span>
+        <span class="badge hot">Windows · Linux · macOS</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5. Архитектура -->
+  <section class="slide">
+    <div class="kicker">Как это устроено</div>
+    <h2>Архитектура: один рантайм — много клиентов</h2>
+    <div class="arch">
+      <div class="arch-layer"><span class="icon">🖥️</span><span class="ttl">Клиенты</span><span class="desc">TUI (терминал) · Dashboard (браузер) · IDE-плагин · скрипты</span></div>
+      <div class="arch-arrow">▼ stdio RPC / HTTP REST + WebSocket ▼</div>
+      <div class="arch-layer"><span class="icon">🚪</span><span class="ttl">API Gateway</span><span class="desc">18 эндпоинтов · токен-аутентификация · стриминг в реальном времени</span></div>
+      <div class="arch-arrow">▼</div>
+      <div class="arch-layer" style="border-color:var(--accent)"><span class="icon">⚙️</span><span class="ttl" style="color:var(--accent)">Runtime (ядро)</span><span class="desc">агент-петля · сессии (JSONL) · расширения и скиллы · MCP-интеграции</span></div>
+      <div class="arch-arrow">▼</div>
+      <div class="arch-row">
+        <div class="arch-layer"><span class="ttl">🎯 Оркестратор</span><span class="desc">координатор + 8 типов воркеров</span></div>
+        <div class="arch-layer"><span class="ttl">🧠 Менеджер моделей</span><span class="desc">роутинг · fallback · бюджет</span></div>
+        <div class="arch-layer"><span class="ttl">💾 SQLite + JSONL</span><span class="desc">сессии · бюджеты · настройки</span></div>
+      </div>
+      <div class="arch-arrow">▼</div>
+      <div class="arch-layer"><span class="icon">☁️</span><span class="ttl">FAN AI</span><span class="desc">20+ провайдеров · 586+ моделей · облачные и локальные (Ollama)</span></div>
+    </div>
+    <p class="sub" style="margin-top:1.2rem; font-size:.95rem">Все данные — на диске пользователя. Наружу уходят только промпты к выбранному ИИ-провайдеру.</p>
+  </section>
+
+  <!-- 6. Оркестратор -->
+  <section class="slide">
+    <div class="kicker">Ключевая фича</div>
+    <h2>Оркестратор: команда ИИ-агентов<br>вместо одного чат-бота</h2>
+    <div class="grid g2" style="margin-top:1rem; align-items:start">
+      <div>
+        <ul class="clean">
+          <li><b>Координатор</b> разбивает задачу на подзадачи <small>и контролирует исполнение</small></li>
+          <li><b>8 специализированных воркеров</b> <small>explore · plan · implement · verify · bug-fix · code-research · tests-impl · docs-impl</small></li>
+          <li><b>Верификация после каждого шага</b> <small>adversarial-проверка результатов</small></li>
+          <li><b>Retry / fallback</b> <small>до 3 попыток с анализом ошибок</small></li>
+        </ul>
+      </div>
+      <div class="card" style="align-self:stretch; display:flex; flex-direction:column; justify-content:center">
+        <p style="font-size:1.25rem; color:var(--text); line-height:1.5">Сложная задача «исследуй → спланируй → реализуй → протестируй» решается <b class="accent">автономно</b>, как мини-командой разработки.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7. Деньги -->
+  <section class="slide">
+    <div class="kicker">Экономика</div>
+    <h2>Контроль расходов на ИИ —<br>встроен, а не прикручен</h2>
+    <div class="grid g3" style="margin-top:2rem">
+      <div class="card"><h3>🎯 Роутинг моделей</h3><p>Каждая задача идёт к оптимальной модели: дешёвой — для простого, мощной — для сложного.</p></div>
+      <div class="card"><h3>💰 Budget Tracker</h3><p>Дневные и месячные лимиты по токенам и стоимости. Визуализация бюджета в Dashboard.</p></div>
+      <div class="card"><h3>🔄 Fallback-цепочки</h3><p>Сбой провайдера или превышение лимита → автоматическое переключение на резервную модель.</p></div>
+    </div>
+    <p class="sub" style="margin-top:2rem">Итог: предсказуемый счёт за ИИ и отсутствие простоев из-за одного провайдера.</p>
+  </section>
+
+  <!-- 8. Клиенты и сценарии -->
+  <section class="slide">
+    <div class="kicker">Как этим пользуются</div>
+    <h2>Один движок — четыре точки входа</h2>
+    <table class="t" style="margin-top:1rem">
+      <tr><th>Клиент</th><th>Сценарий</th></tr>
+      <tr><td><b>Терминал (TUI)</b></td><td>Повседневная работа разработчика: <code>fan</code> — и погнали</td></tr>
+      <tr><td><b>Веб-Dashboard</b></td><td><code>fan --web</code> — чат со стримингом, настройка моделей, бюджет. Доступно и нетехническим ролям</td></tr>
+      <tr><td><b>IDE-плагин</b></td><td><code>fan server start</code> — фоновый daemon, плагин IntelliJ подключается по RPC</td></tr>
+      <tr><td><b>Скрипты / CI</b></td><td><code>fan -p "…"</code> — одноразовые запросы для автоматизации</td></tr>
+    </table>
+  </section>
+
+  <!-- 9. Экосистема -->
+  <section class="slide">
+    <div class="kicker">Экосистема</div>
+    <h2>FAN Store: платформа растёт<br>без изменения ядра</h2>
+    <div class="grid g3" style="margin-top:2rem">
+      <div class="card"><h3>🧩 10 расширений</h3><p>Включая оркестратор, вынесенный из ядра в standalone-пакет: обновляется независимо, устанавливается одной командой.</p></div>
+      <div class="card"><h3>🎓 12 скиллов</h3><p>Готовые «профессии» агента: автогенерация тестов, исправление багов, исследование репозиториев, генерация спецификаций и роадмапов.</p></div>
+      <div class="card"><h3>📦 Бандлы и переносимость</h3><p>Кастомизация через бандлы. Унифицированные пакеты легко передать в другие экземпляры FAN — настройка команды в один клик.</p></div>
+    </div>
+    <p class="sub" style="margin-top:1.6rem">Всё устанавливается одной командой из FAN Store: <code>fan store install &lt;name&gt;</code></p>
+  </section>
+
+  <!-- 11. Качество -->
+  <section class="slide">
+    <div class="kicker">Качество</div>
+    <h2>Проверено, а не «вроде работает»</h2>
+    <div class="grid g3" style="margin-top:2rem">
+      <div class="card"><div class="bignum">717+</div><div class="bignum-label">unit-тестов по всем пакетам — все зелёные</div></div>
+      <div class="card"><div class="bignum">18/18</div><div class="bignum-label">ручных тестов оркестратора пройдено</div></div>
+      <div class="card"><div class="bignum">26/30</div><div class="bignum-label">ручных тестов Dashboard (4 — неприменимы)</div></div>
+    </div>
+    <p class="sub" style="margin-top:2rem">За время тестирования Dashboard найдено и исправлено <b class="accent">18 багов</b> — до того, как их увидел пользователь.</p>
+  </section>
+
+  <!-- 12. Дифференциация -->
+  <section class="slide">
+    <div class="kicker">Почему мы</div>
+    <h2>Чем FAN отличается от облачных ассистентов</h2>
+    <div class="grid g3" style="margin-top:2rem">
+      <div class="card"><h3>🔒 Данные не уходят</h3><p>Сессии, код, настройки — локально. Нет облачного сервера FAN вообще.</p></div>
+      <div class="card"><h3>🤖 Команда агентов</h3><p>Не один чат, а координатор + 8 воркеров с верификацией каждого шага.</p></div>
+      <div class="card"><h3>🖥 Мультиклиентность</h3><p>TUI, браузер, IDE, скрипты — один рантайм, единый контекст.</p></div>
+      <div class="card"><h3>💰 Бюджет под контролем</h3><p>Лимиты, роутинг к дешёвым моделям, прозрачная статистика.</p></div>
+      <div class="card"><h3>🏪 Расширяемость</h3><p>FAN Store, MCP-интеграции, собственные скиллы и расширения.</p></div>
+      <div class="card"><h3>📦 Нулевая установка</h3><p>Standalone-бинарник: не нужен Node.js, установка одной строкой.</p></div>
+    </div>
+  </section>
+
+  <!-- 13. Что дальше -->
+  <section class="slide">
+    <div class="kicker">Дорожная карта</div>
+    <h2>Следующие шаги</h2>
+    <div style="margin-top:1rem; max-width:52rem">
+      <ul class="clean">
+        <li><b>Super-Orchestrator v3</b> <small>многоуровневая иерархия агентов — спецификация готова</small></li>
+        <li><b>Плагин IntelliJ IDEA</b> <small>интеграция в основную IDE — спецификация готова</small></li>
+        <li><b>Session Analytics</b> <small>самоанализ качества работы агента</small></li>
+        <li><b>Облачный агент</b> <small>работа с репозиториями и удалённое управление</small></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- Финал -->
+  <section class="slide">
+    <div class="kicker">Итог</div>
+    <p class="quote">FAN — приватный, многоагентный, расширяемый.</p>
+    <div class="grid g3" style="margin-top:2rem">
+      <div class="card"><h3>🔒 Приватность</h3><p>Данные не покидают машину пользователя</p></div>
+      <div class="card"><h3>🤖 Команда агентов</h3><p>Координатор + 8 воркеров с верификацией</p></div>
+      <div class="card"><h3>🖥 Мультиклиентность</h3><p>TUI · браузер · IDE · скрипты</p></div>
+      <div class="card"><h3>💰 Контроль бюджета</h3><p>Лимиты, роутинг, прозрачная статистика</p></div>
+      <div class="card"><h3>🏪 FAN Store</h3><p>Расширения, скиллы, бандлы — переносимы между экземплярами</p></div>
+      <div class="card"><h3>🔄 Отказоустойчивость</h3><p>Fallback-модели, работа без простоев</p></div>
+    </div>
+    <p class="sub" style="margin-top:1.8rem">Сегодня — инструмент разработчиков. Завтра — платформа корпоративной AI-разработки.</p>
+    <div style="margin-top:1.5rem">
+      <span class="badge hot">Спасибо за внимание</span>
+    </div>
+  </section>
+
+</div>
+
+<div class="nav">
+  <button id="prev" aria-label="Назад">←</button>
+  <span class="counter" id="counter">1 / 11</span>
+  <button id="next" aria-label="Вперёд">→</button>
+</div>
+<div class="hint">← → навигация · F — fullscreen · P — печать</div>
+
+<script>
+(function(){
+  var slides = document.querySelectorAll('.slide');
+  var idx = 0;
+  var counter = document.getElementById('counter');
+  function show(i){
+    idx = Math.max(0, Math.min(slides.length-1, i));
+    slides.forEach(function(s,k){ s.classList.toggle('active', k===idx); });
+    counter.textContent = (idx+1) + ' / ' + slides.length;
+    location.hash = 's' + (idx+1);
+  }
+  document.getElementById('prev').onclick = function(){ show(idx-1); };
+  document.getElementById('next').onclick = function(){ show(idx+1); };
+  document.addEventListener('keydown', function(e){
+    if(e.key==='ArrowRight'||e.key===' '||e.key==='PageDown') show(idx+1);
+    if(e.key==='ArrowLeft'||e.key==='PageUp') show(idx-1);
+    if(e.key==='Home') show(0);
+    if(e.key==='End') show(slides.length-1);
+    if(e.key==='f'||e.key==='F') { if(document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen(); }
+    if(e.key==='p'||e.key==='P') window.print();
+  });
+  var m = location.hash.match(/s(\d+)/);
+  show(m ? parseInt(m[1],10)-1 : 0);
+})();
+</script>
+</body>
+</html>

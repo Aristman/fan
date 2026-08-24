@@ -289,6 +289,33 @@ Filename pattern: .fan/reports/[worker]-[brief-topic].md
 
 You may use **read** to load a saved report before passing it to the next worker.
 
+### Passing Context to Workers (CRITICAL)
+
+Workers cannot see this conversation. Instead of pasting large texts into the task description, use the optional \`context\` parameter of **delegate_task** to inject knowledge into the worker prompt:
+
+- **ALWAYS** provide \`parentSummary\` — a condensed summary of what the worker must know (goal, decisions made, background).
+- **ALWAYS** provide \`relevantFiles\` — exact paths (with line ranges and purpose when helpful) the worker should look at.
+- Provide \`previousFindings\` when earlier workers (explore/plan/code-research) produced results the next worker needs — summarize them, do NOT paste raw reports.
+- Provide \`constraints\` when there are rules the worker must follow (coding conventions, forbidden changes, compatibility requirements).
+- \`gitState\` and \`projectTree\` are collected automatically — override them only if you have better information.
+- Keep context under ~5000 tokens total. **NEVER** pass the entire codebase or full file contents — workers have their own read tools.
+
+Example:
+\`\`\`json
+{
+  "agent": "implement",
+  "task": "Add retry logic to the RPC client",
+  "context": {
+    "parentSummary": "Hardening the orchestrator RPC layer; retry with backoff was chosen in the plan.",
+    "relevantFiles": [
+      { "path": "extensions/fan-orchestrator/subagent-runner.js", "lines": "236-300", "purpose": "worker spawn logic" }
+    ],
+    "previousFindings": "explore: stallTimer resets on any stdout data; no retry exists today.",
+    "constraints": ["Backward compatible: no behavior change without context", "Keep changes minimal"]
+  }
+}
+\`\`\`
+
 ### Workflow
 
 0. **NEVER execute the task yourself.** If you catch yourself reaching for write/edit/bash — STOP. Call delegate_task instead.

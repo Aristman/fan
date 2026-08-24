@@ -73,6 +73,23 @@ export interface BudgetAlert {
 /** Handler for budget alerts */
 export type BudgetAlertHandler = (alert: BudgetAlert) => void;
 
+/**
+ * Result of a per-iteration budget check (F-46).
+ *
+ * The iteration budget is an in-memory ceiling tracked by BudgetTracker on top
+ * of (and independent from) the DB-backed global daily/monthly budgets.
+ */
+export interface IterationBudgetCheckResult {
+	/** Whether the current iteration may continue (within both token and USD ceilings). */
+	allowed: boolean;
+	/**
+	 * Remaining budget of the tightest enabled limit (tokens or USD).
+	 * `Infinity` when no iteration limit is configured.
+	 * Negative when the ceiling is exceeded.
+	 */
+	remaining: number;
+}
+
 /** Configuration for fallback retry behavior */
 export interface FallbackConfig {
 	/** Maximum number of fallback attempts (default: 1 = try primary + 1 fallback) */
@@ -142,6 +159,18 @@ export interface BudgetTrackerOptions {
 		critical: number; // default: 0.95
 		exceeded: number; // default: 1.0
 	};
+	/**
+	 * F-46: per-iteration token ceiling.
+	 * `0` or `undefined` = unlimited (no iteration cap at the tracker level).
+	 * Integration layers apply the roadmap default (DEFAULT_ITERATION_BUDGET_TOKENS).
+	 */
+	iterationBudgetTokens?: number;
+	/**
+	 * F-46: per-iteration USD ceiling.
+	 * `0` or `undefined` = unlimited (no iteration cap at the tracker level).
+	 * Integration layers apply the roadmap default (DEFAULT_ITERATION_BUDGET_USD).
+	 */
+	iterationBudgetUsd?: number;
 }
 
 /** Options for ProviderRouter */

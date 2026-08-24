@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="luxury">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FAN — Общая архитектура</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/daisyui.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/themes.css">
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.2.4/dist/index.global.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  :where(.grid, .flex) > * { min-width: 0; }
+  :where(p, h1, h2, h3, h4, li, td, th, .badge) { overflow-wrap: anywhere; }
+  :where(img, svg) { max-width: 100%; height: auto; }
+  code { font-size: 0.85em; }
+  .mermaid { display: flex; justify-content: center; padding: 1rem 0; }
+</style>
+</head>
+<body class="bg-base-200 text-base-content min-h-screen">
+
+<main class="mx-auto max-w-6xl p-6 lg:p-10 space-y-10">
+
+  <!-- Hero -->
+  <section class="hero bg-base-100 rounded-box shadow">
+    <div class="hero-content text-center py-10">
+      <div class="max-w-2xl">
+        <h1 class="text-4xl font-bold">FAN — Fast Agents Network</h1>
+        <p class="py-4 text-base-content/70">
+          Локальный AI runtime-agent для разработчиков. Монорепозиторий на Bun + TypeScript:
+          один runtime, несколько клиентов (TUI, Web Dashboard, IDE), 20+ LLM-провайдеров,
+          многоагентный оркестратор и расширяемая платформа пакетов.
+        </p>
+        <div class="flex flex-wrap justify-center gap-2">
+          <span class="badge badge-primary">Bun</span>
+          <span class="badge badge-secondary">TypeScript strict</span>
+          <span class="badge badge-accent">npm workspaces</span>
+          <span class="badge badge-info badge-soft">Hono REST + WS</span>
+          <span class="badge badge-success badge-soft">Prisma + SQLite</span>
+          <span class="badge badge-warning badge-soft">Lit + Vite</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Overview diagram -->
+  <section class="card card-border bg-base-100 shadow">
+    <div class="card-body">
+      <h2 class="card-title">Как устроена система? — 6 слоёв, один хаб</h2>
+      <p class="text-base-content/70">
+        Все пути ведут через <code>fan-coding-agent</code> — центральный хаб, который импортирует
+        все остальные пакеты. Клиенты подключаются двумя путями: in-process (TUI) или через
+        API Gateway (HTTP REST + WebSocket).
+      </p>
+      <div class="overflow-x-auto">
+        <div class="mermaid">
+flowchart TD
+  subgraph UI["1 · UI-клиенты"]
+    TUI["TUI (fan-tui)<br/>in-process"]
+    DASH["Dashboard (Lit+Vite)<br/>HTTP REST + WS"]
+    IDE["IDE plugin<br/>stdio RPC / HTTP"]
+    PRINT["Print mode<br/>stdout"]
+  end
+
+  subgraph ENTRY["2 · Точки входа"]
+    CLI["main.ts — CLI dispatcher<br/>modes: interactive · print · rpc · server"]
+    RUNTIME["createAgentSessionRuntime()<br/>один активный AgentSession"]
+  end
+
+  subgraph CORE["3 · Ядро — fan-coding-agent (хаб)"]
+    SESSION["AgentSession · agentLoop()"]
+    SM["SessionManager<br/>JSONL на диске = source of truth"]
+    TOOLS["Built-in tools<br/>read · write · edit · bash · grep · find · ls"]
+    EXTR["ExtensionRunner<br/>lifecycle hooks"]
+  end
+
+  subgraph EXT["4 · Расширения (11 bundled)"]
+    ORCH["fan-orchestrator<br/>coordinator + workers"]
+    STORE["fan-store"]
+    MCPX["fan-mcp"]
+    MORE["+8: soul, memory,<br/>web-search, analytics…"]
+  end
+
+  subgraph MODELS["5 · Model Management"]
+    MM["ProviderRouter · FallbackChain<br/>BudgetTracker"]
+    DB[("@fan/db<br/>Prisma + SQLite")]
+  end
+
+  subgraph LLM["6 · LLM transport — fan-ai"]
+    STREAM["streamSimple()<br/>унифицированный стриминг"]
+  end
+
+  subgraph EXTERNAL["Внешние системы"]
+    CLOUD["20+ облачных LLM<br/>Anthropic · OpenAI · Google · Groq…"]
+    LOCAL["Локальные LLM<br/>Ollama · vLLM · LM Studio"]
+    MCPSRV["MCP-серверы<br/>stdio / HTTP"]
+    FSTORE["FAN Store server<br/>fan.sea-agents.ru"]
+  end
+
+  TUI --> CLI
+  PRINT --> CLI
+  DASH -->|"REST localhost:3456 + WS"| APIGW["API Gateway (Hono)<br/>token auth"]
+  IDE -->|"stdio RPC"| CLI
+  IDE -->|"HTTP+WS"| APIGW
+  CLI --> RUNTIME
+  APIGW -->|"SessionAdapter"| RUNTIME
+  RUNTIME --> SESSION
+  SESSION --> SM
+  SESSION --> TOOLS
+  SESSION --> EXTR
+  EXTR --> ORCH
+  EXTR --> STORE
+  EXTR --> MCPX
+  EXTR --> MORE
+  ORCH -.->|"spawn: fan --mode rpc --no-session<br/>JSON-over-stdio"| CLI
+  SESSION --> MM
+  MM --> DB
+  MM --> STREAM
+  SESSION --> STREAM
+  STREAM -->|"HTTPS + SSE"| CLOUD
+  STREAM -->|"HTTP localhost"| LOCAL
+  MCPX -->|"MCP protocol"| MCPSRV
+  STORE -->|"HTTPS"| FSTORE
+        </div>
+      </div>
+      <div class="alert alert-soft alert-info mt-2">
+        <span>💡 Диаграмма интерактивна — кликните по ней, чтобы открыть как Excalidraw-доску и править вручную.</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Data flow -->
+  <section class="card card-border bg-base-100 shadow">
+    <div class="card-body">
+      <h2 class="card-title">Поток данных end-to-end: от ввода до ответа LLM</h2>
+      <p class="text-base-content/70">
+        Один и тот же путь <code>AgentSession.prompt()</code> используется всеми клиентами —
+        TUI напрямую, Dashboard и IDE через API Gateway.
+      </p>
+      <div class="overflow-x-auto">
+        <div class="mermaid">
+flowchart TD
+  IN["Ввод пользователя<br/>TUI · Dashboard · IDE"]
+  PROMPT["AgentSession.prompt()"]
+  HOOK["ExtensionRunner.emit(input)<br/>расширения могут модифицировать"]
+  APPEND["SessionManager.append()<br/>запись user message в JSONL"]
+  LOOP["Agent.agentLoop()<br/>fan-agent-core"]
+  LLM["fan-ai streamSimple()<br/>HTTPS + SSE → провайдер"]
+  TOOL{"tool_call?"}
+  PERM["ExtensionRunner<br/>permissions check"]
+  EXEC["executeTool()<br/>read/write/edit/bash…"]
+  CTX["результат → контекст<br/>следующая итерация"]
+  DONE["turn_end"]
+  SAVE["append assistant message → JSONL<br/>ModelManager.trackUsage() → Budget"]
+  RENDER["Рендер: TUI markdown<br/>или WS broadcast → Dashboard"]
+
+  IN --> PROMPT --> HOOK --> APPEND --> LOOP --> LLM
+  LLM -->|"text_delta"| RENDER
+  LLM --> TOOL
+  TOOL -->|"да"| PERM --> EXEC --> CTX --> LOOP
+  TOOL -->|"нет, agent_end"| DONE --> SAVE --> RENDER
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Package cards -->
+  <section>
+    <h2 class="text-2xl font-bold mb-4">Пакеты монорепозитория</h2>
+    <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div class="card card-border bg-base-100 shadow-sm">
+        <div class="card-body p-5">
+          <h3 class="card-title text-base">@seaagents/fan-coding-agent <span class="badge badge-primary badge-sm">хаб</span></h3>
+          <p class="text-sm text-base-content/70">CLI, сессии (JSONL), built-in tools, расширения, скиллы. Импортирует все остальные пакеты.</p>
+          <p class="text-xs text-base-content/50"><code>packages/coding-agent</code> · modified</p>
+        </div>
+      </div>
+      <div class="card card-border bg-base-100 shadow-sm">
+        <div class="card-body p-5">
+          <h3 class="card-title text-base">@seaagents/fan-agent-core</h3>
+          <p class="text-sm text-base-content/70">Agent runtime: класс <code>Agent</code>, <code>agentLoop()</code>, tool calling, event stream.</p>
+          <p class="text-xs text-base-content/50"><code>packages/agent</code></p>
+        </div>
+      </div>
+      <div class="card card-border bg-base-100 shadow-sm">
+        <div class="card-body p-5">
+          <h3 class="card-title text-base">@seaagents/fan-ai</h3>
+          <p class="text-sm text-base-content/70">LLM-абстракция: <code>streamSimple()</code>, 20+ провайдеров, OpenAI-compatible endpoints.</p>
+          <p class="text-xs text-base-content/50"><code>packages/ai</code></p>
+        </div>
+      </div>
+      <div class="card card-border bg-base-100 shadow-sm">
+        <div class="card-body p-5">
+          <h3 class="card-title text-base">@seaagents/fan-tui</h3>
+          <p class="text-sm text-base-content/70">Terminal UI: markdown-рендеринг, multi-line editor, дифф-рендеринг.</p>
+          <p class="text-xs text-base-content/50"><code>packages/tui</code></p>
+        </div>
+      </div>
+      <div class="card card-border bg-base-100 shadow-sm">
+        <div class="card-body p-5">
+          <h3 class="card-title text-base">@fan/api-gateway <span class="badge badge-accent badge-sm">new</span></h3>
+          <p class="text-sm text-base-content/70">Hono REST (14 endpoints) + WebSocket. Token auth через ClientToken. SessionAdapter отвязывает сервер от ядра.</p>
+          <p class="text-xs text-base-content/50"><code>packages/api-gateway</code> · localhost:3456</p>
+        </div>
+      </div>
+      <div class="card card-border bg-base-100 shadow-sm">
+        <div class="card-body p-5">
+          <h3 class="card-title text-base">@fan/dashboard <span class="badge badge-accent badge-sm">new</span></h3>
+          <p class="text-sm text-base-content/70">Lit + Vite веб-клиент. Тонкий фронтенд — диск (JSONL) единственный источник истины.</p>
+          <p class="text-xs text-base-content/50"><code>packages/dashboard</code></p>
+        </div>
+      </div>
+      <div class="card card-border bg-base-100 shadow-sm">
+        <div class="card-body p-5">
+          <h3 class="card-title text-base">@fan/model-manager <span class="badge badge-accent badge-sm">new</span></h3>
+          <p class="text-sm text-base-content/70">ProviderRouter, FallbackChain, BudgetTracker. Маршрутизация задача→модель, дневные/месячные лимиты.</p>
+          <p class="text-xs text-base-content/50"><code>packages/model-manager</code></p>
+        </div>
+      </div>
+      <div class="card card-border bg-base-100 shadow-sm">
+        <div class="card-body p-5">
+          <h3 class="card-title text-base">@fan/db <span class="badge badge-accent badge-sm">new</span></h3>
+          <p class="text-sm text-base-content/70">Prisma + SQLite: метаданные сессий, ModelSetting, RoutingRule, Budget, ClientToken.</p>
+          <p class="text-xs text-base-content/50"><code>packages/db</code> · ~/.fan/agent/fan.db</p>
+        </div>
+      </div>
+      <div class="card card-border bg-base-100 shadow-sm">
+        <div class="card-body p-5">
+          <h3 class="card-title text-base">@fan/store · @fan/mcp <span class="badge badge-accent badge-sm">new</span></h3>
+          <p class="text-sm text-base-content/70">Пакетный менеджер FAN Store и MCP-клиент (внешние tool-серверы, префикс <code>mcp__server__tool</code>).</p>
+          <p class="text-xs text-base-content/50"><code>packages/store</code> · <code>packages/mcp</code></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Orchestrator highlight -->
+  <section class="card card-border bg-base-100 shadow">
+    <div class="card-body">
+      <h2 class="card-title">Многоагентный оркестратор — изоляция через субпроцессы</h2>
+      <p class="text-base-content/70">
+        Оркестратор — standalone-расширение, не зашито в ядро. Каждый воркер — полноценный
+        fan-процесс в RPC-режиме с JSON-over-stdio. Координатор владеет таск-бордом, воркеры — чистые исполнители.
+      </p>
+      <div class="overflow-x-auto">
+        <div class="mermaid">
+flowchart LR
+  USER["Оператор"] --> COORD["Coordinator<br/>главная сессия fan"]
+  COORD -->|"TaskCreate / TaskUpdate"| BOARD["Task board<br/>pending → in_progress → completed"]
+  COORD -->|"delegate_task"| RUNNER["Subagent Runner"]
+  RUNNER -->|"spawn"| W1["Worker 1<br/>fan --mode rpc<br/>--no-session"]
+  RUNNER -->|"spawn"| W2["Worker 2<br/>explore · plan · verify"]
+  RUNNER -->|"spawn"| W3["Worker 3<br/>implement · bug-fix"]
+  W1 -->|"JSON-over-stdio"| RUNNER
+  W2 -->|"JSON-over-stdio"| RUNNER
+  W3 -->|"JSON-over-stdio"| RUNNER
+        </div>
+      </div>
+      <div class="mockup-code text-sm mt-2">
+        <pre data-prefix="$"><code>spawn("fan", ["--mode", "rpc", "--no-session", "--no-extensions", "--no-skills"])</code></pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- Storage table -->
+  <section class="card card-border bg-base-100 shadow">
+    <div class="card-body">
+      <h2 class="card-title">Где что хранится</h2>
+      <div class="overflow-x-auto rounded-box border border-base-content/5">
+        <table class="table table-zebra">
+          <thead><tr><th>Данные</th><th>Расположение</th><th>Формат</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Сообщения сессий</strong> — source of truth</td><td><code>~/.fan/sessions/*.jsonl</code> или <code>.fan/sessions/</code></td><td>JSONL на диске</td></tr>
+            <tr><td>Метаданные сессий, модели, бюджеты, токены</td><td><code>~/.fan/agent/fan.db</code></td><td>SQLite (Prisma)</td></tr>
+            <tr><td>API-ключи LLM-провайдеров</td><td><code>~/.fan/agent/auth.json</code></td><td>JSON</td></tr>
+            <tr><td>Кастомные модели (2000+)</td><td><code>~/.fan/agent/models.json</code></td><td>JSON, только global</td></tr>
+            <tr><td>Настройки</td><td><code>~/.fan/agent/settings.json</code> + <code>.fan/settings.json</code></td><td>JSON, 2 уровня</td></tr>
+            <tr><td>Расширения</td><td>project &gt; user &gt; builtin</td><td>директории с приоритетом</td></tr>
+            <tr><td>Скиллы</td><td><code>skills/</code> (8 bundled) + <code>~/.fan/agent/skills/</code></td><td>SKILL.md</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- Nuances -->
+  <section class="card card-border bg-base-100 shadow">
+    <div class="card-body">
+      <h2 class="card-title">Ключевые архитектурные решения</h2>
+      <ul class="space-y-3 mt-2">
+        <li class="flex gap-3"><span class="badge badge-primary shrink-0">1</span><span><strong>Disk-first.</strong> JSONL на диске — единственный источник истины для сообщений. Runtime — stateless execution engine, одна активная сессия, <code>switchSession()</code> пересоздаёт AgentSession.</span></li>
+        <li class="flex gap-3"><span class="badge badge-primary shrink-0">2</span><span><strong>Два пути к ядру.</strong> In-process (TUI, Print) и API Gateway (Dashboard, IDE). Оба сходятся в <code>AgentSession.prompt()</code>.</span></li>
+        <li class="flex gap-3"><span class="badge badge-primary shrink-0">3</span><span><strong>Оркестратор = расширение.</strong> Воркеры — отдельные fan-процессы с JSON-over-stdio, полная изоляция от координатора.</span></li>
+        <li class="flex gap-3"><span class="badge badge-primary shrink-0">4</span><span><strong>Двойная аутентификация.</strong> ClientToken (SQLite) для HTTP/WS-клиентов + auth.json для LLM-провайдеров. <code>FAN_NO_AUTH=1</code> для dev.</span></li>
+        <li class="flex gap-3"><span class="badge badge-primary shrink-0">5</span><span><strong>SessionAdapter pattern.</strong> Интерфейс полностью отвязывает HTTP-сервер от coding-agent.</span></li>
+        <li class="flex gap-3"><span class="badge badge-primary shrink-0">6</span><span><strong>Детерминированная сборка.</strong> Порядок: db → tui → ai → agent → model-manager → api-gateway → web-ui → store → coding-agent → mcp — отражает граф зависимостей.</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <footer class="text-center text-sm text-base-content/50 pb-6">
+    Источник: code-research по ARCHITECTURE.md, package.json, packages/ · Отчёт: <code>.fan/reports/code-research-architecture-overview.md</code>
+  </footer>
+
+</main>
+
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.15.0/dist/mermaid.esm.min.mjs";
+
+  const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
+  const paint = document.createElement("canvas").getContext("2d");
+  function toRgba(color) {
+    paint.clearRect(0, 0, 1, 1);
+    paint.fillStyle = "#000";
+    paint.fillStyle = color;
+    paint.fillRect(0, 0, 1, 1);
+    return paint.getImageData(0, 0, 1, 1).data;
+  }
+  function compositeRgba(fg, bg) {
+    const fa = fg[3] / 255, ba = bg[3] / 255;
+    const a = fa + ba * (1 - fa);
+    if (a === 0) return [0, 0, 0, 0];
+    return [
+      (fg[0] * fa + bg[0] * ba * (1 - fa)) / a,
+      (fg[1] * fa + bg[1] * ba * (1 - fa)) / a,
+      (fg[2] * fa + bg[2] * ba * (1 - fa)) / a,
+      a * 255,
+    ];
+  }
+  function pageIsDark() {
+    const root = document.documentElement;
+    const rootBg = toRgba(getComputedStyle(root).backgroundColor);
+    const bodyBg = document.body ? toRgba(getComputedStyle(document.body).backgroundColor) : [0, 0, 0, 0];
+    const [r, g, b, a] = compositeRgba(bodyBg, rootBg);
+    if (a > 0) return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 < 0.5;
+    const cs = getComputedStyle(root).colorScheme;
+    if (cs.includes("dark") && !cs.includes("light")) return true;
+    if (cs.includes("light") && !cs.includes("dark")) return false;
+    return darkQuery.matches;
+  }
+
+  const diagrams = [...document.querySelectorAll(".mermaid")].map((el) => ({ el, src: el.textContent }));
+  let applied, rendering = false, queued = false;
+  function queueRender() { queued = true; if (!rendering) void render(); }
+  async function render() {
+    rendering = true;
+    try {
+      while (queued) {
+        queued = false;
+        const theme = pageIsDark() ? "dark" : "default";
+        if (theme === applied) continue;
+        mermaid.initialize({ startOnLoad: false, theme, securityLevel: "strict" });
+        for (const { el, src } of diagrams) {
+          el.removeAttribute("data-processed");
+          el.textContent = src;
+        }
+        try {
+          await mermaid.run({ nodes: diagrams.map((d) => d.el) });
+        } catch (e) { console.error("Mermaid render failed:", e); return; }
+        applied = theme;
+      }
+    } finally {
+      rendering = false;
+      if (queued) queueRender();
+    }
+  }
+  if (document.readyState === "complete") queueRender();
+  else window.addEventListener("load", queueRender, { once: true });
+  const obs = new MutationObserver(queueRender);
+  for (const el of [document.documentElement, document.body]) {
+    if (el) obs.observe(el, { attributes: true, attributeFilter: ["data-theme", "class", "style"] });
+  }
+  document.addEventListener("change", queueRender, true);
+  document.addEventListener("transitionend", (e) => { if (e.propertyName === "background-color") queueRender(); }, true);
+  darkQuery.addEventListener("change", queueRender);
+</script>
+</body>
+</html>

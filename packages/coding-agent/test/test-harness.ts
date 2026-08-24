@@ -10,6 +10,7 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { ModelManager } from "@fan/model-manager";
 import type { AgentTool } from "@seaagents/fan-agent-core";
 import { Agent } from "@seaagents/fan-agent-core";
 import type {
@@ -336,6 +337,8 @@ export interface HarnessOptions {
 	resourceLoader?: ResourceLoader;
 	/** Inline extensions to load into the session resource loader. */
 	extensionFactories?: Array<ExtensionFactory | CreateTestExtensionsResultInput>;
+	/** ModelManager for budget tracking (F-46 iteration budget, etc.). */
+	modelManager?: ModelManager;
 }
 
 export interface Harness {
@@ -400,6 +403,7 @@ function createHarnessWithResourceLoader(
 		modelRegistry,
 		resourceLoader,
 		baseToolsOverride: options.baseToolsOverride,
+		modelManager: options.modelManager,
 	});
 
 	const events: AgentSessionEvent[] = [];

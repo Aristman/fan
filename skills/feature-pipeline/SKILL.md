@@ -1,10 +1,11 @@
 ---
 name: feature-pipeline
 description: >
-  Полный TDD-пайплайн разработки фичи от roadmap до готового результата.
+  Полный TDD-пайплайн разработки фичи (Red-Green-Refactor) от roadmap до готового результата.
   Берёт roadmap из docs/features/<slug>/roadmap.md, проходит по всем этапам
-  и функциям, для каждой выполняя: реализация → верификация → тестирование → коммит.
+  и функциям, для каждой выполняя: тесты (Red) → реализация (Green) → верификация → рефакторинг → коммит.
   Каждый шаг цикла — отдельный delegate_task с независимым verify.
+  На границах этапов — phase-gate e2e (smoke + e2e-сценарий этапа из roadmap).
   Координатор управляет pipeline через TaskCreate/TaskUpdate, не выполняя код сам.
   В финале: полная верификация, smoke/e2e-тесты, обновление документации,
   финальный коммит и отчёт.
@@ -13,8 +14,14 @@ description: >
 compatibility: "TaskCreate, TaskUpdate, list_tasks, TaskClear, delegate_task, read, write, edit, bash, question, questionnaire, pipeline"
 metadata:
   author: "FAN Team"
-  version: "3.1.0"
+  version: "3.2.0"
   changelog: |
+    v3.2.0 (2026-08-10):
+    - TDD cycle reordered to Red-Green-Refactor: tests-impl (Red) → implement (Green) → verify → refactor → commit
+    - Refactor step added between verify and commit (reads Refactor-цели from roadmap)
+    - Phase-gate e2e at stage boundaries: Smoke-критерий этапа + E2E-сценарий этапа from roadmap
+    - New anti-patterns: Test-After, refactor without green tests
+    - Aligned with feature-roadmap v1.3.0 (Red-тест, Refactor-цели, E2E-сценарий этапа, Smoke-критерий этапа)
     v3.1.0 (2026-07-08):
     - Pipeline Mode: working artifacts (development-plan.md, development-log.md, phase-status.json)
     - Integration with FAN Orchestrator `/pipeline` command
@@ -53,7 +60,7 @@ metadata:
 
 - Создавать отдельную задачу (TaskCreate) на КАЖДУЮ функцию из roadmap
   плюс на финальную верификацию, smoke и docs.
-- Делегировать каждый TDD-шаг (implement → verify → tests-impl → commit)
+- Делегировать каждый TDD-шаг (tests-impl → implement → verify → refactor → commit)
   ОТДЕЛЬНЫМ вызовом delegate_task.
 - verify — ВСЕГДА отдельным воркером, не тем же, что implement.
 - Запрашивать у пользователя подтверждение на control points
@@ -92,8 +99,9 @@ metadata:
 ## Когда использовать
 
 - Есть roadmap фичи (docs/features/<slug>/roadmap.md) и нужно реализовать всю фичу
-- Нужен автоматизированный TDD-конвейер: код → верификация → тесты → коммит
+- Нужен автоматизированный TDD-конвейер: тесты (Red) → код (Green) → верификация → рефакторинг → коммит
 - Требуется гарантированное качество: каждая функция верифицируется перед коммитом
+- Нужен phase-gate e2e на границах этапов (smoke + e2e-сценарий из roadmap)
 - Нужен финальный отчёт с результатами по каждой функции
 
 ## Commit Policy (v3.1.0+)
@@ -223,8 +231,12 @@ read <path>
 - **Этапы** — разделы `## Этап N: <Название>`
 - **Функции** — пункты с `#### ☐ <ID>: <Название>` внутри каждого этапа
 - **TDD-тесты** — `**TC-<ID>-N:** <название>` с условиями и ожидаемыми результатами
+- **Red-тест** — `**Red-тест:**` с ID тест-кейса, который должен упасть первым
+- **Refactor-цели** — `**Refactor-цели:**` с описанием что улучшить после Green (или `(none)`)
 - **Критерии приёмки** — `**Критерии приёмки:**` со списком
 - **Зависимости** — `**Зависимости:**` с перечислением ID
+- **E2E-сценарий этапа** — `**E2E-сценарий этапа:**` сквозной сценарий для phase-gate
+- **Smoke-критерий этапа** — `**Smoke-критерий этапа:**` быстрый тест для phase-gate
 
 Для каждой функции собрать структуру:
 ```
@@ -234,15 +246,26 @@ read <path>
   priority: "P0",
   description: "...",
   stage: 1,
-  tests: [ { id: "TC-1.1-1", name: "...", condition: "...", steps: "...", expected: "..." } ],
+  tests: [ { id: "TC-F-1.1-1", name: "...", condition: "...", steps: "...", expected: "..." } ],
+  redTest: "TC-F-1.1-1: <почему падает>",
+  refactorGoals: "(none)" | "<что улучшить>",
   criteria: ["...", "..."],
   dependencies: ["F-1.0"],
   status: "☐"  // ☐ ⏳ ✅ ❌
 }
 ```
 
+Для каждого этапа также извлекаются:
+```
+{
+  stageId: 1,
+  e2eScenario: "<E2E-сценарий этапа>",
+  smokeCriteria: "<Smoke-критерий этапа>"
+}
+```
+
 **Лимиты roadmap:**
-- Этапы: 3-8
+- Этапы: 2-8
 - Функций на этап: 3-30 (v3.1.0+, было 3-15 в v3.0)
 
 Для фич с большим числом фаз (>8) — разделите на дочерние roadmap.
@@ -389,35 +412,47 @@ Orchestrator создаёт:
 Координатор НЕ пишет код, НЕ пишет тесты, НЕ коммитит сам.
 Верификация — ВСЕГДА отдельным воркером, не тем же, что implement.
 
-**Алгоритм (одна итерация = одна функция):**
+**Алгоритм (одна итерация = одна функция, Red-Green-Refactor):**
 
 1. Взять первую функцию ☐ в roadmap (с учётом зависимостей).
 2. **TaskUpdate(in_progress, F-X.Y)** — пометить как активную.
-3. **delegate_task(agent="implement", F-X.Y):**
+3. **🔴 Red — delegate_task(agent="tests-impl", F-X.Y, phase="red"):**
+   - прочитать roadmap, секцию F-X.Y: TC-тесты и поле `**Red-тест:**`;
+   - написать failing-тесты по TC-карточкам из roadmap;
+   - запустить тесты, подтвердить FAIL (это и есть Red — тесты падают, потому что функциональности ещё нет);
+   - если тесты НЕ падают — это нарушение Red: разобраться почему (возможно, тесты написаны некорректно или функциональность уже существует); не переходить к шагу 4, пока Red не подтверждён;
+   - вернуть: список тест-файлов + подтверждение FAIL.
+4. **🟢 Green — delegate_task(agent="implement", F-X.Y, phase="green"):**
    - прочитать roadmap, секцию F-X.Y;
-   - написать failing-тесты (если их ещё нет) и код;
+   - написать **минимальную** реализацию для прохождения тестов из шага 3;
+   - требование минимальности: только тот код, который нужен для PASS тестов, без лишней функциональности;
+   - запустить тесты — подтвердить PASS;
    - вернуть: список изменённых файлов + diff-summary.
-4. **delegate_task(agent="verify", F-X.Y)** — НЕЗАВИСИМЫЙ:
+5. **delegate_task(agent="verify", F-X.Y)** — НЕЗАВИСИМЫЙ:
    - проверить TDD-тесты roadmap;
    - проверить критерии приёмки;
    - проверить компиляцию (`npm run build`, `go build`, `cargo check` и т.д.);
    - проверить регрессию (`npm test`, `go test ./...`, `cargo test`);
    - вернуть VERDICT: PASS / FAIL с конкретными замечаниями.
-5. **Если FAIL** (max 3 попытки для крупной фичи, 2 для мелкой):
+6. **Если FAIL** (max 3 попытки для крупной фичи, 2 для мелкой):
    - **delegate_task(agent="bug-fix", F-X.Y, замечания verify)**;
-   - → шаг 4;
+   - → шаг 5;
    - если попытки исчерпаны → **TaskUpdate(failed, F-X.Y)**, спросить пользователя
      через `question` (пропустить / ещё попытка / отменить pipeline).
-6. **delegate_task(agent="tests-impl", F-X.Y)** — отдельный воркер
-   для написания юнит/интеграционных тестов на реализацию из шага 3.
-   - тесты должны проходить после добавления.
-7. **delegate_task(agent="verify", F-X.Y, phase="tests")** — повторная
-   верификация, но теперь проверяется, что новые тесты:
+7. **delegate_task(agent="verify", F-X.Y, phase="tests")** — верификация тестов:
    - корректно написаны (проверяют то, что должны);
    - не вносят ложных срабатываний;
    - проходят на реализованном коде.
    Если FAIL — исправить через bug-fix или tests-impl (макс 2 попытки).
-8. **Commit policy check** (v3.1.0+):
+8. **🔵 Refactor — delegate_task(agent="implement", F-X.Y, phase="refactor"):**
+   - прочитать поле `**Refactor-цели:**` из roadmap для F-X.Y;
+   - если Refactor-цели = `(none)` — **шаг пропускается**;
+   - иначе: выполнить рефакторинг согласно Refactor-целям (устранение дублирования, упрощение, снижение coupling, улучшение именований);
+   - **правило:** рефакторинг без зелёных тестов запрещён (все тесты должны быть PASS перед началом рефакторинга);
+   - после рефакторинга — прогнать тесты повторно (должны остаться зелёными);
+   - если тесты упали после рефакторинга — откат или исправление до зелёного состояния;
+   - вернуть: список изменённых файлов + подтверждение что тесты зелёные.
+9. **Commit policy check** (v3.1.0+):
    - проверить `pipeline.shouldCommit(phaseId)` через `delegate_task(agent="bash", task="...")`
      или прямой вызов в Node (если есть доступ к pipelineState)
    - если true → выполнить git commit через bash:
@@ -426,14 +461,22 @@ Orchestrator создаёт:
      git commit -m "$(./pipeline.formatCommitMessage({ phaseId, action: 'complete', summary: '...', feature: 'F-X.Y' }))"
      ```
    - сохранить commit sha → `pipeline.recordPhaseChange({ phaseId, status: 'IN_PROGRESS' | 'COMPLETED', commitSha: '<sha>' })`
-9. **Обновить pipeline-report.md** инкрементальной записью по функции
-   (см. формат ниже).
-10. **TaskUpdate(taskId="<UUID>", status="completed")** — пометить задачу
+10. **Инкрементальная запись (v3.1.0+):** orchestrator hooks автоматически
+    добавляют запись в `development-log.md` при каждом TaskUpdate.
+    Ручное обновление pipeline-report.md не требуется (см. раздел
+    «Инкрементальная запись (v3.1.0+)» ниже).
+11. **TaskUpdate(taskId="<UUID>", status="completed")** — пометить задачу
     как завершённую. ID задачи получен из TaskCreate (шаг 0.4).
-11. Проверить границу этапов: если следующая функция F-X+1.0 (новый этап
-    roadmap) — показать пользователю краткую сводку (✅/❌ за этап) через
-    question (control point #2).
-12. Если есть следующая ☐ функция (с учётом зависимостей и приоритетов)
+12. **Phase-gate e2e (граница этапов):**
+    Проверить границу этапов: если следующая функция F-(X+1).1 (новый этап
+    roadmap) — запустить phase-gate перед переходом:
+    - **Smoke-критерий этапа:** прочитать из roadmap.md текущего этапа, запустить через delegate_task(agent="verify").
+    - **E2E-сценарий этапа:** прочитать из roadmap.md текущего этапа, запустить через delegate_task(agent="tests-impl").
+    - Если smoke/e2e этапа падает — этап НЕ считается завершённым;
+      возврат к исправлению через `delegate_task(agent="bug-fix")` до зелёного состояния.
+    - Только после зелёного phase-gate — показать пользователю краткую сводку
+      (✅/❌ за этап) через question (control point #2) и переход к следующему этапу.
+13. Если есть следующая ☐ функция (с учётом зависимостей и приоритетов)
     → перейти к шагу 1.
     Иначе → **Финальная фаза**.
 
@@ -462,7 +505,7 @@ TaskUpdate.
 **Главное правило координатора:** координатор не пишет код. Даже простые
 изменения должны быть делегированы — это гарантирует, что контекст
 остаётся чистым для управления pipeline. Исключение: изменение статусов
-в roadmap (✅/❌/☐), обновление pipeline-report, git-команды.
+в roadmap (✅/❌/☐), git-команды.
 
 Доступные типы воркеров:
 - **implement** — реализация кода
@@ -485,18 +528,58 @@ delegate_task(
 
 ✅ **ПРАВИЛЬНО:**
 ```python
-# Один воркер — одна функция — один шаг:
-delegate_task(agent="implement",  task="Реализуй F-1.1: ...")
+# Один воркер — одна функция — один шаг (Red-Green-Refactor):
+delegate_task(agent="tests-impl", task="Red: напиши failing-тесты для F-1.1: ...")
+delegate_task(agent="implement",  task="Green: минимальная реализация F-1.1: ...")
 delegate_task(agent="verify",     task="Проверь F-1.1: ...")
+delegate_task(agent="implement",  task="Refactor F-1.1: <Refactor-цели>")
+```
+
+### Анти-паттерн: Test-After (реализация до тестов)
+
+❌ **НЕЛЬЗЯ:**
+```python
+# Сначала код, потом тесты — это Test-After, не TDD:
+delegate_task(agent="implement", task="Реализуй F-1.1: ...")
 delegate_task(agent="tests-impl", task="Напиши тесты для F-1.1: ...")
 ```
+
+✅ **ПРАВИЛЬНО:**
+```python
+# Сначала тесты (Red), потом код (Green):
+delegate_task(agent="tests-impl", task="Red: напиши failing-тесты для F-1.1: ...")
+delegate_task(agent="implement",  task="Green: минимальная реализация F-1.1: ...")
+```
+
+Test-After теряет преимущества TDD: тесты пишутся «под код», а не как спецификация.
+Red-фаза гарантирует, что тесты проверяют реальную функциональность.
+
+### Анти-паттерн: рефакторинг без зелёных тестов
+
+❌ **НЕЛЬЗЯ:**
+```python
+# Рефакторинг при падающих тестах — риск сломать ещё больше:
+delegate_task(agent="implement", task="Рефакторинг F-1.1: упрости архитектуру")
+# тесты при этом FAIL
+```
+
+✅ **ПРАВИЛЬНО:**
+```python
+# Сначала все тесты в PASS, потом рефакторинг:
+# 1. verify → PASS (все тесты зелёные)
+# 2. delegate_task(agent="implement", task="Refactor F-1.1: <цели>")
+# 3. После рефакторинга — прогнать тесты снова (должны остаться зелёными)
+```
+
+Рефакторинг без зелёных тестов = слепое изменение кода. Если тесты падают после
+рефакторинга — откат или исправление до зелёного состояния.
 
 ### Контрольные точки (где спрашивать пользователя)
 
 | # | Когда | Что спросить | Как |
 |---|-------|--------------|-----|
 | 1 | До старта цикла | scope, стратегия коммитов, репортинг | questionnaire |
-| 2 | На границе этапов roadmap | краткая сводка: ✅/❌, что дальше | question (multi-option) |
+| 2 | На границе этапов roadmap | **phase-gate e2e:** Smoke-критерий этапа + E2E-сценарий этапа из roadmap. Если PASS — краткая сводка ✅/❌, что дальше. Если FAIL — возврат к исправлению, вопрос не задаётся | question (multi-option) |
 | 3 | После verify FAIL, попытки исчерпаны | пропустить / ещё / отменить | question |
 | 4 | Перед финальным коммитом | approve diff | показ diff-summary |
 | 5 | При архитектурном решении (не описанном в roadmap) | выбор подхода | question |
@@ -506,7 +589,7 @@ delegate_task(agent="tests-impl", task="Напиши тесты для F-1.1: ..
 Координатор хранит в своём контексте ТОЛЬКО:
 - список задач (TaskCreate/TaskUpdate handles + taskIds);
 - roadmap со статусами ☐/⏳/✅/❌;
-- pipeline-report.md (последняя запись);
+- development-log.md (последние записи, v3.1.0+);
 - метаданные последнего коммита (sha, message).
 
 Координатор НЕ хранит:
@@ -516,7 +599,7 @@ delegate_task(agent="tests-impl", task="Напиши тесты для F-1.1: ..
 - содержимое воркерских отчётов (только verdict).
 
 Если ощущаешь, что контекст пухнет:
-1. Записать прогресс в pipeline-report.md.
+1. Убедиться, что orchestrator hooks пишут в development-log.md (v3.1.0+).
 2. Сохранить SHA коммита.
 3. Спросить пользователя — продолжать сейчас или прервать на checkpoint.
 
@@ -549,7 +632,7 @@ const status = await pipeline.getStatus();
 Запустить verify-воркер на ВЕСЬ pipeline, а не на отдельную фичу.
 Он прочитает:
 - roadmap.md со всеми ✅/❌;
-- pipeline-report.md;
+- development-log.md и development-plan.md (v3.1.0+ артефакты);
 - git log ветки vs master.
 
 ```
@@ -557,7 +640,8 @@ delegate_task({
   agent: "verify",
   task: "Проведи ПОЛНУЮ верификацию фичи <slug>.
          Roadmap: docs/features/<slug>/roadmap.md
-         Отчёт: docs/features/<slug>/pipeline-report.md
+         Журнал: docs/development-log.md
+         План: docs/development-plan.md
          
          Проверь:
          1. Все ли функции из roadmap реализованы (✅)?
@@ -663,7 +747,8 @@ git commit -m "feat(<slug>): finalize <slug>
 
 #### Шаг G.7: Обновить финальный отчёт
 
-Дополнить `pipeline-report.md`:
+Дополнить `development-log.md` финальной записью (v3.1.0+).
+В v3.0 (без orchestrator) — дополнить `pipeline-report.md`:
 
 1. Обновить сводку
 2. Добавить секцию **Финальная верификация**
@@ -706,7 +791,7 @@ git commit -m "feat(<slug>): finalize <slug>
 - **Статус:** ✅ Реализовано
 - **Коммит:** abc123
 - **Верификация:** PASS (с 1-й попытки)
-- **Тесты:** TC-1.1-1 ✅, TC-1.1-2 ✅, TC-1.1-3 ✅
+- **Тесты:** TC-F-1.1-1 ✅, TC-F-1.1-2 ✅, TC-F-1.1-3 ✅
 - **Критерии приёмки:** Все выполнены
 
 
@@ -740,7 +825,7 @@ git commit -m "feat(<slug>): finalize <slug>
 - README.md — ✅ обновлён
 - CHANGELOG.md — ✅ обновлён
 - docs/features/<slug>/roadmap.md — ✅ синхронизирован
-- docs/features/<slug>/ — ✅ pipeline-report.md
+- docs/development-log.md — ✅ обновлён (v3.1.0+)
 
 ## Рекомендации
 
@@ -753,7 +838,7 @@ git commit -m "feat(<slug>): finalize <slug>
 ```bash
 # Показать отчёт
 echo "=== Pipeline Report: <slug> ==="
-echo "Файл: docs/features/<slug>/pipeline-report.md"
+echo "Журнал: docs/development-log.md"
 echo ""
 echo "=== Коммиты ==="
 git log master..feature/<slug> --oneline
@@ -762,7 +847,7 @@ echo "=== Статус ==="
 # Показать сводку из отчёта
 echo ""
 echo "Что дальше:"
-echo "1. Проверьте отчёт: docs/features/<slug>/pipeline-report.md"
+echo "1. Проверьте журнал: docs/development-log.md"
 echo "2. Сделайте code review"
 echo "3. Замержьте ветку feature/<slug> в master"
 ```
@@ -774,7 +859,7 @@ TaskClear()
 
 ```
 question({
-  question: "Pipeline для <slug> завершён! Отчёт: docs/features/<slug>/pipeline-report.md",
+  question: "Pipeline для <slug> завершён! Журнал: docs/development-log.md",
   options: [
     { label: "Показать отчёт", description: "Вывести содержимое отчёта" },
     { label: "Показать список коммитов", description: "git log" },
@@ -826,14 +911,14 @@ rm .fan/tracking/phase-status.json  # удалить state
 2. **Учитывай зависимости.** Функция, от которой зависят другие, должна быть реализована первой.
 3. **Максимум попыток верификации зависит от размера задачи.** После исчерпания — спросить пользователя.
 4. **Каждый коммит — только одна функция.** Никогда не коммить несколько функций вместе.
-5. **TDD-first.** Код пишется так, чтобы проходить TDD-тесты, указанные в roadmap.
+5. **TDD-first (Red-Green-Refactor).** Сначала failing-тесты (Red), потом минимальная реализация (Green), потом рефакторинг при зелёных тестах (Refactor). Код пишется так, чтобы проходить TDD-тесты, указанные в roadmap.
 6. **Не ломай существующее.** Перед каждой реализацией проверяй, что старые тесты всё ещё проходят.
 7. **Документируй всё.** Каждый шаг фиксируется в файлах.
 8. **Не трогай roadmap пользователя.** Статусы ☐ ✅ ⏳ ❌ — единственное, что меняется в roadmap.md.
 9. **Перед коммитом — git status.** Убедись, что нет неожиданных изменений.
 10. **Перед коммитом — git add по файлам.** Используй явный список изменённых
     файлов, не `git add -A`.
-11. **Делегируй шаги, не функции целиком.** Каждый TDD-шаг (implement → verify → tests-impl) — отдельный delegate_task.
+11. **Делегируй шаги, не функции целиком.** Каждый TDD-шаг (tests-impl → implement → verify → refactor) — отдельный delegate_task.
 12. **Запрет black-box делегации.** Никогда не делегировать весь pipeline
     или несколько функций одним воркером. Каждый шаг TDD-цикла — отдельный delegate_task.
 13. **Verify — adversarial.** verify-воркер не должен иметь контекст
@@ -855,3 +940,12 @@ rm .fan/tracking/phase-status.json  # удалить state
     с первой невыполненной фазы/функции.
 19. **TaskClear в конце.** После финального отчёта (G.8) — очистить
     completed/failed задачи через TaskClear().
+20. **Refactor только при зелёных тестах.** Рефакторинг (шаг 8 основного цикла)
+    разрешён только если все тесты PASS. После рефакторинга тесты прогоняются
+    повторно. Если упали — откат или исправление до зелёного состояния.
+    Если `Refactor-цели = (none)` — шаг пропускается.
+21. **Phase-gate e2e на границах этапов.** Перед переходом к следующему этапу
+    roadmap обязательно запускаются `Smoke-критерий этапа` и `E2E-сценарий этапа`
+    из roadmap.md. Если smoke/e2e падает — этап НЕ завершён, возврат к
+    исправлению (bug-fix worker) до зелёного состояния. Только после зелёного
+    phase-gate — переход к следующему этапу.

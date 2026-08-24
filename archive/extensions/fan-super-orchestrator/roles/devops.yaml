@@ -1,0 +1,10 @@
+id: devops
+name: DevOps Engineer
+description: DevOps engineer role — CI/CD, деплой, инфраструктура, мониторинг
+allowed_depths: [2, 3, 4]
+default_tools:
+  - bash
+  - edit
+  - write
+  - delegate_task
+verification_approach: standard

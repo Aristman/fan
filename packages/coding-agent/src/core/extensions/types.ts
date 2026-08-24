@@ -560,6 +560,19 @@ export interface AgentEndEvent {
 	messages: AgentMessage[];
 }
 
+/**
+ * F-46: fired when the per-iteration budget ceiling is exceeded.
+ * The run is stopped before the next API call (I1 drain semantics);
+ * the session stays usable — the next prompt starts a fresh iteration window.
+ */
+export interface IterationBudgetExceededEvent {
+	type: "iteration_budget_exceeded";
+	tokensUsed: number;
+	costUsed: number;
+	remaining: number;
+	message: string;
+}
+
 /** Fired at the start of each turn */
 export interface TurnStartEvent {
 	type: "turn_start";
@@ -864,6 +877,7 @@ export type ExtensionEvent =
 	| BeforeAgentStartEvent
 	| AgentStartEvent
 	| AgentEndEvent
+	| IterationBudgetExceededEvent
 	| TurnStartEvent
 	| TurnEndEvent
 	| MessageStartEvent
@@ -981,6 +995,15 @@ export interface ResolvedCommand extends RegisteredCommand {
 export type ExtensionHandler<E, R = undefined> = (event: E, ctx: ExtensionContext) => Promise<R | void> | R | void;
 
 /**
+ * Options for ExtensionAPI.newSession().
+ * Subset of ExtensionCommandContext newSession options (no `setup` hook).
+ */
+export interface ExtensionNewSessionOptions {
+	/** Link the new session to a parent session (session tree). */
+	parentSession?: string;
+}
+
+/**
  * ExtensionAPI passed to extension factory functions.
  */
 export interface ExtensionAPI {
@@ -1011,6 +1034,7 @@ export interface ExtensionAPI {
 	on(event: "before_agent_start", handler: ExtensionHandler<BeforeAgentStartEvent, BeforeAgentStartEventResult>): void;
 	on(event: "agent_start", handler: ExtensionHandler<AgentStartEvent>): void;
 	on(event: "agent_end", handler: ExtensionHandler<AgentEndEvent>): void;
+	on(event: "iteration_budget_exceeded", handler: ExtensionHandler<IterationBudgetExceededEvent>): void;
 	on(event: "turn_start", handler: ExtensionHandler<TurnStartEvent>): void;
 	on(event: "turn_end", handler: ExtensionHandler<TurnEndEvent>): void;
 	on(event: "message_start", handler: ExtensionHandler<MessageStartEvent>): void;
@@ -1109,8 +1133,20 @@ export interface ExtensionAPI {
 		options?: { deliverAs?: "steer" | "followUp" },
 	): void;
 
+	/**
+	 * Start a new session, optionally linked to a parent session.
+	 * Fail-safe: without a host binding this resolves to { cancelled: true }.
+	 */
+	newSession(options?: ExtensionNewSessionOptions): Promise<{ cancelled: boolean }>;
+
 	/** Append a custom entry to the session for state persistence (not sent to LLM). */
 	appendEntry<T = unknown>(customType: string, data?: T): void;
+
+	/**
+	 * Read custom entries back from the current session (read counterpart of appendEntry).
+	 * Returns entries in insertion order; filtered by customType when provided.
+	 */
+	getCustomEntries<T = unknown>(customType?: string): Array<{ customType: string; data: T; timestamp?: string }>;
 
 	// =========================================================================
 	// Session Metadata
@@ -1330,6 +1366,10 @@ export type SendUserMessageHandler = (
 
 export type AppendEntryHandler = <T = unknown>(customType: string, data?: T) => void;
 
+export type GetCustomEntriesHandler = <T = unknown>(
+	customType?: string,
+) => Array<{ customType: string; data: T; timestamp?: string }>;
+
 export type SetSessionNameHandler = (name: string) => void;
 
 export type GetSessionNameHandler = () => string | undefined;
@@ -1383,6 +1423,7 @@ export interface ExtensionActions {
 	sendMessage: SendMessageHandler;
 	sendUserMessage: SendUserMessageHandler;
 	appendEntry: AppendEntryHandler;
+	getCustomEntries: GetCustomEntriesHandler;
 	setSessionName: SetSessionNameHandler;
 	getSessionName: GetSessionNameHandler;
 	setLabel: SetLabelHandler;
@@ -1435,7 +1476,13 @@ export interface ExtensionCommandContextActions {
  * Full runtime = state + actions.
  * Created by loader with throwing action stubs, completed by runner.initialize().
  */
-export interface ExtensionRuntime extends ExtensionRuntimeState, ExtensionActions {}
+export interface ExtensionRuntime extends ExtensionRuntimeState, ExtensionActions {
+	/**
+	 * Bound by runner.bindCommandContext() to the host's newSession handler.
+	 * Loader default is a fail-safe refusal ({ cancelled: true }).
+	 */
+	newSession: (options?: ExtensionNewSessionOptions) => Promise<{ cancelled: boolean }>;
+}
 
 /** Loaded extension with all registered items. */
 export interface Extension {

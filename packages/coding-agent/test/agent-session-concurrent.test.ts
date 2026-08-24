@@ -219,14 +219,17 @@ describe("AgentSession concurrent prompt guard", () => {
 					}
 
 					stream.push({ type: "start", partial: createAssistantMessage("") });
-					const checkAbort = () => {
+					// Complete the first turn naturally so the agent-loop reaches
+					// a turn boundary and drains the steering queue.  The delay
+					// must exceed the test waits (10 ms + 25 ms) so the queue check at ~35 ms still
+					// sees the message as pending.
+					setTimeout(() => {
 						if (abortSignal?.aborted) {
 							stream.push({ type: "error", reason: "aborted", error: createAssistantMessage("Aborted") });
 						} else {
-							setTimeout(checkAbort, 5);
+							stream.push({ type: "done", reason: "stop", message: createAssistantMessage("OK") });
 						}
-					};
-					checkAbort();
+					}, 100);
 				});
 				return stream;
 			},
@@ -284,8 +287,10 @@ describe("AgentSession concurrent prompt guard", () => {
 		expect(lastInputSource).toBe("extension");
 		expect(queueEvents.some((event) => event.steering.includes("Steer from extension"))).toBe(true);
 
-		await session.abort();
-		await firstPrompt.catch(() => {});
+		// Let the session process the steering message naturally:
+		// first turn completes → loop drains steering → second turn with
+		// "Steer from extension" → mock sets sawSteeringMessage = true.
+		await firstPrompt;
 
 		expect(sawSteeringMessage).toBe(true);
 	});

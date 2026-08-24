@@ -1,0 +1,5 @@
+{"timestamp":"2026-08-14T10:00:00.000Z","event":"spawn","nodeId":"L0","correlationId":"mission-fixture/L0","task":"fixture mission: рефакторинг auth middleware","depth":0,"port":7001,"pid":4001}
+{"timestamp":"2026-08-14T10:00:01.000Z","event":"spawn","nodeId":"L1/node-1","parentId":"L0","correlationId":"mission-fixture/L1/node-1","task":"fixture mission — часть 1","depth":1,"port":7021,"pid":4021}
+{"timestamp":"2026-08-14T10:00:02.000Z","event":"spawn","nodeId":"L1/node-2","parentId":"L0","correlationId":"mission-fixture/L1/node-2","task":"fixture mission — часть 2","depth":1,"port":7022,"pid":4022}
+{"timestamp":"2026-08-14T10:00:03.000Z","event":"spawn","nodeId":"L1/node-3","parentId":"L0","correlationId":"mission-fixture/L1/node-3","task":"fixture mission — часть 3","depth":1,"port":7023,"pid":4023}
+{"timestamp":"2026-08-14T10:00:10.000Z","event":"complete","nodeId":"L1/node-1","parentId":"L0","correlationId":"mission-fixture/L1/node-1","depth":1,"usage":{"tokens":30000,"usd":3}}

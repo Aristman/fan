@@ -126,6 +126,9 @@ FAN ships with 8 pre-installed skills in `skills/`. Source files are local; inst
 - `fan server status` — Check server status (--json for machine output)
 - `fan --web` — Server + dashboard, auto-opens browser
 - `--mode server` — Server without browser auto-open
+- `fan mission init <slug> [--template <name>]` — Create a mission
+- `fan mission start|stop|pause|resume|status` — Mission lifecycle
+- `fan mission tree <slug> [--format json] [--depth N]` — ASCII/JSON tree from tree-journal
 
 ## Test Instructions
 - Dashboard: `docs/develop/tests/dashboard-phase6.md`

@@ -41,7 +41,7 @@ export function agentLoop(
 		prompts,
 		context,
 		config,
-		async (event) => {
+		(event) => {
 			stream.push(event);
 		},
 		signal,
@@ -80,7 +80,7 @@ export function agentLoopContinue(
 	void runAgentLoopContinue(
 		context,
 		config,
-		async (event) => {
+		(event) => {
 			stream.push(event);
 		},
 		signal,
@@ -170,6 +170,13 @@ async function runLoop(
 
 		// Inner loop: process tool calls and steering messages
 		while (hasMoreToolCalls || pendingMessages.length > 0) {
+			// Check abort signal before starting the next turn.
+			// This catches aborts from loop detector, watchdog, REST API, etc.
+			if (signal?.aborted) {
+				await emit({ type: "agent_end", messages: newMessages });
+				return;
+			}
+
 			if (!firstTurn) {
 				await emit({ type: "turn_start" });
 			} else {
@@ -214,6 +221,21 @@ async function runLoop(
 			await emit({ type: "turn_end", message, toolResults });
 
 			pendingMessages = (await config.getSteeringMessages?.()) || [];
+		}
+
+		// F-05: yield microtasks so the stream consumer can process turn_end
+		// and fire the drain abort BEFORE we check the signal.
+		// Without this yield, the agent-loop may reach this point before the
+		// consumer has had a chance to call abort() on the signal.
+		await Promise.resolve();
+
+		// Check abort BEFORE draining the follow-up queue.
+		// If the signal was aborted (e.g. drain-flag synchronous abort at turn_end),
+		// the queue must NOT be drained — messages stay enqueued and are delivered
+		// after resume + next prompt.
+		if (signal?.aborted) {
+			await emit({ type: "agent_end", messages: newMessages });
+			return;
 		}
 
 		// Agent would stop here. Check for follow-up messages.

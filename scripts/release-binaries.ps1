@@ -46,6 +46,22 @@ $ScriptDir = Split-Path -Parent $PSCommandPath
 $RootDir = Split-Path -Parent $ScriptDir
 Set-Location $RootDir
 
+# Trap to always return to original directory on error/exit
+trap {
+    Write-Host "[trap] Error occurred, returning to $RootDir" -ForegroundColor Yellow
+    Set-Location $RootDir
+    break
+}
+
+# Safe Pop-Location that doesn't error if stack is empty
+function Pop-LocationSafe {
+    try {
+        Pop-Location -ErrorAction Stop
+    } catch {
+        Write-Warn "Pop-Location stack empty at $(Get-Location), staying put"
+    }
+}
+
 # ─── Color helpers ─────────────────────────────────────────────
 function Write-Info($msg)  { Write-Host "==> " -ForegroundColor Blue -NoNewline; Write-Host $msg -ForegroundColor White }
 function Write-Warn($msg)  { Write-Host "Warning: " -ForegroundColor Yellow -NoNewline; Write-Host $msg }
@@ -124,7 +140,7 @@ Write-Info "Generating Prisma client..."
 Push-Location (Join-Path $RootDir "packages\db")
 npx prisma generate
 if ($LASTEXITCODE -ne 0) { Write-Warn "prisma generate exited with code $LASTEXITCODE, continuing..." }
-Pop-Location
+Pop-LocationSafe
 
 if (-not $SkipDeps) {
     Write-Info "Installing cross-platform native bindings..."
@@ -188,9 +204,25 @@ if (Test-Path $configPath) {
 Write-Info "Building FAN (fan) binaries..."
 Push-Location (Join-Path $RootDir "packages\coding-agent")
 
-# Clean previous builds
+# Clean previous builds (with retry for AV-locked fan.exe)
 if (Test-Path "binaries") {
-    Remove-Item -Recurse -Force "binaries"
+    Write-Info "  Cleaning previous build artifacts..."
+    $retries = 8
+    $removed = $false
+    do {
+        $retries--
+        Remove-Item -Recurse -Force "binaries" -ErrorAction SilentlyContinue 2>&1 | Out-Null
+        Start-Sleep -Milliseconds 1500
+        if (-not (Test-Path "binaries")) { $removed = $true; break }
+        if ($retries -gt 0) {
+            Write-Warn "  fan.exe locked by another process (likely antivirus), retrying in 1.5s... ($retries attempts left)"
+        }
+    } while ($retries -gt 0)
+    if (-not $removed) {
+        Write-Err "Could not remove binaries directory after retries — likely AV holding fan.exe"
+        Write-Err "Try closing any antivirus or running: Remove-Item -Recurse -Force packages\coding-agent\binaries"
+        exit 1
+    }
 }
 New-Item -ItemType Directory -Path "binaries" -Force | Out-Null
 
@@ -319,6 +351,26 @@ Write-Info "Creating release archives..."
 Push-Location "binaries"
 
 foreach ($platform in $PlatformList) {
+    # If a previous archive exists, the folder is a copy — safe to remove before re-archiving.
+    # If no archive exists yet, the folder is the source with assets — DO NOT touch it.
+    $expectedArchive = if ($platform -eq "windows-x64") { "fan-$FAN_VERSION-$platform.zip" } else { "fan-$FAN_VERSION-$platform.tar.gz" }
+    if ((Test-Path $platform) -and (Test-Path $expectedArchive)) {
+        Write-Info "  Cleaning stale $platform directory (re-archiving)..."
+        $retries = 5
+        $removed = $false
+        do {
+            $retries--
+            Remove-Item -Recurse -Force $platform -ErrorAction SilentlyContinue 2>&1 | Out-Null
+            Start-Sleep -Milliseconds 1000
+            if (-not (Test-Path $platform)) { $removed = $true; break }
+            Write-Warn "  Retry $($retries - 1) removing $platform..."
+        } while ($retries -gt 0)
+        if (-not $removed) {
+            Write-Warn "Could not remove $platform after retries — files may be locked. Skipping archive creation for this platform."
+            continue
+        }
+    }
+
     if ($platform -eq "windows-x64") {
         # Windows (zip) - use wrapper directory for consistency with Unix
         Write-Info "Creating fan-$FAN_VERSION-$platform.zip..."
@@ -337,20 +389,43 @@ foreach ($platform in $PlatformList) {
 # ─── Extract archives for easy local testing ──────────────────
 Write-Info "Extracting archives for testing..."
 foreach ($platform in $PlatformList) {
+    # If the platform directory already exists from a previous run, remove it with retry
+    # (it'll be replaced by the freshly extracted contents).
     if (Test-Path $platform) {
-        Remove-Item -Recurse -Force $platform
+        $retries = 5
+        $removed = $false
+        do {
+            $retries--
+            Remove-Item -Recurse -Force $platform -ErrorAction SilentlyContinue 2>&1 | Out-Null
+            Start-Sleep -Milliseconds 1000
+            if (-not (Test-Path $platform)) { $removed = $true; break }
+            Write-Warn "  Retry $($retries - 1) removing $platform..."
+        } while ($retries -gt 0)
+        if (-not $removed) {
+            Write-Warn "Could not remove $platform — files locked. Skipping extraction."
+            continue
+        }
     }
 
     if ($platform -eq "windows-x64") {
         Expand-Archive -Path "fan-$FAN_VERSION-$platform.zip" -DestinationPath "." -Force
-        Rename-Item -Path "fan" -NewName $platform
+        # Expand-Archive may create "fan" folder from archive content; rename if it exists
+        if (Test-Path "fan") {
+            Rename-Item -Path "fan" -NewName $platform
+        } elseif (-not (Test-Path $platform)) {
+            Write-Warn "Expected directory not found after extraction of $platform"
+        }
     } else {
         tar -xzf "fan-$FAN_VERSION-$platform.tar.gz"
-        Rename-Item -Path "fan" -NewName $platform
+        if (Test-Path "fan") {
+            Rename-Item -Path "fan" -NewName $platform
+        } elseif (-not (Test-Path $platform)) {
+            Write-Warn "Expected directory not found after extraction of $platform"
+        }
     }
 }
 
-Pop-Location  # back to coding-agent (from binaries)
+Pop-LocationSafe  # back to coding-agent (from binaries)
 
 Write-Host ""
 Write-Info "FAN RELEASE build complete!"
@@ -401,7 +476,7 @@ foreach ($name in $manifestPlatforms.Keys | Sort-Object) {
     Write-Host "  $name`: $($manifestPlatforms[$name].size) bytes"
 }
 
-Pop-Location  # back to coding-agent (from binaries)
+Pop-LocationSafe  # back to coding-agent (from binaries)
 
 # ─── Copy artifacts to dist repo ──────────────────────────────
 $DIST_REPO = "$env:USERPROFILE\fan-store\dist"
@@ -445,4 +520,8 @@ if (Test-Path $changelogPath) {
 }
 
 Write-Info "Dist repo ready. Run: fan-store publish"
-Pop-Location  # back to repo root (from coding-agent)
+Pop-LocationSafe  # back to repo root (from coding-agent)
+
+# ─── Guarantee return to root directory ───────────────────────
+Set-Location $RootDir
+Write-Info "Returned to $RootDir"
