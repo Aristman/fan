@@ -1,3 +1,4 @@
+/// <reference types="vitest/globals" />
 /**
  * Server Bootstrap Tests — F-0 (refactor verification)
  *
@@ -103,7 +104,6 @@ describe("server-bootstrap: TC-2 stop() closes WebSocket gracefully", () => {
 			};
 			ws.onerror = (ev) => {
 				clearTimeout(t);
-				// @ts-expect-error — Event is loose-typed in dom lib
 				reject(new Error(`WS error: ${(ev as ErrorEvent).message ?? "unknown"}`));
 			};
 		});

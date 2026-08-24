@@ -36,10 +36,10 @@
  */
 
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { ServerType } from "@hono/node-server";
 import { serve } from "@hono/node-server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
@@ -57,8 +57,8 @@ vi.mock("@fan/db", () => ({
 
 // F-32/F-47: расширенный tree-journal (createTreeJournal + onJournalWrite) —
 // боевой модуль fan-super-orchestrator, не мок.
-import type { TreeJournal } from "../../../../extensions/fan-super-orchestrator/tree-journal.js";
-import { createTreeJournal } from "../../../../extensions/fan-super-orchestrator/tree-journal.js";
+import type { TreeJournal } from "../../../../bundles/fan-mission/extensions/fan-super-orchestrator/tree-journal.js";
+import { createTreeJournal } from "../../../../bundles/fan-mission/extensions/fan-super-orchestrator/tree-journal.js";
 // F-42: CLI `fan mission tree` (боевой модуль coding-agent, не мок).
 import { missionTree } from "../../../coding-agent/src/cli/mission-command.js";
 import type { SessionAdapter } from "../http-server.js";
@@ -193,7 +193,7 @@ let tmpRoot: string;
 let missionsDir: string;
 let missionDir: string;
 let journal: TreeJournal;
-let httpServer: Server;
+let httpServer: ServerType;
 let wsHandler: { close: () => void };
 let baseUrl = "";
 let port = 0;
@@ -374,7 +374,7 @@ beforeAll(async () => {
 	// подключается к missionJournal ws-handler'а → broadcast mission_event.
 	journal = createTreeJournal(join(missionDir, "tree-journal.jsonl"));
 	wsHandler = attachWebSocketHandler({
-		server: httpServer,
+		server: httpServer as unknown as import("node:http").Server,
 		sessionAdapter: sessionAdapterStub,
 		missionJournal: journal as unknown as MissionJournalLike,
 	});

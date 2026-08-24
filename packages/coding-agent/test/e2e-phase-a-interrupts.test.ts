@@ -547,7 +547,7 @@ describe("Phase A e2e — interrupt core (F-01 abort + F-03 watchdog)", () => {
 		const addr = httpServer.address();
 		if (typeof addr !== "object" || !addr) throw new Error("HTTP server failed to bind");
 		port = addr.port;
-		server = httpServer;
+		server = httpServer as unknown as Server;
 
 		wsHandler = attachWebSocketHandler({
 			server: httpServer as unknown as Server,

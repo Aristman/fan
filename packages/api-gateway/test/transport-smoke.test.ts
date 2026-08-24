@@ -1,3 +1,4 @@
+// @ts-nocheck — bun-only test (uses bun:test, dynamic .js extension imports)
 /**
  * Transport Smoke Tests — F-0 (TDD Red phase)
  *

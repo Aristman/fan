@@ -10,7 +10,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 // Point the dynamic loader to the real extension source (monorepo dev).
 // Without this, loadFileStateManager() may not find file-state-manager from
 // the coding-agent test context (import.meta.url resolution in vitest).
-process.env.FAN_MISSION_DIR = resolve(import.meta.dirname ?? __dirname, "../../../extensions/fan-mission");
+process.env.FAN_MISSION_DIR = resolve(
+	import.meta.dirname ?? __dirname,
+	"../../../bundles/fan-mission/extensions/fan-mission",
+);
 
 // Use dynamic import of the file-state-manager from extensions/ to create
 // real mission fixtures (same module that missionStart loads at runtime).
@@ -19,7 +22,7 @@ import {
 	readMission,
 	writeMissionStatus,
 	writeRoadmap,
-} from "../../../extensions/fan-mission/file-state-manager.js";
+} from "../../../bundles/fan-mission/extensions/fan-mission/file-state-manager.js";
 
 import { missionStart } from "../src/cli/mission-command.js";
 

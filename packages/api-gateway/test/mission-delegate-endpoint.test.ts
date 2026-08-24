@@ -1,3 +1,4 @@
+/// <reference types="vitest/globals" />
 /**
  * Mission Delegate Endpoint Tests — F-3 (TDD Red phase)
  *

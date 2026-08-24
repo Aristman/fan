@@ -97,12 +97,12 @@ describe("SessionManager.getCustomEntries", () => {
  *  actions to a REAL SessionManager (mirrors what ExtensionRunner.bindCore
  *  does in production). */
 function buildApiWithSession(session: SessionManager) {
-	const runtime = createExtensionRuntime() as ReturnType<typeof createExtensionRuntime> & {
-		getCustomEntries: (customType?: string) => CustomEntryView[];
-	};
+	const runtime = createExtensionRuntime();
 	// Wire write+read actions to the real session (simulates bindCore).
 	runtime.appendEntry = (customType: string, data?: unknown) => session.appendCustomEntry(customType, data);
-	runtime.getCustomEntries = (customType?: string) => session.getCustomEntries(customType);
+	// Bypass generic GetCustomEntriesHandler<T> — test only needs CustomEntryView (data: unknown).
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	(runtime as any).getCustomEntries = (customType?: string) => session.getCustomEntries(customType);
 
 	const eventBus = createEventBus();
 	const extension: Extension = {
