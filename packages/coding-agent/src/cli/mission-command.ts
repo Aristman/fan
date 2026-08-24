@@ -4,7 +4,7 @@
 // Спека:   docs/specs/spec_super-orchestrator_v3_2026-08-10.md §3.1.2, §6.1
 //
 // Команда условна: требует расширение `fan-mission`. Файловое хранилище
-// (F-08) подключается динамически из `extensions/fan-mission/file-state-manager.ts`,
+// (F-08) подключается динамически из `bundles/fan-mission/extensions/fan-mission/file-state-manager.ts`,
 // чтобы не ломать rootDir сборки coding-agent и не падать, когда расширение
 // отсутствует (в этом случае бросается MissionExtensionMissingError).
 //
@@ -107,10 +107,14 @@ async function loadFileStateManager(): Promise<FileStateManagerModule> {
 		candidates.push(join(getAgentDir(), "extensions", "fan-mission", `file-state-manager.${ext}`));
 	}
 	for (const ext of ["js", "ts"]) {
-		// Монорепо: <root>/packages/coding-agent/src/cli → <root>/extensions/fan-mission
-		candidates.push(fileURLToPath(new URL(`../../../../extensions/fan-mission/file-state-manager.${ext}`, here)));
+		// Монорепо: <root>/packages/coding-agent/src/cli → <root>/bundles/fan-mission/extensions/fan-mission
+		candidates.push(
+			fileURLToPath(
+				new URL(`../../../../bundles/fan-mission/extensions/fan-mission/file-state-manager.${ext}`, here),
+			),
+		);
 		// Запуск из корня монорепо (например, из собранного бандла другой глубины).
-		candidates.push(resolve("extensions", "fan-mission", `file-state-manager.${ext}`));
+		candidates.push(resolve("bundles", "fan-mission", "extensions", "fan-mission", `file-state-manager.${ext}`));
 	}
 
 	for (const candidate of candidates) {

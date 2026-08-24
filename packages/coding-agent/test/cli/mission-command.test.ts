@@ -55,7 +55,10 @@ import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Point the dynamic loader to the real extension source (monorepo dev).
-process.env.FAN_MISSION_DIR = resolve(import.meta.dirname ?? __dirname, "../../../../extensions/fan-mission");
+process.env.FAN_MISSION_DIR = resolve(
+	import.meta.dirname ?? __dirname,
+	"../../../../bundles/fan-mission/extensions/fan-mission",
+);
 
 import {
 	handleMissionCommand,
