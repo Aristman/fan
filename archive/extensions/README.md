@@ -8,10 +8,12 @@
 |-----------|----------|
 | `fan-mission/` | Long-running autonomous missions (standalone extension) |
 | `fan-super-orchestrator/` | HTTP-иерархия узлов `fan server` (standalone extension) |
+| `fan-scheduler/` | Периодические тики миссий (standalone extension) |
+| `fan-webhook/` | Приём внешних событий (standalone extension) |
 
 ## Замена
 
-Оба расширения заменены бандлом [`bundles/fan-mission/`](../../bundles/fan-mission/), который содержит 4 расширения:
+Все четыре расширения заменены бандлом [`bundles/fan-mission/`](../../bundles/fan-mission/), который содержит 4 расширения:
 
 - `fan-mission`
 - `fan-super-orchestrator`
