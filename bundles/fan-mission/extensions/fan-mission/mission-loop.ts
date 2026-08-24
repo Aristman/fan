@@ -30,7 +30,6 @@ import {
 	type BacklogEntry,
 	canTransition,
 	checkStateFileSize,
-	extractGoal,
 	InvalidTransitionError,
 	isRecurringDue,
 	isRecurringItem,
@@ -52,7 +51,7 @@ import {
 	writeState,
 } from "./file-state-manager.js";
 import { type PromiseParseResult, parsePromise } from "./promise-parser.js";
-import { buildExecutionPrompt, PLANNING_ITEM_TEXT } from "./prompt-builder.js";
+import { buildExecutionPrompt } from "./prompt-builder.js";
 import type { VerificationLadder, VerificationLadderResult } from "./verification-ladder.js";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -935,62 +934,48 @@ export class MissionLoop {
 							itemsExecuted,
 						};
 					}
-					// 0.7.0 bootstrap planning: a valid ROADMAP (has checked items) with
-					// no unchecked items left AND a non-empty mission Goal → the mission
-					// still has work to decompose. Do NOT complete: run a planning
-					// iteration on a synthetic item — the executor must decompose the
-					// Goal into unchecked ROADMAP items (prompt-builder adds guidance).
-					// Empty Goal → completed as before (nothing left to plan).
-					// R2-интент fix (gmail-watch incident): ROADMAP fully closed AND live
-					// RECURRING.md (has items) → completed too — the mission's one-shot
-					// work is done and recurring duty (дежурство) continues in the
-					// recur-phase. Bootstrap-planning remains only for missions WITHOUT
-					// recurring (legit 0.7.0 scenario: roadmap closed, goal not covered,
-					// no duty → keep planning → streak → awaiting_decision).
-					if (!extractGoal(mission.body) || readRecurring(this.missionDir).length > 0) {
-						// Part 3: before completing, evaluate pending IDEA backlog entries
-						// when scorer + promoter are configured. A DECIDE verdict blocks
-						// completion; promoted ROADMAP items keep the loop alive.
-						let pendingIdeas: BacklogEntry[] = [];
-						try {
-							pendingIdeas = (await readBacklog(this.missionDir)).filter((e) => e.status === "IDEA");
-						} catch {
-							pendingIdeas = [];
-						}
-						if (pendingIdeas.length > 0 && this.ideaScorer && this.ideaPromoter) {
-							const hookStatus = await this.runIdeaScoringAndPromotion(loopState, resultStatus, {
-								scoreExistingIdeas: true,
-							});
-							if (hookStatus === "awaiting_decision") {
-								return {
-									iteration: currentIteration,
-									steps,
-									status: "awaiting_decision",
-									item: currentItem,
-								};
-							}
-							roadmapRaw = await readRoadmap(this.missionDir);
-							if (parseAllUnchecked(roadmapRaw).length > 0) {
-								continue;
-							}
-						}
-
-						if (canTransition(resultStatus, "completed")) {
-							resultStatus = "completed";
-							await writeMissionStatus(this.missionDir, "completed");
-						}
-						this.journalStep(loopState, 3);
-						loopState.interrupted = false;
-						loopState.iterationResult = undefined;
-						loopState.pendingItem = undefined;
-						loopState.committed = false;
-						writeLoopStateSync(this.missionDir, loopState);
-						// R2: break to recur-phase (дежурство) instead of returning
-						break;
+					// ROADMAP has checklist items (passed hasAnyChecklistItem above)
+					// and all are checked → mission one-shot work is done.
+					// Complete: break to recur-phase (дежурство) if any.
+					// Part 3: before completing, evaluate pending IDEA backlog entries
+					// when scorer + promoter are configured. A DECIDE verdict blocks
+					// completion; promoted ROADMAP items keep the loop alive.
+					let pendingIdeas: BacklogEntry[] = [];
+					try {
+						pendingIdeas = (await readBacklog(this.missionDir)).filter((e) => e.status === "IDEA");
+					} catch {
+						pendingIdeas = [];
 					}
-					// Synthetic planning item: index -1 marks it as not present in the
-					// ROADMAP (markRoadmapDone/prompt marking are no-ops for it).
-					nextItem = { index: -1, text: PLANNING_ITEM_TEXT };
+					if (pendingIdeas.length > 0 && this.ideaScorer && this.ideaPromoter) {
+						const hookStatus = await this.runIdeaScoringAndPromotion(loopState, resultStatus, {
+							scoreExistingIdeas: true,
+						});
+						if (hookStatus === "awaiting_decision") {
+							return {
+								iteration: currentIteration,
+								steps,
+								status: "awaiting_decision",
+								item: currentItem,
+							};
+						}
+						roadmapRaw = await readRoadmap(this.missionDir);
+						if (parseAllUnchecked(roadmapRaw).length > 0) {
+							continue;
+						}
+					}
+
+					if (canTransition(resultStatus, "completed")) {
+						resultStatus = "completed";
+						await writeMissionStatus(this.missionDir, "completed");
+					}
+					this.journalStep(loopState, 3);
+					loopState.interrupted = false;
+					loopState.iterationResult = undefined;
+					loopState.pendingItem = undefined;
+					loopState.committed = false;
+					writeLoopStateSync(this.missionDir, loopState);
+					// R2: break to recur-phase (дежурство) instead of returning
+					break;
 				}
 
 				// Recovery: determine resume point (use ORIGINAL values from disk)

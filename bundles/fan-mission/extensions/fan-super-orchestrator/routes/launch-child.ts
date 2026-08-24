@@ -512,6 +512,15 @@ export async function launchWorkerChild(ctx: LaunchChildContext): Promise<void> 
 	activeNodes.delete(nodeId);
 	portPool.release(nodeId);
 	reports.push({ nodeId, report });
+	// Kill worker child after successful completion — prevent orphan processes.
+	// Best-effort: node is already removed from activeNodes and port released.
+	if (opts.killNode) {
+		try {
+			await opts.killNode(nodeId);
+		} catch {
+			/* best-effort */
+		}
+	}
 }
 
 // ────────────────────────────────────────────────────────────────────────────
