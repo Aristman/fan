@@ -837,12 +837,52 @@ export async function appendDecision(missionDir: string, entry: DecisionEntry): 
 
 // ─── ROADMAP.md ─────────────────────────────────────────────────────────────
 
+/*
+ * "Current item" marker glyphs that may contaminate ROADMAP.md lines.
+ * Canonical: `▶ ` — added by prompt-builder markCurrentItem() to the PROMPT
+ * copy of the roadmap only, but an executor agent may copy the marked line
+ * back into the file (observed in e2e: `▶ - [ ] [EPIC] ...` — the item then
+ * became invisible to `^[-*] \[ \]` parsers and EPIC delegation never fired).
+ * The rest are common paraphrases of the same pointer marker. ASCII `>` is
+ * deliberately excluded — it is valid markdown (blockquote), not a marker.
+ */
+/** Line-level marker regex: anchored, tolerates indentation, repeats and
+ * spacing variants (`▶ - [ ] x`, `▶  - [ ] x`, `  ▶ ▶ - [ ] x`). */
+const CURRENT_ITEM_MARKER_LINE_RE = /^[ \t]*(?:[▶▸►➤➜→⇒»●][ \t]*)+/;
+
+/** Same marker regex, but captures leading indentation so sanitize-on-write
+ * keeps the nesting of (contaminated) nested items intact. */
+const CURRENT_ITEM_MARKER_SANITIZE_RE = /^([ \t]*)(?:[▶▸►➤➜→⇒»●][ \t]*)+/;
+
+/**
+ * Level 1 (tolerant parser): strip a leading current-item marker from a
+ * roadmap checklist line (or from captured item text, e.g. `- [ ] ▶ [EPIC] x`).
+ * Plain lines without a marker pass through unchanged.
+ */
+export function stripCurrentItemMarker(line: string): string {
+	return line.replace(CURRENT_ITEM_MARKER_LINE_RE, "");
+}
+
+/**
+ * Level 2 (sanitize on read/write): strip marker glyphs from every line of
+ * ROADMAP content, preserving line count (indices stay valid) and leading
+ * indentation of nested items.
+ */
+function sanitizeRoadmapContent(content: string): string {
+	return content
+		.split("\n")
+		.map((line) => line.replace(CURRENT_ITEM_MARKER_SANITIZE_RE, "$1"))
+		.join("\n");
+}
+
 export async function readRoadmap(missionDir: string): Promise<string> {
-	return readFileSync(join(missionDir, "ROADMAP.md"), "utf8");
+	return sanitizeRoadmapContent(readFileSync(join(missionDir, "ROADMAP.md"), "utf8"));
 }
 
 export async function writeRoadmap(missionDir: string, content: string): Promise<void> {
-	atomicWriteFileSync(join(missionDir, "ROADMAP.md"), content);
+	// Heal the file: any ▶-markers an executor copied into ROADMAP.md are
+	// normalized away on the next write through this single funnel.
+	atomicWriteFileSync(join(missionDir, "ROADMAP.md"), sanitizeRoadmapContent(content));
 }
 
 // ─── ROADMAP helpers (shared with mission-loop) ─────────────────────────────
@@ -855,8 +895,8 @@ export async function writeRoadmap(missionDir: string, content: string): Promise
 export function parseFirstUnchecked(raw: string): { index: number; text: string } | null {
 	const lines = raw.split("\n");
 	for (let i = 0; i < lines.length; i++) {
-		const m = /^[-*] \[ \] (.+)$/.exec(lines[i].trim());
-		if (m) return { index: i, text: m[1] };
+		const m = /^[-*] \[ \] (.+)$/.exec(stripCurrentItemMarker(lines[i].trim()));
+		if (m) return { index: i, text: stripCurrentItemMarker(m[1]) };
 	}
 	return null;
 }
@@ -870,8 +910,8 @@ export function parseAllUnchecked(raw: string): Array<{ index: number; text: str
 	const items: Array<{ index: number; text: string }> = [];
 	const lines = raw.split("\n");
 	for (let i = 0; i < lines.length; i++) {
-		const m = /^[-*] \[ \] (.+)$/.exec(lines[i].trim());
-		if (m) items.push({ index: i, text: m[1] });
+		const m = /^[-*] \[ \] (.+)$/.exec(stripCurrentItemMarker(lines[i].trim()));
+		if (m) items.push({ index: i, text: stripCurrentItemMarker(m[1]) });
 	}
 	return items;
 }

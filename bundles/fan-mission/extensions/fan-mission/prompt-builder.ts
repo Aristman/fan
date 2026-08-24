@@ -9,7 +9,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import { extractGoal, isRecurringItem, type MissionState, readMission } from "./file-state-manager.js";
+import { extractGoal, isRecurringItem, type MissionState, readMission, stripCurrentItemMarker } from "./file-state-manager.js";
 
 // ─── Limits (protection against bloated STATE/BACKLOG/ROADMAP) ──────────────
 
@@ -107,7 +107,7 @@ export function isBootstrapItem(roadmapRaw: string, index: number, itemText: str
 	if (!/^bootstrap mission:/i.test(itemText)) return false;
 	const lines = roadmapRaw.split("\n");
 	for (let i = 0; i < lines.length; i++) {
-		if (/^[-*] \[[x ]\] /.test(lines[i].trim())) return i === index;
+		if (/^[-*] \[[x ]\] /.test(stripCurrentItemMarker(lines[i].trim()))) return i === index;
 	}
 	return false;
 }

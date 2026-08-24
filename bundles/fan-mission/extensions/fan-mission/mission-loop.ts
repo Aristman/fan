@@ -44,6 +44,7 @@ import {
 	readRecurringState,
 	readRoadmap,
 	readState,
+	stripCurrentItemMarker,
 	updateBacklogEntry,
 	writeMissionStatus,
 	writeRecurringState,
@@ -395,8 +396,8 @@ function markRoadmapDone(raw: string, lineIndex: number, itemText?: string): str
 	const lines = raw.split("\n");
 	const uncheckedTextAt = (i: number): string | null => {
 		if (i < 0 || i >= lines.length) return null;
-		const m = /^[-*] \[ \] (.+)$/.exec(lines[i].trim());
-		return m ? m[1] : null;
+		const m = /^[-*] \[ \] (.+)$/.exec(stripCurrentItemMarker(lines[i].trim()));
+		return m ? stripCurrentItemMarker(m[1]) : null;
 	};
 	let target = -1;
 	const textAtIndex = uncheckedTextAt(lineIndex);
@@ -424,7 +425,7 @@ function markRoadmapDone(raw: string, lineIndex: number, itemText?: string): str
 function isRoadmapItemChecked(raw: string, lineIndex: number): boolean {
 	const lines = raw.split("\n");
 	if (lineIndex < 0 || lineIndex >= lines.length) return false;
-	return /^[-*] \[x\] /.test(lines[lineIndex].trim());
+	return /^[-*] \[x\] /.test(stripCurrentItemMarker(lines[lineIndex].trim()));
 }
 
 /**
@@ -434,7 +435,7 @@ function isRoadmapItemChecked(raw: string, lineIndex: number): boolean {
  */
 function hasAnyChecklistItem(raw: string): boolean {
 	for (const line of raw.split("\n")) {
-		if (/^[-*] \[[x ]\] /.test(line.trim())) return true;
+		if (/^[-*] \[[x ]\] /.test(stripCurrentItemMarker(line.trim()))) return true;
 	}
 	return false;
 }
@@ -1290,7 +1291,7 @@ export class MissionLoop {
 				// Streak >= 2 → enter awaiting_decision instead of infinite loop.
 				if (nextItem.index === -1) {
 					const freshRoadmapForCap = await readRoadmap(this.missionDir);
-					const hasUnchecked = /^[-*] \[ \] /m.test(freshRoadmapForCap);
+					const hasUnchecked = parseAllUnchecked(freshRoadmapForCap).length > 0;
 					if (!hasUnchecked) {
 						loopState.emptyPlanningStreak = (loopState.emptyPlanningStreak ?? 0) + 1;
 					} else {

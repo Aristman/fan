@@ -16,7 +16,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { formatIdeaEntry, formatIdeaId, maxIdeaNumber, normalizeIdea } from "./backlog-format.js";
 import type { BacklogEntry } from "./file-state-manager.js";
-import { appendBacklog, readBacklog, readRoadmap, readState } from "./file-state-manager.js";
+import { appendBacklog, readBacklog, readRoadmap, readState, stripCurrentItemMarker } from "./file-state-manager.js";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -156,8 +156,8 @@ async function readPendingRoadmapItems(missionDir: string): Promise<string[]> {
 	}
 	const items: string[] = [];
 	for (const line of raw.split("\n")) {
-		const match = /^\s*- \[ \]\s+(.+)$/.exec(line);
-		if (match) items.push(match[1].trim());
+		const match = /^\s*- \[ \]\s+(.+)$/.exec(stripCurrentItemMarker(line));
+		if (match) items.push(stripCurrentItemMarker(match[1].trim()));
 	}
 	return items;
 }

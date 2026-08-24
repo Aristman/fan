@@ -15,7 +15,7 @@
 // Ошибки промоушна не роняют контур (try/catch в месте вызова).
 
 import type { BacklogEntry } from "./file-state-manager.js";
-import { readBacklog, readRoadmap, updateBacklogEntry, writeRoadmap } from "./file-state-manager.js";
+import { readBacklog, readRoadmap, stripCurrentItemMarker, updateBacklogEntry, writeRoadmap } from "./file-state-manager.js";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -44,7 +44,7 @@ export interface PromoteOptions {
 function countRoadmapItems(raw: string): number {
 	let count = 0;
 	for (const line of raw.split("\n")) {
-		if (/^[-*] \[[x ]\] /.test(line.trim())) count++;
+		if (/^[-*] \[[x ]\] /.test(stripCurrentItemMarker(line.trim()))) count++;
 	}
 	return count;
 }
