@@ -69,15 +69,26 @@ function statusLabelRu(status: string): string {
 	}
 }
 
+/** Компактный формат токенов: 1234 → «1.2k», 1_500_000 → «1.5M». */
+function formatTokens(n: number): string {
+	if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+	if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+	return String(n);
+}
+
 /** Сборка render-линии на основе снимка. */
 function renderLines(snapshot: MissionStatusSnapshot, iterationOverride?: number): string[] {
 	const statusEmoji = snapshot.status === "active" ? "●" : "○";
 	const statusLabel = statusLabelRu(snapshot.status);
 	const budgetUsed = `$${snapshot.budgetUsed.usd.toFixed(2)}`;
 	const budgetTotal = `$${snapshot.budgetUsd.toFixed(2)}`;
+	// 1.2: расход честный — usd реально 0 (провайдер не отдаёт cost, конвертацию
+	// токены→USD не выдумываем); токены показываем рядом компактно. Лимиты —
+	// из frontmatter MISSION.md (budget_tokens / budget_usd).
+	const tokens = `${formatTokens(snapshot.budgetUsed.tokens)} / ${formatTokens(snapshot.budgetTokens)} tok`;
 	const iter = iterationOverride ?? snapshot.iteration;
 	return [
-		`Статус: ${statusEmoji} ${statusLabel} │ Итерация: ${iter} │ Расход: ${budgetUsed} / ${budgetTotal} │ Этап: ${snapshot.currentStep}`,
+		`Статус: ${statusEmoji} ${statusLabel} │ Итерация: ${iter} │ Расход: ${budgetUsed} / ${budgetTotal} (${tokens}) │ Этап: ${snapshot.currentStep}`,
 	];
 }
 
@@ -96,6 +107,10 @@ async function fetchSnapshot(args: MissionWidgetArgs): Promise<MissionStatusSnap
 			let iter = 0;
 			let budgetUsed = { tokens: 0, usd: 0 };
 			let currentStep = "";
+			// 1.2: лимиты — из frontmatter MISSION.md (тем же readMission),
+			// как и в основном пути getStatusSnapshot (fan-mission/index.ts).
+			let budgetTokens = 0;
+			let budgetUsd = 0;
 			try {
 				if (args.missionDir) {
 					const ls = await readMissionLoopState(args.missionDir);
@@ -104,6 +119,8 @@ async function fetchSnapshot(args: MissionWidgetArgs): Promise<MissionStatusSnap
 				}
 				const mission = await readMission(args.missionDir ?? ".");
 				currentStep = (mission.body?.[0] ?? "").toString().slice(0, 40);
+				budgetTokens = Number(mission.frontmatter.budget_tokens) || 0;
+				budgetUsd = Number(mission.frontmatter.budget_usd) || 0;
 			} catch {
 				/* допустимо — клиент не успевает */
 			}
@@ -111,8 +128,8 @@ async function fetchSnapshot(args: MissionWidgetArgs): Promise<MissionStatusSnap
 				status,
 				iteration: iter,
 				budgetUsed,
-				budgetTokens: 0,
-				budgetUsd: 0,
+				budgetTokens,
+				budgetUsd,
 				currentStep,
 			};
 		} catch {

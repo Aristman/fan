@@ -66,6 +66,14 @@ export type MissionStatus =
 	| "awaiting_decision"
 	| "busy";
 
+/** Терминальные статусы FSM (ср. slash-commands.ts TERMINAL_STATUSES). */
+const TERMINAL_STATUSES = new Set<string>([
+	"completed",
+	"failed",
+	"aborted",
+	"budget_exhausted",
+]);
+
 export interface IterationResult {
 	status: "COMPLETE" | "BLOCKED" | "DECIDE" | "FAILED";
 	reason?: string;
@@ -768,8 +776,24 @@ export class MissionLoop {
 			loopState = await readMissionLoopState(this.missionDir);
 			currentIteration = loopState.currentIteration;
 
-			// P0-2: respect abort signal from previous run
-			if (loopState.abortedByOperator) {
+			const mission = await readMission(this.missionDir);
+			const missionStatus = String(mission.frontmatter.status) as MissionStatus;
+
+			// 1.1 Abort-гигиена: миссия уже финализирована, а на диске висят
+			// abort-артефакты (stop оператора ПОСЛЕ завершения, e2e-5) — тихо
+			// чистим и НЕ возвращаем aborted: миссия завершилась честно.
+			if (TERMINAL_STATUSES.has(missionStatus)) {
+				if (loopState.abortedByOperator === true) {
+					loopState.abortedByOperator = false;
+					loopState.interrupted = false;
+					loopState.iterationResult = undefined;
+					loopState.pendingItem = undefined;
+					loopState.committed = false;
+					writeLoopStateSync(this.missionDir, loopState);
+				}
+				clearAbortSignal(this.missionDir);
+			} else if (loopState.abortedByOperator) {
+				// P0-2: respect abort signal from previous run (только живая миссия)
 				loopState.abortedByOperator = false;
 				loopState.interrupted = false;
 				loopState.iterationResult = undefined;
@@ -779,9 +803,6 @@ export class MissionLoop {
 				clearAbortSignal(this.missionDir);
 				return { iteration: currentIteration, steps, status: "aborted" };
 			}
-
-			const mission = await readMission(this.missionDir);
-			const missionStatus = String(mission.frontmatter.status) as MissionStatus;
 			// L0 — бюджет НЕ ограничен: frontmatter budget_tokens/budget_usd
 			// трактуются как информационные поля. Расход трекается в
 			// loopState.budgetUsed (см. .mission-loop.json). Enforcement
@@ -857,6 +878,7 @@ export class MissionLoop {
 				if (!archived) {
 					resultStatus = "failed";
 					await writeMissionStatus(this.missionDir, "failed");
+					clearAbortSignal(this.missionDir); // 1.1: терминальный статус — сигнал больше не нужен
 					this.journalStep(loopState, 7);
 					loopState.interrupted = false;
 					writeLoopStateSync(this.missionDir, loopState);
@@ -920,6 +942,7 @@ export class MissionLoop {
 							resultStatus = "failed";
 							await writeMissionStatus(this.missionDir, "failed");
 						}
+						clearAbortSignal(this.missionDir); // 1.1: терминальный статус — сигнал больше не нужен
 						this.journalStep(loopState, 3);
 						loopState.interrupted = false;
 						loopState.iterationResult = undefined;
@@ -968,6 +991,7 @@ export class MissionLoop {
 						resultStatus = "completed";
 						await writeMissionStatus(this.missionDir, "completed");
 					}
+					clearAbortSignal(this.missionDir); // 1.1: терминальный статус — сигнал больше не нужен
 					this.journalStep(loopState, 3);
 					loopState.interrupted = false;
 					loopState.iterationResult = undefined;
@@ -1397,6 +1421,29 @@ export class MissionLoop {
 		} catch {
 			// best-effort
 		}
+		// 1.1 Abort-гигиена: stop ПОСЛЕ финализации миссии (e2e-5) — миссия
+		// уже в терминальном статусе: НЕ создаём abort-сигнал и НЕ загрязняем
+		// журнал (interrupted/abortedByOperator). Тихо чистим протухшие
+		// артефакты, если остались, и выходим.
+		try {
+			const mission = await readMission(this.missionDir);
+			const currentStatus = String(mission.frontmatter.status);
+			if (TERMINAL_STATUSES.has(currentStatus)) {
+				clearAbortSignal(this.missionDir);
+				const staleState = await readMissionLoopState(this.missionDir);
+				if (staleState.abortedByOperator === true) {
+					staleState.abortedByOperator = false;
+					staleState.interrupted = false;
+					staleState.iterationResult = undefined;
+					staleState.pendingItem = undefined;
+					staleState.committed = false;
+					writeLoopStateSync(this.missionDir, staleState);
+				}
+				return;
+			}
+		} catch {
+			// MISSION.md не читается — прежний путь (degraded abort)
+		}
 		// P0-2: write abort signal file (lock-free, atomic)
 		writeAbortSignal(this.missionDir);
 		// Also update journal for persistence across restarts
@@ -1411,6 +1458,12 @@ export class MissionLoop {
 		// Update MISSION.md status
 		try {
 			await writeMissionStatus(this.missionDir, "aborted");
+			// 1.1: сигнал нужен только in-flight tick'у (isAborted-поллинг);
+			// если тика нет — чистим сразу, чтобы не оставлять
+			// .mission-abort-signal на терминальной миссии.
+			if (!this.tickRunning) {
+				clearAbortSignal(this.missionDir);
+			}
 		} catch {
 			// best-effort — abort signal file is the primary mechanism
 		}
@@ -1514,6 +1567,7 @@ export class MissionLoop {
 		writeLoopStateSync(this.missionDir, loopState);
 
 		await writeMissionStatus(this.missionDir, "completed");
+		clearAbortSignal(this.missionDir); // 1.1: терминальный статус — сигнал больше не нужен
 	}
 
 	async status(): Promise<MissionStatus> {
@@ -1844,6 +1898,7 @@ export class MissionLoop {
 
 		try {
 			await writeMissionStatus(this.missionDir, "aborted");
+			clearAbortSignal(this.missionDir); // 1.1: терминальный статус — сигнал больше не нужен
 		} catch {
 			// best-effort
 		}

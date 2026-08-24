@@ -539,7 +539,7 @@ export async function readState(missionDir: string): Promise<MissionState> {
 		console.warn(
 			`[fan-mission] STATE.md is ${byteLen} bytes (limit ${MAX_STATE_BYTES}) — truncating content of sections; archive or compact the file`,
 		);
-		raw = truncateStateSections(done, blockers, nextSteps, MAX_STATE_BYTES);
+		raw = truncateStateSections(done!, blockers!, nextSteps!, MAX_STATE_BYTES);
 		// Re-parse the truncated content to get the final items.
 		const truncatedSections = parseSections(raw);
 		return {

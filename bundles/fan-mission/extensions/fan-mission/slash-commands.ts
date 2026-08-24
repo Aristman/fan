@@ -20,6 +20,7 @@ import {
 	readRoadmap,
 	writeMissionStatus,
 	writeRoadmap,
+	type BacklogEntry,
 } from "./file-state-manager.js";
 import { clearMissionAbortArtifacts, type MissionLoop, readMissionLoopState } from "./mission-loop.js";
 
@@ -101,8 +102,9 @@ function guarded(output: (line: string) => void, body: () => Promise<void>): Pro
 // (ctx.findAttachableMission) и аттачат её (ctx.attach) без рестарта fan.
 // stop/pause/steer/decide по-прежнему требуют аттаченный loop.
 
-/** Терминальные статусы FSM: tick/stop по ним — no-op, нужен явный фидбек. */
-const TERMINAL_STATUSES = new Set(["completed", "failed", "aborted", "budget_exhausted"]);
+/** Терминальные статусы FSM: tick/stop по ним — no-op, нужен явный фидбек.
+ * Экспортируется для fan-mission/index.ts (виджет: «done» вместо шага). */
+export const TERMINAL_STATUSES = new Set(["completed", "failed", "aborted", "budget_exhausted"]);
 
 /** Подсказка для completed-миссии: добавить пункты в ROADMAP или создать новую. */
 function completedMissionHint(slug: string): string {

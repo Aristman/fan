@@ -50,9 +50,13 @@ import {
 	setDrainSignal,
 	writeLoopStateSync,
 } from "./mission-loop.js";
-import { registerMissionWidget } from "./mission-widget.js";
+import { registerMissionWidget, type MissionStatusSnapshot } from "./mission-widget.js";
 import { createSessionExecutor, type RunAgent } from "./session-executor.js";
-import { registerMissionSlashCommands, type SlashCtx } from "./slash-commands.js";
+import {
+	registerMissionSlashCommands,
+	type SlashCtx,
+	TERMINAL_STATUSES,
+} from "./slash-commands.js";
 import { createMissionTickHandler } from "./tick-bridge.js";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -378,7 +382,7 @@ export default function missionExtension(fan: ExtensionAPI): MissionWiring {
 	};
 
 	// Снимок статуса для виджета (читает ТЕКУЩИЙ loop из handle).
-	const getStatusSnapshot = async () => {
+	const getStatusSnapshot = async (): Promise<MissionStatusSnapshot> => {
 		const loop = wiring.getMissionLoop();
 		const missionDir = slashCtx.missionDir;
 		if (!loop || !missionDir) {
@@ -396,12 +400,30 @@ export default function missionExtension(fan: ExtensionAPI): MissionWiring {
 		} catch {
 			// STATE.md может ещё отсутствовать — оставляем дефолты
 		}
+		// 1.2: терминальный статус → фактический шаг цикла неактуален («done»).
+		// awaiting_decision НЕ терминальный (FSM: ждёт решения оператора —
+		// resolveDecision/completeMission/abort) — показываем фактический шаг.
+		if (TERMINAL_STATUSES.has(status)) {
+			currentStep = "done";
+		}
+		// 1.2: лимиты — из frontmatter MISSION.md (L0: поля информационные,
+		// без enforcement). Расход остаётся честным из loop-state: usd реально
+		// 0, пока провайдер не отдаёт cost — конвертацию токены→USD не выдумываем.
+		let budgetTokens = 0;
+		let budgetUsd = 0;
+		try {
+			const mission = await readMission(missionDir);
+			budgetTokens = Number(mission.frontmatter.budget_tokens) || 0;
+			budgetUsd = Number(mission.frontmatter.budget_usd) || 0;
+		} catch {
+			// MISSION.md не читается — нули (прежнее поведение)
+		}
 		return {
 			status,
 			iteration,
 			budgetUsed,
-			budgetTokens: 0,
-			budgetUsd: 0,
+			budgetTokens,
+			budgetUsd,
 			currentStep,
 		};
 	};

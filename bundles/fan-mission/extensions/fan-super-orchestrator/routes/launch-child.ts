@@ -27,7 +27,7 @@
 //     validateDepth (F-38) на границе приёма отчёта.
 
 import { join } from "node:path";
-import { canSpawn, type DepthWidthGuardOptions } from "../depth-width-guard.js";
+import { type DepthWidthGuardOptions } from "../depth-width-guard.js";
 import type { ValidationFailureInfo } from "../child-node-client.js";
 import { validateDepth } from "../message-sanitizer.js";
 import { generateNodeToken } from "../node-auth.js";
