@@ -49,6 +49,14 @@
 import { type Dirent, existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
+import type { KeyId } from "@seaagents/fan-tui";
+
+// Phase 2 MVP: TUI-виджет дерева сабагентов (футер + F8).
+import {
+	registerAgentTreeWidget,
+	type AgentTreeWidgetHandle,
+	type AgentTreeWidgetUI,
+} from "./agent-tree-widget.js";
 
 // F-Diag (REFACTOR, depth-2): подключение chat-logger / extension-health ─────
 //
@@ -418,6 +426,9 @@ function mapDepth2ResultToReply(reports: Array<{ nodeId: string; report: NodeRep
 
 // ─── Фабрика расширения ─────────────────────────────────────────────────────
 
+/** Phase 2 MVP: UI-контекст хуков с подмножеством, нужным виджету дерева. */
+type TreeWidgetCtx = { ui: AgentTreeWidgetUI };
+
 export default function superOrchestratorExtension(
 	fan: ExtensionAPI,
 	opts?: SuperOrchestratorWireOptions,
@@ -448,6 +459,138 @@ export default function superOrchestratorExtension(
 	// Дедупликация correlationId: production EventBus реплеит последнее
 	// событие канала при подписке — повторный запрос не исполняется дважды.
 	const processedCorrelations = new Set<string>();
+
+	// ─── Phase 2 MVP: TUI-виджет дерева сабагентов (футер + F8) ──────────
+	//
+	// Источник данных: tree-journal.jsonl активной миссии (общий для L0 и
+	// SO-детей). Виджет поднимается ТОЛЬКО в корневом узле L0 — у worker/
+	// SO-детей (FAN_NODE_ROLE=super-orchestrator или depth > 0) иначе были
+	// бы дублирующиеся футеры/шорткаты в каждом дочернем fan server (гварды
+	// зеркальны reconcile-гарду initCircuit). ctx.ui захватывается в
+	// session_start и в F8-handler (последний wins) — паттерн fan-mission
+	// mission-widget (index.ts:479).
+
+	let treeWidget: AgentTreeWidgetHandle | null = null;
+	let treeWidgetMissionDir: string | null = null;
+	let treeJournalUnsub: (() => void) | null = null;
+	let lastUiCtx: TreeWidgetCtx | null = null;
+
+	/** Guard: объект с ui.setStatus/setWidget (полный ExtensionContext либо нет). */
+	const isTreeWidgetCtx = (value: unknown): value is TreeWidgetCtx => {
+		if (typeof value !== "object" || value === null) return false;
+		const ui = (value as { ui?: unknown }).ui;
+		if (typeof ui !== "object" || ui === null) return false;
+		const candidate = ui as { setStatus?: unknown; setWidget?: unknown };
+		return typeof candidate.setStatus === "function" && typeof candidate.setWidget === "function";
+	};
+
+	/** UI-фасад: дёргается виджетом из poll-цикла; без UI-контекста — no-op. */
+	const treeWidgetUi: AgentTreeWidgetUI = {
+		setStatus: (key, text) => {
+			try {
+				lastUiCtx?.ui.setStatus(key, text);
+			} catch {
+				/* best-effort */
+			}
+		},
+		setWidget: (key, content, options) => {
+			try {
+				lastUiCtx?.ui.setWidget(key, content, options);
+			} catch {
+				/* best-effort */
+			}
+		},
+	};
+
+	/** Регистрация виджета дерева (только L0). Повторный session_start с тем
+	 *  же missionDir — идемпотентен; с другим — замещает старый виджет. */
+	const registerTreeWidget = (missionDir: string, ctx: unknown): void => {
+		try {
+			if (process.env.FAN_NODE_ROLE === ROLE_SUPER_ORCHESTRATOR) return; // SO-ребёнок
+			if (currentDepthFromEnv() !== 0) return; // worker-ребёнок
+			if (!isTreeWidgetCtx(ctx)) return; // headless/RPC — без виджета
+			lastUiCtx = ctx;
+			if (treeWidget && treeWidgetMissionDir === missionDir) return;
+
+			// Смена миссии: чистим старый виджет и подписку журнала.
+			try {
+				treeJournalUnsub?.();
+			} catch {
+				/* best-effort */
+			}
+			treeJournalUnsub = null;
+			try {
+				treeWidget?.dispose();
+			} catch {
+				/* best-effort */
+			}
+			treeWidget = null;
+			treeWidgetMissionDir = null;
+
+			treeWidget = registerAgentTreeWidget({
+				ui: treeWidgetUi,
+				journalPath: join(missionDir, "tree-journal.jsonl"),
+				// Читаем через journal активного circuit (тот же файл; без
+				// дублирующего createTreeJournal).
+				readJournal: () => {
+					try {
+						return circuit?.journal.readAll() ?? [];
+					} catch {
+						return [];
+					}
+				},
+				registerShortcut: (key, def) => {
+					const shortcuts = fan as {
+						registerShortcut?: (
+							shortcut: KeyId,
+							options: { description?: string; handler: (ctx: unknown) => Promise<void> | void },
+						) => void;
+					};
+					shortcuts.registerShortcut?.(key as KeyId, {
+						description: def.description,
+						handler: async (shortcutCtx: unknown) => {
+							if (isTreeWidgetCtx(shortcutCtx)) lastUiCtx = shortcutCtx; // последний wins
+							await def.handler();
+						},
+					});
+				},
+			});
+			treeWidgetMissionDir = missionDir;
+
+			// Мгновенный refresh на in-process записи L0 в журнал (F-47);
+			// межпроцессные записи детей подхватывает poll-цикл виджета.
+			try {
+				treeJournalUnsub = circuit?.journal.onJournalWrite(() => {
+					try {
+						treeWidget?.refreshNow();
+					} catch {
+						/* best-effort */
+					}
+				}) ?? null;
+			} catch {
+				treeJournalUnsub = null;
+			}
+		} catch {
+			// молчаливая деградация: виджет не критичен для контура
+		}
+	};
+
+	/** Снять виджет дерева (завершение сессии / смена миссии). */
+	const shutdownTreeWidget = (): void => {
+		try {
+			treeJournalUnsub?.();
+		} catch {
+			/* best-effort */
+		}
+		treeJournalUnsub = null;
+		try {
+			treeWidget?.dispose();
+		} catch {
+			/* best-effort */
+		}
+		treeWidget = null;
+		treeWidgetMissionDir = null;
+	};
 
 	const emitReply = (replyEvent: string, data: unknown): void => {
 		if (typeof api.events?.emit !== "function") {
@@ -681,6 +824,9 @@ export default function superOrchestratorExtension(
 					});
 				} else {
 					initCircuit(mission.dir);
+					// Phase 2 MVP: виджет дерева сабагентов — только root-ветка L0
+					// (внутри гварды role/depth + headless-деградация).
+					registerTreeWidget(mission.dir, ctx);
 				}
 			} catch (err) {
 				console.warn("[fan-super-orchestrator] session_start hook failed:", err);
@@ -688,6 +834,8 @@ export default function superOrchestratorExtension(
 		});
 
 		api.on("session_shutdown", async () => {
+			// Phase 2 MVP: снять виджет дерева до kill-switch контура.
+			shutdownTreeWidget();
 			await shutdownCircuit();
 		});
 	}
