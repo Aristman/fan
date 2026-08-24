@@ -18,10 +18,10 @@
  *            fetch handler → "Welcome to Bun!" fallback for subsequent requests)
  */
 
-import { describe, it, expect, beforeAll, afterAll } from "bun:test";
-import { startServer } from "../src/http-server.js";
+import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import type { ModelManager } from "@fan/model-manager";
 import type { SessionAdapter } from "../src/http-server.js";
+import { startServer } from "../src/http-server.js";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 

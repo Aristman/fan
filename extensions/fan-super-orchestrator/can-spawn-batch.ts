@@ -22,7 +22,7 @@
 // working_width для super-orchestrator не проверяется (только max):
 // batch=11 при depth=2 (limits=depth=1) → ALLOWED, т.к. 11 ≤ max[1]=12.
 
-import { PYRAMID_WIDTH, PYRAMID_MAX_DEPTH, PYRAMID_MIN_DEPTH } from "./width-pyramid.js";
+import { PYRAMID_MAX_DEPTH, PYRAMID_MIN_DEPTH, PYRAMID_WIDTH } from "./width-pyramid.js";
 
 /** Опции canSpawnBatch. */
 export interface CanSpawnBatchOpts {
@@ -40,11 +40,7 @@ export interface CanSpawnBatchOpts {
 export interface CanSpawnBatchResult {
 	allowed: boolean;
 	/** Причина отказа (undefined при allowed=true). */
-	reason?:
-		| "max_depth_exceeded"
-		| "max_width_exceeded"
-		| "working_width_exceeded"
-		| "super_orch_at_max_depth";
+	reason?: "max_depth_exceeded" | "max_width_exceeded" | "working_width_exceeded" | "super_orch_at_max_depth";
 	/** Диагностические детали (для логов). */
 	details?: Record<string, unknown>;
 }

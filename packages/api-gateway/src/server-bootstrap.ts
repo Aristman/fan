@@ -22,10 +22,7 @@ import { attachWebSocketHandler } from "./ws-handler.js";
 /** Resolve the actual bound port from a node http.Server instance.
  *  Falls back to the requested port if the address is unexpectedly absent
  *  (e.g. unix socket, or already-destroyed server). */
-function resolveBoundPort(
-	httpServer: { address(): unknown },
-	requestedPort: number,
-): number {
+function resolveBoundPort(httpServer: { address(): unknown }, requestedPort: number): number {
 	const address = httpServer.address();
 	return typeof address === "object" && address !== null && address !== null
 		? (address as { port: number }).port

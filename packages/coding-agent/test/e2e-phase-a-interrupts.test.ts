@@ -30,32 +30,27 @@
  *      прерывает сессию с диагностикой.
  */
 
-import { type Server } from "node:http";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
+import type { Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { mkdirSync, rmSync, existsSync } from "node:fs";
+import type { SessionAdapter } from "@fan/api-gateway";
+import { attachWebSocketHandler, createApp } from "@fan/api-gateway";
+import type { ModelManager } from "@fan/model-manager";
 import type { AgentTool } from "@seaagents/fan-agent-core";
 import { Agent } from "@seaagents/fan-agent-core";
-import type {
-	AssistantMessage,
-	Context,
-	Model,
-	SimpleStreamOptions,
-} from "@seaagents/fan-ai";
+import type { AssistantMessage, Context, Model, SimpleStreamOptions } from "@seaagents/fan-ai";
 import { createAssistantMessageEventStream } from "@seaagents/fan-ai";
 import { Type } from "@sinclair/typebox";
-import type { ModelManager } from "@fan/model-manager";
-import { createApp, attachWebSocketHandler } from "@fan/api-gateway";
-import type { SessionAdapter } from "@fan/api-gateway";
-import type { AgentSession, AgentSessionEvent } from "../src/core/agent-session.js";
-import { AgentSession as AgentSessionCtor } from "../src/core/agent-session.js";
-import { SessionManager } from "../src/core/session-manager.js";
-import { SettingsManager } from "../src/core/settings-manager.js";
-import { AuthStorage } from "../src/core/auth-storage.js";
-import { ModelRegistry } from "../src/core/model-registry.js";
-import { createTestResourceLoader } from "./utilities.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
+import type { AgentSession, AgentSessionEvent } from "../src/core/agent-session.js";
+import { AgentSession as AgentSessionCtor } from "../src/core/agent-session.js";
+import { AuthStorage } from "../src/core/auth-storage.js";
+import { ModelRegistry } from "../src/core/model-registry.js";
+import { SessionManager } from "../src/core/session-manager.js";
+import { SettingsManager } from "../src/core/settings-manager.js";
+import { createTestResourceLoader } from "./utilities.js";
 
 // ============================================================================
 // Auth bypass — Phase A e2e runs locally; auth covered separately.
@@ -272,11 +267,7 @@ function makeHangTool(name: string): AgentTool {
 		parameters: Type.Object({}),
 		execute: async (_id, _args, signal) => {
 			return await new Promise<never>((_resolve, reject) => {
-				signal?.addEventListener(
-					"abort",
-					() => reject(new Error(`${name} aborted by watchdog`)),
-					{ once: true },
-				);
+				signal?.addEventListener("abort", () => reject(new Error(`${name} aborted by watchdog`)), { once: true });
 			});
 		},
 	};
@@ -674,10 +665,7 @@ describe("Phase A e2e — interrupt core (F-01 abort + F-03 watchdog)", () => {
 		// envelopes (see packages/coding-agent/src/core/agent-session.ts —
 		// the session-level event union is AgentEvent, not the lower-level
 		// AssistantMessageEventStream events).
-		await waitFor(
-			() => messages.find((m) => m.event?.type === "message_update"),
-			2000,
-		);
+		await waitFor(() => messages.find((m) => m.event?.type === "message_update"), 2000);
 
 		// Fire REST abort, measure timing.
 		const t0 = Date.now();
@@ -692,10 +680,7 @@ describe("Phase A e2e — interrupt core (F-01 abort + F-03 watchdog)", () => {
 		expect(elapsedMs).toBeLessThan(1000);
 
 		// WS subscriber must receive an agent_end frame.
-		const agentEnd = await waitFor(
-			() => messages.find((m) => m.event?.type === "agent_end"),
-			2000,
-		);
+		const agentEnd = await waitFor(() => messages.find((m) => m.event?.type === "agent_end"), 2000);
 		expect(agentEnd).toBeDefined();
 
 		// agent_end must carry the abort reason (last assistant message has
@@ -755,16 +740,10 @@ describe("Phase A e2e — interrupt core (F-01 abort + F-03 watchdog)", () => {
 
 		// tool_execution_start must reach the WS subscriber (proves the tool
 		// actually entered the hung state and the watchdog is armed).
-		await waitFor(
-			() => messages.find((m) => m.event?.type === "tool_execution_start"),
-			2000,
-		);
+		await waitFor(() => messages.find((m) => m.event?.type === "tool_execution_start"), 2000);
 
 		// watchdog_timeout must arrive within watchdogTimeoutMs + slack.
-		const wd = await waitFor(
-			() => messages.find((m) => m.event?.type === "watchdog_timeout"),
-			1500,
-		);
+		const wd = await waitFor(() => messages.find((m) => m.event?.type === "watchdog_timeout"), 1500);
 
 		const wdEvent = wd.event as {
 			type: string;
@@ -782,10 +761,7 @@ describe("Phase A e2e — interrupt core (F-01 abort + F-03 watchdog)", () => {
 		expect(wdEvent.elapsedMs).toBeGreaterThanOrEqual(150);
 
 		// The session must terminate: agent_end frame on the WS subscriber.
-		await waitFor(
-			() => messages.find((m) => m.event?.type === "agent_end"),
-			2000,
-		);
+		await waitFor(() => messages.find((m) => m.event?.type === "agent_end"), 2000);
 
 		// Give the agent a beat to fully unwind.
 		await new Promise((r) => setTimeout(r, 50));
@@ -818,18 +794,12 @@ describe("Phase A e2e — interrupt core (F-01 abort + F-03 watchdog)", () => {
 
 		const promptPromise = harness!.session.prompt("hi").catch(() => {});
 
-		await waitFor(
-			() => messages.find((m) => m.event?.type === "message_update"),
-			2000,
-		);
+		await waitFor(() => messages.find((m) => m.event?.type === "message_update"), 2000);
 
 		// Send WS abort command instead of REST.
 		ws.send(JSON.stringify({ type: "abort" }));
 
-		await waitFor(
-			() => messages.find((m) => m.event?.type === "agent_end"),
-			2000,
-		);
+		await waitFor(() => messages.find((m) => m.event?.type === "agent_end"), 2000);
 
 		await promptPromise;
 		expect(harness!.session.isStreaming).toBe(false);

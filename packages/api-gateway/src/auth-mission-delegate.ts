@@ -19,9 +19,7 @@ import { timingSafeEqual } from "node:crypto";
  *  - `ok: false, error: "missing_token"`     → no/wrong-format Authorization header.
  *  - `ok: false, error: "invalid_token"`     → header present but token doesn't match
  *                                              (or server-side env not configured). */
-export type MissionDelegateAuthResult =
-	| { ok: true }
-	| { ok: false; error: "missing_token" | "invalid_token" };
+export type MissionDelegateAuthResult = { ok: true } | { ok: false; error: "missing_token" | "invalid_token" };
 
 /**
  * Constant-time verification of FAN_NODE_TOKEN.
@@ -54,12 +52,7 @@ export function verifyNodeToken(
 
 	// Server-side env not configured OR provided token is empty after slice.
 	// Both collapse to `invalid_token` in the original implementation.
-	if (
-		!expectedToken ||
-		typeof expectedToken !== "string" ||
-		expectedToken.length === 0 ||
-		provided.length === 0
-	) {
+	if (!expectedToken || typeof expectedToken !== "string" || expectedToken.length === 0 || provided.length === 0) {
 		return { ok: false, error: "invalid_token" };
 	}
 
@@ -69,7 +62,5 @@ export function verifyNodeToken(
 	if (providedBuf.length !== expectedBuf.length) {
 		return { ok: false, error: "invalid_token" };
 	}
-	return timingSafeEqual(providedBuf, expectedBuf)
-		? { ok: true }
-		: { ok: false, error: "invalid_token" };
+	return timingSafeEqual(providedBuf, expectedBuf) ? { ok: true } : { ok: false, error: "invalid_token" };
 }

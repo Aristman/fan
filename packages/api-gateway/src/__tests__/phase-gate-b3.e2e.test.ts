@@ -36,10 +36,10 @@
  */
 
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Server } from "node:http";
 import { serve } from "@hono/node-server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
@@ -55,17 +55,16 @@ vi.mock("@fan/db", () => ({
 	getPrismaClient: () => ({ clientToken: {} }),
 }));
 
-import type { SessionAdapter } from "../http-server.js";
-import { createApp } from "../http-server.js";
-import type { MissionJournalLike } from "../ws-handler.js";
-import { attachWebSocketHandler } from "../ws-handler.js";
-
 // F-32/F-47: расширенный tree-journal (createTreeJournal + onJournalWrite) —
 // боевой модуль fan-super-orchestrator, не мок.
 import type { TreeJournal } from "../../../../extensions/fan-super-orchestrator/tree-journal.js";
 import { createTreeJournal } from "../../../../extensions/fan-super-orchestrator/tree-journal.js";
 // F-42: CLI `fan mission tree` (боевой модуль coding-agent, не мок).
 import { missionTree } from "../../../coding-agent/src/cli/mission-command.js";
+import type { SessionAdapter } from "../http-server.js";
+import { createApp } from "../http-server.js";
+import type { MissionJournalLike } from "../ws-handler.js";
+import { attachWebSocketHandler } from "../ws-handler.js";
 
 // F-39/40/41: Lit-компоненты Dashboard (side-effect импорт регистрирует
 // custom elements: <mission-tree>, <mission-status>, <mission-log>, <mission-budget>).
@@ -294,14 +293,12 @@ async function mount(tag: string, expectState: "ready" | "empty" = "ready"): Pro
 	el.setAttribute("mission-id", SLUG);
 	document.body.appendChild(el);
 	await (el as unknown as { updateComplete: Promise<boolean> }).updateComplete;
-	const settled = await waitForRender(
-		el,
-		() => el.querySelector(`[data-state='${expectState}']`) !== null,
-	);
+	const settled = await waitForRender(el, () => el.querySelector(`[data-state='${expectState}']`) !== null);
 	if (!settled) {
 		throw new Error(
 			`${tag}: не дождались data-state='${expectState}' (состояние: ${
-				el.querySelector("[data-state]")?.getAttribute("data-state") ?? "нет"}, html: ${el.innerHTML.slice(0, 200)})`,
+				el.querySelector("[data-state]")?.getAttribute("data-state") ?? "нет"
+			}, html: ${el.innerHTML.slice(0, 200)})`,
 		);
 	}
 	return el;

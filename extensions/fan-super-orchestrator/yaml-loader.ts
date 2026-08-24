@@ -62,7 +62,10 @@ function parseScalar(raw: string): YamlScalar {
 		return false;
 	}
 	// Quoted string — return contents verbatim.
-	if (raw.length >= 2 && ((raw[0] === '"' && raw[raw.length - 1] === '"') || (raw[0] === "'" && raw[raw.length - 1] === "'"))) {
+	if (
+		raw.length >= 2 &&
+		((raw[0] === '"' && raw[raw.length - 1] === '"') || (raw[0] === "'" && raw[raw.length - 1] === "'"))
+	) {
 		return raw.slice(1, -1);
 	}
 	// Number.

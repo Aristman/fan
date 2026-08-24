@@ -1,5 +1,5 @@
 # Documentation Manifest
-> Last updated: 2026-08-21 (super-orchestrator-v2 depth-4 SPEC updated)
+> Last updated: 2026-08-24 (bundle fan-mission 1.0.0 testing docs added)
 > Comprehensive index of all project documentation.
 > Maintainer: docs-impl agent
 
@@ -115,6 +115,12 @@
 | `skills/repo-explorer/` | ✅ | Git repo analysis (GitHub & local) |
 | `skills/research-spec-generator/` | ✅ | Research + specification generation |
 
+## Testing Documentation
+| File | Status | Description |
+|------|--------|-------------|
+| `docs/testing/manual-bundle-test-scenario.md` | ✅ | Ручной сценарий полного прогона bundle fan-mission 1.0.0 (EPIC-delegation, spawn, HTTP delegate, диагностика 4-сек смерти) |
+| `docs/testing/automated-test-proposal.md` | ✅ | Предложение по автоматизированному тестированию миссий + super-orchestrator (5 уровней: L1-L5, приоритеты, инфраструктура) |
+
 ## Status Legend
 - ✅ — Up to date
 - ⚠️ — Needs update / superseded
@@ -126,4 +132,4 @@
 
 All 5 package READMEs have been created — status updated to ✅.
 
-Total: **62 tracked documents** (58 ✅, 4 ⚠️, 0 ❌)
+Total: **64 tracked documents** (60 ✅, 4 ⚠️, 0 ❌)

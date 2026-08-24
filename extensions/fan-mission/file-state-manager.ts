@@ -969,12 +969,7 @@ function parseSections(content: string): Map<string, string[]> {
  *   3. If still over limit, truncate `## Следующие шаги` items
  *   4. If still over limit, truncate `## Блокеры` items (rare — usually small)
  */
-function truncateStateSections(
-	done: string[],
-	blockers: string[],
-	nextSteps: string[],
-	maxBytes: number,
-): string {
+function truncateStateSections(done: string[], blockers: string[], nextSteps: string[], maxBytes: number): string {
 	const lines: string[] = [];
 	lines.push("## Сделано");
 	for (const item of done) lines.push(`- ${sanitizeItem(item)}`);

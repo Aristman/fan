@@ -40,23 +40,23 @@ import {
 import { computeChildAllocation, createMissionBudgetStore } from "./budget-coordinator.js";
 import type { ValidationFailureInfo } from "./child-node-client.js";
 import { canSpawn, type DepthWidthGuardOptions } from "./depth-width-guard.js";
-import { type NodeReport } from "./node-report.js";
+import type { NodeReport } from "./node-report.js";
 import { PortPool } from "./port-pool.js";
+import {
+	CHILD_DEPTH,
+	type HttpDelegate,
+	type LaunchChildChildInfo,
+	type LaunchChildContext,
+	type LaunchChildSpawnOpts,
+	launchChildForRole,
+	ROOT_DEPTH,
+	ROOT_NODE_ID,
+	type WaitForReady,
+} from "./routes/launch-child.js";
 import { reconcile } from "./startup-reconciliation.js";
 import { InvalidToolManifestError, validateManifest } from "./tool-manifest.js";
 import { createTreeJournal, type TreeJournal } from "./tree-journal.js";
 import { buildToolArgs, makeCorrelationId, type WorkPackage } from "./work-package.js";
-import {
-	CHILD_DEPTH,
-	ROOT_DEPTH,
-	ROOT_NODE_ID,
-	launchChildForRole,
-	type HttpDelegate,
-	type LaunchChildContext,
-	type LaunchChildChildInfo,
-	type LaunchChildSpawnOpts,
-	type WaitForReady,
-} from "./routes/launch-child.js";
 
 // F-4 Refactor: HttpDelegate переехал в ./routes/launch-child.js. Re-export
 // для back-compat внешних импортов (Depth2Options.httpDelegate сохраняет тип).
@@ -182,7 +182,7 @@ export function createDepth2Integration(opts: Depth2Options): Depth2Handle {
 	const aggregator: BudgetAggregator = createBudgetAggregator(budgetStore);
 	const portPool = new PortPool(portsFile);
 
-	let aborted = { value: false };
+	const aborted = { value: false };
 	/** Активные (порождённые, не завершённые) узлы: kill-switch цель. */
 	const activeNodes = new Map<string, { correlationId: string }>();
 	/** In-flight spawnNode промисы: abort дожидается перед kill-циклом. */

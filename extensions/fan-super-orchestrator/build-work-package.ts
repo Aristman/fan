@@ -111,12 +111,10 @@ export function buildWorkPackage(opts: BuildWorkPackageOpts): WorkPackage {
 export function validateWorkPackageFields(pkg: WorkPackage): void {
 	if (pkg.depth > 0) {
 		if (!pkg.role) throw new Error("WorkPackage.role required for depth>0");
-		if (!pkg.parent_correlation_id)
-			throw new Error("WorkPackage.parent_correlation_id required for depth>0");
+		if (!pkg.parent_correlation_id) throw new Error("WorkPackage.parent_correlation_id required for depth>0");
 		if (!pkg.parent_url) throw new Error("WorkPackage.parent_url required for depth>0");
 		if (!pkg.parent_token) throw new Error("WorkPackage.parent_token required for depth>0");
-		if (!pkg.lineage || pkg.lineage.length === 0)
-			throw new Error("WorkPackage.lineage required for depth>0");
+		if (!pkg.lineage || pkg.lineage.length === 0) throw new Error("WorkPackage.lineage required for depth>0");
 	}
 }
 
@@ -126,9 +124,6 @@ export function buildLineage(coordinator: LineageEntry): LineageEntry[] {
 }
 
 /** Append parent (текущий узел) к существующей lineage. */
-export function appendToLineage(
-	currentLineage: LineageEntry[],
-	newEntry: LineageEntry,
-): LineageEntry[] {
+export function appendToLineage(currentLineage: LineageEntry[], newEntry: LineageEntry): LineageEntry[] {
 	return [...currentLineage, newEntry];
 }

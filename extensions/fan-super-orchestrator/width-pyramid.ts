@@ -26,7 +26,7 @@ export const PYRAMID_MIN_DEPTH = 1;
 /** Допустимая глубина пирамиды (верхняя граница = 4). */
 export const PYRAMID_MAX_DEPTH = 4;
 
+export type { CanSpawnBatchOpts, CanSpawnBatchResult } from "./can-spawn-batch.js";
 // Re-export canSpawnBatch и связанные типы из can-spawn-batch.ts для
 // обратной совместимости (TC-FC-1c..1e, TC-FD-1b импортируют из width-pyramid.js).
 export { canSpawnBatch } from "./can-spawn-batch.js";
-export type { CanSpawnBatchOpts, CanSpawnBatchResult } from "./can-spawn-batch.js";

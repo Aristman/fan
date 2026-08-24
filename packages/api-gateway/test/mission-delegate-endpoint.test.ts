@@ -20,10 +20,10 @@
  * Run: npx vitest run test/mission-delegate-endpoint.test.ts
  */
 
-import { startServer, apiEvents } from "../src/http-server.js";
+import type { EventEmitter } from "node:events";
 import type { ModelManager } from "@fan/model-manager";
 import type { SessionAdapter } from "../src/http-server.js";
-import { EventEmitter } from "node:events";
+import { apiEvents, startServer } from "../src/http-server.js";
 
 // ─── Environment ────────────────────────────────────────────────────────────
 

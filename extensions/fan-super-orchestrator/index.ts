@@ -93,14 +93,14 @@ import {
 import { clean } from "./message-sanitizer.js";
 import type { NodeReport } from "./node-report.js";
 import { createProcessManager } from "./process-manager.js";
-import { reconcile } from "./startup-reconciliation.js";
 import type { RoleProfile } from "./role-loader.js";
+import { reconcile } from "./startup-reconciliation.js";
 import { createTreeJournal, type TreeJournal } from "./tree-journal.js";
 import {
 	initRecursiveCircuit,
+	type RecursiveCircuit,
 	ROLE_SUPER_ORCHESTRATOR,
 	shutdownRecursiveCircuit,
-	type RecursiveCircuit,
 } from "./wiring/spawned-orchestrator.js";
 
 // ─── Константы и типы событий ───────────────────────────────────────────────

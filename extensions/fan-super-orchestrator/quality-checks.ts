@@ -15,14 +15,11 @@
 // Quality checks выполняются ТОЛЬКО при наличии roleProfile
 // (для случаев без roleProfile — quality_score игнорируется полностью).
 
-import type { NodeReport, Issue, RoleProfileForVerify } from "./verify-subtree.js";
+import type { Issue, NodeReport, RoleProfileForVerify } from "./verify-subtree.js";
 
 export type VerificationApproach = "lenient" | "standard" | "strict";
 
-export type QualityCheckFn = (
-	report: NodeReport,
-	profile: RoleProfileForVerify,
-) => Issue | null;
+export type QualityCheckFn = (report: NodeReport, profile: RoleProfileForVerify) => Issue | null;
 
 /**
  * Registry of quality checks keyed by `verification_approach`.
@@ -32,10 +29,7 @@ export type QualityCheckFn = (
 const QUALITY_CHECKS: Record<string, QualityCheckFn> = {};
 
 /** Register (or override) a quality check for a given verification approach. */
-export function registerQualityCheck(
-	approach: VerificationApproach,
-	check: QualityCheckFn,
-): void {
+export function registerQualityCheck(approach: VerificationApproach, check: QualityCheckFn): void {
 	QUALITY_CHECKS[approach] = check;
 }
 
@@ -66,10 +60,7 @@ registerQualityCheck("lenient", () => null);
  * Returns `null` if no check is registered for the approach
  * (e.g. unknown approach or default empty entry).
  */
-export function runQualityCheck(
-	report: NodeReport,
-	profile: RoleProfileForVerify,
-): Issue | null {
+export function runQualityCheck(report: NodeReport, profile: RoleProfileForVerify): Issue | null {
 	const approach: string = profile.verification_approach ?? "standard";
 	const check = QUALITY_CHECKS[approach];
 	if (!check) return null;

@@ -26,15 +26,15 @@
 //   • Используются и для role-routing, и для журнальных записей, и для
 //     validateDepth (F-38) на границе приёма отчёта.
 
-import { canSpawn, type DepthWidthGuardOptions } from "../depth-width-guard.js";
+import type { BudgetAggregator, BudgetAmount } from "../budget-aggregator.js";
 import type { ValidationFailureInfo } from "../child-node-client.js";
+import { canSpawn, type DepthWidthGuardOptions } from "../depth-width-guard.js";
 import { validateDepth } from "../message-sanitizer.js";
 import { generateNodeToken } from "../node-auth.js";
 import type { NodeReport } from "../node-report.js";
 import { totalUsage } from "../node-report.js";
-import type { BudgetAggregator, BudgetAmount } from "../budget-aggregator.js";
-import type { TreeJournal } from "../tree-journal.js";
 import type { PortPool } from "../port-pool.js";
+import type { TreeJournal } from "../tree-journal.js";
 import { createWorkPackage, type WorkPackage } from "../work-package.js";
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -497,9 +497,7 @@ export async function launchSoChild(ctx: LaunchChildContext): Promise<void> {
 			diag: `HTTP delegation failed: status=${result.status ?? "unknown"}`,
 		});
 		aggregator.onNodeComplete(nodeId, allocation);
-		throw new Error(
-			`HTTP delegation to ${url} failed: status=${result.status ?? "unknown"}`,
-		);
+		throw new Error(`HTTP delegation to ${url} failed: status=${result.status ?? "unknown"}`);
 	}
 	journal.write({
 		event: "spawn",

@@ -7,10 +7,10 @@
 // Идемпотентность обеспечивается через Set parentReportId —
 // повторные попытки для уже доставленного отчёта пропускаются.
 
-import { readFileSync, existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { listOrphanReportIds, removeOrphanReport } from "./orphan-storage.js";
 import type { LineageEntry } from "./build-work-package.js";
+import { listOrphanReportIds, removeOrphanReport } from "./orphan-storage.js";
 import { deliverToAncestor } from "./report-delivery.js";
 
 export interface RecoverOrphanReportsOpts {
@@ -27,9 +27,7 @@ export interface RecoverOrphanReportsResult {
 	failed: number;
 }
 
-export async function recoverOrphanReports(
-	opts: RecoverOrphanReportsOpts,
-): Promise<RecoverOrphanReportsResult> {
+export async function recoverOrphanReports(opts: RecoverOrphanReportsOpts): Promise<RecoverOrphanReportsResult> {
 	const cache = opts.idempotencyCache ?? new Set<string>();
 	// Локальный seen-set: предотвращает двойной подсчёт skip для
 	// нескольких orphan-файлов с одинаковым parentReportId в одном
@@ -46,8 +44,7 @@ export async function recoverOrphanReports(
 		if (!existsSync(filePath)) continue;
 
 		const content = JSON.parse(readFileSync(filePath, "utf8"));
-		const parentReportId: string | undefined =
-			content.payload?.parentReportId;
+		const parentReportId: string | undefined = content.payload?.parentReportId;
 
 		if (parentReportId && cache.has(parentReportId)) {
 			// Считаем skip только для первого вхождения данного

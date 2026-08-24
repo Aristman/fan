@@ -144,8 +144,6 @@ export async function shutdownRecursiveCircuit(circuit: RecursiveCircuit): Promi
 }
 
 /** F-5: type guard для narrowing circuit.isRecursive === true. */
-export function isRecursiveCircuit(
-	circuit: { isRecursive?: boolean } | null,
-): circuit is RecursiveCircuit {
+export function isRecursiveCircuit(circuit: { isRecursive?: boolean } | null): circuit is RecursiveCircuit {
 	return circuit?.isRecursive === true;
 }

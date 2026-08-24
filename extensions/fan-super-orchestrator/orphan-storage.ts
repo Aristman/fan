@@ -12,15 +12,7 @@
 // Все записи — атомарные (tmp → rename), _index.json синхронизирован
 // с содержимым каталога.
 
-import {
-	writeFileSync,
-	readFileSync,
-	renameSync,
-	mkdirSync,
-	existsSync,
-	readdirSync,
-	unlinkSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 export interface WriteOrphanOpts {
@@ -78,11 +70,7 @@ export function listOrphanReportIds(missionDir: string): string[] {
 		.map((f) => f.replace(/\.json$/, ""));
 }
 
-function updateIndex(
-	dir: string,
-	reportId: string,
-	action: "add" | "remove",
-): void {
+function updateIndex(dir: string, reportId: string, action: "add" | "remove"): void {
 	const indexPath = join(dir, INDEX_FILE);
 	let current: string[] = [];
 	if (existsSync(indexPath)) {

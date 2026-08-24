@@ -15,9 +15,9 @@
  * Uses native WebSocket (Node 22+ has built-in support), vitest's globals.
  */
 
-import { startServer } from "../src/server-bootstrap.js";
 import type { ModelManager } from "@fan/model-manager";
 import type { SessionAdapter } from "../src/http-server.js";
+import { startServer } from "../src/server-bootstrap.js";
 
 const PREVIOUS_FAN_NO_AUTH = process.env.FAN_NO_AUTH;
 process.env.FAN_NO_AUTH = "1";

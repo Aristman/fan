@@ -84,7 +84,7 @@ describe("Agent queue limits (F-02)", () => {
 
 			// 51st message must be rejected with QueueOverflowError.
 			// The card specifies the message format: "steering queue full (50/50)".
-			let thrown: unknown = undefined;
+			let thrown: unknown;
 			try {
 				agent.steer(createSteerMessage(51));
 			} catch (err) {
@@ -108,7 +108,7 @@ describe("Agent queue limits (F-02)", () => {
 			}
 
 			// 11th must be rejected.
-			let thrown: unknown = undefined;
+			let thrown: unknown;
 			try {
 				agent.steer(createSteerMessage(11));
 			} catch (err) {
@@ -153,7 +153,7 @@ describe("Agent queue limits (F-02)", () => {
 			}
 
 			// 51st follow-up must be rejected.
-			let thrown: unknown = undefined;
+			let thrown: unknown;
 			try {
 				agent.followUp(createFollowUpMessage(51));
 			} catch (err) {
@@ -318,7 +318,7 @@ describe("Agent queue limits (F-02)", () => {
 			const agent = new Agent();
 			fillSteeringQueue(agent, 50);
 
-			let thrown: unknown = undefined;
+			let thrown: unknown;
 			try {
 				agent.steer(createSteerMessage(51));
 			} catch (err) {

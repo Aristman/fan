@@ -13,7 +13,7 @@
 // в orphan-файл по указанному пути (атомарно: tmp → rename) для
 // последующего recovery через orphan-recovery.ts.
 
-import { writeFileSync, renameSync, mkdirSync } from "node:fs";
+import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { LineageEntry } from "./build-work-package.js";
 import { deliverToAncestor } from "./report-delivery.js";
@@ -39,18 +39,14 @@ export interface DeliverReportResult {
 	attempts: number;
 }
 
-export async function deliverReport(
-	opts: DeliverReportOpts,
-): Promise<DeliverReportResult> {
+export async function deliverReport(opts: DeliverReportOpts): Promise<DeliverReportResult> {
 	const hopTimeoutMs = opts.hopTimeoutMs ?? 30000;
 	let attempts = 0;
 
 	// Находим позицию caller в lineage. В тестах caller = последний элемент
 	// (`orch` в [coord, so1, so2, orch]). В production lineage может не
 	// содержать self — тогда стартуем с последнего элемента (parent).
-	const callerIdx = opts.lineage.findIndex(
-		(e) => e.correlationId === opts.report.correlationId,
-	);
+	const callerIdx = opts.lineage.findIndex((e) => e.correlationId === opts.report.correlationId);
 	const startIdx = callerIdx >= 0 ? callerIdx - 1 : opts.lineage.length - 1;
 
 	// Walk-up: от immediate parent (startIdx) вверх до coordinator (index 0).

@@ -61,38 +61,28 @@ export interface DeliverResult {
  *    • TypeError (network) → error: <message>.
  *    • Другое → error: <message>.
  */
-export async function deliverToAncestor(
-	opts: DeliverOpts,
-): Promise<DeliverResult> {
+export async function deliverToAncestor(opts: DeliverOpts): Promise<DeliverResult> {
 	const timeoutMs = opts.timeoutMs ?? 30000;
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	const controller = new AbortController();
 	try {
 		timer = setTimeout(() => controller.abort(), timeoutMs);
-		const response = await opts.fetch(
-			`${opts.target.url}/api/deliver-report`,
-			{
-				method: "POST",
-				headers: {
-					"Content-Type": "application/json",
-					Authorization: `Bearer ${opts.target.token}`,
-				},
-				body: JSON.stringify({
-					parentReportId: opts.parentReportId,
-					fromCorrelationId: opts.fromCorrelationId,
-					payload: opts.payload,
-				}),
-				signal: controller.signal,
+		const response = await opts.fetch(`${opts.target.url}/api/deliver-report`, {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				Authorization: `Bearer ${opts.target.token}`,
 			},
-		);
+			body: JSON.stringify({
+				parentReportId: opts.parentReportId,
+				fromCorrelationId: opts.fromCorrelationId,
+				payload: opts.payload,
+			}),
+			signal: controller.signal,
+		});
 		return { ok: response.ok, status: response.status };
 	} catch (err) {
-		const message =
-			err instanceof Error
-				? err.name === "AbortError"
-					? "aborted"
-					: err.message
-				: String(err);
+		const message = err instanceof Error ? (err.name === "AbortError" ? "aborted" : err.message) : String(err);
 		return { ok: false, status: 0, error: message };
 	} finally {
 		if (timer !== undefined) clearTimeout(timer);

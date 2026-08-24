@@ -5,14 +5,16 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
-import { verifyNodeToken } from "./auth-mission-delegate.js";
 import { generateToken as createToken, listTokens, revokeToken, tokenAuth } from "./auth.js";
+import { verifyNodeToken } from "./auth-mission-delegate.js";
 import { getMissionBudget, getMissionStatus, getMissionTree, isValidMissionSlug } from "./mission-api.js";
 import { validateMissionDelegatePayload } from "./mission-delegate-schema.js";
+
 // Re-export startServer from extracted bootstrap module (F-0). Keeps the
 // existing public surface stable for callers importing from "@fan/api-gateway"
 // or "./http-server.js".
 export { startServer } from "./server-bootstrap.js";
+
 import type {
 	AnalyticsReportMeta,
 	ApiError,
@@ -41,6 +43,7 @@ import type {
 	UpdateModelSettingsRequest,
 	UpdateModelSettingsResponse,
 } from "./types.js";
+
 // Note: `attachWebSocketHandler` was moved to ./server-bootstrap.ts (F-0).
 
 // Version is passed via ServerOptions to avoid __dirname resolution issues
