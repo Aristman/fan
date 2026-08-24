@@ -95,6 +95,40 @@ describe("renderCompact", () => {
 			"⚡ Сабагенты: 1● (F8 — дерево)",
 		);
 	});
+
+	it("formatTokens: границы k/M (999_999 → «999.9k», 1e6 → «1.0M»)", () => {
+		// 999_999 / 1000 = 999.999 → toFixed(1) round → 1000.0k (BUG)
+		// FIX: округление внутрь диапазона → «999.9k»
+		expect(
+			renderCompact({ running: 0, done: 0, failed: 0, other: 0, totalTokens: 999_999, totalUsd: 0 }),
+		).toContain("999.9k tok");
+		// Граница 1e6 → «1.0M»
+		expect(
+			renderCompact({ running: 0, done: 0, failed: 0, other: 0, totalTokens: 1_000_000, totalUsd: 0 }),
+		).toContain("1.0M tok");
+		// 999_499 → «999.4k» (округление вниз)
+		expect(
+			renderCompact({ running: 0, done: 0, failed: 0, other: 0, totalTokens: 999_499, totalUsd: 0 }),
+		).toContain("999.4k tok");
+		// 1_999_999 → «2.0M»
+		expect(
+			renderCompact({ running: 0, done: 0, failed: 0, other: 0, totalTokens: 1_999_999, totalUsd: 0 }),
+		).toContain("2.0M tok");
+		// 2_500_000 → «2.5M»
+		expect(
+			renderCompact({ running: 0, done: 0, failed: 0, other: 0, totalTokens: 2_500_000, totalUsd: 0 }),
+		).toContain("2.5M tok");
+		// Малые значения: 0 — не показывается, 999 → «999»
+		expect(
+			renderCompact({ running: 0, done: 0, failed: 0, other: 0, totalTokens: 0, totalUsd: 0 }),
+		).not.toContain("tok");
+		expect(
+			renderCompact({ running: 0, done: 0, failed: 0, other: 0, totalTokens: 999, totalUsd: 0 }),
+		).toContain("999 tok");
+		expect(
+			renderCompact({ running: 0, done: 0, failed: 0, other: 0, totalTokens: 1_000, totalUsd: 0 }),
+		).toContain("1.0k tok");
+	});
 });
 
 describe("renderTreeLines", () => {
@@ -313,6 +347,31 @@ describe("registerAgentTreeWidget", () => {
 		const after = ui.setStatus.mock.calls.length;
 		vi.advanceTimersByTime(60_000); // ни poll, ни таймеры больше не дёргают UI
 		expect(ui.setStatus.mock.calls.length).toBe(after);
+	});
+
+	it("F8 на пустом журнале — видимая заглушка", async () => {
+		const ui = createUiMock();
+		let f8: { description: string; handler: () => Promise<void> | void } | undefined;
+		const handle = registerAgentTreeWidget({
+			ui,
+			journalPath: "/tmp/agent-tree-empty-test.jsonl",
+			readJournal: () => [],
+			registerShortcut: (key, def) => {
+				if (key === "f8") f8 = def;
+			},
+		});
+		// Пустой журнал без F8 → виджет не показывается
+		expect(ui.setWidget).not.toHaveBeenCalled();
+
+		await f8?.handler(); // разворот на пустом журнале
+		const stubCall = ui.setWidget.mock.calls.find(([, lines]) => Array.isArray(lines));
+		expect(stubCall).toBeDefined();
+		expect(stubCall?.[1] as string[]).toContain("⚡ Дерево сабагентов: нет активных узлов");
+
+		// Появление записей → заглушка заменяется деревом (diff-кэш инвалидируется)
+		handle.refreshNow(); // всё ещё пусто (readJournal → [])
+		// Но если бы журнал обновился, renderTreeLines заменил бы заглушку
+		handle.dispose();
 	});
 
 	it("бросающий UI деградирует молча", () => {

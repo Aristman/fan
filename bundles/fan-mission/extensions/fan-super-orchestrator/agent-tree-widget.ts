@@ -141,10 +141,15 @@ export function summarize(tree: ReconstructedTree): AgentTreeSummary {
 	return summary;
 }
 
-/** Компактный формат токенов: 1234 → «1.2k», 1_500_000 → «1.5M». */
+/** Компактный формат токенов: 1234 → «1.2k», 1_500_000 → «1.5M».
+ *  Граница k/M — 1e6; округление не должно давать «1000.0k» (FIX c403892). */
 function formatTokens(n: number): string {
 	if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-	if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+	if (n >= 1_000) {
+		// Обрезка (floor) до 1 десятичной — не допускаем «1000.0k» на границе.
+		const k = Math.floor((n / 1_000) * 10) / 10;
+		return `${k.toFixed(1)}k`;
+	}
 	return String(n);
 }
 
@@ -359,13 +364,23 @@ function createWidget(args: AgentTreeWidgetArgs): AgentTreeWidgetHandle {
 				renderStatus(undefined);
 				if (!expanded) renderWidget(undefined);
 			}, delay);
+			try {
+				(hideTimer as { unref?: () => void }).unref?.(); // не держим процесс
+			} catch {
+				/* fake timers (тесты) — unref отсутствует, не критично */
+			}
 		}
 
 		const withinGrace = Date.now() - lastEventTs < AUTO_HIDE_MS;
 		const showStatus = everSpawned && entries.length > 0 && (summary.running > 0 || withinGrace);
 		renderStatus(showStatus ? renderCompact(summary) : undefined);
 		if (expanded) {
-			renderWidget(entries.length > 0 ? renderTreeLines(entries) : undefined);
+			if (entries.length > 0) {
+				renderWidget(renderTreeLines(entries));
+			} else {
+				// F8 на пустом журнале — видимый отклик (заглушка).
+				renderWidget(["⚡ Дерево сабагентов: нет активных узлов"]);
+			}
 		}
 	};
 
