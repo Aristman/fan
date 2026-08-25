@@ -3642,6 +3642,20 @@ export class AgentSession {
 		return text.trim() || "";
 	}
 
+	/**
+	 * Get stopReason of the last assistant message (without filtering by content).
+	 * Used by RPC mode to propagate session termination reason to callers.
+	 * @returns StopReason string or undefined if no assistant message exists
+	 */
+	getLastAssistantStopReason(): string | undefined {
+		const lastAssistant = this.messages
+			.slice()
+			.reverse()
+			.find((m) => m.role === "assistant") as AssistantMessage | undefined;
+
+		return lastAssistant?.stopReason;
+	}
+
 	// =========================================================================
 	// Extension System
 	// =========================================================================

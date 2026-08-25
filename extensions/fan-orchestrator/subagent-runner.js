@@ -284,6 +284,9 @@ export function runWorker(model, temperature, agentPrompt, tools, task, stallTim
         const toolCalls = [];
         const seenToolCallIds = new Set();
 
+        // R5: stopReason from RPC (get_state / get_last_assistant_text)
+        let lastStopReason = undefined;
+
         const cleanup = () => {
             if (stallTimer) clearTimeout(stallTimer);
             try { child.stdin?.end(); } catch { /* ignore */ }
@@ -398,6 +401,8 @@ export function runWorker(model, temperature, agentPrompt, tools, task, stallTim
             if (data.type === "response" && data.id === STATE_ID && data.success && data.data) {
                 messageCount = data.data.messageCount ?? 0;
                 if (data.data.model) detectedModel = data.data.model;
+                // R5: propagate stopReason from session
+                if (data.data.lastStopReason !== undefined) lastStopReason = data.data.lastStopReason;
                 if (data.data.isStreaming) {
                     wasStreaming = true;
                     idlePolls = 0;
@@ -409,7 +414,7 @@ export function runWorker(model, temperature, agentPrompt, tools, task, stallTim
                     lastSeenMessageCount = messageCount;
                     emitProgress("Done");
                     send({ type: "get_last_assistant_text", id: TEXT_ID });
-                    setTimeout(() => { if (!resolved) finish({ text: lastText, messageCount }); }, 15_000);
+                    setTimeout(() => { if (!resolved) finish({ text: lastText, messageCount, stopReason: lastStopReason }); }, 15_000);
                 } else {
                     // No streaming detected — use messageCount growth as activity signal
                     if (data.data.messageCount > lastSeenMessageCount) {
@@ -419,10 +424,15 @@ export function runWorker(model, temperature, agentPrompt, tools, task, stallTim
                     } else {
                         idlePolls++;
                         if (idlePolls >= MAX_IDLE_POLLS) {
-                            // No progress for MAX_IDLE_POLLS rounds — force finish
-                            emitProgress("Done");
-                            send({ type: "get_last_assistant_text", id: TEXT_ID });
-                            setTimeout(() => { if (!resolved) finish({ text: lastText, messageCount }); }, 15_000);
+                            // R3: if worker never streamed AND no tool activity detected → fail
+                            if (!wasStreaming && toolCalls.length === 0) {
+                                fail(new Error(`Worker idle: no streaming started and no new messages after ${idlePolls} polls`));
+                            } else {
+                                // Tool activity detected — keep old force-finish
+                                emitProgress("Done");
+                                send({ type: "get_last_assistant_text", id: TEXT_ID });
+                                setTimeout(() => { if (!resolved) finish({ text: lastText, messageCount, stopReason: lastStopReason }); }, 15_000);
+                            }
                         } else {
                             schedulePoll();
                         }
@@ -433,6 +443,8 @@ export function runWorker(model, temperature, agentPrompt, tools, task, stallTim
 
             if (data.type === "response" && data.id === TEXT_ID && data.success) {
                 lastText = data.data?.text ?? "";
+                // R5: capture stopReason from get_last_assistant_text response
+                if (data.data?.stopReason !== undefined) lastStopReason = data.data.stopReason;
                 
                 // If no text but tool calls were made (e.g. plan agent did research) —
                 // give the model a moment to generate a final answer after tool execution.
@@ -445,7 +457,7 @@ export function runWorker(model, temperature, agentPrompt, tools, task, stallTim
                         setTimeout(() => {
                             if (resolved) return;
                             if (lastText) {
-                                finish({ text: lastText, messageCount });
+                                finish({ text: lastText, messageCount, stopReason: lastStopReason });
                             } else if (toolCalls.length > 0) {
                                 // Build summary from tool calls
                                 const summary = toolCalls
@@ -455,9 +467,9 @@ export function runWorker(model, temperature, agentPrompt, tools, task, stallTim
                                 const fallback = summary
                                     ? `Plan agent completed research but did not generate a summary. Tool calls:\n${summary}`
                                     : "(no output — tool calls were made but no summary generated)";
-                                finish({ text: fallback, messageCount });
+                                finish({ text: fallback, messageCount, stopReason: lastStopReason });
                             } else {
-                                finish({ text: lastText, messageCount });
+                                finish({ text: lastText, messageCount, stopReason: lastStopReason });
                             }
                         }, 8000);
                     }, 2000);
@@ -465,7 +477,7 @@ export function runWorker(model, temperature, agentPrompt, tools, task, stallTim
                 }
                 
                 emitProgress("Done");
-                finish({ text: lastText, messageCount });
+                finish({ text: lastText, messageCount, stopReason: lastStopReason });
                 return;
             }
 
@@ -503,14 +515,13 @@ export function runWorker(model, temperature, agentPrompt, tools, task, stallTim
 
         child.on("error", (err) => fail(new Error(`Worker spawn error: ${err.message}`)));
 
-        child.on("exit", (code) => {
+        // R2: Any premature exit (code !== 0 OR signal kill code===null) while unresolved → fail
+        child.on("exit", (code, signal) => {
             if (stallTimer) clearTimeout(stallTimer);
             options?.signal?.removeEventListener("abort", onAbort);
             if (resolved) return;
-            if (code !== 0 && code !== null) {
-                fail(new Error(`Worker exited with code ${code}\n${stderrBuf.slice(-500)}`));
-            }
-            setTimeout(() => { if (!resolved) finish({ text: lastText, messageCount }); }, 2000);
+            const signalStr = signal ? `signal=${signal}` : "no signal";
+            fail(new Error(`Worker exited prematurely (code=${code ?? "null"}, ${signalStr})\n${stderrBuf.slice(-500)}`));
         });
 
         function handleRemoteToolRequest(id, toolId, args) {
@@ -675,6 +686,130 @@ export async function runSingleAgent(defaultCwd, agents, agentName, task, temper
         lastText = result.text;
         messageCount = result.messageCount;
         const endTime = Date.now();
+
+        // R5: handle stopReason from session (error/aborted → failure)
+        const sessionStopReason = result.stopReason;
+        if (sessionStopReason === "error") {
+            const errorResult = {
+                agent: agentName,
+                agentSource: agent.source,
+                task,
+                exitCode: 1,
+                stopReason: "error",
+                messages: [],
+                stderr: "Worker session ended with error stop reason",
+                errorMessage: "Worker session ended with error stop reason",
+                usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
+                model: detectedModel,
+                text: lastText,
+                step,
+                startTime,
+                endTime,
+                progress: { status: "Failed", messageCount, toolCalls: [...allToolCalls], model: detectedModel },
+            };
+            if (onUpdate) {
+                try {
+                    onUpdate({
+                        content: [{ type: "text", text: errorResult.errorMessage }],
+                        details: [{ agent: agentName, agentSource: agent.source, task, step, startTime, endTime, progress: errorResult.progress }],
+                    });
+                } catch { /* ignore */ }
+            }
+            return errorResult;
+        }
+        if (sessionStopReason === "aborted") {
+            const errorResult = {
+                agent: agentName,
+                agentSource: agent.source,
+                task,
+                exitCode: 1,
+                stopReason: "aborted",
+                messages: [],
+                stderr: "Worker session ended with aborted stop reason",
+                errorMessage: "Worker session ended with aborted stop reason",
+                usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
+                model: detectedModel,
+                text: lastText,
+                step,
+                startTime,
+                endTime,
+                progress: { status: "Aborted", messageCount, toolCalls: [...allToolCalls], model: detectedModel },
+            };
+            if (onUpdate) {
+                try {
+                    onUpdate({
+                        content: [{ type: "text", text: errorResult.errorMessage }],
+                        details: [{ agent: agentName, agentSource: agent.source, task, step, startTime, endTime, progress: errorResult.progress }],
+                    });
+                } catch { /* ignore */ }
+            }
+            return errorResult;
+        }
+
+        // R1: validate output — no text AND no tool calls → failure
+        const trimmedText = (lastText || "").trim();
+        const FALLBACK_MARKER = "(no output — tool calls were made but no summary generated)";
+        if (!trimmedText && allToolCalls.length === 0) {
+            const errorResult = {
+                agent: agentName,
+                agentSource: agent.source,
+                task,
+                exitCode: 1,
+                stopReason: "no_output",
+                messages: [],
+                stderr: "",
+                errorMessage: "Worker produced no output (no text, no tool calls)",
+                usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: messageCount > 0 ? messageCount : 1 },
+                model: detectedModel,
+                text: lastText,
+                step,
+                startTime,
+                endTime,
+                progress: { status: "Failed", messageCount, toolCalls: [...allToolCalls], model: detectedModel },
+            };
+            if (onUpdate) {
+                try {
+                    onUpdate({
+                        content: [{ type: "text", text: errorResult.errorMessage }],
+                        details: [{ agent: agentName, agentSource: agent.source, task, step, startTime, endTime, progress: errorResult.progress }],
+                    });
+                } catch { /* ignore */ }
+            }
+            return errorResult;
+        }
+        if ((!trimmedText || trimmedText === FALLBACK_MARKER) && allToolCalls.length > 0) {
+            const toolSummary = allToolCalls
+                .filter(tc => tc.preview)
+                .map(tc => `→ ${tc.preview}`)
+                .join('\n');
+            const errorResult = {
+                agent: agentName,
+                agentSource: agent.source,
+                task,
+                exitCode: 1,
+                stopReason: "no_final_answer",
+                messages: [],
+                stderr: toolSummary || lastText || "",
+                errorMessage: "Worker made tool calls but produced no final answer",
+                usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: messageCount > 0 ? messageCount : 1 },
+                model: detectedModel,
+                text: lastText,
+                step,
+                startTime,
+                endTime,
+                progress: { status: "Failed", messageCount, toolCalls: [...allToolCalls], model: detectedModel },
+            };
+            if (onUpdate) {
+                try {
+                    onUpdate({
+                        content: [{ type: "text", text: errorResult.errorMessage }],
+                        details: [{ agent: agentName, agentSource: agent.source, task, step, startTime, endTime, progress: errorResult.progress }],
+                    });
+                } catch { /* ignore */ }
+            }
+            return errorResult;
+        }
+
         // Send final update with the full result text (markdown)
         if (onUpdate) {
             const finalProgress = { status: "Done", messageCount, toolCalls: [...allToolCalls], model: detectedModel };

@@ -397,9 +397,9 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                         releaseSlot(workerType, config.parallelWorkers);
                     }
                     results.push(result);
-                    const isError = result.exitCode !== 0 || result.stopReason === "error" || result.stopReason === "aborted";
+                    const isError = result.exitCode !== 0 || result.stopReason === "error" || result.stopReason === "aborted" || (result.exitCode === 0 && !((result.text ?? "").trim()));
                     if (isError) {
-                        const errorMsg = result.errorMessage || result.stderr || getFinalOutput(result.messages) || "(no output)";
+                        const errorMsg = result.errorMessage || result.stderr || getFinalOutput(result.messages) || (!result.text?.trim() ? "Worker completed with empty output" : "(no output)");
                         return {
                             content: [{ type: "text", text: `Chain stopped at step ${i + 1} (${step.agent}): ${errorMsg}` }],
                             details: makeDetails("chain")(results),
@@ -620,9 +620,9 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                     workerLifecycle?.onWorkerStop?.(workerId, result?.exitCode === 0, result);
                     releaseSlot(workerType, config.parallelWorkers);
                 }
-                const isError = result.exitCode !== 0 || result.stopReason === "error" || result.stopReason === "aborted";
+                const isError = result.exitCode !== 0 || result.stopReason === "error" || result.stopReason === "aborted" || (result.exitCode === 0 && !((result.text ?? "").trim()));
                 if (isError) {
-                    const errorMsg = result.errorMessage || result.stderr || getFinalOutput(result.messages) || "(no output)";
+                    const errorMsg = result.errorMessage || result.stderr || getFinalOutput(result.messages) || (!result.text?.trim() ? "Worker completed with empty output" : "(no output)");
                     return {
                         content: [{ type: "text", text: `Agent ${result.stopReason || "failed"}: ${errorMsg}` }],
                         details: makeDetails("single")([result]),
