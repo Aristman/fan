@@ -1,5 +1,68 @@
 # Changelog
 
+## [2.8.5] — 2026-08-25
+
+### Fixed
+
+- **Проброс ошибок воркера до координатора (R1-R5).**
+  Воркеры оркестратора, тихо провалившие работу (пустой вывод, нет финального
+  ответа, premature exit/OOM-kill, idle без активности, session error/abort),
+  раньше репортились координатору как успех (`exitCode 0`, без `isError`) — и
+  задача в task-виджете оставалась зелёной. Все механические false-success дыры
+  закрыты:
+  - **R1** `extensions/fan-orchestrator/subagent-runner.js`: `runSingleAgent`
+    валидирует результат — пустой текст и нет tool calls → `exitCode 1`
+    `'no_output'`; пустой/fallback текст при наличии tool calls → `exitCode 1`
+    `'no_final_answer'`.
+  - **R2** `extensions/fan-orchestrator/subagent-runner.js`: преждевременный
+    exit child-процесса (любой код включая `null`/OOM, сигнал захвачен) →
+    `fail()` с code/signal/stderr tail; убран 2000ms finish-fallback.
+  - **R3**: idle воркер, который не стримил и не делал tool calls → `fail()`
+    вместо тихого успеха; активность через tool calls сохраняет force-finish.
+  - **R4**: `delegate_task` (single + chain) трактует пустой текст при
+    `exitCode 0` как `isError 'Worker completed with empty output'`.
+  - **R5**: session `stopReason` пробрасывается через RPC
+    (`get_state.lastStopReason`, `get_last_assistant_text.stopReason`,
+    additive-only в `rpc-types.ts`); значения `'error'`/`'aborted'` мапятся в
+    `exitCode 1` в `runSingleAgent`.
+  Build clean (10/10 packages), 213 orchestrator + 9 rpc tests pass.
+  fan 2.8.4 → 2.8.5, fan-orchestrator 8.0.0 → 8.0.1, fan-coding-agent 2.8.1 → 2.8.2.
+
+- **Падение fan при ресайзе окна.**
+  Компоненты, кешировавшие строки по старой ширине (`cachedLines`), при смене
+  ширины терминала рендерили обрезанные/обрезанные-до-старой-ширины строки —
+  TUI падал. В `packages/tui/src/tui.ts` добавлено поле `lastRenderWidth` и
+  инвалидация через `this.invalidate()`, если ширина изменилась с прошлого
+  рендера; сброс в `start()` и при refresh. В диалоге выбора
+  `extensions/fan-ask-answer/index.ts` кеш инвалидируется не только по
+  `cachedLines`, но и по ширине (`cachedWidth`), чтобы при ресайзе строки
+  пересобирались под новую ширину.
+
+### CI / Tooling
+
+- **Декларация ws/@hono/node-server deps и устаревших `extensions/` путей.**
+  `ws`, `@types/ws`, `@hono/node-server` добавлены в `packages/coding-agent`
+  `devDependencies` — тесты импортировали их через hoisting, что падало на
+  чистом CI-инсталле. Fallback-пути `extensions/fan-mission` в
+  `packages/coding-agent/src/cli/mission-command.ts` и его тесте обновлены на
+  `bundles/fan-mission/` (legacy после миграции `extensions`→`bundles`).
+- **Резолв `tsgo --noEmit` ошибок в test-файлах.** Vitest globals reference
+  (`describe/it/expect`), пути `extensions/` → `bundles/fan-mission/extensions/`,
+  тип `httpServer` как `ServerType` (hono serve union) с cast в
+  `packages/api-gateway/src/__tests__/http-server.test.ts`,
+  `@ts-nocheck` для bun-only `transport-smoke.test.ts`, удалён stale
+  `@ts-expect-error`, добавлен недостающий `afterEach` import.
+- **Steering queue test завершает turn естественно.**
+  `packages/coding-agent/test/agent-session-concurrent.test.ts`: мок `streamFn`
+  теперь эмитит `done` через 100ms при первом вызове (раньше poll'ил
+  `abort` бесконечно) — тест ждёт натурального завершения, и steering queue
+  дренируется. 1991 passed / 0 failed across 9 packages.
+- **Biome lint warnings, блокирующие CI.** В `packages/coding-agent/src/main.ts`
+  строковая конкатенация переписана на template literals (`useTemplate`); в
+  archive/super-orchestrator и `mission-command.test.ts` удалены неиспользуемые
+  импорты (`noUnusedImports`); в `yaml-loader` и e2e-тесте неиспользуемые
+  переменные префиксованы `_` (`noUnusedVariables`).
+
 ## [Unreleased] / 2026-08-22
 
 ### Added — Recursive Orchestrator Spawn (depth-4 в реальных процессах)
