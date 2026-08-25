@@ -1,6 +1,6 @@
 {
   "name": "fan-ask-answer",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "Interactive dialog with the user via TUI selection UI (question/questionnaire) and RPC select/input/confirm. Works in both TUI and RPC modes.",
   "type": "module",
   "main": "index.ts",

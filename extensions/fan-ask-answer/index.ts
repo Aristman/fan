@@ -436,6 +436,7 @@ export default function askAnswerExtension(fan: ExtensionAPI) {
 				let optionIndex = 0;
 				let editMode = false;
 				let cachedLines: string[] | undefined;
+				let cachedWidth: number | undefined;
 
 				const editor = new Editor(tui, makeEditorTheme(theme));
 				editor.onSubmit = (value) => {
@@ -451,6 +452,7 @@ export default function askAnswerExtension(fan: ExtensionAPI) {
 
 				const refresh = () => {
 					cachedLines = undefined;
+					cachedWidth = undefined;
 					tui.requestRender();
 				};
 
@@ -493,50 +495,52 @@ export default function askAnswerExtension(fan: ExtensionAPI) {
 				};
 
 				const render = (width: number): string[] => {
-					if (cachedLines) return cachedLines;
-					const lines: string[] = [];
-					const add = (s: string) => lines.push(truncateToWidth(s, width));
+					if (cachedLines === undefined || cachedWidth !== width) {
+						const lines: string[] = [];
+						const add = (s: string) => lines.push(truncateToWidth(s, width));
 
-					add(theme.fg("accent", "─".repeat(width)));
-					add(theme.fg("text", ` ${params.question}`));
-					lines.push("");
+						add(theme.fg("accent", "─".repeat(width)));
+						add(theme.fg("text", ` ${params.question}`));
+						lines.push("");
 
-					for (let i = 0; i < allOptions.length; i++) {
-						const opt = allOptions[i];
-						const selected = i === optionIndex;
-						const prefix = selected ? theme.fg("accent", "❯ ") : "  ";
+						for (let i = 0; i < allOptions.length; i++) {
+							const opt = allOptions[i];
+							const selected = i === optionIndex;
+							const prefix = selected ? theme.fg("accent", "❯ ") : "  ";
 
-						if (opt.isOther && editMode) {
-							add(prefix + theme.fg("accent", `${i + 1}. ${opt.label} ✎`));
-						} else if (selected) {
-							add(prefix + theme.fg("accent", `${i + 1}. ${opt.label}`));
+							if (opt.isOther && editMode) {
+								add(prefix + theme.fg("accent", `${i + 1}. ${opt.label} ✎`));
+							} else if (selected) {
+								add(prefix + theme.fg("accent", `${i + 1}. ${opt.label}`));
+							} else {
+								add(`  ${theme.fg("text", `${i + 1}. ${opt.label}`)}`);
+							}
+							if (opt.description) {
+								add(`    ${theme.fg("muted", opt.description)}`);
+							}
+						}
+
+						if (editMode) {
+							lines.push("");
+							add(theme.fg("muted", " Your answer:"));
+							for (const line of editor.render(width - 2)) {
+								add(` ${line}`);
+							}
+							lines.push("");
+							add(theme.fg("dim", " Enter to submit · Esc to go back"));
 						} else {
-							add(`  ${theme.fg("text", `${i + 1}. ${opt.label}`)}`);
+							lines.push("");
+							add(theme.fg("dim", " ↑↓ navigate · Enter select · Esc cancel"));
 						}
-						if (opt.description) {
-							add(`    ${theme.fg("muted", opt.description)}`);
-						}
-					}
+						add(theme.fg("accent", "─".repeat(width)));
 
-					if (editMode) {
-						lines.push("");
-						add(theme.fg("muted", " Your answer:"));
-						for (const line of editor.render(width - 2)) {
-							add(` ${line}`);
-						}
-						lines.push("");
-						add(theme.fg("dim", " Enter to submit · Esc to go back"));
-					} else {
-						lines.push("");
-						add(theme.fg("dim", " ↑↓ navigate · Enter select · Esc cancel"));
+						cachedLines = lines;
+						cachedWidth = width;
 					}
-					add(theme.fg("accent", "─".repeat(width)));
-
-					cachedLines = lines;
-					return lines;
+					return cachedLines!;
 				};
 
-				return { render, invalidate: () => { cachedLines = undefined; }, handleInput };
+				return { render, invalidate: () => { cachedLines = undefined; cachedWidth = undefined; }, handleInput };
 			});
 
 			const simpleOptions = params.options.map((o) => o.label);
@@ -670,6 +674,7 @@ export default function askAnswerExtension(fan: ExtensionAPI) {
 				let inputMode = false;
 				let inputQuestionId: string | null = null;
 				let cachedLines: string[] | undefined;
+				let cachedWidth: number | undefined;
 				const answers = new Map<string, AnswerRecord>();
 
 				const editor = new Editor(tui, makeEditorTheme(theme));
@@ -685,6 +690,7 @@ export default function askAnswerExtension(fan: ExtensionAPI) {
 
 				const refresh = () => {
 					cachedLines = undefined;
+					cachedWidth = undefined;
 					tui.requestRender();
 				};
 
@@ -796,16 +802,16 @@ export default function askAnswerExtension(fan: ExtensionAPI) {
 				};
 
 				const render = (width: number): string[] => {
-					if (cachedLines) return cachedLines;
-					const lines: string[] = [];
-					const add = (s: string) => lines.push(truncateToWidth(s, width));
-					const q = currentQuestion();
-					const opts = currentOptions();
+					if (cachedLines === undefined || cachedWidth !== width) {
+						const lines: string[] = [];
+						const add = (s: string) => lines.push(truncateToWidth(s, width));
+						const q = currentQuestion();
+						const opts = currentOptions();
 
 					add(theme.fg("accent", "─".repeat(width)));
 
-					// Tab bar
-					if (isMulti) {
+						// Tab bar
+						if (isMulti) {
 						const tabs: string[] = [];
 						for (let i = 0; i < questions.length; i++) {
 							const isActive = i === currentTab;
@@ -889,10 +895,12 @@ export default function askAnswerExtension(fan: ExtensionAPI) {
 					add(theme.fg("accent", "─".repeat(width)));
 
 					cachedLines = lines;
-					return lines;
+						cachedWidth = width;
+					}
+					return cachedLines!;
 				};
 
-				return { render, invalidate: () => { cachedLines = undefined; }, handleInput };
+				return { render, invalidate: () => { cachedLines = undefined; cachedWidth = undefined; }, handleInput };
 			});
 
 			if (result.cancelled) {

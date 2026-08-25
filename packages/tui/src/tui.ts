@@ -218,6 +218,7 @@ export class TUI extends Container {
 	public terminal: Terminal;
 	private previousLines: string[] = [];
 	private previousWidth = 0;
+	private lastRenderWidth = 0;
 	private previousHeight = 0;
 	private focusedComponent: Component | null = null;
 	private inputListeners = new Set<InputListener>();
@@ -474,6 +475,7 @@ export class TUI extends Container {
 			this.previousLines = [];
 			this.previousWidth = -1; // -1 triggers widthChanged, forcing a full clear
 			this.previousHeight = -1; // -1 triggers heightChanged, forcing a full clear
+			this.lastRenderWidth = 0;
 			this.cursorRow = 0;
 			this.hardwareCursorRow = 0;
 			this.maxLinesRendered = 0;
@@ -901,8 +903,16 @@ export class TUI extends Container {
 			return targetScreenRow - currentScreenRow;
 		};
 
+		// Invalidate component caches when terminal width changed since last render
+		// (components may cache lines built at the old width)
+		if (this.lastRenderWidth !== 0 && this.lastRenderWidth !== width) {
+			this.invalidate();
+		}
+
 		// Render all components to get new lines
 		let newLines = this.render(width);
+
+		this.lastRenderWidth = width;
 
 		// Composite overlays into the rendered lines (before differential compare)
 		if (this.overlayStack.length > 0) {
