@@ -108,6 +108,8 @@ export interface RpcSessionState {
 	autoCompactionEnabled: boolean;
 	messageCount: number;
 	pendingMessageCount: number;
+	/** stopReason of the last assistant message (additive, may be undefined) */
+	lastStopReason?: string;
 }
 
 // ============================================================================

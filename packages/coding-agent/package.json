@@ -1,6 +1,6 @@
 {
   "name": "@seaagents/fan-coding-agent",
-  "version": "2.8.1",
+  "version": "2.8.2",
   "description": "Fan coding agent CLI with read, write, edit, bash tools and session management",
   "type": "module",
   "fanConfig": {

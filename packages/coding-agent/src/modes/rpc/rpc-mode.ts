@@ -438,6 +438,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, remoteTools?:
 					autoCompactionEnabled: session.autoCompactionEnabled,
 					messageCount: session.messages.length,
 					pendingMessageCount: session.pendingMessageCount,
+					lastStopReason: session.getLastAssistantStopReason(),
 				};
 				return success(id, "get_state", state);
 			}
@@ -582,7 +583,8 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, remoteTools?:
 
 			case "get_last_assistant_text": {
 				const text = session.getLastAssistantText();
-				return success(id, "get_last_assistant_text", { text });
+				const stopReason = session.getLastAssistantStopReason();
+				return success(id, "get_last_assistant_text", { text, stopReason });
 			}
 
 			case "set_session_name": {
