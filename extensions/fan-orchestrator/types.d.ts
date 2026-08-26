@@ -163,6 +163,20 @@ export interface SubagentDetails {
   progress?: WorkerProgress;
 }
 
+/** Chain plan step descriptor (stored in details.plan) */
+export interface ChainPlanStep {
+  agent: string;
+  task: string;
+}
+
+/** Additional chain-mode fields present in SubagentDetails when mode="chain" */
+export interface ChainDetailsExtra {
+  /** Total number of planned steps */
+  totalSteps?: number;
+  /** Full chain plan: agent + task for each step */
+  plan?: ChainPlanStep[];
+}
+
 /** Task classification result */
 export interface TaskClassification {
   workerType: WorkerType;
