@@ -31,14 +31,14 @@
 //     (разумное отклонение от `: void` — единственный способ наблюдать
 //     session_start через getMissionLoop()).
 
-import { type Dirent, existsSync, readdirSync } from "node:fs";
+import { type Dirent, existsSync, readFileSync, readdirSync } from "node:fs";
 import { basename, join } from "node:path";
 import process from "node:process";
 import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
 import type { KeyId } from "@seaagents/fan-tui";
 import { createOperatorDecisionPrompter, type OperatorDecisionUI } from "./decision-dialog.js";
-import { createDefaultRunAgent } from "./default-run-agent.js";
-import { readMission, readRecurring, writeMissionStatus } from "./file-state-manager.js";
+import { createDefaultRunAgent, resolveRunAgentTimeoutMs } from "./default-run-agent.js";
+import { compactStateIfNeeded, readMission, readRecurring, writeMissionStatus } from "./file-state-manager.js";
 import { createGitAdapter } from "./git-adapter.js";
 import { promoteAcceptedIdeas } from "./idea-promoter.js";
 import {
@@ -116,8 +116,10 @@ export interface MissionWiring {
 export function wireMission(fan: ExtensionAPI, opts?: MissionWireOptions): MissionWiring {
 	// Дефолтный runAgent создаётся только при отсутствии DI-варианта (не нужно
 	// подписываться на agent_end в тестах с mock runAgent).
-	const defaultHandle = opts?.runAgent ? null : createDefaultRunAgent(fan, { timeoutMs: opts?.runAgentTimeoutMs });
-	const runAgent: RunAgent = defaultHandle ? defaultHandle.runAgent : (opts?.runAgent as RunAgent);
+	// let — пересоздаётся при per-mission timeout (attachMission).
+	let defaultHandle = opts?.runAgent ? null : createDefaultRunAgent(fan, { timeoutMs: opts?.runAgentTimeoutMs });
+	let currentTimeoutMs: number | undefined = opts?.runAgentTimeoutMs;
+	let runAgent: RunAgent = defaultHandle ? defaultHandle.runAgent : (opts?.runAgent as RunAgent);
 
 	let loop: MissionLoop | null = null;
 	let attachedDir: string | null = null;
@@ -172,6 +174,22 @@ export function wireMission(fan: ExtensionAPI, opts?: MissionWireOptions): Missi
 	};
 
 	const attachMission = (missionDir: string): MissionLoop => {
+		// per-mission runAgent timeout из frontmatter MISSION.md (runagent_timeout_min, 1–480 мин)
+		let missionTimeoutMs: number | undefined;
+		try {
+			const raw = readFileSync(join(missionDir, "MISSION.md"), "utf8");
+			const m = raw.match(/^runagent_timeout_min\s*:\s*(\d+)\s*$/m);
+			if (m) missionTimeoutMs = resolveRunAgentTimeoutMs({ runagent_timeout_min: Number(m[1]) });
+		} catch {
+			// MISSION.md не читается — дефолтный таймаут wire-уровня
+		}
+		if (defaultHandle && missionTimeoutMs !== undefined && missionTimeoutMs !== currentTimeoutMs) {
+			defaultHandle.settle("re-attach: per-mission timeout");
+			defaultHandle = createDefaultRunAgent(fan, { timeoutMs: missionTimeoutMs });
+			runAgent = defaultHandle.runAgent;
+			currentTimeoutMs = missionTimeoutMs;
+		}
+
 		if (loop && attachedDir === missionDir) {
 			return loop; // идемпотентен для того же dir — без двойного wiring
 		}
@@ -338,6 +356,8 @@ export default function missionExtension(fan: ExtensionAPI): MissionWiring {
 	};
 
 	const attach = (missionDir: string): MissionLoop => {
+		// Плановая компактизация STATE.md при перезапуске/аттаче миссии.
+		void compactStateIfNeeded(missionDir).catch(() => {});
 		const loop = wiring.attachMission(missionDir);
 		slashCtx.missionLoop = loop;
 		slashCtx.missionDir = missionDir;

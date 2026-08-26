@@ -8,7 +8,9 @@ import { join, resolve } from "node:path";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
-export const MAX_STATE_BYTES = 5 * 1024;
+export const MAX_STATE_BYTES = 150 * 1024;
+/** Плановый порог компактизации — при превышении запускается архивирование (тихо, без failed). */
+export const SOFT_STATE_BYTES = 100 * 1024;
 export const MAX_SLUG_LENGTH = 100;
 export const MISSION_FILES = ["MISSION.md", "ROADMAP.md", "STATE.md", "BACKLOG.md", "DECISIONS.md"] as const;
 
@@ -1102,11 +1104,97 @@ function ensureArchive(missionDir: string): void {
 }
 
 /**
- * Move old done-items from STATE.md to ARCHIVE.md, keeping the last `keepCount`.
- * Returns true if items were archived, false if nothing to archive or archiving failed.
+ * Уровни keepCount для прогрессивного архивирования.
+ * При overflow архивация пробуется последовательно: 10→5→3→1.
+ * Если даже 1 запись не влезает — архивация невозможна (радикальный случай).
+ */
+const PROGRESSIVE_KEEP_COUNTS = [10, 5, 3, 1] as const;
+
+/**
+ * Собрать содержимое STATE.md из массивов done/blockers/nextSteps.
+ */
+function buildStateContent(
+	done: string[],
+	blockers: string[],
+	nextSteps: string[],
+): string {
+	const lines: string[] = [];
+	lines.push("## Сделано");
+	for (const item of done) lines.push(`- ${item.replace(/[\r\n]+/g, " ")}`);
+	lines.push("");
+	lines.push("## Блокеры");
+	for (const item of blockers) lines.push(`- ${item.replace(/[\r\n]+/g, " ")}`);
+	lines.push("");
+	lines.push("## Следующие шаги");
+	for (const item of nextSteps) lines.push(`- ${item.replace(/[\r\n]+/g, " ")}`);
+	lines.push("");
+	return lines.join("\n");
+}
+
+/**
+ * Плановая компактизация STATE.md: если размер >= SOFT_STATE_BYTES —
+ * прогрессивное архивирование старых done-записей. Тихо, без failed.
+ * Вызывается при смене пункта ROADMAP и при перезапуске миссии.
  *
- * P1-3 fix: compute result in memory first. If kept items still exceed MAX_STATE_BYTES,
- * return false WITHOUT touching ARCHIVE.md (prevents zombie-cycle and duplicates).
+ * Возвращает true, если архивирование было выполнено (файл уменьшен).
+ */
+export async function compactStateIfNeeded(missionDir: string): Promise<boolean> {
+	const stateSize = checkStateFileSize(missionDir);
+	if (stateSize < SOFT_STATE_BYTES) return false;
+	return archiveOldDoneItems(missionDir, ARCHIVE_KEEP_COUNT);
+}
+
+/**
+ * Радикальная усечка: оставить только последнюю done-запись,
+ * остальное архивировать. Последний рубеж перед 'failed'.
+ *
+ * Возвращает true, если файл после усечки <= MAX_STATE_BYTES.
+ */
+export async function radicalTruncateDone(missionDir: string): Promise<boolean> {
+	const statePath = join(missionDir, "STATE.md");
+	if (!existsSync(statePath)) return false;
+	const raw = readFileSync(statePath, "utf8");
+	const sections = parseSections(raw);
+	const done = sections.get("Сделано");
+	const blockers = sections.get("Блокеры") ?? [];
+	const nextSteps = sections.get("Следующие шаги") ?? [];
+	if (!done || done.length <= 1) return false;
+
+	const toArchive = done.slice(0, done.length - 1);
+	const toKeep = done.slice(done.length - 1);
+	const newStateContent = buildStateContent(toKeep, blockers, nextSteps);
+
+	if (Buffer.byteLength(newStateContent, "utf8") > MAX_STATE_BYTES) return false;
+
+	ensureArchive(missionDir);
+	const archivePath = join(missionDir, "ARCHIVE.md");
+	const existingArchive = readFileSync(archivePath, "utf8");
+	const existingItems = new Set<string>();
+	for (const line of existingArchive.split("\n")) {
+		const m = /^- (.+)$/.exec(line.trim());
+		if (m) existingItems.add(m[1]);
+	}
+	const newArchiveItems = toArchive.filter((item) => !existingItems.has(item));
+	if (newArchiveItems.length > 0) {
+		const archiveLines = newArchiveItems.map((item) => `- ${item}`).join("\n");
+		atomicWriteFileSync(archivePath, `${existingArchive}${archiveLines}\n`);
+	}
+
+	atomicWriteFileSync(join(missionDir, "STATE.md"), newStateContent);
+	return true;
+}
+
+/**
+ * Move old done-items from STATE.md to ARCHIVE.md.
+ *
+ * Прогрессивное архивирование (fix: STATE.md overflow — миссия не умирает
+ * от подробного STATE):
+ *   - Если done.length > keepCount — архивировать лишние, проверить размер.
+ *   - Если после архивирования STATE.md всё ещё >= MAX_STATE_BYTES —
+ *     пробовать уменьшать keepCount последовательно: 10→5→3→1.
+ *   - 'failed' в mission-loop (step 2) — только если даже 1 запись
+ *     не влезает (радикальный случай: одна done-запись > MAX_STATE_BYTES).
+ *
  * Deduplicates archived items against existing ARCHIVE.md entries.
  *
  * Bypasses the MAX_STATE_BYTES size check in readState (the whole point
@@ -1124,50 +1212,47 @@ export async function archiveOldDoneItems(
 	const done = sections.get("Сделано");
 	const blockers = sections.get("Блокеры") ?? [];
 	const nextSteps = sections.get("Следующие шаги") ?? [];
-	if (!done || done.length <= keepCount) return false;
+	if (!done || done.length === 0) return false;
 
-	const toArchive = done.slice(0, done.length - keepCount);
-	const toKeep = done.slice(done.length - keepCount);
+	// Прогрессивное архивирование: пробуем keepCount от исходного вниз до 1.
+	// Если вызвано с явным keepCount (не по умолчанию) — пробуем только его.
+	const keepCounts = keepCount === ARCHIVE_KEEP_COUNT
+		? PROGRESSIVE_KEEP_COUNTS
+		: [keepCount] as const;
 
-	// P1-3: compute new STATE.md in memory and check if it fits BEFORE writing anything
-	const newLines: string[] = [];
-	newLines.push("## Сделано");
-	for (const item of toKeep) newLines.push(`- ${item.replace(/[\r\n]+/g, " ")}`);
-	newLines.push("");
-	newLines.push("## Блокеры");
-	for (const item of blockers) newLines.push(`- ${item.replace(/[\r\n]+/g, " ")}`);
-	newLines.push("");
-	newLines.push("## Следующие шаги");
-	for (const item of nextSteps) newLines.push(`- ${item.replace(/[\r\n]+/g, " ")}`);
-	newLines.push("");
-	const newStateContent = newLines.join("\n");
+	for (const kc of keepCounts) {
+		if (done.length <= kc) continue; // нечего архивировать при этом уровне
 
-	// If kept items still exceed limit → abort without touching ARCHIVE.md
-	if (Buffer.byteLength(newStateContent, "utf8") > MAX_STATE_BYTES) {
-		return false;
+		const toArchive = done.slice(0, done.length - kc);
+		const toKeep = done.slice(done.length - kc);
+		const newStateContent = buildStateContent(toKeep, blockers, nextSteps);
+
+		if (Buffer.byteLength(newStateContent, "utf8") > MAX_STATE_BYTES) {
+			continue; // не влезло — пробуем менее жадный keepCount
+		}
+
+		// Влезло — записываем ARCHIVE.md и STATE.md
+		ensureArchive(missionDir);
+		const archivePath = join(missionDir, "ARCHIVE.md");
+		const existingArchive = readFileSync(archivePath, "utf8");
+		const existingItems = new Set<string>();
+		for (const line of existingArchive.split("\n")) {
+			const m = /^- (.+)$/.exec(line.trim());
+			if (m) existingItems.add(m[1]);
+		}
+		const newArchiveItems = toArchive.filter((item) => !existingItems.has(item));
+
+		if (newArchiveItems.length > 0) {
+			const archiveLines = newArchiveItems.map((item) => `- ${item}`).join("\n");
+			atomicWriteFileSync(archivePath, `${existingArchive}${archiveLines}\n`);
+		}
+
+		atomicWriteFileSync(join(missionDir, "STATE.md"), newStateContent);
+		return true;
 	}
 
-	// P1-3: dedup — only archive items not already in ARCHIVE.md
-	ensureArchive(missionDir);
-	const archivePath = join(missionDir, "ARCHIVE.md");
-	const existingArchive = readFileSync(archivePath, "utf8");
-	const existingItems = new Set<string>();
-	for (const line of existingArchive.split("\n")) {
-		const m = /^- (.+)$/.exec(line.trim());
-		if (m) existingItems.add(m[1]);
-	}
-	const newArchiveItems = toArchive.filter((item) => !existingItems.has(item));
-
-	// Write ARCHIVE.md (only if there are new items to add)
-	if (newArchiveItems.length > 0) {
-		const archiveLines = newArchiveItems.map((item) => `- ${item}`).join("\n");
-		atomicWriteFileSync(archivePath, `${existingArchive}${archiveLines}\n`);
-	}
-
-	// Write new STATE.md (guaranteed to fit from the check above)
-	atomicWriteFileSync(join(missionDir, "STATE.md"), newStateContent);
-
-	return true;
+	// Ни один keepCount не помог — даже 1 запись не влезает (радикальный случай).
+	return false;
 }
 
 /**

@@ -17,6 +17,7 @@ metric_command: npm test
 # Информационные поля: L0 бюджетом не ограничен; лимит детей — childBudgetTokens (fan-super-orchestrator)
 budget_tokens: 500000
 budget_usd: 10.00
+# runagent_timeout_min: 90
 max_depth: 4
 max_width: 4
 session_mode: fresh
