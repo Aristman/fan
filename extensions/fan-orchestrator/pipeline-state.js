@@ -176,6 +176,25 @@ YYYY-MM-DD HH:MM — [Phase N] — [Status] — [Action]
 `;
 }
 
+/**
+ * Terminal pipeline statuses that should NOT be auto-restored.
+ */
+const TERMINAL_PIPELINE_STATUSES = new Set(["COMPLETED", "FINISHED", "CANCELLED"]);
+
+/**
+ * Pure helper: determine whether a pipeline's on-disk status indicates
+ * a terminal (non-restorable) state.
+ *
+ * @param {object|null} existingStatus — parsed phase-status.json content
+ * @returns {boolean} true if the pipeline should be skipped (terminal)
+ */
+export function shouldRestorePipeline(existingStatus) {
+  if (!existingStatus) return false;
+  const status = existingStatus.globalMetrics?.pipelineStatus;
+  if (!status) return true; // missing = old format or in-progress → restore
+  return !TERMINAL_PIPELINE_STATUSES.has(String(status).toUpperCase());
+}
+
 // ---------------------------------------------------------------------------
 // PipelineState
 // ---------------------------------------------------------------------------
@@ -442,6 +461,28 @@ export class PipelineState {
   }
 
   /**
+   * Persist a terminal pipeline status into phase-status.json.
+   *
+   * Sets globalMetrics.pipelineStatus and globalMetrics.pipelineCompletedAt,
+   * ensuring the auto-restore probe will skip this pipeline on next session.
+   *
+   * @param {"FINISHED"|"CANCELLED"|"COMPLETED"} terminalStatus
+   * @returns {Promise<void>}
+   */
+  async markTerminal(terminalStatus) {
+    const timestamp = _formatLogTimestamp();
+    await this.#updateStatusJson((data) => {
+      if (!data.globalMetrics) {
+        data.globalMetrics = { pipelineStatus: null, pipelineCompletedAt: null };
+      }
+      data.globalMetrics.pipelineStatus = terminalStatus;
+      data.globalMetrics.pipelineCompletedAt = timestamp;
+      data.updatedAt = timestamp;
+      return data;
+    });
+  }
+
+  /**
    * Return the full content of development-log.md.
    *
    * @returns {Promise<string>}
@@ -690,6 +731,10 @@ export class PipelineState {
         completed: 0,
         failed: 0,
         in_progress: 0,
+      },
+      globalMetrics: {
+        pipelineStatus: null,
+        pipelineCompletedAt: null,
       },
     };
   }

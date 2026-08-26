@@ -29,7 +29,7 @@ import { getFinalOutput, runSingleAgent } from "./subagent-runner.js";
 import { TaskManager } from "./task-manager.js";
 import { restoreTasks, writeTaskSnapshot } from "./task-persistence.js";
 import { activeWorkers, finalizeWorker, genWorkerId, getWorker, listWorkers, pruneOldWorkers, registerWorker, resetSlots, updateWorker } from "./workers.js";
-import { PipelineState } from "./pipeline-state.js";
+import { PipelineState, shouldRestorePipeline } from "./pipeline-state.js";
 import * as path from "node:path";
 export const orchestratorExtension = (fan) => {
     // F-2.5: Subscribe to MCP catalog (fan-mcp extension emits on "mcp:catalog")
@@ -269,14 +269,18 @@ export const orchestratorExtension = (fan) => {
                 const probeState = new PipelineState(ctx.cwd, { featureName: "_probe_", slug: "_probe_", phases: [] });
                 const existing = await probeState.getStatus();
                 if (existing && existing.featureName && existing.featureName !== "_probe_") {
-                    const ps = new PipelineState(ctx.cwd, {
-                        featureName: existing.featureName,
-                        slug: existing.slug,
-                        phases: existing.phases || [],
-                        commitStrategy: existing.commitStrategy || "per-phase",
-                    });
-                    pipelineState = { instance: ps, isActive: true, restored: true };
-                    console.log(`[FAN Pipeline] Restored pipeline: ${existing.featureName} (${existing.slug})`);
+                    if (!shouldRestorePipeline(existing)) {
+                        console.log(`[FAN Pipeline] Pipeline ${existing.featureName} (${existing.slug}) already ${existing.globalMetrics?.pipelineStatus} — skipping restore`);
+                    } else {
+                        const ps = new PipelineState(ctx.cwd, {
+                            featureName: existing.featureName,
+                            slug: existing.slug,
+                            phases: existing.phases || [],
+                            commitStrategy: existing.commitStrategy || "per-phase",
+                        });
+                        pipelineState = { instance: ps, isActive: true, restored: true };
+                        console.log(`[FAN Pipeline] Restored pipeline: ${existing.featureName} (${existing.slug})`);
+                    }
                 }
             } catch { /* no pipeline on disk */ }
         }
@@ -1745,22 +1749,13 @@ export const orchestratorExtension = (fan) => {
                         return;
                     }
                     try {
-                        const statusData = await pipelineState.instance.getStatus();
-                        if (statusData && !statusData.finishedAt) {
-                            // Mark as finished via status update
-                            await pipelineState.instance.recordPhaseChange({
-                                phaseId: 0,
-                                status: "COMPLETED",
-                                action: "pipeline_finish",
-                                notes: "Pipeline marked as complete by user.",
-                            });
-                            // We mark finishedAt directly in status.json via a log entry
-                            await pipelineState.instance.recordLogEntry({
-                                phaseId: statusData.currentPhase ?? 0,
-                                action: "pipeline_finish",
-                                content: "Pipeline finished. All work completed.",
-                            });
-                        }
+                        // Persist terminal marker BEFORE user choice so 'Keep' won't re-activate
+                        await pipelineState.instance.markTerminal("FINISHED");
+                        await pipelineState.instance.recordLogEntry({
+                            phaseId: 0,
+                            action: "pipeline_finish",
+                            content: "Pipeline finished. All work completed.",
+                        });
                         const action = await ctx.ui.select("Pipeline finished. Delete artifacts?", [
                             "Keep — Leave artifacts on disk for history",
                             "Delete — Remove plan, log, and status files",
@@ -1792,6 +1787,8 @@ export const orchestratorExtension = (fan) => {
                         return;
                     }
                     try {
+                        // Persist terminal marker before nullifying state
+                        await pipelineState.instance.markTerminal("CANCELLED");
                         await pipelineState.instance.recordLogEntry({
                             phaseId: 0,
                             action: "pipeline_cancel",

@@ -164,6 +164,11 @@ async function lazyAttachForStart(ctx: SlashCtx): Promise<boolean> {
  * Lazy-attach для /mission:resume: аттачит только paused-миссию
  * (переход paused → active); прочие статусы/отсутствие миссии — сообщение.
  * Возвращает true, если loop аттачен.
+ *
+ * Fix: после attach безопасно инициирует тик (через isTickRunning-guard
+ * как tick-bridge), чтобы миссия продолжила работу, а не стояла active
+ * без выполнения. Тик запускается detached (setTimeout 0) — handler
+ * resume не блокируется ожиданием результата.
  */
 async function lazyAttachForResume(ctx: SlashCtx): Promise<boolean> {
 	if (!ctx.findAttachableMission || !ctx.attach) {
@@ -180,8 +185,20 @@ async function lazyAttachForResume(ctx: SlashCtx): Promise<boolean> {
 	}
 	await resolveWriteStatus(ctx)(found.missionDir, "active");
 	await clearMissionAbortArtifacts(found.missionDir);
-	ctx.attach(found.missionDir);
-	ctx.output("Mission resumed — loop attached");
+	const attachedLoop = ctx.attach(found.missionDir);
+
+	// Безопасно инициировать тик (busy-guard внутри tick'а через tickRunning,
+	// file-lock — двойной тик невозможен). setTimeout 0 — detached, как в
+	// session_start auto-resume (maybeResumeAfterRotation).
+	try {
+		setTimeout(() => {
+			void attachedLoop.tick();
+		}, 0);
+	} catch {
+		// best-effort — scheduler/tick-bridge подхватит миссию позже
+	}
+
+	ctx.output("Mission resumed — loop attached, tick initiated");
 	return true;
 }
 
@@ -444,8 +461,22 @@ export function registerMissionSlashCommands(register: SlashCommandRegister, reg
 				await ctx.actions.abort();
 				if (ctx.missionLoop) await ctx.missionLoop.abort();
 				if (ctx.missionDir) {
-					await writeMissionStatus(ctx.missionDir, "aborted");
-					ctx.output("Mission stopped (status: aborted).");
+					// Re-read status: loop.abort() может записать 'completed'
+					// (исчерпанная ROADMAP → defence-in-depth). Не пытаемся
+					// перейти completed→aborted — показываем фактический статус.
+					let postAbort: string | null = null;
+					try {
+						const mission = await readMission(ctx.missionDir);
+						postAbort = String(mission.frontmatter.status);
+					} catch {
+						// MISSION.md не прочитался — пробуем обычный путь
+					}
+					if (postAbort && TERMINAL_STATUSES.has(postAbort)) {
+						ctx.output(`Mission already ${postAbort}.`);
+					} else {
+						await writeMissionStatus(ctx.missionDir, "aborted");
+						ctx.output("Mission stopped (status: aborted).");
+					}
 				} else {
 					ctx.output("No active mission to stop — nothing attached.");
 				}

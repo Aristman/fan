@@ -29,7 +29,32 @@ import { parsePromise } from "./promise-parser.js";
 import type { RunAgent } from "./session-executor.js";
 
 /** Дефолтный таймаут ожидания agent_end: 30 минут. */
-const DEFAULT_TIMEOUT_MS = 1_800_000;
+export const DEFAULT_TIMEOUT_MS = 1_800_000;
+
+/** Минимальный таймаут (1 минута). */
+const MIN_TIMEOUT_MS = 60_000;
+
+/** Максимальный таймаут (8 часов). */
+const MAX_TIMEOUT_MS = 480 * 60_000;
+
+/**
+ * Вычислить таймаут runAgent из frontmatter MISSION.md.
+ * Читает поле `runagent_timeout_min` (минуты); валидирует границы 1–480.
+ * При отсутствии или невалидном значении — возвращает дефолт (30 мин).
+ *
+ * Используется в index.ts (wireMission) для проброса таймаута в
+ * createDefaultRunAgent при создании runAgent для каждой конкретной миссии.
+ */
+export function resolveRunAgentTimeoutMs(frontmatter: Record<string, unknown>): number {
+	const raw = frontmatter.runagent_timeout_min;
+	if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) {
+		const ms = raw * 60_000;
+		if (ms >= MIN_TIMEOUT_MS && ms <= MAX_TIMEOUT_MS) {
+			return ms;
+		}
+	}
+	return DEFAULT_TIMEOUT_MS;
+}
 
 export interface DefaultRunAgentOptions {
 	/** Таймаут ожидания завершения turn (по умолчанию 1_800_000 = 30 мин). */

@@ -221,6 +221,12 @@ export function createFindToolDefinition(
 							// ignore
 						}
 						for (const gitignorePath of gitignoreFiles) args.push("--ignore-file", gitignorePath);
+						// fd on Linux errors on glob patterns containing path-separator
+						// characters unless --full-path is passed (fd 10.x). On Windows fd
+						// silently accepts such patterns, so the flag is safe everywhere.
+						if (pattern.includes("/") || pattern.includes("\\")) {
+							args.push("--full-path");
+						}
 						args.push(pattern, searchPath);
 
 						const result = spawnSync(fdPath, args, { encoding: "utf-8", maxBuffer: 10 * 1024 * 1024 });
