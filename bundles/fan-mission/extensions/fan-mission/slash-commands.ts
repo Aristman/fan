@@ -444,8 +444,22 @@ export function registerMissionSlashCommands(register: SlashCommandRegister, reg
 				await ctx.actions.abort();
 				if (ctx.missionLoop) await ctx.missionLoop.abort();
 				if (ctx.missionDir) {
-					await writeMissionStatus(ctx.missionDir, "aborted");
-					ctx.output("Mission stopped (status: aborted).");
+					// Re-read status: loop.abort() может записать 'completed'
+					// (исчерпанная ROADMAP → defence-in-depth). Не пытаемся
+					// перейти completed→aborted — показываем фактический статус.
+					let postAbort: string | null = null;
+					try {
+						const mission = await readMission(ctx.missionDir);
+						postAbort = String(mission.frontmatter.status);
+					} catch {
+						// MISSION.md не прочитался — пробуем обычный путь
+					}
+					if (postAbort && TERMINAL_STATUSES.has(postAbort)) {
+						ctx.output(`Mission already ${postAbort}.`);
+					} else {
+						await writeMissionStatus(ctx.missionDir, "aborted");
+						ctx.output("Mission stopped (status: aborted).");
+					}
 				} else {
 					ctx.output("No active mission to stop — nothing attached.");
 				}

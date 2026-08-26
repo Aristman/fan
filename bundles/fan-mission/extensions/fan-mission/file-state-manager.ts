@@ -961,7 +961,7 @@ const TRANSITIONS: Record<string, Set<string>> = {
 	// F-17: DECIDE interruption — loop blocked until operator answer or timeout.
 	// completed allowed: operator can close the mission from the decision
 	// dialog / /mission:complete (MissionLoop.completeMission).
-	awaiting_decision: new Set(["active", "aborted", "completed"]),
+	awaiting_decision: new Set(["active", "aborted", "completed", "paused"]),
 };
 
 export function canTransition(from: string, to: string): boolean {

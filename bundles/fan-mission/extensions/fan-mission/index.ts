@@ -107,6 +107,8 @@ export interface MissionWiring {
 	clearRotationGuard(): void;
 	/** abort активного loop + очистка handle. Идемпотентен. */
 	shutdown(): Promise<void>;
+	/** Осадить waiter дефолтного runAgent БЕЗ abort loop (для graceful pause). */
+	settleWaiter(reason?: string): void;
 }
 
 // ─── Wiring ─────────────────────────────────────────────────────────────────
@@ -213,7 +215,11 @@ export function wireMission(fan: ExtensionAPI, opts?: MissionWireOptions): Missi
 		}
 	};
 
-	return { attachMission, getMissionLoop, isRotating, clearRotationGuard, shutdown };
+	const settleWaiter = (reason = "mission pause"): void => {
+		defaultHandle?.settle(reason);
+	};
+
+	return { attachMission, getMissionLoop, isRotating, clearRotationGuard, shutdown, settleWaiter };
 }
 
 // ─── Скан миссий (session_start + lazy-attach) ──────────────────────────────
@@ -371,15 +377,7 @@ export default function missionExtension(fan: ExtensionAPI): MissionWiring {
 	});
 	const unsubTick = fan.events?.on ? fan.events.on("mission_tick", bridge.handler) : undefined;
 
-	const detach = async (): Promise<void> => {
-		if (typeof unsubTick === "function") {
-			unsubTick();
-		}
-		bridge.dispose();
-		await wiring.shutdown();
-		slashCtx.missionLoop = null;
-		slashCtx.missionDir = undefined;
-	};
+	// (detach удалён — мёртвый код, нигде не вызывался)
 
 	// Снимок статуса для виджета (читает ТЕКУЩИЙ loop из handle).
 	const getStatusSnapshot = async (): Promise<MissionStatusSnapshot> => {
@@ -578,6 +576,22 @@ export default function missionExtension(fan: ExtensionAPI): MissionWiring {
 				// Явное/неявное восстановление: сбросить протухший abort-сигнал,
 				// иначе первый тик сгорит с результатом 'aborted'.
 				await clearMissionAbortArtifacts(found.missionDir);
+				// Paused by session_shutdown → auto-resume: переводим в active
+				// перед первым тиком, чтобы tick() не вернул no-op (P1-2).
+				// Также сбрасываем interrupted (pause() мог его поставить),
+				// чтобы tick не пытался recovery-путь вместо нормального.
+				if (found.status === "paused") {
+					try {
+						await writeMissionStatus(found.missionDir, "active");
+						const ls = await readMissionLoopState(found.missionDir);
+						if (ls.interrupted) {
+							ls.interrupted = false;
+							writeLoopStateSync(found.missionDir, ls);
+						}
+					} catch {
+						// FSM-переход запрещён или IO error — best-effort
+					}
+				}
 				await maybeResumeAfterRotation(found.missionDir, attachedLoop);
 				// F-MISSION-DIALOG (точка 2): recovery — миссия застряла в
 				// awaiting_decision до рестарта/ротации → показать диалог сразу.
@@ -606,7 +620,22 @@ export default function missionExtension(fan: ExtensionAPI): MissionWiring {
 			wiring.clearRotationGuard();
 			return;
 		}
-		await detach();
+		// Не-rotating shutdown (закрытие/переключение сессии оператором):
+		// graceful pause — миссия остаётся resumable (paused), а не aborted.
+		// Отписываем tick-мост, очищаем bridge, осаждаем waiter,
+		// ставим миссию на паузу, сбрасываем loop/slashCtx —
+		// но НЕ пишем abort-signal и НЕ вызываем shutdown() (abort()).
+		if (typeof unsubTick === "function") {
+			unsubTick();
+		}
+		bridge.dispose();
+		wiring.settleWaiter("session shutdown — graceful pause");
+		const current = wiring.getMissionLoop();
+		if (current) {
+			await current.pause();
+		}
+		slashCtx.missionLoop = null;
+		slashCtx.missionDir = undefined;
 	});
 
 	return wiring;

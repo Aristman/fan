@@ -1373,6 +1373,21 @@ export class MissionLoop {
 					if (parseAllUnchecked(roadmapRaw).length > 0) {
 						loopState.resumeAfterRotation = true;
 						writeLoopStateSync(this.missionDir, loopState);
+					} else {
+						// P0 fix: ROADMAP исчерпана в fresh-режиме — финализируем
+						// миссию как completed (по образцу step-3 completion), чтобы
+						// статус не оставался 'active' (зомби → ложный abort при
+						// session_shutdown).
+						if (canTransition(resultStatus, "completed")) {
+							resultStatus = "completed";
+							await writeMissionStatus(this.missionDir, "completed");
+						}
+						clearAbortSignal(this.missionDir);
+						loopState.interrupted = false;
+						loopState.iterationResult = undefined;
+						loopState.pendingItem = undefined;
+						loopState.committed = false;
+						writeLoopStateSync(this.missionDir, loopState);
 					}
 					break;
 				}
@@ -1444,6 +1459,28 @@ export class MissionLoop {
 		} catch {
 			// MISSION.md не читается — прежний путь (degraded abort)
 		}
+		// Defence-in-depth: если ROADMAP полностью исчерпана (есть чеклист,
+		// но unchecked = 0) — завершить как completed вместо ложного abort.
+		// Лечит уже существующие зомби-миссии (active без работы → abort при
+		// session_shutdown).
+		try {
+			const roadmapRaw = await readRoadmap(this.missionDir);
+			if (hasAnyChecklistItem(roadmapRaw) && parseAllUnchecked(roadmapRaw).length === 0) {
+				const loopState = await readMissionLoopState(this.missionDir);
+				loopState.abortedByOperator = false;
+				loopState.interrupted = false;
+				loopState.iterationResult = undefined;
+				loopState.pendingItem = undefined;
+				loopState.committed = false;
+				writeLoopStateSync(this.missionDir, loopState);
+				await writeMissionStatus(this.missionDir, "completed");
+				clearAbortSignal(this.missionDir);
+				this.clearDecideTimer();
+				return;
+			}
+		} catch {
+			// ROADMAP не читается — прежний путь (real abort)
+		}
 		// P0-2: write abort signal file (lock-free, atomic)
 		writeAbortSignal(this.missionDir);
 		// Also update journal for persistence across restarts
@@ -1469,6 +1506,60 @@ export class MissionLoop {
 		}
 		// F-17: no pending decide timeout after abort
 		this.clearDecideTimer();
+	}
+
+	/**
+	 * Graceful pause: останавливает активный tick без abort-сигнала.
+	 * Используется при session_shutdown (закрытие/переключение сессии),
+	 * чтобы миссия стала resumable (paused), а не aborted.
+	 *
+	 * (a) Если тик сейчас выполняется — помечает loopState.interrupted=true,
+	 *     чтобы следующий attach корректно продолжил.
+	 * (b) Пишет статус 'paused' только если canTransition разрешает.
+	 */
+	async pause(): Promise<void> {
+		try {
+			const mission = await readMission(this.missionDir);
+			const currentStatus = String(mission.frontmatter.status);
+			// Терминальный статус или уже paused — ничего не делать
+			if (TERMINAL_STATUSES.has(currentStatus) || currentStatus === "paused") {
+				return;
+			}
+			// Только active и awaiting_decision можно ставить на паузу
+			if (currentStatus !== "active" && currentStatus !== "awaiting_decision") {
+				return;
+			}
+		} catch {
+			return; // MISSION.md не читается — best-effort
+		}
+		// Если тик сейчас выполняется — пометить interrupted (как в abort),
+		// чтобы следующий attach/tick корректно продолжил.
+		if (this.tickRunning) {
+			try {
+				const loopState = await readMissionLoopState(this.missionDir);
+				loopState.interrupted = true;
+				writeLoopStateSync(this.missionDir, loopState);
+			} catch {
+				// best-effort
+			}
+		}
+		// F-48.5: прервать pending EPIC-делегирование (как в abort).
+		const delegationCleanup = this.pendingDelegationCleanup;
+		this.pendingDelegationCleanup = null;
+		try {
+			delegationCleanup?.();
+		} catch {
+			// best-effort
+		}
+		// F-17: no pending decide timeout after pause
+		this.clearDecideTimer();
+		// НЕ пишем abort-signal, НЕ ставим abortedByOperator.
+		// Переводим в paused (если переход разрешён FSM).
+		try {
+			await writeMissionStatus(this.missionDir, "paused");
+		} catch {
+			// canTransition запретил или IO error — best-effort
+		}
 	}
 
 	/**
