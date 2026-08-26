@@ -61,3 +61,7 @@ bundles/*.tar.gz
 # e2e debug dumps (mock-node argv/env)
 archive/extensions/fan-super-orchestrator/argv-*.txt
 archive/extensions/fan-super-orchestrator/env-*.txt
+
+# Pipeline runtime artifacts (orchestrator pipeline mode)
+docs/development-log.md
+docs/development-plan.md
