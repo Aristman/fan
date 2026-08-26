@@ -12,7 +12,7 @@
 //     Дефолтный runAgent (без opts.runAgent) — createDefaultRunAgent из
 //     ./default-run-agent.js: prompt → sendUserMessage(followUp) → ожидание
 //     agent_end → последний assistant-текст + Σ usage (single-flight,
-//     timeout = opts.runAgentTimeoutMs ?? 30 мин). shutdown() осаживает
+//     timeout = opts.runAgentTimeoutMs ?? 0 (бесконечно)). shutdown() осаживает
 //     активный waiter дефолтного runAgent FAILED-тегом ДО abort loop.
 //   export default missionExtension(fan) — фабрика расширения: регистрирует
 //     7 slash-команд /mission:* (DI через fan.registerCommand), виджет
@@ -83,7 +83,7 @@ export interface MissionWireOptions {
 	runAgent?: RunAgent;
 	/** Дефолтный deliverAs для actions.sendMessage (по умолчанию "steer"). */
 	streamingBehavior?: "steer" | "followUp";
-	/** Таймаут дефолтного runAgent (мс; по умолчанию 1_800_000 = 30 мин). */
+	/** Таймаут дефолтного runAgent (мс; по умолчанию 0 = бесконечно). */
 	runAgentTimeoutMs?: number;
 	/** F-48.5: таймаут ожидания ответа EPIC-делегирования (мс; default 30 мин). */
 	delegationTimeoutMs?: number;

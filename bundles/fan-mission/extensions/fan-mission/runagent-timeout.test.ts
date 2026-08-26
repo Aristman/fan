@@ -56,27 +56,27 @@ describe("resolveRunAgentTimeoutMs", () => {
 		expect(resolveRunAgentTimeoutMs({ runagent_timeout_min: 480 })).toBe(480 * 60_000);
 	});
 
-	it("invalid 0 → default 30 min", () => {
+	it("invalid 0 → default 0 (infinite)", () => {
 		expect(resolveRunAgentTimeoutMs({ runagent_timeout_min: 0 })).toBe(DEFAULT_TIMEOUT_MS);
 	});
 
-	it("invalid 1000 (> 480) → default 30 min", () => {
+	it("invalid 1000 (> 480) → default 0 (infinite)", () => {
 		expect(resolveRunAgentTimeoutMs({ runagent_timeout_min: 1000 })).toBe(DEFAULT_TIMEOUT_MS);
 	});
 
-	it("non-number 'abc' → default 30 min", () => {
+	it("non-number 'abc' → default 0 (infinite)", () => {
 		expect(resolveRunAgentTimeoutMs({ runagent_timeout_min: "abc" as unknown as number })).toBe(DEFAULT_TIMEOUT_MS);
 	});
 
-	it("missing field → default 30 min", () => {
+	it("missing field → default 0 (infinite)", () => {
 		expect(resolveRunAgentTimeoutMs({})).toBe(DEFAULT_TIMEOUT_MS);
 	});
 
-	it("negative value → default 30 min", () => {
+	it("negative value → default 0 (infinite)", () => {
 		expect(resolveRunAgentTimeoutMs({ runagent_timeout_min: -5 })).toBe(DEFAULT_TIMEOUT_MS);
 	});
 
-	it("Infinity → default 30 min", () => {
+	it("Infinity → default 0 (infinite)", () => {
 		expect(resolveRunAgentTimeoutMs({ runagent_timeout_min: Infinity })).toBe(DEFAULT_TIMEOUT_MS);
 	});
 });
@@ -112,5 +112,62 @@ describe("MISSION.md runagent_timeout_min regex", () => {
 		const m = raw.match(/^runagent_timeout_min\s*:\s*(\d+)\s*$/m);
 		expect(m).not.toBeNull();
 		expect(Number(m![1])).toBe(45);
+	});
+});
+
+// ─── createDefaultRunAgent: timeoutMs=0 → no setTimeout ────────────────────
+
+describe("createDefaultRunAgent with timeoutMs=0", () => {
+	let setTimeoutSpy: ReturnType<typeof vi.spyOn>;
+	beforeEach(() => {
+		setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
+	});
+	afterEach(() => {
+		setTimeoutSpy.mockRestore();
+	});
+
+	it("DEFAULT_TIMEOUT_MS is 0 (infinite, no timer)", () => {
+		expect(DEFAULT_TIMEOUT_MS).toBe(0);
+	});
+
+	it("timeoutMs=0 does NOT call setTimeout when runAgent is invoked", async () => {
+		// Minimal mock ExtensionAPI that captures the followUp prompt.
+		let sentPrompt: string | null = null;
+		const fan = {
+			on: () => {},
+			sendUserMessage: (prompt: string) => { sentPrompt = prompt; },
+		} as any;
+
+		const { createDefaultRunAgent } = await import("./default-run-agent.js");
+		const handle = createDefaultRunAgent(fan, { timeoutMs: 0 });
+
+		// Fire runAgent — it sends the prompt and waits for agent_end.
+		// We don't resolve agent_end, but we can check setTimeout was NOT called.
+		const resultPromise = handle.runAgent("test prompt");
+
+		// setTimeout should NOT have been called for the timeout.
+		// (sendUserMessage doesn't use setTimeout in our mock)
+		expect(setTimeoutSpy).not.toHaveBeenCalled();
+
+		// Clean up — settle the pending waiter so the test doesn't hang.
+		handle.settle("test cleanup");
+		await resultPromise; // resolve the promise
+	});
+
+	it("timeoutMs>0 DOES call setTimeout (guard doesn't break explicit timeouts)", async () => {
+		const fan = {
+			on: () => {},
+			sendUserMessage: () => {},
+		} as any;
+
+		const { createDefaultRunAgent } = await import("./default-run-agent.js");
+		const handle = createDefaultRunAgent(fan, { timeoutMs: 60_000 });
+
+		const resultPromise = handle.runAgent("test");
+		expect(setTimeoutSpy).toHaveBeenCalledTimes(1);
+		expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 60_000);
+
+		handle.settle("test cleanup");
+		await resultPromise;
 	});
 });

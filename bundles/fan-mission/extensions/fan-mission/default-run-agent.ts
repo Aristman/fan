@@ -28,8 +28,8 @@ import type { AgentEndEvent, ExtensionAPI, IterationBudgetExceededEvent } from "
 import { parsePromise } from "./promise-parser.js";
 import type { RunAgent } from "./session-executor.js";
 
-/** Дефолтный таймаут ожидания agent_end: 30 минут. */
-export const DEFAULT_TIMEOUT_MS = 1_800_000;
+/** Дефолтный таймаут ожидания agent_end: 0 = бесконечно (таймер не ставится). */
+export const DEFAULT_TIMEOUT_MS = 0;
 
 /** Минимальный таймаут (1 минута). */
 const MIN_TIMEOUT_MS = 60_000;
@@ -40,7 +40,7 @@ const MAX_TIMEOUT_MS = 480 * 60_000;
 /**
  * Вычислить таймаут runAgent из frontmatter MISSION.md.
  * Читает поле `runagent_timeout_min` (минуты); валидирует границы 1–480.
- * При отсутствии или невалидном значении — возвращает дефолт (30 мин).
+ * При отсутствии или невалидном значении — возвращает дефолт (0 = бесконечно).
  *
  * Используется в index.ts (wireMission) для проброса таймаута в
  * createDefaultRunAgent при создании runAgent для каждой конкретной миссии.
@@ -57,7 +57,7 @@ export function resolveRunAgentTimeoutMs(frontmatter: Record<string, unknown>): 
 }
 
 export interface DefaultRunAgentOptions {
-	/** Таймаут ожидания завершения turn (по умолчанию 1_800_000 = 30 мин). */
+	/** Таймаут ожидания завершения turn (по умолчанию 0 = бесконечно). */
 	timeoutMs?: number;
 	/** DI часов (для тестов); по умолчанию Date.now. */
 	now?: () => number;
@@ -255,18 +255,20 @@ export function createDefaultRunAgent(fan: ExtensionAPI, opts?: DefaultRunAgentO
 		}
 		return new Promise<RunAgentResult>((resolve) => {
 			const pending: Pending = { prompt, resolve, timer: null, sentAt: now() };
-			const timer = setTimeout(() => {
-				if (state.pending !== pending) {
-					return;
+			if (timeoutMs > 0) {
+				const timer = setTimeout(() => {
+					if (state.pending !== pending) {
+						return;
+					}
+					clearPending(pending);
+					console.warn(`[fan-mission] runAgent timeout after ${timeoutMs}ms`);
+					resolve(failed(`runAgent timeout after ${timeoutMs}ms`));
+				}, timeoutMs);
+				if (typeof timer.unref === "function") {
+					timer.unref();
 				}
-				clearPending(pending);
-				console.warn(`[fan-mission] runAgent timeout after ${timeoutMs}ms`);
-				resolve(failed(`runAgent timeout after ${timeoutMs}ms`));
-			}, timeoutMs);
-			if (typeof timer.unref === "function") {
-				timer.unref();
+				pending.timer = timer;
 			}
-			pending.timer = timer;
 			// pending устанавливается ДО sendUserMessage (race-guard: agent_end
 			// может прийти синхронно/мгновенно в некоторых runtime-конфигурациях).
 			// Флаг iteration_budget_exceeded сбрасывается на новый прогон.
