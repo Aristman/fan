@@ -124,7 +124,7 @@ const makeStepResult = (step, agent, task, opts = {}) => ({
     messages: opts.messages || [],
     stderr: opts.stderr ?? "",
     errorMessage: opts.errorMessage,
-    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
+    usage: opts.usage ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
     model: opts.model || "test-model",
     text: opts.text || "",
     step,
@@ -1022,5 +1022,244 @@ describe("delegate_task single mode — new UI features", () => {
         // With the mock returning "", just verify it doesn't crash
         expect(str).toContain("✓");
         expect(str).toContain("Result");
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// CHAIN MODE — LIVE TOKEN USAGE IN HEADERS & STEPS
+// ═══════════════════════════════════════════════════════════════
+
+describe("delegate_task chain/parallel — live token usage (⚡)", () => {
+
+    // ── Helper: make parallel result ──
+    const makeParallelResult = (results) => ({
+        content: [{ type: "text", text: "output" }],
+        details: {
+            mode: "parallel",
+            agentScope: "user",
+            projectAgentsDir: null,
+            results,
+        },
+    });
+
+    // ── Chain legacy expanded: running step with live usage in header ──
+    it("chain legacy expanded: header shows aggregate ⚡ from running step", () => {
+        const results = [
+            makeStepResult(1, "explore", "Explore", {
+                endTime: 1200,
+                usage: { input: 2000, output: 1000, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 1 },
+            }),
+            makeStepResult(2, "implement", "Implement", {
+                endTime: undefined,
+                progress: { status: "Processing", messageCount: 1, toolCalls: [], usage: { input: 5000, output: 3000 } },
+            }),
+        ];
+        const result = makeChainResult(results);
+        const rendered = toolDef.renderResult(result, { expanded: true }, theme);
+        const str = rendered.toString();
+        // Header should show aggregate: 2k+5k / 1k+3k = 7.0k/4.0k
+        expect(str).toContain("⚡");
+        expect(str).toContain("7.0k/4.0k");
+    });
+
+    // ── Chain legacy expanded: step headers show individual ⚡ ──
+    it("chain legacy expanded: step header shows ⚡ for completed step with usage", () => {
+        const results = [
+            makeStepResult(1, "explore", "Explore", {
+                endTime: 1200,
+                usage: { input: 2000, output: 1000, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 1 },
+            }),
+            makeStepResult(2, "implement", "Implement", {
+                endTime: undefined,
+                progress: { status: "Processing", messageCount: 1, toolCalls: [], usage: { input: 5000, output: 3000 } },
+            }),
+        ];
+        const result = makeChainResult(results);
+        const rendered = toolDef.renderResult(result, { expanded: true }, theme);
+        const str = rendered.toString();
+        // Step 1 (completed) should show 2.0k/1.0k
+        expect(str).toContain("2.0k/1.0k");
+        // Step 2 (running) should show 5.0k/3.0k
+        expect(str).toContain("5.0k/3.0k");
+    });
+
+    // ── Chain legacy collapsed: header + step headers with ⚡ ──
+    it("chain legacy collapsed: header and step headers show ⚡", () => {
+        const results = [
+            makeStepResult(1, "explore", "Explore", {
+                endTime: 1200,
+                usage: { input: 1500, output: 500, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 1 },
+            }),
+        ];
+        const result = makeChainResult(results);
+        const rendered = toolDef.renderResult(result, { expanded: false }, theme);
+        const str = rendered.toString();
+        expect(str).toContain("⚡");
+        expect(str).toContain("1.5k/500");
+    });
+
+    // ── Chain with plan — live: header shows aggregate from completed + running ──
+    it("chain with plan live: header shows aggregate ⚡", () => {
+        const results = [
+            makeStepResult(1, "explore", "Explore", {
+                endTime: 1200,
+                usage: { input: 3000, output: 2000, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 1 },
+            }),
+            makeStepResult(2, "implement", "Implement", {
+                endTime: undefined,
+                progress: { status: "Processing", messageCount: 1, toolCalls: [], usage: { input: 4000, output: 1000 } },
+            }),
+        ];
+        const plan = [
+            { agent: "explore", task: "Explore" },
+            { agent: "implement", task: "Implement" },
+            { agent: "verify", task: "Verify" },
+        ];
+        const result = makeChainResult(results, plan);
+        const rendered = toolDef.renderResult(result, { expanded: true }, theme);
+        const str = rendered.toString();
+        // Header: 3k+4k / 2k+1k = 7.0k/3.0k
+        expect(str).toContain("⚡");
+        expect(str).toContain("7.0k/3.0k");
+    });
+
+    // ── Chain with plan — terminated expanded: step headers with ⚡ ──
+    it("chain with plan terminated expanded: completed step headers show ⚡", () => {
+        const results = [
+            makeStepResult(1, "explore", "Explore", {
+                endTime: 1200,
+                usage: { input: 4000, output: 2000, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 1 },
+            }),
+            makeStepResult(2, "implement", "Implement", {
+                endTime: 1300,
+                usage: { input: 6000, output: 3000, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 2 },
+            }),
+        ];
+        const plan = [
+            { agent: "explore", task: "Explore" },
+            { agent: "implement", task: "Implement" },
+        ];
+        const result = makeChainResult(results, plan);
+        const rendered = toolDef.renderResult(result, { expanded: true }, theme);
+        const str = rendered.toString();
+        // Header aggregate: 4k+6k / 2k+3k = 10.0k/5.0k
+        expect(str).toContain("10.0k/5.0k");
+        // Step 1: 4.0k/2.0k
+        expect(str).toContain("4.0k/2.0k");
+        // Step 2: 6.0k/3.0k
+        expect(str).toContain("6.0k/3.0k");
+    });
+
+    // ── Chain with plan — terminated collapsed: step headers with ⚡ ──
+    it("chain with plan live collapsed: header shows aggregate ⚡ from completed step", () => {
+        const results = [
+            makeStepResult(1, "explore", "Explore", {
+                endTime: 1200,
+                usage: { input: 8000, output: 4000, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 1 },
+            }),
+        ];
+        const plan = [
+            { agent: "explore", task: "Explore" },
+            { agent: "implement", task: "Implement" },
+        ];
+        // Only 1/2 steps → live view (not terminated)
+        const result = makeChainResult(results, plan);
+        const rendered = toolDef.renderResult(result, { expanded: false }, theme);
+        const str = rendered.toString();
+        expect(str).toContain("⚡");
+        expect(str).toContain("8.0k/4.0k");
+    });
+
+    // ── No ⚡ when usage is zero/absent ──
+    it("chain with plan: NO ⚡ when all usage is zero", () => {
+        const results = [
+            makeStepResult(1, "explore", "Explore", {
+                endTime: 1200,
+                usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
+            }),
+            makeStepResult(2, "implement", "Implement", {
+                endTime: undefined,
+                progress: { status: "Processing", messageCount: 1, toolCalls: [] },
+            }),
+        ];
+        const plan = [
+            { agent: "explore", task: "Explore" },
+            { agent: "implement", task: "Implement" },
+        ];
+        const result = makeChainResult(results, plan);
+        const rendered = toolDef.renderResult(result, { expanded: true }, theme);
+        const str = rendered.toString();
+        expect(str).not.toContain("⚡");
+    });
+
+    // ── Parallel expanded: header + worker headers with ⚡ ──
+    it("parallel expanded: header and worker headers show ⚡", () => {
+        const results = [
+            makeStepResult(undefined, "explore", "Explore A", {
+                endTime: 1200,
+                usage: { input: 3000, output: 1500, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 1 },
+            }),
+            makeStepResult(undefined, "explore", "Explore B", {
+                endTime: 1300,
+                usage: { input: 5000, output: 2500, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 1 },
+            }),
+        ];
+        const result = makeParallelResult(results);
+        const rendered = toolDef.renderResult(result, { expanded: true }, theme);
+        const str = rendered.toString();
+        // Header aggregate: 3k+5k / 1.5k+2.5k = 8.0k/4.0k
+        expect(str).toContain("⚡");
+        expect(str).toContain("8.0k/4.0k");
+        // Worker A: 3.0k/1.5k
+        expect(str).toContain("3.0k/1.5k");
+        // Worker B: 5.0k/2.5k
+        expect(str).toContain("5.0k/2.5k");
+    });
+
+    // ── Parallel collapsed: header + worker headers with ⚡ (running) ──
+    it("parallel collapsed running: header and worker headers show ⚡", () => {
+        const results = [
+            makeStepResult(undefined, "explore", "Task A", {
+                endTime: undefined,
+                progress: { status: "Processing", messageCount: 2, toolCalls: [], usage: { input: 4000, output: 2000 } },
+            }),
+            makeStepResult(undefined, "explore", "Task B", {
+                endTime: undefined,
+                progress: { status: "Processing", messageCount: 1, toolCalls: [], usage: { input: 6000, output: 1000 } },
+            }),
+        ];
+        const result = makeParallelResult(results);
+        const rendered = toolDef.renderResult(result, { expanded: false }, theme);
+        const str = rendered.toString();
+        // Header aggregate: 4k+6k / 2k+1k = 10.0k/3.0k
+        expect(str).toContain("⚡");
+        expect(str).toContain("10.0k/3.0k");
+        // Worker A: 4.0k/2.0k
+        expect(str).toContain("4.0k/2.0k");
+        // Worker B: 6.0k/1.0k
+        expect(str).toContain("6.0k/1.0k");
+    });
+
+    // ── Parallel: NO ⚡ when usage is absent ──
+    it("parallel: NO ⚡ when no usage on any worker", () => {
+        const results = [
+            makeStepResult(undefined, "explore", "Task A", { endTime: 1200 }),
+        ];
+        const result = makeParallelResult(results);
+        const rendered = toolDef.renderResult(result, { expanded: false }, theme);
+        const str = rendered.toString();
+        // Default usage in makeStepResult is {input:0, output:0, ...} — should NOT show ⚡
+        expect(str).not.toContain("⚡");
+    });
+
+    // ── Chain legacy: NO ⚡ when no usage ──
+    it("chain legacy: NO ⚡ when usage is all zeros", () => {
+        const results = [
+            makeStepResult(1, "explore", "Explore", { endTime: 1200 }),
+        ];
+        const result = makeChainResult(results);
+        const rendered = toolDef.renderResult(result, { expanded: true }, theme);
+        const str = rendered.toString();
+        expect(str).not.toContain("⚡");
     });
 });
