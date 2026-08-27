@@ -3,12 +3,15 @@
  *
  * Covers:
  *  (a) pending steps shown during running
- *  (b) running step highlighted/marked with ▶
- *  (c) completed marked with ✓
+ *  (b) running step highlighted/marked with ◐
+ *  (c) completed marked with ☑
  *  (d) failed marked with ✗
  *  (e) fallback without plan (backwards compat)
- *  (f) renderCall uses ○ pending markers
+ *  (f) renderCall uses ☐ pending markers
  *  (g) collapsed view shows running step and pending count
+ *  (h) partial data (no messages field) does NOT throw
+ *  (h2) partial data shows ◐ for running step, ☑ for completed, ☐ for pending
+ *  (h3) collapsed partial data renders correctly
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
@@ -41,6 +44,7 @@ class Markdown {
 const makeTheme = () => ({
     fg: (role, text) => `<${role}>${text}</${role}>`,
     bold: (t) => `<b>${t}</b>`,
+    strikethrough: (t) => `<s>${t}</s>`,
 });
 
 let toolDef;
@@ -124,10 +128,21 @@ const makeStepResult = (step, agent, task, opts = {}) => ({
     progress: opts.progress,
 });
 
+/** Partial result shape — exactly what runSingleAgent.onProgress sends (NO messages) */
+const makePartialStepResult = (step, agent, task, opts = {}) => ({
+    agent,
+    agentSource: "builtin",
+    task,
+    step,
+    startTime: opts.startTime ?? 1000,
+    model: opts.model || "test-model",
+    progress: opts.progress || { status: "Processing", messageCount: 0, toolCalls: [], model: "test-model" },
+});
+
 const theme = makeTheme();
 
 describe("delegate_task chain renderResult", () => {
-    it("(a) shows pending steps as ○ during running with plan", () => {
+    it("(a) shows pending steps as ☐ during running with plan", () => {
         const results = [
             makeStepResult(1, "explore", "Explore codebase", { endTime: 1100, text: "Found 5 files" }),
             makeStepResult(2, "implement", "Implement feature", { endTime: undefined }),
@@ -142,12 +157,12 @@ describe("delegate_task chain renderResult", () => {
         const str = rendered.toString();
         expect(str).toContain("Step 3");
         expect(str).toContain("verify");
-        expect(str).toContain("○");
-        expect(str).toContain("✓");
-        expect(str).toContain("▶");
+        expect(str).toContain("☐");
+        expect(str).toContain("☑");
+        expect(str).toContain("◐");
     });
 
-    it("(b) marks running step with ▶ in expanded view", () => {
+    it("(b) marks running step with ◐ in expanded view", () => {
         const results = [
             makeStepResult(1, "explore", "Explore", { endTime: 1100 }),
             makeStepResult(2, "implement", "Implement", {
@@ -163,11 +178,11 @@ describe("delegate_task chain renderResult", () => {
         const result = makeChainResult(results, plan);
         const rendered = toolDef.renderResult(result, { expanded: true }, theme);
         const str = rendered.toString();
-        expect(str).toContain("▶");
+        expect(str).toContain("◐");
         expect(str).toContain("read");
     });
 
-    it("(c) marks completed steps with ✓ in expanded view", () => {
+    it("(c) marks completed steps with ☑ in expanded view", () => {
         const results = [
             makeStepResult(1, "explore", "Explore", { endTime: 1100, text: "Done exploring" }),
             makeStepResult(2, "implement", "Implement", { endTime: 1200, text: "Done implementing" }),
@@ -179,10 +194,10 @@ describe("delegate_task chain renderResult", () => {
         const result = makeChainResult(results, plan);
         const rendered = toolDef.renderResult(result, { expanded: true }, theme);
         const str = rendered.toString();
-        expect(str).toContain("✓");
+        expect(str).toContain("☑");
         expect(str).toContain("2/2 steps");
-        expect(str).not.toContain("○");
-        expect(str).not.toContain("▶");
+        expect(str).not.toContain("☐");
+        expect(str).not.toContain("◐");
     });
 
     it("(d) marks failed steps with ✗ in expanded view", () => {
@@ -199,7 +214,7 @@ describe("delegate_task chain renderResult", () => {
         const rendered = toolDef.renderResult(result, { expanded: true }, theme);
         const str = rendered.toString();
         expect(str).toContain("✗");
-        expect(str).toContain("○");
+        expect(str).toContain("☐");
         expect(str).toContain("Step 3");
     });
 
@@ -214,7 +229,7 @@ describe("delegate_task chain renderResult", () => {
         expect(str).toContain("Step 1");
         expect(str).toContain("Step 2");
         expect(str).not.toContain("Step 3");
-        expect(str).not.toContain("○");
+        expect(str).not.toContain("☐");
         expect(str).toContain("1/2 steps");
     });
 
@@ -226,10 +241,10 @@ describe("delegate_task chain renderResult", () => {
         const rendered = toolDef.renderResult(result, { expanded: false }, theme);
         const str = rendered.toString();
         expect(str).toContain("1/1 steps");
-        expect(str).toContain("✓");
+        expect(str).toContain("☑");
     });
 
-    it("(f) renderCall uses ○ pending markers for chain steps", () => {
+    it("(f) renderCall uses ☐ pending markers for chain steps", () => {
         const args = {
             chain: [
                 { agent: "explore", task: "Explore codebase" },
@@ -239,7 +254,7 @@ describe("delegate_task chain renderResult", () => {
         const rendered = toolDef.renderCall(args, theme);
         const str = rendered.toString();
         expect(str).toContain("2 steps");
-        expect(str).toContain("○");
+        expect(str).toContain("☐");
         expect(str).toContain("explore");
         expect(str).toContain("implement");
     });
@@ -258,13 +273,13 @@ describe("delegate_task chain renderResult", () => {
         const result = makeChainResult(results, plan);
         const rendered = toolDef.renderResult(result, { expanded: false }, theme);
         const str = rendered.toString();
-        expect(str).toContain("▶ step 2");
+        expect(str).toContain("◐ step 2");
         expect(str).toContain("implement");
         expect(str).toContain("2 pending");
         expect(str).toContain("1/4 steps");
     });
 
-    it("(g2) collapsed view without plan has no ▶ step indicator", () => {
+    it("(g2) collapsed view without plan has no ◐ step indicator", () => {
         const results = [
             makeStepResult(1, "explore", "Explore", { endTime: 1100 }),
             makeStepResult(2, "implement", "Implement", { endTime: undefined }),
@@ -272,7 +287,7 @@ describe("delegate_task chain renderResult", () => {
         const result = makeChainResult(results);
         const rendered = toolDef.renderResult(result, { expanded: false }, theme);
         const str = rendered.toString();
-        expect(str).not.toContain("▶ step");
+        expect(str).not.toContain("◐ step");
         expect(str).not.toContain("pending");
     });
 
@@ -355,8 +370,8 @@ describe("delegate_task chain renderResult", () => {
         // Header must be ✗ (terminated with error), not ⏳ (still running)
         expect(str).toContain("✗");
         expect(str).not.toContain("⏳");
-        // Step 3 is pending ○ but chain is NOT still running
-        expect(str).toContain("○");
+        // Step 3 is pending ☐ but chain is NOT still running
+        expect(str).toContain("☐");
         expect(str).toContain("Step 3");
         // Header shows 1 failed
         expect(str).toContain("1 failed");
@@ -441,5 +456,93 @@ describe("delegate_task chain renderResult", () => {
         expect(str).toContain("Read /src/file.ts");
         expect(str).toContain("Write /src/new.ts");
         expect(str).toContain("Run npm test");
+    });
+
+    // ─── Partial data tests (no messages field) ─────────────────────────
+
+    it("(h) partial data with no messages does NOT throw — expanded", () => {
+        // Exact user scenario: 3-step plan, step 1 completed WITH messages, step 2 running WITHOUT messages, step 3 pending
+        const results = [
+            makeStepResult(1, "explore", "Explore codebase", {
+                endTime: 1200,
+                messages: [{ role: "assistant", content: [{ type: "text", text: "Found 5 files" }] }],
+            }),
+            makePartialStepResult(2, "implement", "Implement feature"),
+        ];
+        const plan = [
+            { agent: "explore", task: "Explore codebase" },
+            { agent: "implement", task: "Implement feature" },
+            { agent: "verify", task: "Verify the implementation" },
+        ];
+        const result = makeChainResult(results, plan);
+        // Must NOT throw
+        expect(() => toolDef.renderResult(result, { expanded: true }, theme)).not.toThrow();
+    });
+
+    it("(h2) partial data shows ◐ bold for running, ☑ for completed, ☐ for pending — expanded", () => {
+        const results = [
+            makeStepResult(1, "explore", "Explore codebase", {
+                endTime: 1200,
+                messages: [{ role: "assistant", content: [{ type: "text", text: "Done" }] }],
+            }),
+            makePartialStepResult(2, "implement", "Implement feature", {
+                progress: { status: "Processing", messageCount: 3, toolCalls: [{ name: "read", args: {}, preview: "Reading file" }], model: "gpt-4" },
+            }),
+        ];
+        const plan = [
+            { agent: "explore", task: "Explore codebase" },
+            { agent: "implement", task: "Implement feature" },
+            { agent: "verify", task: "Verify the implementation" },
+        ];
+        const result = makeChainResult(results, plan);
+        const rendered = toolDef.renderResult(result, { expanded: true }, theme);
+        const str = rendered.toString();
+        // Step 1 completed: ☑
+        expect(str).toContain("☑");
+        // Step 2 running: ◐
+        expect(str).toContain("◐");
+        // Step 3 pending: ☐
+        expect(str).toContain("☐");
+        // Running step should have bold+warning agent name
+        expect(str).toContain("<warning>implement</warning>");
+        // Running step should show live tool calls
+        expect(str).toContain("Reading file");
+    });
+
+    it("(h3) partial data — collapsed view renders correctly", () => {
+        const results = [
+            makeStepResult(1, "explore", "Explore codebase", {
+                endTime: 1200,
+                messages: [{ role: "assistant", content: [{ type: "text", text: "Done" }] }],
+            }),
+            makePartialStepResult(2, "implement", "Implement feature"),
+        ];
+        const plan = [
+            { agent: "explore", task: "Explore codebase" },
+            { agent: "implement", task: "Implement feature" },
+            { agent: "verify", task: "Verify the implementation" },
+        ];
+        const result = makeChainResult(results, plan);
+        expect(() => toolDef.renderResult(result, { expanded: false }, theme)).not.toThrow();
+        const rendered = toolDef.renderResult(result, { expanded: false }, theme);
+        const str = rendered.toString();
+        expect(str).toContain("◐ step 2");
+        expect(str).toContain("implement");
+        expect(str).toContain("1 pending");
+    });
+
+    it("(h4) all-partial chain (no messages on any step) does not throw", () => {
+        const results = [
+            makePartialStepResult(1, "explore", "Explore"),
+            makePartialStepResult(2, "implement", "Implement"),
+        ];
+        const plan = [
+            { agent: "explore", task: "Explore" },
+            { agent: "implement", task: "Implement" },
+            { agent: "verify", task: "Verify" },
+        ];
+        const result = makeChainResult(results, plan);
+        expect(() => toolDef.renderResult(result, { expanded: true }, theme)).not.toThrow();
+        expect(() => toolDef.renderResult(result, { expanded: false }, theme)).not.toThrow();
     });
 });

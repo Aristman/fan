@@ -335,6 +335,12 @@ export interface ToolRenderResultOptions {
 	isPartial: boolean;
 }
 
+/** Optional metadata that controls how the tool is rendered in the TUI. */
+export interface ToolRenderOptions {
+	/** When true, the result renderer REPLACES the call renderer once a (partial) result exists. */
+	resultReplacesCall?: boolean;
+}
+
 /** Context passed to tool renderers. */
 export interface ToolRenderContext<TState = any, TArgs = any> {
 	/** Current tool call arguments. Shared across call/result renders for the same tool call. */
@@ -402,6 +408,9 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
 		theme: Theme,
 		context: ToolRenderContext<TState, Static<TParams>>,
 	) => Component;
+
+	/** Rendering behavior options */
+	renderOptions?: ToolRenderOptions;
 }
 
 type AnyToolDefinition = ToolDefinition<any, any, any>;

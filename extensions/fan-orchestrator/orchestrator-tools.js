@@ -74,7 +74,7 @@ function getResultToolCalls(result) {
     if (result.progress?.toolCalls?.length > 0) {
         return result.progress.toolCalls;
     }
-    return getDisplayItems(result.messages).filter((item) => item.type === "toolCall");
+    return getDisplayItems(result.messages || []).filter((item) => item.type === "toolCall");
 }
 function formatToolCall(toolName, args, themeFg) {
     const shortenPath = (p) => {
@@ -550,7 +550,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                 const anyFailed = results.some(r => r.exitCode !== 0 || r.stopReason === "error" || r.stopReason === "aborted");
                 const successCount = results.filter((r) => r.exitCode === 0).length;
                 const summaries = results.map((r) => {
-                    const output = getFinalOutput(r.messages);
+                    const output = getFinalOutput(r.messages || []);
                     const preview = output || "(no output)";
                     return `[${r.agent}] ${r.exitCode === 0 ? "completed" : "failed"}:\n${preview}`;
                 });
@@ -651,7 +651,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                     const step = args.chain[i];
                     const cleanTask = step.task.replace(/\{previous\}/g, "").trim();
                     const preview = cleanTask.length > 50 ? `${cleanTask.slice(0, 50)}...` : cleanTask;
-                    text += `\n  ${theme.fg("muted", `${i + 1}.`)} ${theme.fg("dim", "○")} ${getAgentIcon(step.agent)} ${theme.fg("accent", step.agent)}${theme.fg("dim", ` ${preview}`)}`;
+                    text += `\n  ${theme.fg("muted", `${i + 1}.`)} ${theme.fg("muted", "☐")} ${getAgentIcon(step.agent)} ${theme.fg("accent", step.agent)}${theme.fg("dim", ` ${preview}`)}`;
                     const ctxIndicator = formatContextIndicator(step.context);
                     if (ctxIndicator)
                         text += `\n     ${theme.fg("muted", ctxIndicator)}`;
@@ -696,12 +696,13 @@ Each subagent runs in an isolated context window — it cannot see the main conv
             const aggregateUsage = (results) => {
                 const total = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 };
                 for (const r of results) {
-                    total.input += r.usage.input;
-                    total.output += r.usage.output;
-                    total.cacheRead += r.usage.cacheRead;
-                    total.cacheWrite += r.usage.cacheWrite;
-                    total.cost += r.usage.cost;
-                    total.turns += r.usage.turns;
+                    const u = r.usage || {};
+                    total.input += u.input || 0;
+                    total.output += u.output || 0;
+                    total.cacheRead += u.cacheRead || 0;
+                    total.cacheWrite += u.cacheWrite || 0;
+                    total.cost += u.cost || 0;
+                    total.turns += u.turns || 0;
                 }
                 return total;
             };
@@ -709,11 +710,11 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                 const parts = [];
                 const tc = getResultToolCalls(r).length;
                 parts.push(`${tc} tool${tc !== 1 ? "s" : ""}`);
-                const msgCount = r.progress?.messageCount ?? r.messages.filter((m) => m.role === "assistant" || m.role === "user").length;
+                const msgCount = r.progress?.messageCount ?? (r.messages || []).filter((m) => m.role === "assistant" || m.role === "user").length;
                 parts.push(`${msgCount} msg${msgCount !== 1 ? "s" : ""}`);
                 if (r.startTime)
                     parts.push(formatElapsedTime(r.startTime, r.endTime));
-                const usageStr = formatUsageStats(r.usage, r.model);
+                const usageStr = r.usage ? formatUsageStats(r.usage, r.model) : "";
                 if (usageStr)
                     parts.push(usageStr);
                 return parts.join(" · ");
@@ -738,7 +739,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                 const r = details.results[0];
                 const isRunning = !r.endTime;
                 const isError = !isRunning && (r.exitCode !== 0 || r.stopReason === "error" || r.stopReason === "aborted");
-                const toolCount = countToolCalls(r.messages);
+                const toolCount = countToolCalls(r.messages || []);
                 const modelLabel = r.model || "initializing...";
                 // ── Running (collapsed) ──
                 if (isRunning) {
@@ -769,7 +770,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                 }
                 // ── Completed ──
                 const icon = isError ? theme.fg("error", "✗") : theme.fg("success", "✓");
-                const finalOutput = getFinalOutput(r.messages);
+                const finalOutput = getFinalOutput(r.messages || []);
                 const allToolCalls = getResultToolCalls(r);
                 if (expanded) {
                     const container = new Container();
@@ -872,10 +873,10 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                 };
                 const stepIcon = (status) => {
                     switch (status) {
-                        case "completed": return theme.fg("success", "✓");
+                        case "completed": return theme.fg("muted", "☑");
                         case "failed": return theme.fg("error", "✗");
-                        case "running": return theme.fg("warning", "▶");
-                        default: return theme.fg("dim", "○");
+                        case "running": return theme.fg("warning", "◐");
+                        default: return theme.fg("muted", "☐");
                     }
                 };
                 // Find the running step index (0-based) for collapsed view
@@ -893,13 +894,18 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                             const p = details.plan[i];
                             const cleanTask = (p.task || "").replace(/\{previous\}/g, "").trim();
                             const preview = cleanTask.length > 80 ? `${cleanTask.slice(0, 80)}...` : cleanTask;
-                            container.addChild(new Text(`${theme.fg("muted", `─── Step ${i + 1}:`)} ${sIcon} ${getAgentIcon(p.agent)} ${theme.fg("dim", p.agent)} ${theme.fg("dim", preview)}`, 0, 0));
+                            container.addChild(new Text(`${theme.fg("muted", `─── Step ${i + 1}:`)} ${sIcon} ${getAgentIcon(p.agent)} ${theme.fg("muted", p.agent)} ${theme.fg("muted", preview)}`, 0, 0));
                         } else {
                             const r = details.results.find(x => x.step === i + 1);
                             const chainStepModel = r.model ? theme.fg("muted", ` 🤖 ${r.model}`) : "";
                             const isRunning = status === "running";
-                            container.addChild(new Text(`${theme.fg("muted", `─── Step ${r.step}:`)} ${sIcon} ${getAgentIcon(r.agent)} ${theme.fg("accent", r.agent)}${chainStepModel}`, 0, 0));
-                            container.addChild(new Text(theme.fg("muted", "Task: ") + theme.fg("dim", r.task), 0, 0));
+                            const stepTaskText = isRunning
+                                ? theme.fg("muted", "Task: ") + theme.fg("warning", theme.bold(r.task))
+                                : theme.fg("muted", "Task: ") + (status === "completed"
+                                    ? theme.fg("muted", theme.strikethrough(r.task))
+                                    : theme.fg("dim", r.task));
+                            container.addChild(new Text(`${theme.fg("muted", `─── Step ${r.step}:`)} ${sIcon} ${getAgentIcon(r.agent)} ${theme.fg(isRunning ? "warning" : "accent", r.agent)}${chainStepModel}`, 0, 0));
+                            container.addChild(new Text(stepTaskText, 0, 0));
                             const rToolCalls = getResultToolCalls(r);
                             for (const item of rToolCalls) {
                                 if (item.preview) {
@@ -919,7 +925,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                                     container.addChild(new Text(theme.fg("muted", "(running...)"), 0, 0));
                                 }
                             } else {
-                                const rOutput = getFinalOutput(r.messages);
+                                const rOutput = getFinalOutput(r.messages || []);
                                 if (rOutput) {
                                     container.addChild(new Spacer(1));
                                     container.addChild(new Markdown(rOutput.trim(), 0, 0, mdTheme));
@@ -937,7 +943,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                 // Collapsed chain
                 let text = `${icon} ${theme.fg("toolTitle", theme.bold("CHAIN worker"))} ${theme.fg("accent", `(${headerStatus})`)}`;
                 if (runningStepPlan) {
-                    text += ` ${theme.fg("warning", `· ▶ step ${runningStepIdx + 1}: ${getAgentIcon(runningStepPlan.agent)} ${runningStepPlan.agent}`)}`;
+                    text += ` ${theme.fg("warning", `· ◐ step ${runningStepIdx + 1}: ${getAgentIcon(runningStepPlan.agent)} ${runningStepPlan.agent}`)}`;
                 }
                 // Show pending count only when chain is still running
                 if (hasPlan && !terminated) {
@@ -949,11 +955,11 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                 for (const r of details.results) {
                     const rRunning = !r.endTime;
                     const rIcon = rRunning
-                        ? theme.fg("warning", "▶")
+                        ? theme.fg("warning", "◐")
                         : (r.exitCode === 0 && !r.stopReason)
-                            ? theme.fg("success", "✓")
+                            ? theme.fg("muted", "☑")
                             : theme.fg("error", "✗");
-                    const rOutput = getFinalOutput(r.messages);
+                    const rOutput = getFinalOutput(r.messages || []);
                     const chainCollapsedModel = r.model ? theme.fg("muted", ` 🤖 ${r.model}`) : "";
                     text += `\n\n${theme.fg("muted", `─── Step ${r.step}:`)} ${rIcon} ${getAgentIcon(r.agent)} ${theme.fg("accent", r.agent)}${chainCollapsedModel}`;
                     if (rRunning) {
@@ -1008,7 +1014,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                     for (const r of details.results) {
                         const rFailed = r.exitCode !== 0 || r.stopReason === "error" || r.stopReason === "aborted";
                         const rIcon = !rFailed ? theme.fg("success", "✓") : theme.fg("error", "✗");
-                        const rOutput = getFinalOutput(r.messages);
+                        const rOutput = getFinalOutput(r.messages || []);
                         container.addChild(new Spacer(1));
                         const parExpModel = r.model ? theme.fg("muted", ` 🤖 ${r.model}`) : "";
                         container.addChild(new Text(`${theme.fg("muted", "─── ")}${getAgentIcon(r.agent)} ${theme.fg("accent", r.agent)}${parExpModel} ${rIcon}`, 0, 0));
@@ -1040,7 +1046,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                         : (r.exitCode === 0 && !r.stopReason)
                             ? theme.fg("success", "✓")
                             : theme.fg("error", "✗");
-                    const rOutput = getFinalOutput(r.messages);
+                    const rOutput = getFinalOutput(r.messages || []);
                     const parCollapsedModel = r.model ? theme.fg("muted", ` 🤖 ${r.model}`) : "";
                     text += `\n\n${theme.fg("muted", "─── ")}${getAgentIcon(r.agent)} ${theme.fg("accent", r.agent)}${parCollapsedModel} ${rIcon}`;
                     if (rRunning) {
@@ -1078,6 +1084,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
             const text = result.content[0];
             return new Text(text?.type === "text" ? text.text : "(no output)", 0, 0);
         },
+        resultReplacesCall: true,
     });
     // ---- list_tasks ----
     fan.registerTool({
