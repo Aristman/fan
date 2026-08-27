@@ -287,6 +287,9 @@ export function runWorker(model, temperature, agentPrompt, tools, task, stallTim
         // R5: stopReason from RPC (get_state / get_last_assistant_text)
         let lastStopReason = undefined;
 
+        // Accumulated usage from message_end RPC events
+        let accumulatedUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: 0 };
+
         const cleanup = () => {
             if (stallTimer) clearTimeout(stallTimer);
             try { child.stdin?.end(); } catch { /* ignore */ }
@@ -297,6 +300,8 @@ export function runWorker(model, temperature, agentPrompt, tools, task, stallTim
             if (resolved) return;
             resolved = true;
             cleanup();
+            // Always attach accumulated usage to the result
+            result.usage = { ...accumulatedUsage };
             resolve(result);
         };
 
@@ -378,11 +383,13 @@ export function runWorker(model, temperature, agentPrompt, tools, task, stallTim
 
         function emitProgress(status) {
             if (options?.onProgress) {
+                const hasUsage = accumulatedUsage.input > 0 || accumulatedUsage.output > 0;
                 options.onProgress({
                     status,
                     messageCount,
                     toolCalls: [...toolCalls],
                     model: detectedModel,
+                    ...(hasUsage ? { usage: { input: accumulatedUsage.input, output: accumulatedUsage.output, cacheRead: accumulatedUsage.cacheRead, cacheWrite: accumulatedUsage.cacheWrite } } : {}),
                 });
             }
         }
@@ -495,6 +502,20 @@ export function runWorker(model, temperature, agentPrompt, tools, task, stallTim
             if (data.type === "remote_tool_request") {
                 const { id, toolId, args } = data;
                 handleRemoteToolRequest(id, toolId, args);
+                return;
+            }
+
+            // Accumulate usage from message_end events
+            if (data.type === "message_end" && data.message?.usage) {
+                const u = data.message.usage;
+                accumulatedUsage.input += u.input || 0;
+                accumulatedUsage.output += u.output || 0;
+                accumulatedUsage.cacheRead += u.cacheRead || 0;
+                accumulatedUsage.cacheWrite += u.cacheWrite || 0;
+                if (u.totalTokens != null) accumulatedUsage.totalTokens = u.totalTokens;
+                if (u.cost?.total != null) accumulatedUsage.cost += u.cost.total;
+                // Re-emit progress with updated usage
+                emitProgress(wasStreaming ? "Thinking" : "Processing");
                 return;
             }
 
@@ -685,6 +706,7 @@ export async function runSingleAgent(defaultCwd, agents, agentName, task, temper
         const result = await runWorker(model, temperature, agentPrompt, tools, task, stallTimeout, progressOptions, agentName);
         lastText = result.text;
         messageCount = result.messageCount;
+        const workerUsage = result.usage || {};
         const endTime = Date.now();
 
         // R5: handle stopReason from session (error/aborted → failure)
@@ -835,7 +857,15 @@ export async function runSingleAgent(defaultCwd, agents, agentName, task, temper
                 ? [{ role: "assistant", content: [{ type: "text", text: lastText }] }]
                 : [],
             stderr: "",
-            usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: messageCount > 0 ? messageCount : 1 },
+            usage: {
+                input: workerUsage.input || 0,
+                output: workerUsage.output || 0,
+                cacheRead: workerUsage.cacheRead || 0,
+                cacheWrite: workerUsage.cacheWrite || 0,
+                cost: workerUsage.cost || 0,
+                contextTokens: workerUsage.totalTokens || 0,
+                turns: messageCount > 0 ? messageCount : 1,
+            },
             model: detectedModel,
             text: lastText,
             step,

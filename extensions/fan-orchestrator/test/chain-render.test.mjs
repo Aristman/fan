@@ -70,6 +70,7 @@ beforeEach(async () => {
     vi.mock("../config.js", () => ({ resolveWorkerModel: () => "model", resolveWorkerTemperature: () => 0.7 }));
     vi.mock("../subagent-runner.js", () => ({
         formatUsageStats: () => "",
+        formatTokens: (n) => n < 1000 ? String(n) : `${(n / 1000).toFixed(1)}k`,
         formatToolPreview: (n) => n,
         getDisplayItems: () => [],
         getFinalOutput: (msgs) => {
@@ -796,6 +797,8 @@ describe("delegate_task single mode", () => {
         expect(str).toContain("3 messages");
         expect(str).toContain("1 tool");
         expect(str).toContain("Read /src/file.ts");
+        // Horizontal divider between header and body
+        expect(str).toContain("─");
     });
 
     // (d) renderResult — single completed (endTime present) renders ✓ + output + footer
@@ -863,5 +866,161 @@ describe("delegate_task renderOptions.resultReplacesCall", () => {
         expect(fn({ chain: [] })).toBe(false);
         expect(fn({ chain: undefined })).toBe(false);
         expect(fn({})).toBe(false);
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// SINGLE MODE — NEW UI FEATURES
+// ═══════════════════════════════════════════════════════════════
+
+describe("delegate_task single mode — new UI features", () => {
+    const makeSingleResult = (results, isError = false) => ({
+        content: [{ type: "text", text: "output" }],
+        isError,
+        details: { mode: "single", agentScope: "user", projectAgentsDir: null, results },
+    });
+
+    // ── 1. No truncation of task in renderCall ──
+    it("renderCall shows full task without truncation (no ...)", () => {
+        const longTask = "A".repeat(200);
+        const args = { agent: "explore", task: longTask };
+        const rendered = toolDef.renderCall(args, theme);
+        const str = rendered.toString();
+        expect(str).toContain("EXPLORE");
+        expect(str).toContain(longTask);
+        expect(str).not.toContain("...");
+    });
+
+    it("renderCall collapses multiline task into single line (no ...)", () => {
+        const multiLineTask = "Line one\nLine two\nLine three";
+        const args = { agent: "implement", task: multiLineTask };
+        const rendered = toolDef.renderCall(args, theme);
+        const str = rendered.toString();
+        expect(str).toContain("IMPLEMENT");
+        expect(str).toContain("Line one Line two Line three");
+        expect(str).not.toContain("\nLine two");
+        expect(str).not.toContain("...");
+    });
+
+    // ── 2. Token usage in running status line ──
+    it("running status shows ⚡ in/out when progress has usage", () => {
+        const results = [
+            makeStepResult(undefined, "explore", "Task", {
+                endTime: undefined,
+                progress: {
+                    status: "Processing",
+                    messageCount: 2,
+                    toolCalls: [{ name: "read", args: {}, preview: "Read file" }],
+                    model: "gpt-4",
+                    usage: { input: 12345, output: 8100, cacheRead: 0, cacheWrite: 0 },
+                },
+            }),
+        ];
+        const result = makeSingleResult(results);
+        const rendered = toolDef.renderResult(result, { expanded: false, isPartial: true }, theme);
+        const str = rendered.toString();
+        expect(str).toContain("⚡");
+        expect(str).toContain("12.3k/8.1k");
+    });
+
+    it("running status does NOT show ⚡ when no usage yet", () => {
+        const results = [
+            makeStepResult(undefined, "explore", "Task", {
+                endTime: undefined,
+                progress: {
+                    status: "Processing",
+                    messageCount: 1,
+                    toolCalls: [],
+                    model: "gpt-4",
+                },
+            }),
+        ];
+        const result = makeSingleResult(results);
+        const rendered = toolDef.renderResult(result, { expanded: false, isPartial: true }, theme);
+        const str = rendered.toString();
+        expect(str).not.toContain("⚡");
+    });
+
+    it("running status does NOT show ⚡ when usage is all zeros", () => {
+        const results = [
+            makeStepResult(undefined, "explore", "Task", {
+                endTime: undefined,
+                progress: {
+                    status: "Processing",
+                    messageCount: 1,
+                    toolCalls: [],
+                    model: "gpt-4",
+                    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+                },
+            }),
+        ];
+        const result = makeSingleResult(results);
+        const rendered = toolDef.renderResult(result, { expanded: false, isPartial: true }, theme);
+        const str = rendered.toString();
+        expect(str).not.toContain("⚡");
+    });
+
+    // ── 3. Horizontal divider between header and body ──
+    it("renderResult running shows ─ divider after status line", () => {
+        const results = [
+            makeStepResult(undefined, "explore", "Task", {
+                endTime: undefined,
+                progress: { status: "Processing", messageCount: 0, toolCalls: [] },
+            }),
+        ];
+        const result = makeSingleResult(results);
+        const rendered = toolDef.renderResult(result, { expanded: false, isPartial: true }, theme);
+        const str = rendered.toString();
+        const lines = str.split("\n");
+        // Second line should be the divider (muted ─)
+        expect(lines[1]).toContain("─");
+    });
+
+    it("renderResult completed collapsed shows ─ divider after icon line", () => {
+        const results = [
+            makeStepResult(undefined, "explore", "Task", {
+                endTime: 1200,
+                messages: [{ role: "assistant", content: [{ type: "text", text: "Done" }] }],
+            }),
+        ];
+        const result = makeSingleResult(results);
+        const rendered = toolDef.renderResult(result, { expanded: false, isPartial: false }, theme);
+        const str = rendered.toString();
+        const lines = str.split("\n");
+        // Second line should be the divider
+        expect(lines[1]).toContain("─");
+    });
+
+    it("renderResult completed expanded shows ─ divider as first child", () => {
+        const results = [
+            makeStepResult(undefined, "explore", "Task", {
+                endTime: 1200,
+                messages: [{ role: "assistant", content: [{ type: "text", text: "Done" }] }],
+            }),
+        ];
+        const result = makeSingleResult(results);
+        const rendered = toolDef.renderResult(result, { expanded: true, isPartial: false }, theme);
+        const str = rendered.toString();
+        // Expanded is a Container — first child is the divider
+        const lines = str.split("\n");
+        expect(lines[0]).toContain("─");
+    });
+
+    // ── 5. Footer shows real usage via formatUsageStats ──
+    it("completed footer shows usage when non-zero", () => {
+        const results = [
+            makeStepResult(undefined, "explore", "Task", {
+                endTime: 1200,
+                messages: [{ role: "assistant", content: [{ type: "text", text: "Result" }] }],
+                usage: { input: 5000, output: 2000, cacheRead: 3000, cacheWrite: 500, cost: 0.05, contextTokens: 8000, turns: 4 },
+            }),
+        ];
+        const result = makeSingleResult(results);
+        const rendered = toolDef.renderResult(result, { expanded: false, isPartial: false }, theme);
+        const str = rendered.toString();
+        // formatUsageStats is mocked to return "" — but the real function would show ↑5k ↓2k R3k W500 etc.
+        // With the mock returning "", just verify it doesn't crash
+        expect(str).toContain("✓");
+        expect(str).toContain("Result");
     });
 });

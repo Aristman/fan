@@ -12,7 +12,7 @@ import { Type } from "@sinclair/typebox";
 import { discoverAgents } from "./agents.js";
 import { classifyComplexity, formatComplexityResult, DIRECT_TASK_RULES, DELEGATE_TASK_RULES } from "./task-complexity.js";
 import { resolveWorkerModel, resolveWorkerTemperature } from "./config.js";
-import { formatUsageStats, formatToolPreview, getDisplayItems, getFinalOutput, MAX_CONCURRENCY, MAX_PARALLEL_TASKS, mapWithConcurrencyLimit, runSingleAgent, } from "./subagent-runner.js";
+import { formatTokens, formatUsageStats, formatToolPreview, getDisplayItems, getFinalOutput, MAX_CONCURRENCY, MAX_PARALLEL_TASKS, mapWithConcurrencyLimit, runSingleAgent, } from "./subagent-runner.js";
 import { acquireSlot, getWorker, releaseSlot, updateWorker } from "./workers.js";
 import { collectProjectContext, mergeContext, truncate, PREVIOUS_OUTPUT_LIMIT } from "./context-builder.js";
 const COLLAPSED_ITEM_COUNT = 10;
@@ -677,8 +677,8 @@ Each subagent runs in an isolated context window — it cannot see the main conv
             const agentLabel = (args.agent || "unknown").toUpperCase();
             let text = theme.fg("toolTitle", theme.bold(`${agentIcon} ${agentLabel} worker`));
             if (args.task) {
-                const preview = (args.task || "").length > 80 ? `${(args.task || "").slice(0, 80)}...` : (args.task || "");
-                text += `\n  ${theme.fg("dim", `ЗАДАЧА: ${preview}`)}`;
+                const fullTask = (args.task || "").replace(/\n/g, " ");
+                text += `\n  ${theme.fg("dim", `ЗАДАЧА: ${fullTask}`)}`;
             }
             const ctxIndicator = formatContextIndicator(args.context);
             if (ctxIndicator)
@@ -755,7 +755,13 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                     if (elapsed) statusParts.push(`⏱ ${elapsed}`);
                     statusParts.push(`💬 ${msgCount} message${msgCount !== 1 ? "s" : ""}`);
                     statusParts.push(`🔧 ${toolCount} tool${toolCount !== 1 ? "s" : ""}`);
+                    // Token usage from accumulated RPC message_end events
+                    const usage = progress.usage;
+                    if (usage && (usage.input > 0 || usage.output > 0)) {
+                        statusParts.push(`⚡ ${formatTokens(usage.input)}/${formatTokens(usage.output)}`);
+                    }
                     let text = `${icon} ${theme.fg("muted", statusParts.join(" | "))}`;
+                    text += `\n${theme.fg("muted", "─".repeat(48))}`;
                     const lastTools = progressTools.slice(-MAX_LIVE_TOOLS);
                     if (lastTools.length > 0) {
                         for (const tc of lastTools) {
@@ -774,6 +780,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                 const allToolCalls = getResultToolCalls(r);
                 if (expanded) {
                     const container = new Container();
+                    container.addChild(new Text(theme.fg("muted", "─".repeat(48)), 0, 0));
                     if (isError && r.errorMessage)
                         container.addChild(new Text(theme.fg("error", `Error: ${r.errorMessage}`), 0, 0));
                     if (isError && r.stderr && !r.errorMessage)
@@ -809,6 +816,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                 }
                 // Collapsed completed
                 let text = `${icon} ${theme.fg("muted", `(${modelLabel})`)}`;
+                text += `\n${theme.fg("muted", "─".repeat(48))}`;
                 if (isError && r.stopReason)
                     text += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
                 if (isError && r.errorMessage) {
