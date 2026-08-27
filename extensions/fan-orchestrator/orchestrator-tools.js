@@ -1215,7 +1215,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
             const text = result.content[0];
             return new Text(text?.type === "text" ? text.text : "(no output)", 0, 0);
         },
-        renderOptions: { resultReplacesCall: true },
+        renderOptions: { resultReplacesCall: (args) => Boolean(args.chain && args.chain.length > 0) },
     });
     // ---- list_tasks ----
     fan.registerTool({

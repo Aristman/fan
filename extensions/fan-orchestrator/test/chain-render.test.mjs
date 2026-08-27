@@ -121,7 +121,8 @@ const makeStepResult = (step, agent, task, opts = {}) => ({
     exitCode: opts.exitCode ?? 0,
     stopReason: opts.stopReason,
     messages: opts.messages || [],
-    stderr: "",
+    stderr: opts.stderr ?? "",
+    errorMessage: opts.errorMessage,
     usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
     model: opts.model || "test-model",
     text: opts.text || "",
@@ -728,5 +729,139 @@ describe("delegate_task chain renderResult", () => {
         expect(previewLines).toHaveLength(9);
         expect(previewLines[0]).toContain("Read file 4");
         expect(previewLines[8]).toContain("Read file 12");
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// SINGLE MODE RENDERING
+// ═══════════════════════════════════════════════════════════════
+
+describe("delegate_task single mode", () => {
+
+    // Helper: make a single-mode result object for testing renderResult
+    const makeSingleResult = (results, isError = false) => ({
+        content: [{ type: "text", text: "output" }],
+        isError,
+        details: {
+            mode: "single",
+            agentScope: "user",
+            projectAgentsDir: null,
+            results,
+        },
+    });
+
+    // (a) renderCall for single shows worker header
+    it("(a) renderCall shows 🤖 worker header and ЗАДАЧА for single mode", () => {
+        const args = { agent: "explore", task: "Explore the codebase structure" };
+        const rendered = toolDef.renderCall(args, theme);
+        const str = rendered.toString();
+        expect(str).toContain("EXPLORE");
+        expect(str).toContain("ЗАДАЧА");
+        expect(str).toContain("Explore the codebase structure");
+    });
+
+    // (b) renderCall for single with context indicator
+    it("(b) renderCall shows 📋 ctx indicator when context provided", () => {
+        const args = {
+            agent: "implement",
+            task: "Fix the bug",
+            context: { relevantFiles: ["src/a.ts", "src/b.ts"], constraints: ["no breaking changes"] },
+        };
+        const rendered = toolDef.renderCall(args, theme);
+        const str = rendered.toString();
+        expect(str).toContain("IMPLEMENT");
+        expect(str).toContain("ctx:");
+        expect(str).toContain("2 files");
+        expect(str).toContain("1 constraint");
+    });
+
+    // (c) renderResult — single live partial (no endTime) renders status line with ⏳
+    it("(c) renderResult live partial shows ⏳ status line", () => {
+        const results = [
+            makeStepResult(undefined, "explore", "Explore codebase", {
+                endTime: undefined,
+                progress: {
+                    status: "Processing",
+                    messageCount: 3,
+                    toolCalls: [{ name: "read", args: { path: "/src/file.ts" }, preview: "Read /src/file.ts" }],
+                    model: "test-model",
+                },
+            }),
+        ];
+        const result = makeSingleResult(results);
+        const rendered = toolDef.renderResult(result, { expanded: false, isPartial: true }, theme);
+        const str = rendered.toString();
+        expect(str).toContain("⏳");
+        expect(str).toContain("test-model");
+        expect(str).toContain("3 messages");
+        expect(str).toContain("1 tool");
+        expect(str).toContain("Read /src/file.ts");
+    });
+
+    // (d) renderResult — single completed (endTime present) renders ✓ + output + footer
+    it("(d) renderResult completed shows ✓, output, and footer", () => {
+        const results = [
+            makeStepResult(undefined, "explore", "Explore codebase", {
+                endTime: 1200,
+                messages: [{ role: "assistant", content: [{ type: "text", text: "Found 5 important files" }] }],
+            }),
+        ];
+        const result = makeSingleResult(results);
+        const rendered = toolDef.renderResult(result, { expanded: false, isPartial: false }, theme);
+        const str = rendered.toString();
+        expect(str).toContain("✓");
+        expect(str).toContain("Found 5 important files");
+        // Footer with tool count
+        expect(str).toContain("0 tools");
+    });
+
+    // (e) renderResult — single failed shows ✗ and error info
+    it("(e) renderResult failed shows ✗ and error message", () => {
+        const results = [
+            makeStepResult(undefined, "implement", "Fix bug", {
+                exitCode: 1,
+                stopReason: "error",
+                endTime: 1200,
+                errorMessage: "Something went wrong",
+            }),
+        ];
+        const result = makeSingleResult(results, true);
+        const rendered = toolDef.renderResult(result, { expanded: false, isPartial: false }, theme);
+        const str = rendered.toString();
+        expect(str).toContain("✗");
+        expect(str).toContain("Something went wrong");
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// resultReplacesCall CONDITIONAL FUNCTION
+// ═══════════════════════════════════════════════════════════════
+
+describe("delegate_task renderOptions.resultReplacesCall", () => {
+
+    it("returns false for single-mode args", () => {
+        const fn = toolDef.renderOptions.resultReplacesCall;
+        expect(typeof fn).toBe("function");
+        expect(fn({ agent: "explore", task: "Do something" })).toBe(false);
+        expect(fn({ agent: "implement", task: "Fix", context: { relevantFiles: [] } })).toBe(false);
+        expect(fn({ agent: "explore", task: "Task", cwd: "/tmp" })).toBe(false);
+    });
+
+    it("returns true for chain-mode args", () => {
+        const fn = toolDef.renderOptions.resultReplacesCall;
+        expect(fn({ chain: [{ agent: "explore", task: "Step 1" }] })).toBe(true);
+        expect(fn({ chain: [{ agent: "a", task: "1" }, { agent: "b", task: "2" }] })).toBe(true);
+    });
+
+    it("returns false for parallel-mode args", () => {
+        const fn = toolDef.renderOptions.resultReplacesCall;
+        expect(fn({ tasks: [{ agent: "explore", task: "A" }] })).toBe(false);
+    });
+
+    it("returns false for empty chain array", () => {
+        const fn = toolDef.renderOptions.resultReplacesCall;
+        expect(fn({ chain: [] })).toBe(false);
+        expect(fn({ chain: undefined })).toBe(false);
+        expect(fn({})).toBe(false);
     });
 });
