@@ -80,6 +80,7 @@ interface FileStateManagerModule {
 	canTransition(from: string, to: string): boolean;
 	parseFirstUnchecked(raw: string): { index: number; text: string } | null;
 	hasUncheckedRoadmapItems(missionDir: string): Promise<boolean>;
+	readBacklog(missionDir: string): Promise<Array<{ id: string; status: string }>>;
 	InvalidTransitionError: typeof InvalidTransitionError;
 }
 
@@ -304,8 +305,30 @@ export async function missionResume(missionDir?: string, ctx?: MissionContext): 
 	if (!fsm.canTransition(status, "active")) {
 		throw new InvalidTransitionError(status, "active");
 	}
+	// For completed missions: warn if nothing to resume (no unchecked
+	// ROADMAP items and no IDEA backlog entries). Changing status would
+	// just cause the loop to complete again immediately.
+	if (status === "completed") {
+		const hasUnchecked = await fsm.hasUncheckedRoadmapItems(dir);
+		let hasIdeas = false;
+		if (!hasUnchecked && typeof fsm.readBacklog === "function") {
+			try {
+				hasIdeas = (await fsm.readBacklog(dir)).some((e) => e.status === "IDEA");
+			} catch {
+				hasIdeas = false;
+			}
+		}
+		if (!hasUnchecked && !hasIdeas) {
+			console.log("Nothing to resume: backlog has no IDEA entries and ROADMAP is complete.");
+			console.log("Add new items via `/idea <text>` in a fan session, then use /mission:resume.");
+			return;
+		}
+	}
 	await fsm.writeMissionStatus(dir, "active");
 	console.log(`Mission resumed at ${dir}`);
+	if (status === "completed") {
+		console.log("Start a fan session or use /mission:resume in-session to begin processing.");
+	}
 }
 
 // ─── F-42: mission tree (tree-journal.jsonl → ASCII/JSON) ───────────────────

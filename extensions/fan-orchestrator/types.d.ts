@@ -130,12 +130,22 @@ export interface UsageStats {
   turns: number;
 }
 
+/** Accumulated usage (subset, for live progress display) */
+export interface ProgressUsage {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+}
+
 /** Live worker progress */
 export interface WorkerProgress {
   status: string;
   messageCount: number;
   toolCalls: ToolCallInfo[];
   model?: string;
+  /** Accumulated token usage (present only after first message_end) */
+  usage?: ProgressUsage;
 }
 
 /** Tool call info for progress display */

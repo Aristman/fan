@@ -583,12 +583,25 @@ export default function missionExtension(fan: ExtensionAPI): MissionWiring {
 				currentSessionFile = undefined;
 			}
 			// F-MISSION-DUTY: сначала не-терминальные; если их нет —
-			// completed-миссия с parseable recurring-пунктами аттачится как duty.
+			// completed-миссия с parseable recurring-пунктами или IDEA-записями
+			// в BACKLOG.md аттачится (дежурство / реактивация идей).
 			let found = await findAttachableMission(cwd, (status) => NON_TERMINAL_STATUSES.has(status));
 			if (!found) {
 				found = await findAttachableMission(
 					cwd,
-					(status, missionDir) => status === "completed" && readRecurring(missionDir).length > 0,
+					(status, missionDir) => {
+						if (status !== "completed") return false;
+						if (readRecurring(missionDir).length > 0) return true;
+						// Cheap sync check: scan BACKLOG.md for IDEA status
+						// (no full parse needed — just grep for | IDEA | rows).
+						try {
+							const raw = readFileSync(join(missionDir, "BACKLOG.md"), "utf8");
+							// Table rows with status "IDEA" match: | ... | IDEA |
+							return /\|.*\|\s*IDEA\s*\|/.test(raw);
+						} catch {
+							return false;
+						}
+					},
 				);
 			}
 			if (found) {

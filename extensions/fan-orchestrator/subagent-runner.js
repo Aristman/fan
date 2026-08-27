@@ -238,6 +238,7 @@ export function runWorker(model, temperature, agentPrompt, tools, task, stallTim
     const PROMPT_ID = "orch-prompt";
     const STATE_ID = "orch-state";
     const TEXT_ID = "orch-text";
+    const STATS_ID = "orch-stats";
 
     return new Promise((resolve, reject) => {
         const rpcArgs = ["--mode", "rpc"];
@@ -287,16 +288,42 @@ export function runWorker(model, temperature, agentPrompt, tools, task, stallTim
         // R5: stopReason from RPC (get_state / get_last_assistant_text)
         let lastStopReason = undefined;
 
+        // Accumulated usage from message_end RPC events
+        let accumulatedUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: 0 };
+
         const cleanup = () => {
             if (stallTimer) clearTimeout(stallTimer);
             try { child.stdin?.end(); } catch { /* ignore */ }
             try { child.kill("SIGTERM"); } catch { /* ignore */ }
         };
 
+        /**
+         * Send get_session_stats and use the response as authoritative final usage.
+         * Keeps stdin open so the worker can respond. Falls back to accumulatedUsage
+         * if the RPC response doesn't arrive within 3s.
+         */
+        const finishWithStats = (result) => {
+            if (resolved) return;
+            // Send stats request BEFORE marking resolved (send checks !resolved)
+            send({ type: "get_session_stats", id: STATS_ID });
+            resolved = true;
+            // Do NOT cleanup yet — stdin must stay open for get_session_stats response.
+            const statsTimeout = setTimeout(() => {
+                // Timeout — use whatever accumulatedUsage has, then cleanup
+                cleanup();
+                result.usage = { ...accumulatedUsage };
+                resolve(result);
+            }, 3000);
+            // The STATS_ID response handler (below) will clear this timeout, cleanup, and resolve
+            finishWithStats._pending = { result, statsTimeout };
+        };
+        finishWithStats._pending = null;
+
         const finish = (result) => {
             if (resolved) return;
             resolved = true;
             cleanup();
+            result.usage = { ...accumulatedUsage };
             resolve(result);
         };
 
@@ -378,11 +405,13 @@ export function runWorker(model, temperature, agentPrompt, tools, task, stallTim
 
         function emitProgress(status) {
             if (options?.onProgress) {
+                const hasUsage = accumulatedUsage.input > 0 || accumulatedUsage.output > 0;
                 options.onProgress({
                     status,
                     messageCount,
                     toolCalls: [...toolCalls],
                     model: detectedModel,
+                    ...(hasUsage ? { usage: { input: accumulatedUsage.input, output: accumulatedUsage.output, cacheRead: accumulatedUsage.cacheRead, cacheWrite: accumulatedUsage.cacheWrite } } : {}),
                 });
             }
         }
@@ -414,7 +443,7 @@ export function runWorker(model, temperature, agentPrompt, tools, task, stallTim
                     lastSeenMessageCount = messageCount;
                     emitProgress("Done");
                     send({ type: "get_last_assistant_text", id: TEXT_ID });
-                    setTimeout(() => { if (!resolved) finish({ text: lastText, messageCount, stopReason: lastStopReason }); }, 15_000);
+                    setTimeout(() => { if (!resolved) finishWithStats({ text: lastText, messageCount, stopReason: lastStopReason }); }, 15_000);
                 } else {
                     // No streaming detected — use messageCount growth as activity signal
                     if (data.data.messageCount > lastSeenMessageCount) {
@@ -431,7 +460,7 @@ export function runWorker(model, temperature, agentPrompt, tools, task, stallTim
                                 // Tool activity detected — keep old force-finish
                                 emitProgress("Done");
                                 send({ type: "get_last_assistant_text", id: TEXT_ID });
-                                setTimeout(() => { if (!resolved) finish({ text: lastText, messageCount, stopReason: lastStopReason }); }, 15_000);
+                                setTimeout(() => { if (!resolved) finishWithStats({ text: lastText, messageCount, stopReason: lastStopReason }); }, 15_000);
                             }
                         } else {
                             schedulePoll();
@@ -457,7 +486,7 @@ export function runWorker(model, temperature, agentPrompt, tools, task, stallTim
                         setTimeout(() => {
                             if (resolved) return;
                             if (lastText) {
-                                finish({ text: lastText, messageCount, stopReason: lastStopReason });
+                                finishWithStats({ text: lastText, messageCount, stopReason: lastStopReason });
                             } else if (toolCalls.length > 0) {
                                 // Build summary from tool calls
                                 const summary = toolCalls
@@ -467,9 +496,9 @@ export function runWorker(model, temperature, agentPrompt, tools, task, stallTim
                                 const fallback = summary
                                     ? `Plan agent completed research but did not generate a summary. Tool calls:\n${summary}`
                                     : "(no output — tool calls were made but no summary generated)";
-                                finish({ text: fallback, messageCount, stopReason: lastStopReason });
+                                finishWithStats({ text: fallback, messageCount, stopReason: lastStopReason });
                             } else {
-                                finish({ text: lastText, messageCount, stopReason: lastStopReason });
+                                finishWithStats({ text: lastText, messageCount, stopReason: lastStopReason });
                             }
                         }, 8000);
                     }, 2000);
@@ -477,7 +506,7 @@ export function runWorker(model, temperature, agentPrompt, tools, task, stallTim
                 }
                 
                 emitProgress("Done");
-                finish({ text: lastText, messageCount, stopReason: lastStopReason });
+                finishWithStats({ text: lastText, messageCount, stopReason: lastStopReason });
                 return;
             }
 
@@ -495,6 +524,41 @@ export function runWorker(model, temperature, agentPrompt, tools, task, stallTim
             if (data.type === "remote_tool_request") {
                 const { id, toolId, args } = data;
                 handleRemoteToolRequest(id, toolId, args);
+                return;
+            }
+
+            // Accumulate usage from message_end events (live progress source)
+            if (data.type === "message_end" && data.message?.usage) {
+                const u = data.message.usage;
+                accumulatedUsage.input += u.input || 0;
+                accumulatedUsage.output += u.output || 0;
+                accumulatedUsage.cacheRead += u.cacheRead || 0;
+                accumulatedUsage.cacheWrite += u.cacheWrite || 0;
+                if (u.totalTokens != null) accumulatedUsage.totalTokens = u.totalTokens;
+                if (u.cost?.total != null) accumulatedUsage.cost += u.cost.total;
+                // Re-emit progress with updated usage
+                emitProgress(wasStreaming ? "Thinking" : "Processing");
+                return;
+            }
+
+            // Authoritative usage from get_session_stats response (final source)
+            if (data.type === "response" && data.id === STATS_ID && data.success && data.data?.tokens) {
+                const t = data.data.tokens;
+                accumulatedUsage.input = t.input || 0;
+                accumulatedUsage.output = t.output || 0;
+                accumulatedUsage.cacheRead = t.cacheRead || 0;
+                accumulatedUsage.cacheWrite = t.cacheWrite || 0;
+                accumulatedUsage.totalTokens = t.total || 0;
+                if (data.data.cost != null) accumulatedUsage.cost = data.data.cost;
+                // If finishWithStats is waiting, resolve now with authoritative usage
+                if (finishWithStats._pending) {
+                    const { result, statsTimeout } = finishWithStats._pending;
+                    finishWithStats._pending = null;
+                    clearTimeout(statsTimeout);
+                    cleanup();
+                    result.usage = { ...accumulatedUsage };
+                    resolve(result);
+                }
                 return;
             }
 
@@ -685,6 +749,7 @@ export async function runSingleAgent(defaultCwd, agents, agentName, task, temper
         const result = await runWorker(model, temperature, agentPrompt, tools, task, stallTimeout, progressOptions, agentName);
         lastText = result.text;
         messageCount = result.messageCount;
+        const workerUsage = result.usage || {};
         const endTime = Date.now();
 
         // R5: handle stopReason from session (error/aborted → failure)
@@ -835,7 +900,15 @@ export async function runSingleAgent(defaultCwd, agents, agentName, task, temper
                 ? [{ role: "assistant", content: [{ type: "text", text: lastText }] }]
                 : [],
             stderr: "",
-            usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: messageCount > 0 ? messageCount : 1 },
+            usage: {
+                input: workerUsage.input || 0,
+                output: workerUsage.output || 0,
+                cacheRead: workerUsage.cacheRead || 0,
+                cacheWrite: workerUsage.cacheWrite || 0,
+                cost: workerUsage.cost || 0,
+                contextTokens: workerUsage.totalTokens || 0,
+                turns: messageCount > 0 ? messageCount : 1,
+            },
             model: detectedModel,
             text: lastText,
             step,

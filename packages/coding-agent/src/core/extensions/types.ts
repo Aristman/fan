@@ -337,8 +337,16 @@ export interface ToolRenderResultOptions {
 
 /** Optional metadata that controls how the tool is rendered in the TUI. */
 export interface ToolRenderOptions {
-	/** When true, the result renderer REPLACES the call renderer once a (partial) result exists. */
-	resultReplacesCall?: boolean;
+	/**
+	 * When true (or when the function returns true for the given args), the result
+	 * renderer REPLACES the call renderer once a (partial) result exists.
+	 *
+	 * - `boolean`: static decision for all invocations (backward compatible).
+	 * - `(args: any) => boolean`: per-call decision based on tool call arguments.
+	 *
+	 * Defaults to `false` for all tools when omitted.
+	 */
+	resultReplacesCall?: boolean | ((args: any) => boolean);
 }
 
 /** Context passed to tool renderers. */

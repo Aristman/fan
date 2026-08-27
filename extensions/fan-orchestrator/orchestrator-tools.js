@@ -12,7 +12,7 @@ import { Type } from "@sinclair/typebox";
 import { discoverAgents } from "./agents.js";
 import { classifyComplexity, formatComplexityResult, DIRECT_TASK_RULES, DELEGATE_TASK_RULES } from "./task-complexity.js";
 import { resolveWorkerModel, resolveWorkerTemperature } from "./config.js";
-import { formatUsageStats, formatToolPreview, getDisplayItems, getFinalOutput, MAX_CONCURRENCY, MAX_PARALLEL_TASKS, mapWithConcurrencyLimit, runSingleAgent, } from "./subagent-runner.js";
+import { formatTokens, formatUsageStats, formatToolPreview, getDisplayItems, getFinalOutput, MAX_CONCURRENCY, MAX_PARALLEL_TASKS, mapWithConcurrencyLimit, runSingleAgent, } from "./subagent-runner.js";
 import { acquireSlot, getWorker, releaseSlot, updateWorker } from "./workers.js";
 import { collectProjectContext, mergeContext, truncate, PREVIOUS_OUTPUT_LIMIT } from "./context-builder.js";
 const COLLAPSED_ITEM_COUNT = 10;
@@ -677,8 +677,8 @@ Each subagent runs in an isolated context window — it cannot see the main conv
             const agentLabel = (args.agent || "unknown").toUpperCase();
             let text = theme.fg("toolTitle", theme.bold(`${agentIcon} ${agentLabel} worker`));
             if (args.task) {
-                const preview = (args.task || "").length > 80 ? `${(args.task || "").slice(0, 80)}...` : (args.task || "");
-                text += `\n  ${theme.fg("dim", `ЗАДАЧА: ${preview}`)}`;
+                const fullTask = (args.task || "").replace(/\n/g, " ");
+                text += `\n  ${theme.fg("dim", `ЗАДАЧА: ${fullTask}`)}`;
             }
             const ctxIndicator = formatContextIndicator(args.context);
             if (ctxIndicator)
@@ -719,6 +719,23 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                     parts.push(usageStr);
                 return parts.join(" · ");
             };
+            const resultUsage = (r) => r.endTime ? r.usage : r.progress?.usage;
+            const liveUsageBadge = (usage) => {
+                if (!usage || (usage.input <= 0 && usage.output <= 0)) return "";
+                return ` ⚡ ${formatTokens(usage.input)}/${formatTokens(usage.output)}`;
+            };
+            const aggregateLiveUsage = (results) => {
+                let totalInput = 0, totalOutput = 0;
+                for (const r of results) {
+                    const u = resultUsage(r);
+                    if (u) {
+                        totalInput += u.input || 0;
+                        totalOutput += u.output || 0;
+                    }
+                }
+                if (totalInput <= 0 && totalOutput <= 0) return "";
+                return theme.fg("accent", ` ⚡ ${formatTokens(totalInput)}/${formatTokens(totalOutput)}`);
+            };
             const formatAggregateFooter = (results) => {
                 const parts = [];
                 const totalTools = results.reduce((s, r) => s + getResultToolCalls(r).length, 0);
@@ -755,7 +772,13 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                     if (elapsed) statusParts.push(`⏱ ${elapsed}`);
                     statusParts.push(`💬 ${msgCount} message${msgCount !== 1 ? "s" : ""}`);
                     statusParts.push(`🔧 ${toolCount} tool${toolCount !== 1 ? "s" : ""}`);
+                    // Token usage from accumulated RPC message_end events
+                    const usage = progress.usage;
+                    if (usage && (usage.input > 0 || usage.output > 0)) {
+                        statusParts.push(`⚡ ${formatTokens(usage.input)}/${formatTokens(usage.output)}`);
+                    }
                     let text = `${icon} ${theme.fg("muted", statusParts.join(" | "))}`;
+                    text += `\n${theme.fg("muted", "─".repeat(48))}`;
                     const lastTools = progressTools.slice(-MAX_LIVE_TOOLS);
                     if (lastTools.length > 0) {
                         for (const tc of lastTools) {
@@ -774,6 +797,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                 const allToolCalls = getResultToolCalls(r);
                 if (expanded) {
                     const container = new Container();
+                    container.addChild(new Text(theme.fg("muted", "─".repeat(48)), 0, 0));
                     if (isError && r.errorMessage)
                         container.addChild(new Text(theme.fg("error", `Error: ${r.errorMessage}`), 0, 0));
                     if (isError && r.stderr && !r.errorMessage)
@@ -809,6 +833,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                 }
                 // Collapsed completed
                 let text = `${icon} ${theme.fg("muted", `(${modelLabel})`)}`;
+                text += `\n${theme.fg("muted", "─".repeat(48))}`;
                 if (isError && r.stopReason)
                     text += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
                 if (isError && r.errorMessage) {
@@ -884,7 +909,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                     };
                     if (expanded) {
                         const container = new Container();
-                        container.addChild(new Text(`${icon} ${theme.fg("toolTitle", theme.bold("CHAIN worker"))} ${theme.fg("accent", `(${headerStatus})`)}`, 0, 0));
+                        container.addChild(new Text(`${icon} ${theme.fg("toolTitle", theme.bold("CHAIN worker"))} ${theme.fg("accent", `(${headerStatus})`)}${aggregateLiveUsage(details.results)}`, 0, 0));
                         for (let i = 0; i < details.results.length; i++) {
                             const r = details.results[i];
                             const isRunning = !r.endTime;
@@ -897,7 +922,8 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                                 : theme.fg("muted", "Task: ") + (status === "completed"
                                     ? theme.fg("muted", theme.strikethrough(r.task))
                                     : theme.fg("dim", r.task));
-                            container.addChild(new Text(`${theme.fg("muted", `─── Step ${r.step}:`)} ${sIcon} ${getAgentIcon(r.agent)} ${theme.fg(isRunning ? "warning" : "accent", r.agent)}${chainStepModel}`, 0, 0));
+                            const stepBadge = liveUsageBadge(resultUsage(r));
+                            container.addChild(new Text(`${theme.fg("muted", `─── Step ${r.step}:`)} ${sIcon} ${getAgentIcon(r.agent)} ${theme.fg(isRunning ? "warning" : "accent", r.agent)}${chainStepModel}${stepBadge ? theme.fg("accent", stepBadge) : ""}`, 0, 0));
                             container.addChild(new Text(stepTaskText, 0, 0));
                             const rToolCalls = getResultToolCalls(r);
                             for (const item of rToolCalls) {
@@ -933,7 +959,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                         return container;
                     }
                     // Collapsed old behavior
-                    let text = `${icon} ${theme.fg("toolTitle", theme.bold("CHAIN worker"))} ${theme.fg("accent", `(${headerStatus})`)}`;
+                    let text = `${icon} ${theme.fg("toolTitle", theme.bold("CHAIN worker"))} ${theme.fg("accent", `(${headerStatus})`)}${aggregateLiveUsage(details.results)}`;
                     for (const r of details.results) {
                         const rRunning = !r.endTime;
                         const rIcon = rRunning
@@ -943,7 +969,8 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                                 : theme.fg("error", "✗");
                         const rOutput = getFinalOutput(r.messages || []);
                         const chainCollapsedModel = r.model ? theme.fg("muted", ` 🤖 ${r.model}`) : "";
-                        text += `\n\n${theme.fg("muted", `─── Step ${r.step}:`)} ${rIcon} ${getAgentIcon(r.agent)} ${theme.fg("accent", r.agent)}${chainCollapsedModel}`;
+                        const stepBadge = liveUsageBadge(resultUsage(r));
+                        text += `\n\n${theme.fg("muted", `─── Step ${r.step}:`)} ${rIcon} ${getAgentIcon(r.agent)} ${theme.fg("accent", r.agent)}${chainCollapsedModel}${stepBadge ? theme.fg("accent", stepBadge) : ""}`;
                         if (rRunning) {
                             const progressTools = r.progress?.toolCalls || [];
                             const lastTools = progressTools.slice(-5);
@@ -998,7 +1025,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                     const tailLimit = expanded ? MAX_LIVE_TOOLS : 3;
 
                     // Build step list lines
-                    let text = `${icon} ${theme.fg("toolTitle", theme.bold("CHAIN worker"))} ${theme.fg("accent", `(${headerStatus})`)}`;
+                    let text = `${icon} ${theme.fg("toolTitle", theme.bold("CHAIN worker"))} ${theme.fg("accent", `(${headerStatus})`)}${aggregateLiveUsage(details.results)}`;
                     for (let i = 0; i < stepCount; i++) {
                         const status = stepStatus(i);
                         const p = details.plan[i];
@@ -1059,7 +1086,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                 // ── FINAL view (terminated) ──
                 if (expanded) {
                     const container = new Container();
-                    container.addChild(new Text(`${icon} ${theme.fg("toolTitle", theme.bold("CHAIN worker"))} ${theme.fg("accent", `(${headerStatus})`)}`, 0, 0));
+                    container.addChild(new Text(`${icon} ${theme.fg("toolTitle", theme.bold("CHAIN worker"))} ${theme.fg("accent", `(${headerStatus})`)}${aggregateLiveUsage(details.results)}`, 0, 0));
                     const stepCount = details.plan.length;
                     for (let i = 0; i < stepCount; i++) {
                         const status = stepStatus(i);
@@ -1079,7 +1106,8 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                             const stepTaskText = theme.fg("muted", "Task: ") + (status === "completed"
                                 ? theme.fg("muted", r.task)
                                 : theme.fg("dim", r.task));
-                            container.addChild(new Text(`${theme.fg("muted", `─── Step ${r.step}:`)} ${sIcon} ${getAgentIcon(r.agent)} ${theme.fg("accent", r.agent)}${chainStepModel}`, 0, 0));
+                            const stepBadge = liveUsageBadge(resultUsage(r));
+                            container.addChild(new Text(`${theme.fg("muted", `─── Step ${r.step}:`)} ${sIcon} ${getAgentIcon(r.agent)} ${theme.fg("accent", r.agent)}${chainStepModel}${stepBadge ? theme.fg("accent", stepBadge) : ""}`, 0, 0));
                             container.addChild(new Text(stepTaskText, 0, 0));
                             const rToolCalls = getResultToolCalls(r);
                             for (const item of rToolCalls) {
@@ -1102,13 +1130,14 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                     return container;
                 }
                 // Collapsed final
-                let text = `${icon} ${theme.fg("toolTitle", theme.bold("CHAIN worker"))} ${theme.fg("accent", `(${headerStatus})`)}`;
+                let text = `${icon} ${theme.fg("toolTitle", theme.bold("CHAIN worker"))} ${theme.fg("accent", `(${headerStatus})`)}${aggregateLiveUsage(details.results)}`;
                 for (const r of details.results) {
                     const isError = r.exitCode !== 0 || r.stopReason === "error" || r.stopReason === "aborted";
                     const rIcon = isError ? theme.fg("error", "✗") : theme.fg("muted", "☑");
                     const rOutput = getFinalOutput(r.messages || []);
                     const chainCollapsedModel = r.model ? theme.fg("muted", ` 🤖 ${r.model}`) : "";
-                    text += `\n\n${theme.fg("muted", `─── Step ${r.step}:`)} ${rIcon} ${getAgentIcon(r.agent)} ${theme.fg("accent", r.agent)}${chainCollapsedModel}`;
+                    const stepBadge = liveUsageBadge(resultUsage(r));
+                    text += `\n\n${theme.fg("muted", `─── Step ${r.step}:`)} ${rIcon} ${getAgentIcon(r.agent)} ${theme.fg("accent", r.agent)}${chainCollapsedModel}${stepBadge ? theme.fg("accent", stepBadge) : ""}`;
                     if (rOutput) {
                         const lines = rOutput.trim().split("\n");
                         const preview = lines.slice(0, 15).join("\n");
@@ -1141,14 +1170,15 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                     : `${successCount}/${details.results.length} tasks`;
                 if (expanded && !isRunning) {
                     const container = new Container();
-                    container.addChild(new Text(`${icon} ${theme.fg("toolTitle", theme.bold("PARALLEL worker"))} ${theme.fg("accent", `(${status})`)}`, 0, 0));
+                    container.addChild(new Text(`${icon} ${theme.fg("toolTitle", theme.bold("PARALLEL worker"))} ${theme.fg("accent", `(${status})`)}${aggregateLiveUsage(details.results)}`, 0, 0));
                     for (const r of details.results) {
                         const rFailed = r.exitCode !== 0 || r.stopReason === "error" || r.stopReason === "aborted";
                         const rIcon = !rFailed ? theme.fg("success", "✓") : theme.fg("error", "✗");
                         const rOutput = getFinalOutput(r.messages || []);
                         container.addChild(new Spacer(1));
                         const parExpModel = r.model ? theme.fg("muted", ` 🤖 ${r.model}`) : "";
-                        container.addChild(new Text(`${theme.fg("muted", "─── ")}${getAgentIcon(r.agent)} ${theme.fg("accent", r.agent)}${parExpModel} ${rIcon}`, 0, 0));
+                        const workerBadge = liveUsageBadge(resultUsage(r));
+                        container.addChild(new Text(`${theme.fg("muted", "─── ")}${getAgentIcon(r.agent)} ${theme.fg("accent", r.agent)}${parExpModel}${workerBadge ? theme.fg("accent", workerBadge) : ""} ${rIcon}`, 0, 0));
                         container.addChild(new Text(theme.fg("muted", "Task: ") + theme.fg("dim", r.task), 0, 0));
                         const rToolCalls = getResultToolCalls(r);
                         for (const item of rToolCalls) {
@@ -1169,7 +1199,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                     return container;
                 }
                 // Collapsed parallel (includes running state)
-                let text = `${icon} ${theme.fg("toolTitle", theme.bold("PARALLEL worker"))} ${theme.fg("accent", `(${status})`)}`;
+                let text = `${icon} ${theme.fg("toolTitle", theme.bold("PARALLEL worker"))} ${theme.fg("accent", `(${status})`)}${aggregateLiveUsage(details.results)}`;
                 for (const r of details.results) {
                     const rRunning = !r.endTime;
                     const rIcon = rRunning
@@ -1179,7 +1209,8 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                             : theme.fg("error", "✗");
                     const rOutput = getFinalOutput(r.messages || []);
                     const parCollapsedModel = r.model ? theme.fg("muted", ` 🤖 ${r.model}`) : "";
-                    text += `\n\n${theme.fg("muted", "─── ")}${getAgentIcon(r.agent)} ${theme.fg("accent", r.agent)}${parCollapsedModel} ${rIcon}`;
+                    const workerBadge = liveUsageBadge(resultUsage(r));
+                    text += `\n\n${theme.fg("muted", "─── ")}${getAgentIcon(r.agent)} ${theme.fg("accent", r.agent)}${parCollapsedModel}${workerBadge ? theme.fg("accent", workerBadge) : ""} ${rIcon}`;
                     if (rRunning) {
                         const progressTools = r.progress?.toolCalls || [];
                         const lastTools = progressTools.slice(-5);
@@ -1215,7 +1246,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
             const text = result.content[0];
             return new Text(text?.type === "text" ? text.text : "(no output)", 0, 0);
         },
-        renderOptions: { resultReplacesCall: true },
+        renderOptions: { resultReplacesCall: (args) => Boolean(args.chain && args.chain.length > 0) },
     });
     // ---- list_tasks ----
     fan.registerTool({

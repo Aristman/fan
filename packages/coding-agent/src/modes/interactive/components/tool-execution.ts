@@ -36,7 +36,7 @@ export class ToolExecutionComponent extends Container {
 	};
 	private convertedImages: Map<number, { data: string; mimeType: string }> = new Map();
 	private hideComponent = false;
-	private resultReplacesCall = false;
+	private resultReplacesCall: boolean | ((args: any) => boolean) = false;
 
 	constructor(
 		toolName: string,
@@ -57,8 +57,11 @@ export class ToolExecutionComponent extends Container {
 		this.ui = ui;
 		this.cwd = cwd;
 		// Opt-in: if tool sets resultReplacesCall, result renderer replaces call renderer once a result exists.
-		this.resultReplacesCall = toolDefinition?.renderOptions?.resultReplacesCall === true
-			|| this.builtInToolDefinition?.renderOptions?.resultReplacesCall === true;
+		const extOpt = toolDefinition?.renderOptions?.resultReplacesCall;
+		const builtInOpt = this.builtInToolDefinition?.renderOptions?.resultReplacesCall;
+		this.resultReplacesCall = typeof extOpt === "function" ? extOpt : extOpt === true ? true
+			: typeof builtInOpt === "function" ? builtInOpt : builtInOpt === true ? true
+			: false;
 
 		this.addChild(new Spacer(1));
 
@@ -222,7 +225,9 @@ export class ToolExecutionComponent extends Container {
 			this.contentBox.clear();
 
 			const callRenderer = this.getCallRenderer();
-			const shouldSkipCall = this.resultReplacesCall && this.result;
+			const shouldSkipCall = (typeof this.resultReplacesCall === "function"
+				? this.resultReplacesCall(this.args)
+				: this.resultReplacesCall) && this.result;
 			if (!callRenderer) {
 				if (!shouldSkipCall) {
 					this.contentBox.addChild(this.createCallFallback());
