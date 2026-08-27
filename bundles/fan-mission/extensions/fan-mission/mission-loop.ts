@@ -790,7 +790,7 @@ export class MissionLoop {
 			currentIteration = loopState.currentIteration;
 
 			const mission = await readMission(this.missionDir);
-			const missionStatus = String(mission.frontmatter.status) as MissionStatus;
+			let missionStatus = String(mission.frontmatter.status) as MissionStatus;
 
 			// 1.1 Abort-гигиена: миссия уже финализирована, а на диске висят
 			// abort-артефакты (stop оператора ПОСЛЕ завершения, e2e-5) — тихо
@@ -835,23 +835,38 @@ export class MissionLoop {
 			// R2: completed → recur-only phase (дежурство).
 			// Skip one-shot/planning, execute only due recurring items.
 			if (missionStatus === "completed") {
-				let missionState: MissionState;
+				// IDEA-reactivation: operator-sourced IDEA entries in BACKLOG.md
+				// reactivate a completed mission (no LLM scoring needed —
+				// operator already decided the idea is needed).
+				let ideaEntries: BacklogEntry[] = [];
 				try {
-					missionState = await readState(this.missionDir);
+					ideaEntries = (await readBacklog(this.missionDir)).filter((e) => e.status === "IDEA");
 				} catch {
-					missionState = { done: [], blockers: [], nextSteps: [] };
+					ideaEntries = [];
 				}
-				const roadmapRaw = await readRoadmap(this.missionDir);
-				const recurResult = await this.runRecurPhase(
-					loopState,
-					steps,
-					currentIteration,
-					roadmapRaw,
-					missionState,
-					"completed",
-					0,
-				);
-				return recurResult;
+				if (ideaEntries.length > 0) {
+					await writeMissionStatus(this.missionDir, "active");
+					missionStatus = "active";
+					// Fall through to the main execution loop below.
+				} else {
+					let missionState: MissionState;
+					try {
+						missionState = await readState(this.missionDir);
+					} catch {
+						missionState = { done: [], blockers: [], nextSteps: [] };
+					}
+					const roadmapRaw = await readRoadmap(this.missionDir);
+					const recurResult = await this.runRecurPhase(
+						loopState,
+						steps,
+						currentIteration,
+						roadmapRaw,
+						missionState,
+						"completed",
+						0,
+					);
+					return recurResult;
+				}
 			}
 
 			// P1-2: Paused mission → no-op (resume only via explicit external action)
@@ -991,17 +1006,35 @@ export class MissionLoop {
 					} catch {
 						pendingIdeas = [];
 					}
-					if (pendingIdeas.length > 0 && this.ideaScorer && this.ideaPromoter) {
-						const hookStatus = await this.runIdeaScoringAndPromotion(loopState, resultStatus, {
-							scoreExistingIdeas: true,
-						});
-						if (hookStatus === "awaiting_decision") {
-							return {
-								iteration: currentIteration,
-								steps,
-								status: "awaiting_decision",
-								item: currentItem,
-							};
+					if (pendingIdeas.length > 0) {
+						if (this.ideaScorer && this.ideaPromoter) {
+							// Full LLM scoring path (future: auto-generated ideas).
+							const hookStatus = await this.runIdeaScoringAndPromotion(loopState, resultStatus, {
+								scoreExistingIdeas: true,
+							});
+							if (hookStatus === "awaiting_decision") {
+								return {
+									iteration: currentIteration,
+									steps,
+									status: "awaiting_decision",
+									item: currentItem,
+								};
+							}
+						} else if (this.ideaPromoter) {
+							// Fallback (no scorer): operator-sourced IDEA entries are
+							// promoted directly to ROADMAP without LLM scoring.
+							for (const entry of pendingIdeas) {
+								try {
+									await updateBacklogEntry(this.missionDir, entry.id, { status: "ROADMAP" });
+								} catch {
+									// best-effort per entry
+								}
+							}
+							try {
+								await this.ideaPromoter.promote(this.missionDir);
+							} catch {
+								// promoter errors must not crash the loop
+							}
 						}
 						roadmapRaw = await readRoadmap(this.missionDir);
 						if (parseAllUnchecked(roadmapRaw).length > 0) {

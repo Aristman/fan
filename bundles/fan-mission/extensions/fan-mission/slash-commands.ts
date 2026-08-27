@@ -179,6 +179,33 @@ async function lazyAttachForResume(ctx: SlashCtx): Promise<boolean> {
 		outputNoMissionFound(ctx);
 		return false;
 	}
+	if (found.status === "completed") {
+		const hasUnchecked = await hasUncheckedRoadmapItems(found.missionDir);
+		let hasIdeas = false;
+		if (!hasUnchecked) {
+			try {
+				hasIdeas = (await readBacklog(found.missionDir)).some((e) => e.status === "IDEA");
+			} catch {
+				hasIdeas = false;
+			}
+		}
+		if (hasUnchecked || hasIdeas) {
+			await resolveWriteStatus(ctx)(found.missionDir, "active");
+			await clearMissionAbortArtifacts(found.missionDir);
+			const attachedLoop = ctx.attach(found.missionDir);
+			try {
+				setTimeout(() => {
+					void attachedLoop.tick();
+				}, 0);
+			} catch {
+				// best-effort
+			}
+			ctx.output("Mission resumed — loop attached, tick initiated");
+			return true;
+		}
+		ctx.output(completedMissionHint(basename(found.missionDir)));
+		return false;
+	}
 	if (found.status !== "paused") {
 		ctx.output(`Mission is not paused (status: ${found.status}) — nothing to resume`);
 		return false;
@@ -280,9 +307,28 @@ async function handleIdeaCommand(rawArgs: string, ctx: SlashCtx): Promise<void> 
 		await resolveWriteStatus(ctx)(missionDir, "active");
 		if (!ctx.missionLoop && ctx.attach) {
 			await clearMissionAbortArtifacts(missionDir);
-			ctx.attach(missionDir);
+			const attachedLoop = ctx.attach(missionDir);
+			// Trigger tick so the IDEA is promoted immediately
+			// (operator-sourced, no scorer needed → direct promote).
+			try {
+				setTimeout(() => {
+					void attachedLoop.tick();
+				}, 0);
+			} catch {
+				// best-effort — scheduler/tick-bridge will pick it up
+			}
+		} else if (ctx.missionLoop) {
+			// Loop already attached (e.g. completed → attached in session_start
+			// or earlier). Trigger tick to process the new IDEA.
+			try {
+				setTimeout(() => {
+					void ctx.missionLoop!.tick();
+				}, 0);
+			} catch {
+				// best-effort
+			}
 		}
-		ctx.output("Idea recorded — mission reactivated, it will be scored on the next tick.");
+		ctx.output("Idea recorded — mission reactivated, it will be processed on the next tick.");
 		return;
 	}
 
