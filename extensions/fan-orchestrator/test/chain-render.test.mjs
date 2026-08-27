@@ -653,6 +653,56 @@ describe("delegate_task chain renderResult", () => {
         expect(str).toContain("(thinking...)");
     });
 
+    // ═══════════════════════════════════════════════════════════════
+    // (l) EARLY TERMINATION via isPartial:false (no isError)
+    // ═══════════════════════════════════════════════════════════════
+    it("(l) early-terminated via isPartial:false without isError renders FINAL view", () => {
+        const results = [
+            makeStepResult(1, "explore", "Explore", { endTime: 1100 }),
+            makeStepResult(2, "implement", "Implement", { exitCode: 1, stopReason: "error", endTime: 1200 }),
+        ];
+        const plan = [
+            { agent: "explore", task: "Explore" },
+            { agent: "implement", task: "Implement" },
+            { agent: "verify", task: "Verify" },
+        ];
+        // No isError on result — only isPartial:false signals termination
+        const result = makeChainResult(results, plan, null, false);
+        const rendered = toolDef.renderResult(result, { expanded: false, isPartial: false }, theme);
+        const str = rendered.toString();
+
+        // Terminated → final view, NOT live
+        expect(str).toContain("✗");
+        expect(str).toContain("1 failed");
+        expect(str).not.toContain("⏳");
+        expect(str).not.toContain("(starting next worker...)");
+    });
+
+    // ═══════════════════════════════════════════════════════════════
+    // (m) LIVE PARTIAL preserved with isPartial:true
+    // ═══════════════════════════════════════════════════════════════
+    it("(m) live partial with isPartial:true still shows LIVE view", () => {
+        const results = [
+            makeStepResult(1, "explore", "Explore", { endTime: 1100 }),
+        ];
+        const plan = [
+            { agent: "explore", task: "Explore" },
+            { agent: "implement", task: "Implement" },
+            { agent: "verify", task: "Verify" },
+        ];
+        const result = makeChainResult(results, plan);
+        const rendered = toolDef.renderResult(result, { expanded: false, isPartial: true }, theme);
+        const str = rendered.toString();
+
+        // Still live
+        expect(str).toContain("⏳");
+        expect(str).toContain("1/3 steps");
+        expect(str).toContain("(starting next worker...)");
+        // Not terminated
+        expect(str).not.toContain("✗");
+        expect(str).not.toContain("✓");
+    });
+
     it("expanded live: uses MAX_LIVE_TOOLS (9) for expanded tail", () => {
         const toolCalls = Array.from({ length: 12 }, (_, i) => ({
             name: "read", args: {}, preview: `Read file ${i + 1}`,

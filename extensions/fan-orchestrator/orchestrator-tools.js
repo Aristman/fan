@@ -685,7 +685,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                 text += `\n  ${theme.fg("muted", ctxIndicator)}`;
             return new Text(text, 0, 0);
         },
-        renderResult(result, { expanded }, theme) {
+        renderResult(result, { expanded, isPartial }, theme) {
             const details = result.details;
             if (!details || details.results.length === 0) {
                 const text = result.content[0];
@@ -856,7 +856,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                 const completedSteps = details.results.filter((r) => !!r.endTime).length;
                 const failedCount = details.results.filter((r) => !!r.endTime && (r.exitCode !== 0 || r.stopReason === "error" || r.stopReason === "aborted")).length;
                 const allDone = completedSteps === totalSteps;
-                const terminated = result.isError || allDone;
+                const terminated = result.isError === true || isPartial === false || allDone;
 
                 // ── BACKWARDS-COMPAT: no plan → old behavior ──
                 if (!hasPlan) {
@@ -1215,7 +1215,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
             const text = result.content[0];
             return new Text(text?.type === "text" ? text.text : "(no output)", 0, 0);
         },
-        resultReplacesCall: true,
+        renderOptions: { resultReplacesCall: true },
     });
     // ---- list_tasks ----
     fan.registerTool({
