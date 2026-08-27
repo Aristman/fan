@@ -1,6 +1,6 @@
 {
 	"name": "fan-mission",
-	"version": "1.4.0",
+	"version": "1.4.1",
 	"description": "Миссионный контур FAN — 7-шаговый цикл, файловое хранилище состояния (MISSION.md, ROADMAP.md, STATE.md, BACKLOG.md, DECISIONS.md), FSM статусов.",
 	"type": "module",
 	"private": true,

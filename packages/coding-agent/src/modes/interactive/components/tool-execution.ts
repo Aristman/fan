@@ -36,6 +36,7 @@ export class ToolExecutionComponent extends Container {
 	};
 	private convertedImages: Map<number, { data: string; mimeType: string }> = new Map();
 	private hideComponent = false;
+	private resultReplacesCall = false;
 
 	constructor(
 		toolName: string,
@@ -55,6 +56,9 @@ export class ToolExecutionComponent extends Container {
 		this.showImages = options.showImages ?? true;
 		this.ui = ui;
 		this.cwd = cwd;
+		// Opt-in: if tool sets resultReplacesCall, result renderer replaces call renderer once a result exists.
+		this.resultReplacesCall = toolDefinition?.renderOptions?.resultReplacesCall === true
+			|| this.builtInToolDefinition?.renderOptions?.resultReplacesCall === true;
 
 		this.addChild(new Spacer(1));
 
@@ -218,10 +222,13 @@ export class ToolExecutionComponent extends Container {
 			this.contentBox.clear();
 
 			const callRenderer = this.getCallRenderer();
+			const shouldSkipCall = this.resultReplacesCall && this.result;
 			if (!callRenderer) {
-				this.contentBox.addChild(this.createCallFallback());
-				hasContent = true;
-			} else {
+				if (!shouldSkipCall) {
+					this.contentBox.addChild(this.createCallFallback());
+					hasContent = true;
+				}
+			} else if (!shouldSkipCall) {
 				try {
 					const component = callRenderer(this.args, theme, this.getRenderContext(this.callRendererComponent));
 					this.callRendererComponent = component;
