@@ -15,6 +15,7 @@ import {
 import {
 	canTransition,
 	readMission,
+	readBacklog,
 	writeMissionStatus,
 	writeRoadmap,
 	writeState,
@@ -411,6 +412,129 @@ describe("mission-loop pause-fix", () => {
 			await writeMissionStatus(missionDir, "aborted");
 			cleanup();
 		});
+	});
+
+	// ── Shutdown-pause vs completion race (post-iteration re-read) ────────
+
+	// Инцидент git-reviewer 2026-08-27: session_shutdown вызвал pause() во время
+	// тика; тик доработал ПОСЛЕДНИЙ пункт ROADMAP, но re-read видел 'paused' и
+	// выходил до completion-блока — миссия с законченной работой зависла в paused.
+	describe("shutdown-pause vs completion race (post-iteration re-read)", () => {
+		/** deps с executor'ом, который вызывает loop.pause() посреди тика (симуляция session_shutdown). */
+		function createShutdownRaceDeps(
+			loopRef: { current?: MissionLoop },
+			opts?: { sessionMode?: "fresh" | "persistent" },
+		) {
+			const deps = createMockDeps();
+			deps.executor.runIteration.mockImplementation(async () => {
+				// Simulate session_shutdown → MissionLoop.pause() mid-tick
+				await loopRef.current?.pause();
+				return { status: "COMPLETE", response: "<promise>COMPLETE</promise>" };
+			});
+			const fullDeps: Record<string, unknown> = { ...deps };
+			if (opts?.sessionMode === "fresh") {
+				fullDeps.sessionRotator = { rotate: vi.fn().mockResolvedValue({ cancelled: false }) };
+			}
+			return fullDeps as unknown as ConstructorParameters<typeof MissionLoop>[0]["deps"];
+		}
+
+		it("completes mission when shutdown-pause fires while tick finishes the LAST roadmap item (fresh mode)", async () => {
+			cleanup();
+			missionDir = createMissionDir();
+			writeFileSync(
+				join(missionDir, "MISSION.md"),
+				MISSION_TEMPLATE.replace("session_mode: persistent", "session_mode: fresh"),
+				"utf8",
+			);
+
+			const loopRef: { current?: MissionLoop } = {};
+			const loop = new MissionLoop({ missionDir, deps: createShutdownRaceDeps(loopRef, { sessionMode: "fresh" }) });
+			loopRef.current = loop;
+
+			const result = await loop.tick();
+
+			// Работа закончена — пауза не должна «заморозить» finished-миссию
+			expect(result.status).toBe("completed");
+			const mission = await readMission(missionDir);
+			expect(String(mission.frontmatter.status)).toBe("completed");
+			expect(existsSync(join(missionDir, ".mission-abort-signal"))).toBe(false);
+
+			cleanup();
+		});
+
+		it("stays paused when ROADMAP still has unchecked items after shutdown-pause", async () => {
+			cleanup();
+			missionDir = createMissionDir();
+			writeFileSync(join(missionDir, "ROADMAP.md"), "- [ ] First\n- [ ] Second", "utf8");
+
+			const loopRef: { current?: MissionLoop } = {};
+			const loop = new MissionLoop({ missionDir, deps: createShutdownRaceDeps(loopRef) });
+			loopRef.current = loop;
+
+			const result = await loop.tick();
+
+			// Работа есть — shutdown-pause корректно останавливает новые итерации
+			expect(result.status).toBe("paused");
+			const mission = await readMission(missionDir);
+			expect(String(mission.frontmatter.status)).toBe("paused");
+
+			cleanup();
+		});
+
+		it("stays paused when backlog has IDEA entries after shutdown-pause (roadmap exhausted)", async () => {
+			cleanup();
+			missionDir = createMissionDir();
+			await appendBacklog(missionDir, {
+				id: "idea-1",
+				date: "2026-08-27",
+				idea: "Future idea",
+				source: "operator",
+				fit: 3,
+				value: 3,
+				risk: 1,
+				cost: 2,
+				score: 2.5,
+				status: "IDEA",
+			});
+
+			const loopRef: { current?: MissionLoop } = {};
+			const loop = new MissionLoop({ missionDir, deps: createShutdownRaceDeps(loopRef) });
+			loopRef.current = loop;
+
+			const result = await loop.tick();
+
+			// IDEA не теряется — пауза сохраняется, разбудится реактивацией
+			expect(result.status).toBe("paused");
+			const mission = await readMission(missionDir);
+			expect(String(mission.frontmatter.status)).toBe("paused");
+			const backlog = await readBacklog(missionDir);
+			expect(backlog.some((e) => e.status === "IDEA")).toBe(true);
+
+			cleanup();
+		});
+
+		for (const externalStatus of ["aborted", "failed"] as const) {
+			it(`breaks immediately on ${externalStatus} status even when roadmap becomes exhausted (no pause special-case)`, async () => {
+				cleanup();
+				missionDir = createMissionDir();
+
+				const deps = createMockDeps();
+				deps.executor.runIteration.mockImplementation(async () => {
+					// External status change (not via pause())
+					await writeMissionStatus(missionDir, externalStatus);
+					return { status: "COMPLETE", response: "<promise>COMPLETE</promise>" };
+				});
+				const loop = new MissionLoop({ missionDir, deps });
+
+				const result = await loop.tick();
+
+				expect(result.status).toBe(externalStatus);
+				const mission = await readMission(missionDir);
+				expect(String(mission.frontmatter.status)).toBe(externalStatus);
+
+				cleanup();
+			});
+		}
 	});
 
 	// ── FSM transitions ───────────────────────────────────────────────────

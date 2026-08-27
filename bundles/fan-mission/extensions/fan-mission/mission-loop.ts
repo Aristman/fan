@@ -1413,7 +1413,15 @@ export class MissionLoop {
 				const freshStatus = String(freshMission.frontmatter.status) as MissionStatus;
 				if (freshStatus !== "active") {
 					resultStatus = freshStatus;
-					break;
+					// Shutdown-pause race: pause() может сработать посреди тика,
+					// завершившего ПОСЛЕДНИЙ пункт ROADMAP. Если работы не осталось
+					// (нет unchecked, нет IDEA в бэклоге) — не выходим: fall-through
+					// в completion-блок ниже корректно финализирует как completed.
+					const pauseWithNoWorkLeft =
+						freshStatus === "paused" && (await this.isMissionWorkDone());
+					if (!pauseWithNoWorkLeft) {
+						break;
+					}
 				}
 
 				// Re-read roadmap for next item
@@ -1619,6 +1627,30 @@ export class MissionLoop {
 		} catch {
 			// canTransition запретил или IO error — best-effort
 		}
+	}
+
+	/**
+	 * Shutdown-pause race: true, если у миссии не осталось работы —
+	 * ROADMAP без unchecked-пунктов и в BACKLOG.md нет IDEA-записей.
+	 * Нечитаемое состояние трактуется консервативно как «работа есть».
+	 */
+	private async isMissionWorkDone(): Promise<boolean> {
+		let roadmap: string;
+		try {
+			roadmap = await readRoadmap(this.missionDir);
+		} catch {
+			return false;
+		}
+		if (parseAllUnchecked(roadmap).length > 0) {
+			return false;
+		}
+		let ideaEntries: BacklogEntry[] = [];
+		try {
+			ideaEntries = (await readBacklog(this.missionDir)).filter((e) => e.status === "IDEA");
+		} catch {
+			ideaEntries = []; // BACKLOG.md отсутствует — IDEA нет
+		}
+		return ideaEntries.length === 0;
 	}
 
 	/**
