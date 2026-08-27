@@ -857,48 +857,41 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                 const failedCount = details.results.filter((r) => !!r.endTime && (r.exitCode !== 0 || r.stopReason === "error" || r.stopReason === "aborted")).length;
                 const allDone = completedSteps === totalSteps;
                 const terminated = result.isError || allDone;
-                const icon = !terminated
-                    ? theme.fg("warning", "⏳")
-                    : (failedCount > 0)
-                        ? theme.fg("error", "✗")
-                        : theme.fg("success", "✓");
-                const headerStatus = `${completedSteps}/${totalSteps} steps` + (failedCount > 0 ? ` · ${failedCount} failed` : "");
-                // Helper: determine step status for index i (0-based)
-                const stepStatus = (i) => {
-                    const r = details.results.find(x => x.step === i + 1);
-                    if (!r) return "pending";
-                    if (!r.endTime) return "running";
-                    if (r.exitCode === 0 && !r.stopReason) return "completed";
-                    return "failed";
-                };
-                const stepIcon = (status) => {
-                    switch (status) {
-                        case "completed": return theme.fg("muted", "☑");
-                        case "failed": return theme.fg("error", "✗");
-                        case "running": return theme.fg("warning", "◐");
-                        default: return theme.fg("muted", "☐");
-                    }
-                };
-                // Find the running step index (0-based) for collapsed view
-                const runningStepIdx = hasPlan ? details.plan.findIndex((_, i) => stepStatus(i) === "running") : -1;
-                const runningStepPlan = runningStepIdx >= 0 ? details.plan[runningStepIdx] : null;
-                if (expanded) {
-                    const container = new Container();
-                    container.addChild(new Text(`${icon} ${theme.fg("toolTitle", theme.bold("CHAIN worker"))} ${theme.fg("accent", `(${headerStatus})`)}`, 0, 0));
-                    const stepCount = hasPlan ? details.plan.length : details.results.length;
-                    for (let i = 0; i < stepCount; i++) {
-                        const status = stepStatus(i);
-                        const sIcon = stepIcon(status);
-                        container.addChild(new Spacer(1));
-                        if (status === "pending") {
-                            const p = details.plan[i];
-                            const cleanTask = (p.task || "").replace(/\{previous\}/g, "").trim();
-                            const preview = cleanTask.length > 80 ? `${cleanTask.slice(0, 80)}...` : cleanTask;
-                            container.addChild(new Text(`${theme.fg("muted", `─── Step ${i + 1}:`)} ${sIcon} ${getAgentIcon(p.agent)} ${theme.fg("muted", p.agent)} ${theme.fg("muted", preview)}`, 0, 0));
-                        } else {
-                            const r = details.results.find(x => x.step === i + 1);
+
+                // ── BACKWARDS-COMPAT: no plan → old behavior ──
+                if (!hasPlan) {
+                    const icon = !terminated
+                        ? theme.fg("warning", "⏳")
+                        : (failedCount > 0)
+                            ? theme.fg("error", "✗")
+                            : theme.fg("success", "✓");
+                    const headerStatus = `${completedSteps}/${totalSteps} steps` + (failedCount > 0 ? ` · ${failedCount} failed` : "");
+                    // Helper: determine step status for index i (0-based)
+                    const stepStatusOld = (i) => {
+                        const r = details.results.find(x => x.step === i + 1);
+                        if (!r) return "pending";
+                        if (!r.endTime) return "running";
+                        if (r.exitCode === 0 && !r.stopReason) return "completed";
+                        return "failed";
+                    };
+                    const stepIconOld = (status) => {
+                        switch (status) {
+                            case "completed": return theme.fg("muted", "☑");
+                            case "failed": return theme.fg("error", "✗");
+                            case "running": return theme.fg("warning", "◐");
+                            default: return theme.fg("muted", "☐");
+                        }
+                    };
+                    if (expanded) {
+                        const container = new Container();
+                        container.addChild(new Text(`${icon} ${theme.fg("toolTitle", theme.bold("CHAIN worker"))} ${theme.fg("accent", `(${headerStatus})`)}`, 0, 0));
+                        for (let i = 0; i < details.results.length; i++) {
+                            const r = details.results[i];
+                            const isRunning = !r.endTime;
+                            const status = stepStatusOld(i);
+                            const sIcon = stepIconOld(status);
+                            container.addChild(new Spacer(1));
                             const chainStepModel = r.model ? theme.fg("muted", ` 🤖 ${r.model}`) : "";
-                            const isRunning = status === "running";
                             const stepTaskText = isRunning
                                 ? theme.fg("muted", "Task: ") + theme.fg("warning", theme.bold(r.task))
                                 : theme.fg("muted", "Task: ") + (status === "completed"
@@ -933,63 +926,201 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                                 container.addChild(new Text(theme.fg("dim", formatFooter(r)), 0, 0));
                             }
                         }
+                        if (terminated) {
+                            container.addChild(new Spacer(1));
+                            container.addChild(new Text(theme.fg("dim", formatAggregateFooter(details.results)), 0, 0));
+                        }
+                        return container;
                     }
-                    if (terminated) {
-                        container.addChild(new Spacer(1));
-                        container.addChild(new Text(theme.fg("dim", formatAggregateFooter(details.results)), 0, 0));
+                    // Collapsed old behavior
+                    let text = `${icon} ${theme.fg("toolTitle", theme.bold("CHAIN worker"))} ${theme.fg("accent", `(${headerStatus})`)}`;
+                    for (const r of details.results) {
+                        const rRunning = !r.endTime;
+                        const rIcon = rRunning
+                            ? theme.fg("warning", "◐")
+                            : (r.exitCode === 0 && !r.stopReason)
+                                ? theme.fg("muted", "☑")
+                                : theme.fg("error", "✗");
+                        const rOutput = getFinalOutput(r.messages || []);
+                        const chainCollapsedModel = r.model ? theme.fg("muted", ` 🤖 ${r.model}`) : "";
+                        text += `\n\n${theme.fg("muted", `─── Step ${r.step}:`)} ${rIcon} ${getAgentIcon(r.agent)} ${theme.fg("accent", r.agent)}${chainCollapsedModel}`;
+                        if (rRunning) {
+                            const progressTools = r.progress?.toolCalls || [];
+                            const lastTools = progressTools.slice(-5);
+                            if (lastTools.length > 0) {
+                                for (const tc of lastTools) {
+                                    const previewStr = tc.preview || formatToolPreview(tc.name, tc.args);
+                                    text += `\n${theme.fg("muted", "→ ")}${theme.fg("toolOutput", previewStr)}`;
+                                }
+                            } else {
+                                text += `\n${theme.fg("muted", "(running...)")}`;
+                            }
+                        } else if (rOutput) {
+                            const lines = rOutput.trim().split("\n");
+                            const preview = lines.slice(0, 15).join("\n");
+                            text += `\n${theme.fg("toolOutput", preview)}`;
+                            if (lines.length > 15)
+                                text += `\n${theme.fg("muted", `... ${lines.length - 15} more lines`)}`;
+                        } else {
+                            text += `\n${theme.fg("muted", "(no output)")}`;
+                        }
+                        if (!rRunning)
+                            text += `\n${theme.fg("dim", formatFooter(r))}`;
                     }
-                    return container;
+                    if (terminated)
+                        text += `\n\n${theme.fg("dim", formatAggregateFooter(details.results))}`;
+                    text += `\n${theme.fg("muted", "(Ctrl+O to expand)")}`;
+                    return new Text(text, 0, 0);
                 }
-                // Collapsed chain
-                let text = `${icon} ${theme.fg("toolTitle", theme.bold("CHAIN worker"))} ${theme.fg("accent", `(${headerStatus})`)}`;
-                if (runningStepPlan) {
-                    text += ` ${theme.fg("warning", `· ◐ step ${runningStepIdx + 1}: ${getAgentIcon(runningStepPlan.agent)} ${runningStepPlan.agent}`)}`;
-                }
-                // Show pending count only when chain is still running
-                if (hasPlan && !terminated) {
-                    const pendingCount = details.plan.filter((_, i) => stepStatus(i) === "pending").length;
-                    if (pendingCount > 0) {
-                        text += ` ${theme.fg("dim", `(${pendingCount} pending)`)}`;
+
+                // ── CHAIN WITH PLAN ──
+                const icon = !terminated
+                    ? theme.fg("warning", "⏳")
+                    : (failedCount > 0)
+                        ? theme.fg("error", "✗")
+                        : theme.fg("success", "✓");
+                const headerStatus = `${completedSteps}/${totalSteps} steps` + (failedCount > 0 ? ` · ${failedCount} failed` : "");
+
+                // Helper: determine step status for index i (0-based)
+                const stepStatus = (i) => {
+                    const r = details.results.find(x => x.step === i + 1);
+                    if (!r) return "pending";
+                    if (!r.endTime) return "running";
+                    if (r.exitCode === 0 && !r.stopReason) return "completed";
+                    return "failed";
+                };
+
+                // ── LIVE view (NOT terminated) ──
+                if (!terminated) {
+                    const stepCount = details.plan.length;
+                    const runningIdx = details.plan.findIndex((_, i) => stepStatus(i) === "running");
+                    const runningResult = runningIdx >= 0 ? details.results.find(x => x.step === runningIdx + 1) : null;
+                    const tailLimit = expanded ? MAX_LIVE_TOOLS : 3;
+
+                    // Build step list lines
+                    let text = `${icon} ${theme.fg("toolTitle", theme.bold("CHAIN worker"))} ${theme.fg("accent", `(${headerStatus})`)}`;
+                    for (let i = 0; i < stepCount; i++) {
+                        const status = stepStatus(i);
+                        const p = details.plan[i];
+                        const agentIcon = getAgentIcon(p.agent);
+                        // Get task text: from result if available, else from plan
+                        const r = details.results.find(x => x.step === i + 1);
+                        const taskText = r ? (r.task || p.task) : p.task;
+                        const cleanTask = (taskText || "").replace(/\{previous\}/g, "").trim();
+                        const preview = cleanTask.length > 60 ? `${cleanTask.slice(0, 60)}...` : cleanTask;
+                        const stepLine = `  ${i + 1}. `;
+
+                        if (status === "completed") {
+                            text += `\n${stepLine}${theme.fg("muted", "☑")} ${agentIcon} ${theme.fg("muted", theme.strikethrough(preview))}`;
+                        } else if (status === "failed") {
+                            text += `\n${stepLine}${theme.fg("error", "✗")} ${agentIcon} ${theme.fg("muted", theme.strikethrough(preview))}`;
+                        } else if (status === "running") {
+                            text += `\n${stepLine}${theme.fg("warning", "◐")} ${agentIcon} ${theme.fg("warning", theme.bold(preview))}`;
+                        } else {
+                            text += `\n${stepLine}${theme.fg("muted", "☐")} ${agentIcon} ${theme.fg("muted", preview)}`;
+                        }
                     }
-                }
-                for (const r of details.results) {
-                    const rRunning = !r.endTime;
-                    const rIcon = rRunning
-                        ? theme.fg("warning", "◐")
-                        : (r.exitCode === 0 && !r.stopReason)
-                            ? theme.fg("muted", "☑")
-                            : theme.fg("error", "✗");
-                    const rOutput = getFinalOutput(r.messages || []);
-                    const chainCollapsedModel = r.model ? theme.fg("muted", ` 🤖 ${r.model}`) : "";
-                    text += `\n\n${theme.fg("muted", `─── Step ${r.step}:`)} ${rIcon} ${getAgentIcon(r.agent)} ${theme.fg("accent", r.agent)}${chainCollapsedModel}`;
-                    if (rRunning) {
-                        const progressTools = r.progress?.toolCalls || [];
-                        const lastTools = progressTools.slice(-5);
+                    // Divider
+                    text += `\n  ${theme.fg("dim", "──")}`;
+                    // Current worker tail (or gap indicator)
+                    if (runningResult) {
+                        const progress = runningResult.progress || {};
+                        const modelLabel = runningResult.model || "initializing...";
+                        const statusLabel = progress.status || "Processing";
+                        const msgCount = progress.messageCount ?? 0;
+                        const progressTools = progress.toolCalls || [];
+                        const toolCount = progressTools.length;
+                        const elapsed = runningResult.startTime ? formatElapsedTime(runningResult.startTime) : "";
+                        const statusParts = [];
+                        statusParts.push(`🤖 ${modelLabel}`);
+                        if (elapsed) statusParts.push(`⏱ ${elapsed}`);
+                        statusParts.push(`💬 ${msgCount} message${msgCount !== 1 ? "s" : ""}`);
+                        statusParts.push(`🔧 ${toolCount} tool${toolCount !== 1 ? "s" : ""}`);
+                        text += `\n${theme.fg("muted", statusParts.join(" | "))}`;
+                        const lastTools = progressTools.slice(-tailLimit);
                         if (lastTools.length > 0) {
                             for (const tc of lastTools) {
                                 const previewStr = tc.preview || formatToolPreview(tc.name, tc.args);
-                                text += `\n${theme.fg("muted", "→ ")}${theme.fg("toolOutput", previewStr)}`;
+                                text += `\n  ${theme.fg("muted", "→ ")}${theme.fg("toolOutput", previewStr)}`;
                             }
+                        } else {
+                            text += `\n  ${theme.fg("muted", `(${statusLabel === "Thinking" ? "thinking" : "initializing"}...)`)}`;
                         }
-                        else {
-                            text += `\n${theme.fg("muted", "(running...)")}`;
+                    } else {
+                        // Gap: no running step (e.g. all completed but not yet terminated)
+                        text += `\n  ${theme.fg("dim", "(starting next worker...)")}`;
+                    }
+                    if (!expanded) {
+                        text += `\n${theme.fg("muted", "(Ctrl+O to expand)")}`;
+                    }
+                    return new Text(text, 0, 0);
+                }
+
+                // ── FINAL view (terminated) ──
+                if (expanded) {
+                    const container = new Container();
+                    container.addChild(new Text(`${icon} ${theme.fg("toolTitle", theme.bold("CHAIN worker"))} ${theme.fg("accent", `(${headerStatus})`)}`, 0, 0));
+                    const stepCount = details.plan.length;
+                    for (let i = 0; i < stepCount; i++) {
+                        const status = stepStatus(i);
+                        const sIcon = status === "completed" ? theme.fg("muted", "☑")
+                            : status === "failed" ? theme.fg("error", "✗")
+                            : theme.fg("muted", "☐");
+                        container.addChild(new Spacer(1));
+                        if (status === "pending") {
+                            const p = details.plan[i];
+                            const cleanTask = (p.task || "").replace(/\{previous\}/g, "").trim();
+                            const preview = cleanTask.length > 80 ? `${cleanTask.slice(0, 80)}...` : cleanTask;
+                            container.addChild(new Text(`${theme.fg("muted", `─── Step ${i + 1}:`)} ${sIcon} ${getAgentIcon(p.agent)} ${theme.fg("muted", p.agent)} ${theme.fg("muted", preview)}`, 0, 0));
+                        } else {
+                            const r = details.results.find(x => x.step === i + 1);
+                            const chainStepModel = r.model ? theme.fg("muted", ` 🤖 ${r.model}`) : "";
+                            const isError = status === "failed";
+                            const stepTaskText = theme.fg("muted", "Task: ") + (status === "completed"
+                                ? theme.fg("muted", r.task)
+                                : theme.fg("dim", r.task));
+                            container.addChild(new Text(`${theme.fg("muted", `─── Step ${r.step}:`)} ${sIcon} ${getAgentIcon(r.agent)} ${theme.fg("accent", r.agent)}${chainStepModel}`, 0, 0));
+                            container.addChild(new Text(stepTaskText, 0, 0));
+                            const rToolCalls = getResultToolCalls(r);
+                            for (const item of rToolCalls) {
+                                if (item.preview) {
+                                    container.addChild(new Text(theme.fg("muted", "→ ") + theme.fg("toolOutput", item.preview), 0, 0));
+                                } else {
+                                    container.addChild(new Text(theme.fg("muted", "→ ") + fmtTool(item.name, item.args), 0, 0));
+                                }
+                            }
+                            const rOutput = getFinalOutput(r.messages || []);
+                            if (rOutput) {
+                                container.addChild(new Spacer(1));
+                                container.addChild(new Markdown(rOutput.trim(), 0, 0, mdTheme));
+                            }
+                            container.addChild(new Text(theme.fg("dim", formatFooter(r)), 0, 0));
                         }
                     }
-                    else if (rOutput) {
+                    container.addChild(new Spacer(1));
+                    container.addChild(new Text(theme.fg("dim", formatAggregateFooter(details.results)), 0, 0));
+                    return container;
+                }
+                // Collapsed final
+                let text = `${icon} ${theme.fg("toolTitle", theme.bold("CHAIN worker"))} ${theme.fg("accent", `(${headerStatus})`)}`;
+                for (const r of details.results) {
+                    const isError = r.exitCode !== 0 || r.stopReason === "error" || r.stopReason === "aborted";
+                    const rIcon = isError ? theme.fg("error", "✗") : theme.fg("muted", "☑");
+                    const rOutput = getFinalOutput(r.messages || []);
+                    const chainCollapsedModel = r.model ? theme.fg("muted", ` 🤖 ${r.model}`) : "";
+                    text += `\n\n${theme.fg("muted", `─── Step ${r.step}:`)} ${rIcon} ${getAgentIcon(r.agent)} ${theme.fg("accent", r.agent)}${chainCollapsedModel}`;
+                    if (rOutput) {
                         const lines = rOutput.trim().split("\n");
                         const preview = lines.slice(0, 15).join("\n");
                         text += `\n${theme.fg("toolOutput", preview)}`;
                         if (lines.length > 15)
                             text += `\n${theme.fg("muted", `... ${lines.length - 15} more lines`)}`;
-                    }
-                    else {
+                    } else {
                         text += `\n${theme.fg("muted", "(no output)")}`;
                     }
-                    if (!rRunning)
-                        text += `\n${theme.fg("dim", formatFooter(r))}`;
+                    text += `\n${theme.fg("dim", formatFooter(r))}`;
                 }
-                if (terminated)
-                    text += `\n\n${theme.fg("dim", formatAggregateFooter(details.results))}`;
+                text += `\n\n${theme.fg("dim", formatAggregateFooter(details.results))}`;
                 text += `\n${theme.fg("muted", "(Ctrl+O to expand)")}`;
                 return new Text(text, 0, 0);
             }
