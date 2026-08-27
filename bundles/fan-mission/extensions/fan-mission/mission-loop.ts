@@ -15,6 +15,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { isPendingIdeaStatus } from "./backlog-format.js";
 import {
 	DEFAULT_DELEGATION_TIMEOUT_MS,
 	type EpicEventBus,
@@ -215,8 +216,6 @@ export interface LoopState {
 	pendingDecisionIdeaId?: string;
 	// F-22: number of ideas promoted in the last tick (for observability)
 	lastPromotedCount?: number;
-	// 0.7.2: consecutive empty planning iterations (backlog #32 cap)
-	emptyPlanningStreak?: number;
 	// ralph-loop (S3): fresh-mode rotation request — set only after a fully
 	// persisted finalise (lastStep=7, interrupted=false); consumed by the
 	// session_start wiring (S5) which resets it and auto-continues the loop.
@@ -835,12 +834,13 @@ export class MissionLoop {
 			// R2: completed → recur-only phase (дежурство).
 			// Skip one-shot/planning, execute only due recurring items.
 			if (missionStatus === "completed") {
-				// IDEA-reactivation: operator-sourced IDEA entries in BACKLOG.md
-				// reactivate a completed mission (no LLM scoring needed —
-				// operator already decided the idea is needed).
+				// IDEA/ROADMAP-reactivation: ожидающие записи BACKLOG.md (IDEA — новая,
+				// ROADMAP — одобрена и ждёт промоушена) реактивируют completed-миссию
+				// (для ROADMAP LLM-скоринг не нужен — идея уже одобрена скорером или
+				// оператором через DECIDE→accept).
 				let ideaEntries: BacklogEntry[] = [];
 				try {
-					ideaEntries = (await readBacklog(this.missionDir)).filter((e) => e.status === "IDEA");
+					ideaEntries = (await readBacklog(this.missionDir)).filter((e) => isPendingIdeaStatus(e.status));
 				} catch {
 					ideaEntries = [];
 				}
@@ -997,12 +997,12 @@ export class MissionLoop {
 					// ROADMAP has checklist items (passed hasAnyChecklistItem above)
 					// and all are checked → mission one-shot work is done.
 					// Complete: break to recur-phase (дежурство) if any.
-					// Part 3: before completing, evaluate pending IDEA backlog entries
-					// when scorer + promoter are configured. A DECIDE verdict blocks
-					// completion; promoted ROADMAP items keep the loop alive.
+					// Part 3: перед завершением оцениваем ожидающие записи бэклога
+					// (IDEA + ROADMAP): DECIDE-вердикт блокирует завершение; промоученные
+					// ROADMAP-пункты (включая принятые оператором) оставляют цикл живым.
 					let pendingIdeas: BacklogEntry[] = [];
 					try {
-						pendingIdeas = (await readBacklog(this.missionDir)).filter((e) => e.status === "IDEA");
+						pendingIdeas = (await readBacklog(this.missionDir)).filter((e) => isPendingIdeaStatus(e.status));
 					} catch {
 						pendingIdeas = [];
 					}
@@ -1021,9 +1021,12 @@ export class MissionLoop {
 								};
 							}
 						} else if (this.ideaPromoter) {
-							// Fallback (no scorer): operator-sourced IDEA entries are
-							// promoted directly to ROADMAP without LLM scoring.
+							// Fallback (no scorer): операторные IDEA-записи промоутятся в
+							// ROADMAP напрямую, без LLM-скоринга. ROADMAP-записи (уже
+							// одобренные — напр. DECIDE→accept) не трогаем: их подхватит
+							// promoter.promote() ниже вместе со свежеперевёрнутыми.
 							for (const entry of pendingIdeas) {
+								if (entry.status !== "IDEA") continue;
 								try {
 									await updateBacklogEntry(this.missionDir, entry.id, { status: "ROADMAP" });
 								} catch {
@@ -1350,43 +1353,6 @@ export class MissionLoop {
 					...(infraSkip ? { skipBacklog: true } : {}),
 				});
 
-				// ── 0.7.2: Planning cap (backlog #32) ─────────────────────────
-				// Planning tick (index -1) that didn't add unchecked items → streak++.
-				// Streak >= 2 → enter awaiting_decision instead of infinite loop.
-				if (nextItem.index === -1) {
-					const freshRoadmapForCap = await readRoadmap(this.missionDir);
-					const hasUnchecked = parseAllUnchecked(freshRoadmapForCap).length > 0;
-					if (!hasUnchecked) {
-						loopState.emptyPlanningStreak = (loopState.emptyPlanningStreak ?? 0) + 1;
-					} else {
-						loopState.emptyPlanningStreak = 0;
-					}
-					writeLoopStateSync(this.missionDir, loopState);
-					if (loopState.emptyPlanningStreak >= 2) {
-						loopState.emptyPlanningStreak = 0;
-						writeLoopStateSync(this.missionDir, loopState);
-						await this.enterAwaitingDecision(
-							loopState,
-							// F-MISSION-DIALOG: вопрос пишется в pendingDecision — его показывает
-							// операторный диалог (decision-dialog.ts) при входе в awaiting_decision.
-							"Планирование 2 раза подряд не добавило новых пунктов в ROADMAP. Миссия исчерпала направление или ждёт указания.",
-						);
-						return {
-							iteration: currentIteration,
-							steps,
-							status: "awaiting_decision",
-							item: currentItem,
-							itemsExecuted,
-						};
-					}
-				} else {
-					// Non-planning tick → reset the streak
-					if ((loopState.emptyPlanningStreak ?? 0) > 0) {
-						loopState.emptyPlanningStreak = 0;
-						writeLoopStateSync(this.missionDir, loopState);
-					}
-				}
-
 				// ── Finalise ───────────────────────────────────────────────────
 				loopState.lastStep = 7;
 				loopState.interrupted = false;
@@ -1631,7 +1597,8 @@ export class MissionLoop {
 
 	/**
 	 * Shutdown-pause race: true, если у миссии не осталось работы —
-	 * ROADMAP без unchecked-пунктов и в BACKLOG.md нет IDEA-записей.
+	 * ROADMAP без unchecked-пунктов и в BACKLOG.md нет ожидающих идей
+	 * (статусы IDEA/ROADMAP — обе категории считаются работой).
 	 * Нечитаемое состояние трактуется консервативно как «работа есть».
 	 */
 	private async isMissionWorkDone(): Promise<boolean> {
@@ -1646,9 +1613,9 @@ export class MissionLoop {
 		}
 		let ideaEntries: BacklogEntry[] = [];
 		try {
-			ideaEntries = (await readBacklog(this.missionDir)).filter((e) => e.status === "IDEA");
+			ideaEntries = (await readBacklog(this.missionDir)).filter((e) => isPendingIdeaStatus(e.status));
 		} catch {
-			ideaEntries = []; // BACKLOG.md отсутствует — IDEA нет
+			ideaEntries = []; // BACKLOG.md отсутствует — ожидающих идей нет
 		}
 		return ideaEntries.length === 0;
 	}
@@ -1682,9 +1649,6 @@ export class MissionLoop {
 
 		this.clearDecideTimer();
 
-		// F-22: if the DECIDE was about an idea and the operator accepts,
-		// update the idea's BACKLOG status from DECIDE to ROADMAP so the
-		// promoter picks it up on the next tick.
 		// F-22: if the DECIDE was about an idea and the operator accepts,
 		// update the idea's BACKLOG status from DECIDE to ROADMAP so the
 		// promoter picks it up on the next tick.
