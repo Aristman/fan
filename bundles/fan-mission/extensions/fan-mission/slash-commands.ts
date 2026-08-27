@@ -139,9 +139,25 @@ async function lazyAttachForStart(ctx: SlashCtx): Promise<boolean> {
 	}
 	if (found.status === "completed") {
 		const hasUnchecked = await hasUncheckedRoadmapItems(found.missionDir);
-		if (hasUnchecked) {
+		let hasIdeas = false;
+		if (!hasUnchecked) {
+			try {
+				hasIdeas = (await readBacklog(found.missionDir)).some((e) => e.status === "IDEA");
+			} catch {
+				hasIdeas = false;
+			}
+		}
+		if (hasUnchecked || hasIdeas) {
 			await resolveWriteStatus(ctx)(found.missionDir, "active");
-			ctx.attach(found.missionDir);
+			await clearMissionAbortArtifacts(found.missionDir);
+			const attachedLoop = ctx.attach(found.missionDir);
+			try {
+				setTimeout(() => {
+					void attachedLoop.tick();
+				}, 0);
+			} catch {
+				// best-effort
+			}
 			ctx.output("Mission reactivated — new unchecked items found.");
 			return true;
 		}
@@ -466,7 +482,15 @@ export function registerMissionSlashCommands(register: SlashCommandRegister, reg
 					if (status && TERMINAL_STATUSES.has(status)) {
 						if (status === "completed" && ctx.missionDir) {
 							const hasUnchecked = await hasUncheckedRoadmapItems(ctx.missionDir);
-							if (hasUnchecked) {
+							let hasIdeas = false;
+							if (!hasUnchecked) {
+								try {
+									hasIdeas = (await readBacklog(ctx.missionDir)).some((e) => e.status === "IDEA");
+								} catch {
+									hasIdeas = false;
+								}
+							}
+							if (hasUnchecked || hasIdeas) {
 								const ws = resolveWriteStatus(ctx);
 								await ws(ctx.missionDir, "active");
 								ctx.output("Mission reactivated — new unchecked items found.");
