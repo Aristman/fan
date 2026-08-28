@@ -583,8 +583,8 @@ export default function missionExtension(fan: ExtensionAPI): MissionWiring {
 				currentSessionFile = undefined;
 			}
 			// F-MISSION-DUTY: сначала не-терминальные; если их нет —
-			// completed-миссия с parseable recurring-пунктами или IDEA-записями
-			// в BACKLOG.md аттачится (дежурство / реактивация идей).
+			// completed-миссия с parseable recurring-пунктами или ожидающими идеями
+			// (статусы IDEA/ROADMAP) в BACKLOG.md аттачится (дежурство / реактивация).
 			let found = await findAttachableMission(cwd, (status) => NON_TERMINAL_STATUSES.has(status));
 			if (!found) {
 				found = await findAttachableMission(
@@ -592,12 +592,12 @@ export default function missionExtension(fan: ExtensionAPI): MissionWiring {
 					(status, missionDir) => {
 						if (status !== "completed") return false;
 						if (readRecurring(missionDir).length > 0) return true;
-						// Cheap sync check: scan BACKLOG.md for IDEA status
-						// (no full parse needed — just grep for | IDEA | rows).
+						// Cheap sync check: scan BACKLOG.md for pending idea statuses
+						// (no full parse needed — just grep for | IDEA |/| ROADMAP | rows).
 						try {
 							const raw = readFileSync(join(missionDir, "BACKLOG.md"), "utf8");
-							// Table rows with status "IDEA" match: | ... | IDEA |
-							return /\|.*\|\s*IDEA\s*\|/.test(raw);
+							// Table rows with a pending status match: | ... | IDEA | or | ... | ROADMAP |
+							return /\|.*\|\s*(IDEA|ROADMAP)\s*\|/.test(raw);
 						} catch {
 							return false;
 						}

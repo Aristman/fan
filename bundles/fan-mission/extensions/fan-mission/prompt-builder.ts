@@ -9,6 +9,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
+import { EPIC_MARKER } from "./epic-delegation.js";
 import { extractGoal, isRecurringItem, type MissionState, readMission, stripCurrentItemMarker } from "./file-state-manager.js";
 
 // ─── Limits (protection against bloated STATE/BACKLOG/ROADMAP) ──────────────
@@ -29,6 +30,15 @@ export const PLANNING_ITEM_TEXT = "Plan: decompose mission Goal into ROADMAP ite
 /** Guidance line appended for bootstrap/planning iterations. */
 export const BOOTSTRAP_PLANNING_GUIDANCE =
 	"- This is the bootstrap iteration: decompose the mission Goal into concrete unchecked ROADMAP.md items (- [ ] ...) and replace/extend the roadmap. Keep items atomic and verifiable.";
+
+/**
+ * F-22 size-heuristic: guidance appended for promoted idea items (marker
+ * `(idea:<id>)` at the end). The executor must first assess the idea's size:
+ * large → decompose into unchecked ROADMAP items below it and finish the
+ * iteration as planning; small → implement directly as usual.
+ */
+export const IDEA_PLANNING_GUIDANCE =
+	"- This roadmap item is a newly promoted operator idea (marker `(idea:<id>)`). FIRST assess its size honestly. If it needs more than one atomic verifiable change (e.g. new integration surface, multi-step feature, several modules/files, config + code + docs) — do NOT implement everything in this single iteration: instead decompose the idea into concrete, atomic, verifiable unchecked ROADMAP.md items and insert them directly BELOW this item, then mark THIS item as done ([x] — planning complete) and end the iteration; the loop will pick up the new items one by one. If it is genuinely small (single focused change) — implement, verify and complete it directly in this iteration as usual. Do not decompose trivially small ideas; do not implement large ideas in one run.";
 
 /** Guidance line appended for recurring items (R2: from RECURRING.md). */
 export const RECUR_GUIDANCE =
@@ -112,6 +122,14 @@ export function isBootstrapItem(roadmapRaw: string, index: number, itemText: str
 	return false;
 }
 
+/**
+ * F-22: true when the current item is a promoted idea — its text ends with
+ * an `(idea:<id>)` marker (see idea-promoter.ts item format).
+ */
+export function isPromotedIdeaItem(itemText: string): boolean {
+	return /\(idea:[^)]+\)\s*$/.test(itemText);
+}
+
 /** Render parsed STATE.md as simple lists; empty state → placeholder. */
 function renderState(state: MissionState): string {
 	const done = state.done ?? [];
@@ -176,6 +194,11 @@ export async function buildExecutionPrompt(opts: ExecutionPromptOptions): Promis
 	const isPlanningIteration =
 		goalText.length > 0 &&
 		(opts.itemText === PLANNING_ITEM_TEXT || isBootstrapItem(opts.roadmapRaw, opts.index, opts.itemText));
+	// F-22 size-heuristic: promoted idea items get size-assessment guidance —
+	// except EPIC items (own delegation path) and bootstrap/planning iterations
+	// (already guided by BOOTSTRAP_PLANNING_GUIDANCE).
+	const isIdeaIteration =
+		!isPlanningIteration && !opts.itemText.trimStart().startsWith(EPIC_MARKER) && isPromotedIdeaItem(opts.itemText);
 
 	const assemble = (): string => {
 		const parts: string[] = [];
@@ -222,6 +245,10 @@ export async function buildExecutionPrompt(opts: ExecutionPromptOptions): Promis
 			parts.push(
 				"- Periodic tasks go into RECURRING.md with marker (interval: Ns/m/h/d) as checklist items: '- [ ] Task text (interval: 30m)' (or '## Task text (interval: 30m)'), NOT into ROADMAP.",
 			);
+		}
+		// F-22 size-heuristic for promoted idea items (see isIdeaIteration above)
+		if (isIdeaIteration) {
+			parts.push(IDEA_PLANNING_GUIDANCE);
 		}
 		// R2: recurring items (from RECURRING.md or legacy (recur) marker)
 		if (opts.recurring || isRecurringItem(opts.itemText)) {

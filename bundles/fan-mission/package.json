@@ -1,6 +1,6 @@
 {
   "name": "fan-mission",
-  "version": "1.5.3",
+  "version": "1.5.6",
   "description": "FAN Mission bundle — long-running autonomous missions (fan-mission + fan-scheduler + fan-super-orchestrator + fan-webhook)",
   "license": "MIT",
   "keywords": ["fan", "mission", "orchestrator", "scheduler", "webhook", "autonomous", "bundle"]

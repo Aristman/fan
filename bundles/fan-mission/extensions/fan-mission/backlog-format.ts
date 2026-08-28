@@ -15,6 +15,17 @@ export const IDEA_ID_PATTERN = /^idea-(\d{3})$/;
 /** Статус новой идеи до скоринга (F-20). */
 export const NEW_IDEA_STATUS = "IDEA";
 
+/**
+ * Статусы идей, ожидающих обработки в пайплайне идей: "IDEA" (новая, до
+ * скоринга/вердикта) и "ROADMAP" (одобрена — скорером или оператором через
+ * DECIDE→accept — и ждёт промоушена в ROADMAP.md). Оба статуса — «работа»
+ * для контура: completed-реактивация, pre-completion промоушен, гейты
+ * slash-команд и session_start-фильтр учитывают их одинаково.
+ */
+export function isPendingIdeaStatus(status: string): boolean {
+	return status === "IDEA" || status === "ROADMAP";
+}
+
 /** Нормализация идеи для дедупликации: lowercase + trim + схлопывание пробелов. */
 export function normalizeIdea(idea: string): string {
 	return idea.toLowerCase().trim().replace(/\s+/g, " ");

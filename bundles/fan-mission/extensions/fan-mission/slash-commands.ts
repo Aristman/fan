@@ -9,7 +9,7 @@
 
 import { existsSync } from "node:fs";
 import { basename, join } from "node:path";
-import { formatIdeaEntry, formatIdeaId, maxIdeaNumber } from "./backlog-format.js";
+import { formatIdeaEntry, formatIdeaId, isPendingIdeaStatus, maxIdeaNumber } from "./backlog-format.js";
 import {
 	appendBacklog,
 	canTransition,
@@ -142,7 +142,7 @@ async function lazyAttachForStart(ctx: SlashCtx): Promise<boolean> {
 		let hasIdeas = false;
 		if (!hasUnchecked) {
 			try {
-				hasIdeas = (await readBacklog(found.missionDir)).some((e) => e.status === "IDEA");
+				hasIdeas = (await readBacklog(found.missionDir)).some((e) => isPendingIdeaStatus(e.status));
 			} catch {
 				hasIdeas = false;
 			}
@@ -200,7 +200,7 @@ async function lazyAttachForResume(ctx: SlashCtx): Promise<boolean> {
 		let hasIdeas = false;
 		if (!hasUnchecked) {
 			try {
-				hasIdeas = (await readBacklog(found.missionDir)).some((e) => e.status === "IDEA");
+				hasIdeas = (await readBacklog(found.missionDir)).some((e) => isPendingIdeaStatus(e.status));
 			} catch {
 				hasIdeas = false;
 			}
@@ -485,7 +485,7 @@ export function registerMissionSlashCommands(register: SlashCommandRegister, reg
 							let hasIdeas = false;
 							if (!hasUnchecked) {
 								try {
-									hasIdeas = (await readBacklog(ctx.missionDir)).some((e) => e.status === "IDEA");
+									hasIdeas = (await readBacklog(ctx.missionDir)).some((e) => isPendingIdeaStatus(e.status));
 								} catch {
 									hasIdeas = false;
 								}

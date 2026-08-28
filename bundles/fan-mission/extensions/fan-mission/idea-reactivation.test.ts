@@ -17,6 +17,7 @@ import {
 } from "./file-state-manager.js";
 import { promoteAcceptedIdeas } from "./idea-promoter.js";
 import { MissionLoop, readMissionLoopState, writeLoopStateSync } from "./mission-loop.js";
+import { BOOTSTRAP_PLANNING_GUIDANCE, buildExecutionPrompt, IDEA_PLANNING_GUIDANCE } from "./prompt-builder.js";
 import { registerMissionSlashCommands, type SlashCommandRegister, type SlashCtx } from "./slash-commands.js";
 
 // ─── Test helpers ──────────────────────────────────────────────────────────
@@ -426,5 +427,43 @@ describe("reactivation condition helpers (hasUncheckedRoadmapItems / readBacklog
 		await appendBacklog(missionDir, IDEA_ENTRY);
 		expect(await hasUncheckedRoadmapItems(missionDir)).toBe(false);
 		expect((await readBacklog(missionDir)).some((e) => e.status === "IDEA")).toBe(true);
+	});
+});
+
+describe("prompt-builder: size-heuristic guidance for promoted ideas (F-22)", () => {
+	const EMPTY_STATE = { done: [], blockers: [], nextSteps: [] };
+
+	function ideaOpts(itemText: string, roadmapRaw: string, index: number) {
+		return { missionDir, itemText, index, roadmapRaw, state: EMPTY_STATE };
+	}
+
+	it("(a) item with (idea:id) → prompt contains IDEA_PLANNING_GUIDANCE", async () => {
+		const roadmap = "- [x] Done thing\n- [ ] Add export button (idea:idea-100)\n";
+		const prompt = await buildExecutionPrompt(ideaOpts("Add export button (idea:idea-100)", roadmap, 1));
+		expect(prompt).toContain(IDEA_PLANNING_GUIDANCE);
+	});
+
+	it("(b) regular item → neither idea guidance nor bootstrap guidance", async () => {
+		const roadmap = "- [x] Done thing\n- [ ] Plain small task\n";
+		const prompt = await buildExecutionPrompt(ideaOpts("Plain small task", roadmap, 1));
+		expect(prompt).not.toContain(IDEA_PLANNING_GUIDANCE);
+		expect(prompt).not.toContain(BOOTSTRAP_PLANNING_GUIDANCE);
+	});
+
+	it("(c) bootstrap item → bootstrap guidance present, idea guidance absent", async () => {
+		// isPlanningIteration requires a non-empty `## Goal` section in MISSION.md
+		writeFileSync(join(missionDir, "MISSION.md"), `${MISSION_TEMPLATE}\n## Goal\nBuild the thing\n`, "utf8");
+		const roadmap = "- [ ] Bootstrap mission: decompose the goal\n";
+		const prompt = await buildExecutionPrompt(ideaOpts("Bootstrap mission: decompose the goal", roadmap, 0));
+		expect(prompt).toContain(BOOTSTRAP_PLANNING_GUIDANCE);
+		expect(prompt).not.toContain(IDEA_PLANNING_GUIDANCE);
+	});
+
+	it("(d) [EPIC] item with (idea:id) → idea guidance NOT added (own delegation path)", async () => {
+		const item = "[EPIC] Big multi-module feature (idea:idea-200)";
+		const roadmap = `- [x] Done thing\n- [ ] ${item}\n`;
+		const prompt = await buildExecutionPrompt(ideaOpts(item, roadmap, 1));
+		expect(prompt).not.toContain(IDEA_PLANNING_GUIDANCE);
+		expect(prompt).not.toContain(BOOTSTRAP_PLANNING_GUIDANCE);
 	});
 });

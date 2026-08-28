@@ -955,7 +955,10 @@ export function extractGoal(body: string): string {
 
 const TRANSITIONS: Record<string, Set<string>> = {
 	active: new Set(["paused", "completed", "aborted", "failed", "budget_exhausted", "awaiting_decision"]),
-	paused: new Set(["active", "aborted"]),
+	// completed: shutdown-pause race — пауза посреди тика, завершившего
+	// последний пункт ROADMAP, должна уметь финализироваться как completed
+	// (см. mission-loop.ts, post-iteration re-read).
+	paused: new Set(["active", "aborted", "completed"]),
 	completed: new Set(["active", "budget_exhausted"]),
 	aborted: new Set(["active"]),
 	failed: new Set(["active"]),
