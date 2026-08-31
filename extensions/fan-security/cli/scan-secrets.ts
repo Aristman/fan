@@ -29,11 +29,12 @@
  *   `--format json` — весь stdout валидный JSON без посторонних строк.
  *
  * Без внешних зависимостей: только node:fs / node:path + lib/report.ts +
- * lib/patterns/secrets.ts (data-driven таблица паттернов, F-2.2 refactor).
+ * lib/patterns/secrets.ts (data-driven таблица паттернов, F-2.2 refactor) +
+ * lib/walker.ts (общий обход ФС, F-2.3 REFACTOR).
  * Spec: docs/specs/spec_security-worker_2026-08-31.md §2.3, §3.3, §4, §6.
  */
 
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { statSync } from "node:fs";
 import path from "node:path";
 import {
 	createReport,
@@ -45,6 +46,7 @@ import {
 	type Report,
 	type Severity,
 } from "../lib/report.ts";
+import { readTextFileSafe, walkDirectory } from "../lib/walker.ts";
 import {
 	ENTROPY_BARE_MIN_LENGTH,
 	ENTROPY_MIN_LENGTH,
@@ -60,23 +62,10 @@ import {
 const TOOL = "scan-secrets";
 const VERSION = "0.1.0";
 
-/** Размерный фильтр: файлы больше 1 МБ не сканируются (§4.1). */
-const MAX_FILE_BYTES = 1024 * 1024;
 /** Ограничение длины evidence (цитата кода, не весь файл). */
 const MAX_EVIDENCE_LENGTH = 240;
-
-/** Директории, не имеющие смысла для скана секретов в исходниках. */
-const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "coverage"]);
-
-/** Явно бинарные расширения — содержимое не читается. */
-const BINARY_EXTENSIONS = new Set([
-	".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".bmp", ".tiff",
-	".pdf", ".zip", ".gz", ".tgz", ".bz2", ".xz", ".7z", ".rar", ".iso", ".dmg",
-	".exe", ".dll", ".so", ".dylib", ".bin", ".wasm", ".class", ".jar",
-	".woff", ".woff2", ".ttf", ".otf", ".eot",
-	".mp3", ".mp4", ".mov", ".avi", ".mkv", ".wav", ".flac",
-	".sqlite", ".db", ".pdb",
-]);
+// Обход ФС и фильтры файлов (SKIP_DIRS, BINARY_EXTENSIONS, MAX_FILE_BYTES,
+// readTextFileSafe) — lib/walker.ts, общий для обоих CLI (F-2.3 REFACTOR).
 
 // ── Паттерны и entropy-константы — lib/patterns/secrets.ts (§4.4) ───────────
 // SECRET_PATTERNS (data-driven таблица), ENTROPY_* (именованные пороги) и
@@ -189,57 +178,11 @@ export async function scanSecrets(targetPath: string, _options: ScanSecretsOptio
 	return createReport({ tool: TOOL, version: VERSION, target: targetPath, findings });
 }
 
-/** Рекурсивный обход директории с пропусками SKIP_DIRS (node_modules, .git…). */
-function walkDirectory(dir: string): string[] {
-	const files: string[] = [];
-	const stack = [dir];
-	while (stack.length > 0) {
-		const current = stack.pop();
-		if (!current) {
-			continue;
-		}
-		let entries;
-		try {
-			entries = readdirSync(current, { withFileTypes: true });
-		} catch {
-			continue; // недоступная директория — не ошибка скана
-		}
-		for (const entry of entries) {
-			const full = path.join(current, entry.name);
-			if (entry.isDirectory()) {
-				if (!SKIP_DIRS.has(entry.name)) {
-					stack.push(full);
-				}
-			} else if (entry.isFile()) {
-				files.push(full);
-			}
-		}
-	}
-	return files;
-}
-
 /** Скан одного файла: паттерны построчно + правило «закоммиченный .env». */
 function scanFile(filePath: string, root: string, nextId: () => string): Finding[] {
-	if (BINARY_EXTENSIONS.has(path.extname(filePath).toLowerCase())) {
-		return [];
-	}
-	let stats;
-	try {
-		stats = statSync(filePath);
-	} catch {
-		return [];
-	}
-	if (stats.size === 0 || stats.size > MAX_FILE_BYTES) {
-		return [];
-	}
-	let content: string;
-	try {
-		content = readFileSync(filePath, "utf8");
-	} catch {
-		return [];
-	}
-	if (content.includes("\0")) {
-		return []; // бинарный файл (null-байт), не текст
+	const content = readTextFileSafe(filePath);
+	if (content === null) {
+		return []; // бинарное расширение / пустой / > 1 МБ / ошибка чтения / null-байт
 	}
 
 	const relFile = toPosix(path.relative(root, filePath)) || path.basename(filePath);
