@@ -1,0 +1,5 @@
+# FIXTURE (TC-F-2.4-a) — фейковые Python-зависимости для мок-аудита pip-audit.
+# Пакеты fake-* не существуют; содержимое только для тестов парсера tests/dep-audit.test.mjs.
+# fake-flask==0.5 уязвим в мок-выводе (aliases: CVE-2026-41111, fix_versions: 1.0).
+fake-flask==0.5
+fake-requests==2.0

@@ -1,0 +1,74 @@
+{
+  "vulnerabilities": {
+    "fake-pkg-critical": {
+      "name": "fake-pkg-critical",
+      "severity": "critical",
+      "isDirect": true,
+      "via": [
+        {
+          "source": 1099001,
+          "name": "fake-pkg-critical",
+          "dependency": "fake-pkg-critical",
+          "title": "Remote Code Execution in fake-pkg-critical",
+          "url": "https://nvd.nist.gov/vuln/detail/CVE-2025-99999",
+          "severity": "critical",
+          "range": ">=1.0.0 <9.9.9",
+          "cwe": ["CWE-94"],
+          "cvss": {
+            "score": 9.8,
+            "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
+          },
+          "effects": []
+        }
+      ],
+      "effects": [],
+      "range": ">=1.0.0 <9.9.9",
+      "nodes": ["node_modules/fake-pkg-critical"],
+      "fixAvailable": {
+        "name": "fake-pkg-critical",
+        "version": "9.9.9",
+        "isSemVerMajor": true
+      }
+    },
+    "fake-pkg-high": {
+      "name": "fake-pkg-high",
+      "severity": "high",
+      "isDirect": false,
+      "via": ["fake-pkg-critical"],
+      "effects": ["fan-security-dep-fixture"],
+      "range": ">=1.0.0 <2.0.1",
+      "nodes": ["node_modules/fake-pkg-high"],
+      "fixAvailable": {
+        "name": "fake-pkg-high",
+        "version": "2.0.1",
+        "isSemVerMajor": false
+      }
+    },
+    "fake-pkg-moderate": {
+      "name": "fake-pkg-moderate",
+      "severity": "moderate",
+      "isDirect": true,
+      "via": [
+        {
+          "source": 1099002,
+          "name": "fake-pkg-moderate",
+          "dependency": "fake-pkg-moderate",
+          "title": "Regular Expression Denial of Service in fake-pkg-moderate",
+          "url": "https://github.com/advisories/GHSA-fake-moderate-0002",
+          "severity": "moderate",
+          "range": "<1.1.0",
+          "cwe": ["CWE-400"],
+          "cvss": {
+            "score": 5.3,
+            "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L"
+          },
+          "effects": []
+        }
+      ],
+      "effects": [],
+      "range": "<1.1.0",
+      "nodes": ["node_modules/fake-pkg-moderate"],
+      "fixAvailable": true
+    }
+  }
+}

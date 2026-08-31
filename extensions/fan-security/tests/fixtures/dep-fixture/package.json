@@ -1,0 +1,14 @@
+{
+  "name": "fan-security-dep-fixture",
+  "version": "0.0.0",
+  "private": true,
+  "description": "FIXTURE (TC-F-2.4-1) — фейковый манифест npm для мок-аудита dep-audit. Пакеты fake-* не существуют; real-pkg-placeholder — синтетика. Комментарии в JSON невозможны — описание в шапке tests/dep-audit.test.mjs. fake-pkg-high НЕ объявлен здесь намеренно: он транзитивный (via-ссылка на fake-pkg-critical в npm-audit-output.json).",
+  "dependencies": {
+    "fake-pkg-critical": "^1.0.0",
+    "fake-pkg-moderate": "^0.9.0",
+    "real-pkg-placeholder": "^1.0.0"
+  },
+  "devDependencies": {
+    "fake-dev-unused": "^2.0.0"
+  }
+}
