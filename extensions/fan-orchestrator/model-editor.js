@@ -3,8 +3,8 @@
  *
  * Two-level TUI component that replaces the full wizard when editing an
  * existing preset:
- *   Level 1 (worker list): provider mode toggle, default model, 8 worker
- *           rows, Save / Cancel footer actions.
+ *   Level 1 (worker list): provider mode toggle, default model, one row per
+ *           registered worker agent, Save / Cancel footer actions.
  *   Level 2 (model picker): all models from all providers (current provider
  *           first, others with `· provider` suffix), plus a reset entry.
  *
@@ -28,6 +28,7 @@ export function AGENT_TYPES() {
 const AGENT_ICONS = {
     explore: "🔍", plan: "📋", implement: "🔧", verify: "✅",
     "bug-fix": "🐛", "code-research": "🔬", "tests-impl": "🧪", "docs-impl": "📝",
+    security: "🔒",
 };
 
 const PROVIDER_MODES = ["cloud", "local", "auto"];
