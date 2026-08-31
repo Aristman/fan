@@ -18,5 +18,6 @@
  */
 import type { ExtensionFactory } from "@seaagents/fan-coding-agent";
 export declare const orchestratorExtension: ExtensionFactory;
+export { getAgentTypes } from "./agents/index.js";
 export default orchestratorExtension;
 //# sourceMappingURL=orchestrator-extension.d.ts.map

@@ -18,10 +18,12 @@
  * should detect this (isCustomUIAvailable) and fall back to the wizard flow.
  */
 import { Container, Spacer, Text, getKeybindings } from "@seaagents/fan-tui";
+import { getAgentTypes } from "./agents/index.js";
 
-export const AGENT_TYPES = [
-    "explore", "plan", "implement", "verify", "bug-fix", "code-research", "tests-impl", "docs-impl",
-];
+/** Built-in agent types — accessor over the agent registry (single source of truth). */
+export function AGENT_TYPES() {
+    return getAgentTypes();
+}
 
 const AGENT_ICONS = {
     explore: "🔍", plan: "📋", implement: "🔧", verify: "✅",
@@ -144,7 +146,7 @@ class ModelEditorComponent extends Container {
         return [
             { kind: "providerMode" },
             { kind: "default" },
-            ...AGENT_TYPES.map((worker) => ({ kind: "worker", worker })),
+            ...AGENT_TYPES().map((worker) => ({ kind: "worker", worker })),
             { kind: "save" },
             { kind: "cancel" },
         ];

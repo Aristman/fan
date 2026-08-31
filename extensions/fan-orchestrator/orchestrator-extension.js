@@ -30,7 +30,12 @@ import { TaskManager } from "./task-manager.js";
 import { restoreTasks, writeTaskSnapshot } from "./task-persistence.js";
 import { activeWorkers, finalizeWorker, genWorkerId, getWorker, listWorkers, pruneOldWorkers, registerWorker, resetSlots, updateWorker } from "./workers.js";
 import { PipelineState, shouldRestorePipeline } from "./pipeline-state.js";
+import { getAgentTypes } from "./agents/index.js";
 import * as path from "node:path";
+
+// F-0.1: single source of truth for agent types — re-export the registry accessor.
+export { getAgentTypes };
+
 export const orchestratorExtension = (fan) => {
     // F-2.5: Subscribe to MCP catalog (fan-mcp extension emits on "mcp:catalog")
     brokerHandler.initialize(fan);
@@ -491,7 +496,7 @@ export const orchestratorExtension = (fan) => {
                         return;
                     }
 
-                    const agentTypes = ["explore", "plan", "implement", "verify", "bug-fix", "code-research", "tests-impl", "docs-impl"];
+                    const agentTypes = getAgentTypes();
                     const agentIcons = {
                         explore: "🔍", plan: "📋", implement: "🔧", verify: "✅",
                         "bug-fix": "🐛", "code-research": "🔬", "tests-impl": "🧪", "docs-impl": "📝",
@@ -1207,7 +1212,7 @@ export const orchestratorExtension = (fan) => {
                         ctx.ui.notify("Init cancelled.");
                         ctx.ui.setWidget("orchestrator", undefined);
                     };
-                    const agentTypes = ["explore", "plan", "implement", "verify", "bug-fix", "code-research", "tests-impl", "docs-impl"];
+                    const agentTypes = getAgentTypes();
                     const agentIcons = { explore: "🔍", plan: "📋", implement: "🔧", verify: "✅", "bug-fix": "🐛", "code-research": "🔬", "tests-impl": "🧪", "docs-impl": "📝" };
 
                     ctx.ui.setWidget("orchestrator", [
