@@ -59,9 +59,16 @@ export class ToolExecutionComponent extends Container {
 		// Opt-in: if tool sets resultReplacesCall, result renderer replaces call renderer once a result exists.
 		const extOpt = toolDefinition?.renderOptions?.resultReplacesCall;
 		const builtInOpt = this.builtInToolDefinition?.renderOptions?.resultReplacesCall;
-		this.resultReplacesCall = typeof extOpt === "function" ? extOpt : extOpt === true ? true
-			: typeof builtInOpt === "function" ? builtInOpt : builtInOpt === true ? true
-			: false;
+		this.resultReplacesCall =
+			typeof extOpt === "function"
+				? extOpt
+				: extOpt === true
+					? true
+					: typeof builtInOpt === "function"
+						? builtInOpt
+						: builtInOpt === true
+							? true
+							: false;
 
 		this.addChild(new Spacer(1));
 
@@ -225,9 +232,10 @@ export class ToolExecutionComponent extends Container {
 			this.contentBox.clear();
 
 			const callRenderer = this.getCallRenderer();
-			const shouldSkipCall = (typeof this.resultReplacesCall === "function"
-				? this.resultReplacesCall(this.args)
-				: this.resultReplacesCall) && this.result;
+			const shouldSkipCall =
+				(typeof this.resultReplacesCall === "function"
+					? this.resultReplacesCall(this.args)
+					: this.resultReplacesCall) && this.result;
 			if (!callRenderer) {
 				if (!shouldSkipCall) {
 					this.contentBox.addChild(this.createCallFallback());
