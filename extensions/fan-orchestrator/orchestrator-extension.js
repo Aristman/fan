@@ -500,6 +500,7 @@ export const orchestratorExtension = (fan) => {
                     const agentIcons = {
                         explore: "🔍", plan: "📋", implement: "🔧", verify: "✅",
                         "bug-fix": "🐛", "code-research": "🔬", "tests-impl": "🧪", "docs-impl": "📝",
+                        security: "🔒",
                     };
 
                     // Refresh and get available models from the runtime
@@ -756,9 +757,10 @@ export const orchestratorExtension = (fan) => {
                         verify:       { reasoning: 0.5, context: 0.5, cost: 5, maxTokens: 0.3 },
                         "tests-impl": { reasoning: 2, context: 1, cost: 2, maxTokens: 1 },
                         "docs-impl":  { reasoning: 0.3, context: 1, cost: 4, maxTokens: 0.5 },
+                        security:     { reasoning: 0.5, context: 6, cost: 3, maxTokens: 0.3 },
                     };
                     // Priority order: assign heavy workers first so they get the best models
-                    const ASSIGNMENT_ORDER = ["implement", "plan", "bug-fix", "explore", "code-research", "tests-impl", "verify", "docs-impl"];
+                    const ASSIGNMENT_ORDER = ["implement", "plan", "bug-fix", "explore", "code-research", "tests-impl", "verify", "docs-impl", "security"];
 
                     function scoreModel(model, profile) {
                         let score = 0;
@@ -1213,7 +1215,7 @@ export const orchestratorExtension = (fan) => {
                         ctx.ui.setWidget("orchestrator", undefined);
                     };
                     const agentTypes = getAgentTypes();
-                    const agentIcons = { explore: "🔍", plan: "📋", implement: "🔧", verify: "✅", "bug-fix": "🐛", "code-research": "🔬", "tests-impl": "🧪", "docs-impl": "📝" };
+                    const agentIcons = { explore: "🔍", plan: "📋", implement: "🔧", verify: "✅", "bug-fix": "🐛", "code-research": "🔬", "tests-impl": "🧪", "docs-impl": "📝", security: "🔒" };
 
                     ctx.ui.setWidget("orchestrator", [
                         "⚡ ORCHESTRATOR — Configuration Wizard",

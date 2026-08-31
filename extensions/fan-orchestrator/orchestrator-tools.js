@@ -24,6 +24,13 @@ const AGENT_ICONS = {
     verify: "🛡️",
 };
 const WRITE_WORKER_TYPES = new Set(["implement", "bug-fix", "tests-impl", "docs-impl"]);
+// Security-ключевые слова классификатора задач (routing на security-воркера).
+// ПЕРВОЕ правило classifyTaskByDescription: security-слова специфичнее generic-глаголов
+// (explore/verify) и однозначно указывают на аудит, поэтому приоритетнее
+// (например, "search for hardcoded secrets" → security, а не explore).
+// Примечание: \b не работает вокруг кириллицы (\w — только ASCII),
+// поэтому русские ключи (уязвим*, инъекци*) матчатся без границ.
+const SECURITY_KEYWORDS = /\bsecurity\b|vulnerab\w*|exploit\w*|\bcve\w*|owasp|injection\w*|\bxss\b|secret\w*|уязвим\w*|инъекци\w*/i;
 function getAgentIcon(agentName) {
     return AGENT_ICONS[agentName] ?? "🤖";
 }
@@ -139,6 +146,14 @@ function formatToolCall(toolName, args, themeFg) {
 }
 function classifyTaskByDescription(description) {
     const lower = description.toLowerCase();
+    // Security — ПЕРВОЕ правило (SECURITY_KEYWORDS в шапке модуля)
+    if (SECURITY_KEYWORDS.test(lower)) {
+        return {
+            workerType: "security",
+            confidence: 0.9,
+            reasoning: "Task description mentions security keywords (security, vulnerability, exploit, CVE, OWASP, injection, XSS, secrets)",
+        };
+    }
     // Explore patterns
     if (/\b(explore|find|locate|search|grep|look for|what files|list|structure|where|which file)\b/i.test(lower)) {
         return {
