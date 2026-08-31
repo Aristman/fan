@@ -1,7 +1,7 @@
 {
 	"name": "fan-security",
-	"version": "0.1.0",
-	"description": "Практичный аудит безопасности для FAN: scan-secrets, scan-patterns, dep-audit + slash-команда /security-scan и SKILL.md-методология",
+	"version": "1.0.0",
+	"description": "Практичный аудит безопасности для FAN: scan-secrets, scan-patterns, dep-audit + slash-команда /security-scan (методология аудита — в skill-компоненте бандла fan-security)",
 	"type": "module",
 	"main": "index.ts",
 	"fan": {
@@ -9,7 +9,7 @@
 		"type": "extension",
 		"displayName": "FAN Security",
 		"description": "Аудит безопасности: секреты, CWE-сигнатуры кода, уязвимые зависимости; /security-scan агрегирует три CLI-сканера",
-		"version": "0.1.0",
+		"version": "1.0.0",
 		"main": "index.ts",
 		"author": "FAN Team",
 		"tags": [

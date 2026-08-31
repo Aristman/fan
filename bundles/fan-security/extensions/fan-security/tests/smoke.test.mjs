@@ -41,7 +41,7 @@
  *
  * ЗАПУСК (одна команда, из директории пакета):
  *
- *   cd extensions/fan-security
+ *   cd bundles/fan-security/extensions/fan-security
  *   npx vitest run tests/smoke.test.mjs
  *
  *   (входит и в полный прогон пакета — vitest-конфиг пакета включает tests на *.test.mjs;
@@ -64,7 +64,8 @@ import { scanSecrets } from "../cli/scan-secrets.ts";
 import { scanPatterns } from "../cli/scan-patterns.ts";
 import { scanDepAudits } from "../cli/dep-audit.ts";
 // Реестр агентов оркестратора (чистый JS, без тяжёлых зависимостей)
-import { getAgentDefinition } from "../../fan-orchestrator/agents/index.js";
+// (расположен в extensions/fan-orchestrator монорепо — 5 уровней вверх от tests/)
+import { getAgentDefinition } from "../../../../../extensions/fan-orchestrator/agents/index.js";
 
 const testsDir = path.dirname(fileURLToPath(import.meta.url));
 const pkgDir = path.resolve(testsDir, "..");
@@ -194,7 +195,7 @@ describe("Smoke: security-worker — сквозной happy path (extension → 
 
 		// Routing (F-1.3/TC-F-1.3-1): classifyTaskByDescription не экспортируется —
 		// вызываем публичный инструмент classify_task (паттерн agents-security-routing.test.mjs)
-		const { registerOrchestratorTools } = await import("../../fan-orchestrator/orchestrator-tools.js");
+		const { registerOrchestratorTools } = await import("../../../../../extensions/fan-orchestrator/orchestrator-tools.js");
 		let classifyTool;
 		const mockFan = {
 			registerTool: (toolDef) => {

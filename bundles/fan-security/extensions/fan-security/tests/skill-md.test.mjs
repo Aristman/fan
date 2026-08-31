@@ -6,7 +6,8 @@
  *
  * ═══════════════════════════════════════════════════════════════════════════════
  * ЦЕЛЕВОЙ КОНТРАКТ (спецификация для implement-воркера, Green-фаза) —
- * extensions/fan-security/SKILL.md:
+ * bundles/fan-security/skills/fan-security/SKILL.md (перенесён из корня
+ * extension при реструктуризации в bundle):
  *
  *   1) Frontmatter (YAML, «---»-ограничители, парсится parseFrontmatter ядра):
  *      - name: fan-security — по правилам движка (skills.ts:validateName):
@@ -58,17 +59,23 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 // Реальный парсер frontmatter ядра (тот же, что использует skill-движок)
-import { parseFrontmatter } from "../../../packages/coding-agent/src/utils/frontmatter.ts";
+// (coding-agent живёт в packages/ монорепо — 5 уровней вверх от tests/)
+import { parseFrontmatter } from "../../../../../packages/coding-agent/src/utils/frontmatter.ts";
 // Реальный загрузчик skills (правила validateName/validateDescription применяет сам движок)
-import { loadSkillsFromDir } from "../../../packages/coding-agent/src/core/skills.ts";
+import { loadSkillsFromDir } from "../../../../../packages/coding-agent/src/core/skills.ts";
 // Enum severity из схемы отчёта F-2.1 (уже существует, COMPLETED)
 import { SEVERITIES } from "../lib/report.ts";
 
 const testsDir = path.dirname(fileURLToPath(import.meta.url));
 const EXT_DIR = path.resolve(testsDir, "..");
-const SKILL_PATH = path.join(EXT_DIR, "SKILL.md");
-const SKILL_DIR_NAME = path.basename(EXT_DIR); // "fan-security" — ожидаемое name
-const REL_SKILL_PATH = "extensions/fan-security/SKILL.md";
+// Skill переехал в skill-компонент бандла (реструктуризация F-2.8 → bundle):
+// <repo>/bundles/fan-security/skills/fan-security/SKILL.md
+// (от tests/: 4 уровня вверх → bundles/, затем fan-security/skills/fan-security/)
+const SKILL_PATH = path.resolve(
+	testsDir, "..", "..", "..", "..", "fan-security", "skills", "fan-security", "SKILL.md",
+);
+const SKILL_DIR_NAME = path.basename(path.dirname(SKILL_PATH)); // "fan-security" — ожидаемое name
+const REL_SKILL_PATH = "bundles/fan-security/skills/fan-security/SKILL.md";
 
 /** Лимиты и правила — копия констант skills.ts (для читаемых сообщений вне движка). */
 const MAX_NAME_LENGTH = 64;
@@ -81,11 +88,13 @@ const MAX_DESCRIPTION_LENGTH = 1024;
 function readSkillRaw() {
 	if (!existsSync(SKILL_PATH)) {
 		throw new Error(
-			`${REL_SKILL_PATH} не существует — создай extensions/fan-security/SKILL.md по контракту из шапки этого файла ` +
-				`(roadmap F-2.7, Green-фаза TDD): frontmatter (name: ${SKILL_DIR_NAME}, description ≤ ${MAX_DESCRIPTION_LENGTH}) ` +
+			`${REL_SKILL_PATH} не существует — создай bundles/fan-security/skills/fan-security/SKILL.md по контракту из шапки этого файла ` +
+				`(roadmap F-2.7 + реструктуризация в bundle): frontmatter (name: ${SKILL_DIR_NAME}, description ≤ ${MAX_DESCRIPTION_LENGTH}) ` +
 				`+ методология аудита (7 маркеров: OWASP/CWE, secret scanning, dependency audit, IaC, config audit, ` +
 				`формат отчёта с severity, маскирование 4+4) + относительные ссылки на ` +
-				`cli/scan-secrets.ts, cli/scan-patterns.ts, cli/dep-audit.ts.`,
+				`cli/scan-secrets.ts, cli/scan-patterns.ts, cli/dep-audit.ts ` +
+				`+ абзац в начале: сканеры — в корне установленного расширения fan-security ` +
+				`(обычно ~/.fan/agent/extensions/fan-security/), команды выполняются оттуда.`,
 		);
 	}
 	return readFileSync(SKILL_PATH, "utf8");
@@ -193,7 +202,7 @@ afterEach(() => {
 });
 
 describe(`TC-F-2.7-1: SKILL.md валиден по правилам skill-движка (${REL_SKILL_PATH})`, () => {
-	it("файл SKILL.md существует в корне пакета", () => {
+	it("файл SKILL.md существует в skill-компоненте бандла", () => {
 		// Guard: читаемая причина вместо сырого ENOENT (Red: файла нет)
 		expect(existsSync(SKILL_PATH), `${REL_SKILL_PATH} не существует — см. контракт в шапке tests/skill-md.test.mjs`).toBe(true);
 	});

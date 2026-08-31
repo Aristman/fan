@@ -1,9 +1,10 @@
 # fan-security 🛡️
 
-Extension-пакет аудита безопасности для FAN. Три CLI-сканера, агрегирующая
-slash-команда `/security-scan` и SKILL.md-методология ручного прохода
-(/skill:fan-security — OWASP Top 10 / CWE-чеклист, secret scanning, аудит
-зависимостей, IaC и конфигураций).
+Extension-компонент бандла fan-security: аудита безопасности для FAN. Три
+CLI-сканера и агрегирующая slash-команда `/security-scan`; SKILL.md-методология
+ручного прохода (/skill:fan-security — OWASP Top 10 / CWE-чеклист, secret
+scanning, аудит зависимостей, IaC и конфигураций) — в skill-компоненте бандла
+(`bundles/fan-security/skills/fan-security/`).
 
 ## Состав пакета
 
@@ -13,33 +14,38 @@ slash-команда `/security-scan` и SKILL.md-методология руч�
 | `cli/scan-patterns.ts` | CWE-сигнатуры кода: SQL-инъекции (CWE-89), command injection (CWE-78), path traversal (CWE-22), XSS (CWE-79), weak crypto/randomness, hardcoded IV |
 | `cli/dep-audit.ts` | Уязвимые зависимости: `npm audit` / `pnpm audit` / `yarn audit`, `pip-audit`, `cargo audit` |
 | `/security-scan` | Slash-команда: запускает все три сканера разом и агрегирует отчёт в чат |
-| `SKILL.md` | Методология аудита для агента (skill-часть пакета) |
+
+Skill-компонент бандла — `SKILL.md`-методология аудита — устанавливается рядом
+(в `~/.fan/agent/skills/fan-security/`) и доступен через `/skill:fan-security`.
 
 ## Установка
 
-### Из FAN Store (user scope)
+Расширение распространяется в составе **бандла fan-security** (extension +
+skill устанавливаются одной командой):
 
 ```bash
 fan store install fan-security
 ```
 
-### Из локального архива (.tar.gz)
+Installer авто-детектит bundle по поддиректориям `extensions/` + `skills/` —
+указывать `--type` не нужно: расширение встанет в
+`~/.fan/agent/extensions/fan-security/`, скилл — в `~/.fan/agent/skills/fan-security/`.
+
+Из локального архива (.tar.gz) — тоже без явного типа (авто-детект bundle
+работает и для распакованного архива):
 
 ```bash
-fan store install ./fan-security-0.1.0.tar.gz --type extension
+fan store install ./fan-security-1.0.0.tar.gz
 ```
-
-> ⚠️ **Явный `--type extension` обязателен для архива.** Пакет содержит **и**
-> `SKILL.md`, **и** `index.ts`, а авто-детект типа installer'а проверяет
-> `SKILL.md` **раньше** extension-признаков (`index.ts` / `package.json`) —
-> без явного типа пакет будет определён как skill. Явно указанный тип старше
-> авто-детекта и гарантирует установку в `~/.fan/agent/extensions/fan-security/`.
 
 После установки выполните `/reload` в сессии FAN.
 
 ## Использование
 
 ### CLI-сканеры
+
+Команды выполняются из корня установленного расширения fan-security (обычно
+`~/.fan/agent/extensions/fan-security/`):
 
 ```bash
 # Секреты (ключи, токены, .env, entropy)

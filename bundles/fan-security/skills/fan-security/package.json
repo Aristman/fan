@@ -1,0 +1,7 @@
+{
+  "name": "fan-security",
+  "version": "1.0.0",
+  "description": "Методология практичного аудита безопасности FAN: OWASP Top 10 / CWE-чеклист кода, secret scanning, аудит зависимостей, IaC (Dockerfile/compose/k8s) и конфигураций (CORS, CSP, debug, TLS). Используется при «проверь безопасность», перед коммитом или релизом.",
+  "type": "module",
+  "keywords": ["security", "audit", "owasp", "cwe", "secrets", "dependencies", "iac"]
+}
