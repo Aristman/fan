@@ -4,11 +4,11 @@
 > **v7.10.0** — Named model-config presets: сохранение/переключение/удаление именованных конфигураций моделей (`presets`, `activePreset`) + multi-provider списки моделей в `/orchestrator models` (модели выбранного провайдера сверху, все остальные провайдеры ниже).
 > Pipeline Mode: `/pipeline` command, auto-update hooks, state recovery, conventional-commits policy.
 
-Портирован из fan-orchestrator с сохранением стабильной архитектуры воркеров. Расширение для FAN, добавляющее режим координатора, доску задач, 8 специализированных воркеров, систему разрешений и Pipeline Mode для многофазных проектов.
+Портирован из fan-orchestrator с сохранением стабильной архитектуры воркеров. Расширение для FAN, добавляющее режим координатора, доску задач, 9 специализированных воркеров, систему разрешений и Pipeline Mode для многофазных проектов.
 
 ## Highlights
 
-- **8 специализированных воркеров** — explore, plan, implement, verify, bug-fix, code-research, tests-impl, docs-impl
+- **9 специализированных воркеров** — explore, plan, implement, verify, security, bug-fix, code-research, tests-impl, docs-impl
 - **Pi-style RPC protocol** — JSONL over stdin/stdout, единый `stallTimer`, без жёсткого лимита выполнения
 - **Slot pool concurrency** — read-only агенты параллельно (до `parallelWorkers`, каждый в своём пуле), write-агенты эксклюзивно (параллельные write-воркеры блокируются слотом)
 - **🆕 `/orchestrator models`** — умное назначение моделей воркерам (scoring-профили `WORKER_PROFILES`: reasoning/context/cost/maxTokens), интерактивный wizard, multi-provider списки (выбранный провайдер сверху, все остальные ниже)
@@ -29,7 +29,7 @@
 - **Worker pool** — read-only агенты параллельно (до `config.parallelWorkers`), write-агенты последовательно
 
 ### Slot pool
-- **Read-only воркеры** (explore, plan, verify, code-research): до `config.parallelWorkers` (default 3) одновременно
+- **Read-only воркеры** (explore, plan, verify, security, code-research): до `config.parallelWorkers` (default 3) одновременно
 - **Write воркеры** (implement, bug-fix, tests-impl, docs-impl): строго 1 (эксклюзивный слот)
 - **FIFO-очередь** при переполнении
 
@@ -40,7 +40,7 @@
 | `orchestrator-extension.js` | Главный модуль: регистрация команд, хуков, инициализация Pipeline Mode |
 | `orchestrator-tools.js` | LLM-инструменты (delegate_task, TaskCreate, TaskUpdate, assess_task, stop_worker и др.) |
 | `pipeline-state.js` | Pipeline State: 10 instance методов + 1 static, 3 рабочих артефакта, атомарные записи |
-| `agents.js` | Реестр агентов: 8 воркеров, координаторский промпт, discovery |
+| `agents.js` | Реестр агентов: 9 воркеров, координаторский промпт, discovery |
 | `config.js` | Загрузка/сохранение конфигурации (`~/.fan/agent/extensions/fan-orchestrator/config.json`) |
 | `permissions.js` | Проверка опасных команд (делегирует в core `@seaagents/fan-coding-agent`) |
 | `broker-handler.js` | MCP tool broker: подписка на EventBus (`mcp:catalog`), обработка `remote_tool_request` от воркеров, per-worker profile filtering (`all` / `read-only`) |
@@ -72,6 +72,7 @@
 | 🔍 explore | Read-only | Fast codebase recon: file search, structure analysis |
 | 📋 plan | Read-only | Architectural planning: design, strategy, approach |
 | 🛡️ verify | Read-only | Adversarial verification: build, tests, lint, edge cases |
+| 🔒 security | Read-only | Security audit: secrets, dependencies, OWASP/CWE patterns, IaC/config (read-only, on-demand) |
 | 🔬 code-research | Read-only | Deep READ-ONLY research with structured reports |
 | 🔧 implement | Write | General code changes, new features |
 | 🐛 bug-fix | Write | Bug fixing pipeline: reproduce → root cause → fix → verify |

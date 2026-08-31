@@ -91,7 +91,7 @@
 | `orchestrator-tools.js` | LLM-инструменты: delegate_task, TaskCreate, TaskUpdate и т.д. |
 | `subagent-runner.js` | RPC-коммуникация с под-агентами |
 | `task-manager.js` | Управление жизненным циклом задач |
-| `agents.js` | Фабрика типов агентов (8 типов) |
+| `agents.js` | Фабрика типов агентов (9 типов) |
 | `agents/*.js + *.md` | Каждый тип агента + его system prompt |
 | `workers.js` | Пул воркеров (очередь, слоты) |
 | `permissions.js` | Управление разрешениями воркеров |
@@ -100,7 +100,7 @@
 | `types.js` | Типы TypeScript |
 | `README.md` | Документация |
 
-**Типы агентов:** explore, plan, implement, verify, bug-fix, code-research, docs-impl, tests-impl
+**Типы агентов:** explore, plan, implement, verify, bug-fix, code-research, docs-impl, tests-impl, security
 
 **Особенности:**
 - Per-worker температура и лимиты
