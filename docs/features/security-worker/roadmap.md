@@ -51,7 +51,7 @@
 - *Ожидаемый результат:* 0 ошибок сборки и тестов; `/agents` показывает 8 built-in агентов; `/orchestrator models` показывает те же 8 типов в настройке моделей — идентично поведению до рефакторинга.
 **Smoke-критерий этапа:** vitest-тест консистентности списков зелёный + `npm run build` без ошибок.
 
-#### ☐ F-0.1: Динамические списки агентных типов из реестра
+#### ✅ F-0.1: Динамические списки агентных типов из реестра
 - **Приоритет:** P0
 - **Слой:** [INTEG]
 - **Описание:** `WORKER_TYPES` (types.js:8-18), `AGENT_TYPES` (model-editor.js:22) и `agentTypes` (orchestrator-extension.js:~494) импортируют список из `getAgentTypes()` (`agents/index.js`) вместо собственных констант; кастомные user/project агенты в model-editor и `/orchestrator models` не показываются (поведение не меняется).
@@ -86,7 +86,7 @@
 - *Ожидаемый результат:* отчёт с findings (severity, file:line, CWE, remediation), ни один файл не изменён; `/orchestrator models` позволяет настроить модель security.
 **Smoke-критерий этапа:** vitest: реестр содержит security (readOnly=true, tools), `classifyTaskByDescription('security...')` → `security`; `/agents` отображает security.
 
-#### ☐ F-1.1: Определение агента security с промпт-методологией
+#### ✅ F-1.1: Определение агента security с промпт-методологией
 - **Приоритет:** P0
 - **Слой:** [BIZ]
 - **Описание:** создать `extensions/fan-orchestrator/agents/security.js` и `security.md` (двойное определение по образцу verify.js/verify.md): `type: "security"`, `label: "Security Auditor"`, icon `🔒`, `readOnly: true`, `tools: [read, bash, grep, find, ls]`; промпт — методология полного скоупа (OWASP Top 10 / CWE-паттерны кода, secret scanning regex+entropy, dependency audit через bash, IaC: Dockerfile/compose/k8s, config audit: CORS/CSP/debug/TLS/cookie flags) + формат отчёта (severity CRITICAL..INFO, file:line, CWE, exploit vector, remediation, маскирование секретов, `needs-verification` для неподтверждённых) + правило read-only.
@@ -114,7 +114,7 @@
 - **Ожидаемый результат:** два файла agents/security.js + agents/security.md с полной методологией.
 - **Оценка объёма:** L (≤ 2 дня, основное — промпт)
 
-#### ☐ F-1.2: Регистрация в реестре и конфиге
+#### ✅ F-1.2: Регистрация в реестре и конфиге
 - **Приоритет:** P0
 - **Слой:** [INTEG]
 - **Описание:** добавить security в `AGENT_REGISTRY` (agents/index.js — import + запись) и `config.example.json` (ключ `"security"` в models cloud/local, `"security": 0.1` в agentTemperature). Благодаря F-0.1 других точек регистрации нет.
@@ -136,7 +136,7 @@
 - **Ожидаемый результат:** security виден во всех динамических потребителях: координаторский промпт, `/agents`, `/delegate`.
 - **Оценка объёма:** S (≤ 4ч)
 
-#### ☐ F-1.3: Routing fix классификатора задач
+#### ✅ F-1.3: Routing fix классификатора задач
 - **Приоритет:** P0
 - **Слой:** [BIZ]
 - **Описание:** в `classifyTaskByDescription` (orchestrator-tools.js:~155) добавить проверку security-ключевых слов (`security`, `vulnerab`, `exploit`, `cve`, `owasp`, `injection`, `xss`, `secret`) **до** generic-правила verify; добавить security в `AGENT_ICONS` (🔒) и в `WORKER_PROFILES` (orchestrator-extension.js:~745) приоритет security-слов.
@@ -160,7 +160,7 @@
 - **Ожидаемый результат:** classifyTaskByDescription + AGENT_ICONS + WORKER_PROFILES обновлены, регресс-тесты зелёные.
 - **Оценка объёма:** S (≤ 4ч)
 
-#### ☐ F-1.4: Разграничение ролей verify и security в промптах
+#### ✅ F-1.4: Разграничение ролей verify и security в промптах
 - **Приоритет:** P0
 - **Слой:** [BIZ]
 - **Описание:** в verify.md/verify.js добавить явную границу роли «проверка свежего диффа после имплементации; глубокие аудиты → security-воркер»; в useFor security-определения (F-1.1) зеркальная формулировка «глубокий аудит фичи/модуля/репо по запросу, не дифф-проверка».
@@ -194,7 +194,7 @@
 - *Ожидаемый результат:* findings по всем seed-нарушениям, exit-code 1, JSON валиден по схеме §6.1 спеки, секрет не воспроизводится полностью.
 **Smoke-критерий этапа:** три CLI на fixture — корректные exit-codes и валидный JSON; extension загружается без ошибок (`/reload`).
 
-#### ☐ F-2.1: Общая схема отчёта и text-рендер
+#### ✅ F-2.1: Общая схема отчёта и text-рендер
 - **Приоритет:** P0
 - **Слой:** [DATA]
 - **Описание:** создать `lib/report.ts` пакета fan-security: типы `Finding` (схема §6.1 спеки: id, scanner, severity, title, file, line, cwe, evidence, description, exploit, remediation, confidence) и `Report` ({tool, version, target, scannedAt, findings[], summary}); функция маскирования секретов (4+4 символа); text-рендер; хелперы exit-code (0/1/2).
@@ -217,7 +217,7 @@
 - **Ожидаемый результат:** lib/report.ts — единый контракт данных всех CLI.
 - **Оценка объёма:** S (≤ 4ч)
 
-#### ☐ F-2.2: CLI scan-secrets
+#### ✅ F-2.2: CLI scan-secrets
 - **Приоритет:** P0
 - **Слой:** [CLI]
 - **Описание:** `cli/scan-secrets.ts`: regex-паттерны (api_key, AKIA, sk-, ghp_, xox, PEM BEGIN, .env в репо) + entropy-эвристика; флаги `--format json|text` (text — дефолт), exit 0 чисто / 1 findings / 2 ошибка.
@@ -244,7 +244,7 @@
 - **Ожидаемый результат:** cli/scan-secrets.ts + fixtures.
 - **Оценка объёма:** M (≤ 1 день)
 
-#### ☐ F-2.3: CLI scan-patterns
+#### ✅ F-2.3: CLI scan-patterns
 - **Приоритет:** P0
 - **Слой:** [CLI]
 - **Описание:** `cli/scan-patterns.ts`: сигнатуры CWE/OWASP в коде — SQL/cmd/path injection, XSS, weak crypto (md5/sha1), hardcoded IV/nonce, weak randomness; флаги и exit-codes как F-2.2.
@@ -264,7 +264,7 @@
 - **Ожидаемый результат:** cli/scan-patterns.ts + fixtures.
 - **Оценка объёма:** M (≤ 1 день)
 
-#### ☐ F-2.4: CLI dep-audit
+#### ✅ F-2.4: CLI dep-audit
 - **Приоритет:** P0
 - **Слой:** [CLI]
 - **Описание:** `cli/dep-audit.ts`: детект манифестов (package.json / requirements.txt / pyproject.toml / Cargo.toml), вызов соответствующих audit-утилит через bash (npm/pnpm/yarn audit, pip-audit, cargo audit); парсинг вывода в схему F-2.1; отсутствие утилиты/манифестов — информативное сообщение без падения.
@@ -287,7 +287,7 @@
 - **Ожидаемый результат:** cli/dep-audit.ts + fixture-выводы audit.
 - **Оценка объёма:** M (≤ 1 день)
 
-#### ☐ F-2.5: Гибридный режим авто-детекта внешних тулов
+#### ✅ F-2.5: Гибридный режим авто-детекта внешних тулов
 - **Приоритет:** P1
 - **Слой:** [CLI]
 - **Описание:** `lib/external.ts`: авто-детект gitleaks/semgrep по наличию бинаря в PATH (без скачивания); режимы `--use-external off|auto|only` (auto — дефолт); мердж findings внешних тулов с базовыми сканерами, дедупликация по (file, line, тип нарушения).
@@ -311,7 +311,7 @@
 - **Ожидаемый результат:** lib/external.ts + интеграция в scan-secrets/scan-patterns.
 - **Оценка объёма:** M (≤ 1 день)
 
-#### ☐ F-2.6: Slash-команда /security-scan
+#### ✅ F-2.6: Slash-команда /security-scan
 - **Приоритет:** P0
 - **Слой:** [INTEG]
 - **Описание:** index.ts extension-factory регистрирует `registerCommand('security-scan', ...)`: парсинг аргументов `[path] [--format json|text]`, запуск трёх сканеров, агрегация summary, вывод текстовой сводки (таблица severity × файл) в чат; JSON-путь к полному отчёту при объёме > 20 findings.
@@ -339,7 +339,7 @@
 - **Ожидаемый результат:** index.ts с factory + registerCommand.
 - **Оценка объёма:** M (≤ 1 день)
 
-#### ☐ F-2.7: SKILL.md методология
+#### ✅ F-2.7: SKILL.md методология
 - **Приоритет:** P1
 - **Слой:** [BIZ]
 - **Описание:** SKILL.md в корне пакета: frontmatter (name: fan-security, description ≤ 1024 chars) + методология аудита для обычных сессий: OWASP/CWE-чеклист, secret scanning, deps, IaC, config audit, формат отчёта с маскированием, ссылки на CLI-сканеры пакета (относительные пути, resolve against skill dir).
@@ -361,7 +361,7 @@
 - **Ожидаемый результат:** SKILL.md, подгружаемый и автоматически (по description), и через slash-команду.
 - **Оценка объёма:** S (≤ 4ч)
 
-#### ☐ F-2.8: Упаковка extension-пакета
+#### ✅ F-2.8: Упаковка extension-пакета
 - **Приоритет:** P1
 - **Слой:** [INTEG]
 - **Описание:** package.json пакета (`"type": "module"`, `"fan": {"type": "extension", "name": "fan-security"}`, main → index.ts) + README (установка user scope, использование CLI и /security-scan, зависимость от Этапа 1 для воркер-сценария); структура соответствует эвристикам installer (SKILL.md → skill, index.ts → extension).
