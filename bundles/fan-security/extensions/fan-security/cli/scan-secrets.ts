@@ -61,6 +61,7 @@ import {
 	type Severity,
 } from "../lib/report.ts";
 import { mergeFindings, resolveExternalTools, runGitleaks, type ExternalEnv } from "../lib/external.ts";
+import { getPkgVersion } from "../lib/pkg.ts";
 import { readTextFileSafe, walkDirectory } from "../lib/walker.ts";
 import {
 	ENTROPY_BARE_MIN_LENGTH,
@@ -75,7 +76,7 @@ import {
 // ── Константы сканера ────────────────────────────────────────────────────────
 
 const TOOL = "scan-secrets";
-const VERSION = "0.1.0";
+const VERSION = getPkgVersion();
 
 /** Ограничение длины evidence (цитата кода, не весь файл). */
 const MAX_EVIDENCE_LENGTH = 240;

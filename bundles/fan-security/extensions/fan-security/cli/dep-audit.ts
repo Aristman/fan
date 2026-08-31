@@ -71,12 +71,13 @@ import {
 	type Report,
 	type Severity,
 } from "../lib/report.ts";
+import { getPkgVersion } from "../lib/pkg.ts";
 import { walkDirectory } from "../lib/walker.ts";
 
 // ── Константы сканера ────────────────────────────────────────────────────────
 
 const TOOL = "dep-audit";
-const VERSION = "0.1.0";
+const VERSION = getPkgVersion();
 /** Верхняя граница evidence (§6.1) — цитата строки манифеста или audit-вывода. */
 const MAX_EVIDENCE_LENGTH = 300;
 /** CWE-дефолт, когда утилита не отдаёт CWE (npm via-строка, pip-audit, cargo). */

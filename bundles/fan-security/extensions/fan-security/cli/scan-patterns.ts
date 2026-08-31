@@ -59,6 +59,7 @@ import {
 	type Severity,
 } from "../lib/report.ts";
 import { mergeFindings, resolveExternalTools, runSemgrep, type ExternalEnv } from "../lib/external.ts";
+import { getPkgVersion } from "../lib/pkg.ts";
 import {
 	CWE_PATTERNS,
 	MAX_CWE_EVIDENCE_LENGTH,
@@ -70,7 +71,7 @@ import { readTextFileSafe, walkDirectory } from "../lib/walker.ts";
 // ── Константы сканера ────────────────────────────────────────────────────────
 
 const TOOL = "scan-patterns";
-const VERSION = "0.1.0";
+const VERSION = getPkgVersion();
 // Обход ФС и фильтры файлов (SKIP_DIRS, BINARY_EXTENSIONS, MAX_FILE_BYTES,
 // readTextFileSafe) — lib/walker.ts, общий для обоих CLI (F-2.3 REFACTOR).
 
