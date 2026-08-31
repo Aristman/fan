@@ -22,16 +22,28 @@
  * из lib/report.ts (4+4, «AKIA…MNOP») — полный секрет не утекает ни в одно поле.
  * Схема отчёта — lib/report.ts (F-2.1): createReport/renderText/resolveExitCode.
  *
+ * Гибридный режим (F-2.5): useExternal off|auto|only (дефолт auto). Доменная
+ * внешняя тулза — gitleaks (lib/external.ts): auto — детект всегда → отчёт несёт
+ * externalTools, найденный gitleaks запускается, вывод мерджится с базовыми
+ * findings (дедуп [file, line, cwe||title], base wins, id EXT-*); ничего не
+ * найдено → external='off' (TC-F-2.5-1). only — базовый regex-скан пропущен,
+ * тулза не найдена → findings=[] (exit 0). off — детект/запуск не выполняются.
+ * Ошибка запуска тулзы → 0 внешних findings, отчёт валиден. Секреты внешних
+ * findings маскируются в конвертере (§2.3 — инвариант и для внешних).
+ *
  * CLI-контракт (§3.3, §4.1):
- *   bun cli/scan-secrets.ts <path> [--format json|text]   (text — дефолт)
+ *   bun cli/scan-secrets.ts <path> [--format json|text] [--use-external off|auto|only]
+ *   (text/auto — дефолты; формы "--use-external V" и "--use-external=V";
+ *    недопустимое значение → exit 2)
  *   main() ВОЗВРАЩАЕТ exit-код (0 чисто / 1 findings / 2 ошибка) и НЕ вызывает
  *   process.exit — он только в CLI-обёртке import.meta.main ниже.
  *   `--format json` — весь stdout валидный JSON без посторонних строк.
  *
  * Без внешних зависимостей: только node:fs / node:path + lib/report.ts +
  * lib/patterns/secrets.ts (data-driven таблица паттернов, F-2.2 refactor) +
- * lib/walker.ts (общий обход ФС, F-2.3 REFACTOR).
- * Spec: docs/specs/spec_security-worker_2026-08-31.md §2.3, §3.3, §4, §6.
+ * lib/walker.ts (общий обход ФС, F-2.3 REFACTOR) + lib/external.ts (гибридный
+ * режим: детект/раннер/мердж внешних тулз, F-2.5).
+ * Spec: docs/specs/spec_security-worker_2026-08-31.md §2.3, §3.3, §4, §5.3, §6.
  */
 
 import { statSync } from "node:fs";
@@ -42,10 +54,13 @@ import {
 	renderText,
 	resolveExitCode,
 	type Confidence,
+	type ExternalMode,
+	type ExternalToolsReport,
 	type Finding,
 	type Report,
 	type Severity,
 } from "../lib/report.ts";
+import { mergeFindings, resolveExternalTools, runGitleaks, type ExternalEnv } from "../lib/external.ts";
 import { readTextFileSafe, walkDirectory } from "../lib/walker.ts";
 import {
 	ENTROPY_BARE_MIN_LENGTH,
@@ -142,8 +157,10 @@ type MatchWithIndices = RegExpMatchArray & {
 export interface ScanSecretsOptions {
 	/** Формат вывода (зарезервировано: json | text). */
 	format?: "json" | "text";
-	/** Режим внешних сканеров (зарезервировано под F-2.4). */
-	useExternal?: "off" | "auto" | "only";
+	/** Режим внешних сканеров (F-2.5): off | auto (дефолт) | only. */
+	useExternal?: ExternalMode;
+	/** Инъекция PATH для детекта/раннера внешних тулз (F-2.5, для тестов). */
+	env?: ExternalEnv;
 }
 
 /** Тип вывода main(): json | text (text — дефолт, roadmap F-2.2). */
@@ -151,10 +168,17 @@ export type OutputFormat = "json" | "text";
 
 /**
  * Сканирует файл или директорию (рекурсивно) на секреты.
- * Возвращает Report по схеме F-2.1 (tool: "scan-secrets").
+ * Возвращает Report по схеме F-2.1 (tool: "scan-secrets") + external-поля
+ * F-2.5 (external/externalTools — см. lib/report.ts).
  * Несуществующий targetPath → throw (main() превращает в exit 2).
+ *
+ * Режимы useExternal (дефолт auto):
+ * - off  — детект/запуск внешних не выполняются; external='off';
+ * - auto — детект всегда (externalTools=результат), найденный gitleaks
+ *          запускается и мерджится (дедуп, base wins); не найден → 'off';
+ * - only — базовый regex-скан пропущен; тулзы нет → findings=[] (exit 0).
  */
-export async function scanSecrets(targetPath: string, _options: ScanSecretsOptions = {}): Promise<Report> {
+export async function scanSecrets(targetPath: string, options: ScanSecretsOptions = {}): Promise<Report> {
 	let stats;
 	try {
 		stats = statSync(targetPath);
@@ -164,6 +188,67 @@ export async function scanSecrets(targetPath: string, _options: ScanSecretsOptio
 
 	const isDirectory = stats.isDirectory();
 	const root = isDirectory ? targetPath : path.dirname(targetPath);
+	const mode: ExternalMode = options.useExternal ?? "auto"; // auto — дефолт (F-2.5)
+
+	// off: детект и запуск внешних тулз не выполняются вовсе (externalTools нет)
+	if (mode === "off") {
+		return createReport({
+			tool: TOOL,
+			version: VERSION,
+			target: targetPath,
+			findings: scanBaseTarget(targetPath, isDirectory, root),
+			external: "off",
+		});
+	}
+
+	// auto/only: детект выполняется всегда → externalTools = результат детекта
+	const tools = resolveExternalTools({ env: options.env });
+	const externalTools: ExternalToolsReport = {
+		gitleaks: tools.gitleaks !== null,
+		semgrep: tools.semgrep !== null,
+	};
+
+	// only: базовый regex-скан пропущен — только внешние (дедуп среди них);
+	// доменная тулза не найдена → findings=[] (явное намерение оператора)
+	if (mode === "only") {
+		const external = tools.gitleaks ? runGitleaks(root, tools.gitleaks, options.env) : [];
+		return createReport({
+			tool: TOOL,
+			version: VERSION,
+			target: targetPath,
+			findings: mergeFindings([], external),
+			external: "only",
+			externalTools,
+		});
+	}
+
+	// auto: доменная тулза (gitleaks) не найдена → вырождается в off (TC-F-2.5-1)
+	const baseFindings = scanBaseTarget(targetPath, isDirectory, root);
+	if (!tools.gitleaks) {
+		return createReport({
+			tool: TOOL,
+			version: VERSION,
+			target: targetPath,
+			findings: baseFindings,
+			external: "off",
+			externalTools,
+		});
+	}
+
+	// auto + gitleaks: запуск (любая ошибка → 0 внешних) и мердж (base wins)
+	const external = runGitleaks(root, tools.gitleaks, options.env);
+	return createReport({
+		tool: TOOL,
+		version: VERSION,
+		target: targetPath,
+		findings: mergeFindings(baseFindings, external),
+		external: "auto",
+		externalTools,
+	});
+}
+
+/** Базовый regex-скан (секреты): обход файлов + построчные паттерны/entropy. */
+function scanBaseTarget(targetPath: string, isDirectory: boolean, root: string): Finding[] {
 	const files = isDirectory ? walkDirectory(targetPath) : [targetPath];
 	files.sort();
 
@@ -174,8 +259,7 @@ export async function scanSecrets(targetPath: string, _options: ScanSecretsOptio
 	for (const file of files) {
 		findings.push(...scanFile(file, root, nextId));
 	}
-
-	return createReport({ tool: TOOL, version: VERSION, target: targetPath, findings });
+	return findings;
 }
 
 /** Скан одного файла: паттерны построчно + правило «закоммиченный .env». */
@@ -366,16 +450,16 @@ function toPosix(value: string): string {
 
 // ── CLI (§3.3, §4.1) ────────────────────────────────────────────────────────
 
-/**
- * CLI-входная точка: парсит [target] [--format json|text], печатает отчёт и
- * ВОЗВРАЩАЕТ exit-код (resolveExitCode): 0 — чисто, 1 — findings, 2 — ошибка.
- * process.exit НЕ вызывает — только обёртка import.meta.main ниже.
+/** CLI-входная точка: парсит [target] [--format json|text] [--use-external off|auto|only],
+ * печатает отчёт и ВОЗВРАЩАЕТ exit-код (resolveExitCode): 0 — чисто, 1 — findings,
+ * 2 — ошибка. process.exit НЕ вызывает — только обёртка import.meta.main ниже.
  * Вывод — исключительно console.log (stdout) / console.error (stderr).
  */
 export async function main(argv?: string[]): Promise<number> {
 	const args = argv ?? process.argv.slice(2);
 	let target: string | undefined;
 	let format: OutputFormat = "text"; // text — дефолт (roadmap F-2.2)
+	let useExternal: ExternalMode = "auto"; // auto — дефолт (F-2.5)
 
 	for (let index = 0; index < args.length; index++) {
 		const arg = args[index];
@@ -394,8 +478,25 @@ export async function main(argv?: string[]): Promise<number> {
 				return 2;
 			}
 			format = value;
+		} else if (arg === "--use-external") {
+			const value = args[index + 1] as ExternalMode | undefined;
+			if (value !== "off" && value !== "auto" && value !== "only") {
+				console.error(
+					`scan-secrets: недопустимое значение --use-external "${String(value)}" (ожидается off|auto|only)`,
+				);
+				return 2;
+			}
+			useExternal = value;
+			index += 1;
+		} else if (arg.startsWith("--use-external=")) {
+			const value = arg.slice("--use-external=".length) as ExternalMode;
+			if (value !== "off" && value !== "auto" && value !== "only") {
+				console.error(`scan-secrets: недопустимое значение --use-external "${value}" (ожидается off|auto|only)`);
+				return 2;
+			}
+			useExternal = value;
 		} else if (arg.startsWith("-") && arg.length > 1) {
-			console.error(`scan-secrets: неизвестная опция "${arg}" (поддерживается --format json|text)`);
+			console.error(`scan-secrets: неизвестная опция "${arg}" (поддерживаются --format json|text и --use-external off|auto|only)`);
 			return 2;
 		} else if (target === undefined) {
 			target = arg;
@@ -406,12 +507,14 @@ export async function main(argv?: string[]): Promise<number> {
 	}
 
 	if (!target) {
-		console.error("Использование: bun cli/scan-secrets.ts <путь> [--format json|text] (text — по умолчанию)");
+		console.error(
+			"Использование: bun cli/scan-secrets.ts <путь> [--format json|text] [--use-external off|auto|only] (text/auto — по умолчанию)",
+		);
 		return 2;
 	}
 
 	try {
-		const report = await scanSecrets(target);
+		const report = await scanSecrets(target, { useExternal });
 		// §4.1: --format json без лишнего вывода — весь stdout валидный JSON
 		console.log(format === "json" ? JSON.stringify(report, null, "\t") : renderText(report));
 		return resolveExitCode(report);

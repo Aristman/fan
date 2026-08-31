@@ -55,6 +55,23 @@ export interface ReportSummary {
 }
 
 /**
+ * Режим гибридного сканирования внешних тулов (F-2.5):
+ * - "off"  — детект и запуск внешних тулов не выполняются;
+ * - "auto" — детект выполнен, доменная тулза найдена и запущена (мердж);
+ *           при auto без найденных тулов в отчёте остаётся "off" (TC-F-2.5-1);
+ * - "only" — только внешние findings, базовый regex-скан пропущен.
+ */
+export type ExternalMode = "off" | "auto" | "only";
+
+/** Результат детекта внешних тулов (F-2.5); присутствует в отчёте только если детект запускался. */
+export interface ExternalToolsReport {
+	/** gitleaks найден в PATH (домен scan-secrets). */
+	gitleaks?: boolean;
+	/** semgrep найден в PATH (домен scan-patterns). */
+	semgrep?: boolean;
+}
+
+/**
  * Отчёт сканера по схеме §6.2: `{ tool, version, target, scannedAt, findings[], summary }`.
  * JSON-сериализуем без потерь; summary вычисляется, а не передаётся вручную.
  */
@@ -71,6 +88,10 @@ export interface Report {
 	findings: Finding[];
 	/** Вычисленная сводка (см. {@link ReportSummary}). */
 	summary: ReportSummary;
+	/** ФАКТИЧЕСКИ применённый режим внешних тулов (F-2.5); отсутствует в старых отчётах. */
+	external?: ExternalMode;
+	/** Результат детекта внешних тулов (F-2.5); присутствует только если детект запускался. */
+	externalTools?: ExternalToolsReport;
 }
 
 /** Все допустимые severity в порядке убывания критичности (enum §6.1). */
@@ -91,13 +112,17 @@ const MASK_VISIBLE = 4;
 /** Минимум гарантированно скрытых символов середины (на границе порога хвост укорачивается). */
 const MASK_MIN_HIDDEN = 2;
 
-/** Аргумент {@link createReport}: findings и scannedAt опциональны. */
+/** Аргумент {@link createReport}: findings, scannedAt и external-поля опциональны. */
 export interface CreateReportInput {
 	tool: string;
 	version: string;
 	target: string;
 	findings?: Finding[];
 	scannedAt?: string;
+	/** Passthrough фактического режима внешних тулов (F-2.5). */
+	external?: ExternalMode;
+	/** Passthrough результата детекта внешних тулов (F-2.5). */
+	externalTools?: ExternalToolsReport;
 }
 
 /**
@@ -116,7 +141,7 @@ export function createReport(input: CreateReportInput): Report {
 		}
 	}
 
-	return {
+	const report: Report = {
 		tool: input.tool,
 		version: input.version,
 		target: input.target,
@@ -124,6 +149,16 @@ export function createReport(input: CreateReportInput): Report {
 		findings,
 		summary: { bySeverity, total: findings.length },
 	};
+	// F-2.5: опциональные external-поля — passthrough ТОЛЬКО когда заданы,
+	// чтобы §6.2 six-key контракт сохранялся для вызовов без гибридного режима
+	// (строгое равенство ключей в tests/report.test.mjs / F-2.1).
+	if (input.external !== undefined) {
+		report.external = input.external;
+	}
+	if (input.externalTools !== undefined) {
+		report.externalTools = input.externalTools;
+	}
+	return report;
 }
 
 /**

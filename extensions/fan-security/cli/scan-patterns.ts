@@ -22,16 +22,27 @@
  * tool/scanner: "scan-patterns", file — путь относительно корня сканирования
  * (POSIX-стиль), line — 1-based.
  *
+ * Гибридный режим (F-2.5): useExternal off|auto|only (дефолт auto). Доменная
+ * внешняя тулза — semgrep (lib/external.ts): auto — детект всегда → externalTools
+ * в отчёте, найденный semgrep запускается, вывод конвертируется и мерджится с
+ * базовыми findings (дедуп [file, line, cwe||title], base wins, id EXT-*);
+ * ничего не найдено → external='off'. only — базовый regex-скан пропущен;
+ * тулза не найдена → findings=[] (exit 0). off — детект/запуск не выполняются.
+ * Ошибка запуска тулзы → 0 внешних findings, отчёт валиден.
+ *
  * CLI-контракт (§3.3, §4.1):
- *   bun cli/scan-patterns.ts <path> [--format json|text]   (text — дефолт)
+ *   bun cli/scan-patterns.ts <path> [--format json|text] [--use-external off|auto|only]
+ *   (text/auto — дефолты; формы "--use-external V" и "--use-external=V";
+ *    недопустимое значение → exit 2)
  *   main() ВОЗВРАЩАЕТ exit-код (0 чисто / 1 findings / 2 ошибка) и НЕ вызывает
  *   process.exit — он только в CLI-обёртке import.meta.main ниже.
  *   `--format json` — весь stdout валидный JSON без посторонних строк.
  *
  * Без внешних зависимостей: только node:fs / node:path + lib/report.ts +
  * lib/patterns/cwe.ts (data-driven таблица, F-2.3) + lib/walker.ts (общий
- * обход ФС, F-2.3 REFACTOR).
- * Spec: docs/specs/spec_security-worker_2026-08-31.md §3.3, §4, §6.
+ * обход ФС, F-2.3 REFACTOR) + lib/external.ts (гибридный режим: детект/
+ * раннер/мердж внешних тулз, F-2.5).
+ * Spec: docs/specs/spec_security-worker_2026-08-31.md §3.3, §4, §5.3, §6.
  */
 
 import { statSync } from "node:fs";
@@ -41,10 +52,13 @@ import {
 	renderText,
 	resolveExitCode,
 	type Confidence,
+	type ExternalMode,
+	type ExternalToolsReport,
 	type Finding,
 	type Report,
 	type Severity,
 } from "../lib/report.ts";
+import { mergeFindings, resolveExternalTools, runSemgrep, type ExternalEnv } from "../lib/external.ts";
 import {
 	CWE_PATTERNS,
 	MAX_CWE_EVIDENCE_LENGTH,
@@ -66,6 +80,10 @@ const VERSION = "0.1.0";
 export interface ScanPatternsOptions {
 	/** Формат вывода (зарезервировано: json | text). */
 	format?: "json" | "text";
+	/** Режим внешних сканеров (F-2.5): off | auto (дефолт) | only. */
+	useExternal?: ExternalMode;
+	/** Инъекция PATH для детекта/раннера внешних тулз (F-2.5, для тестов). */
+	env?: ExternalEnv;
 }
 
 /** Тип вывода main(): json | text (text — дефолт, roadmap F-2.3). */
@@ -73,10 +91,17 @@ export type OutputFormat = "json" | "text";
 
 /**
  * Сканирует файл или директорию (рекурсивно) на CWE-сигнатуры кода.
- * Возвращает Report по схеме F-2.1 (tool: "scan-patterns").
+ * Возвращает Report по схеме F-2.1 (tool: "scan-patterns") + external-поля
+ * F-2.5 (external/externalTools — см. lib/report.ts).
  * Несуществующий targetPath → throw (main() превращает в exit 2).
+ *
+ * Режимы useExternal (дефолт auto):
+ * - off  — детект/запуск внешних не выполняются; external='off';
+ * - auto — детект всегда (externalTools=результат), найденный semgrep
+ *          запускается и мерджится (дедуп, base wins); не найден → 'off';
+ * - only — базовый regex-скан пропущен; тулзы нет → findings=[] (exit 0).
  */
-export async function scanPatterns(targetPath: string, _options: ScanPatternsOptions = {}): Promise<Report> {
+export async function scanPatterns(targetPath: string, options: ScanPatternsOptions = {}): Promise<Report> {
 	let stats;
 	try {
 		stats = statSync(targetPath);
@@ -86,6 +111,67 @@ export async function scanPatterns(targetPath: string, _options: ScanPatternsOpt
 
 	const isDirectory = stats.isDirectory();
 	const root = isDirectory ? targetPath : path.dirname(targetPath);
+	const mode: ExternalMode = options.useExternal ?? "auto"; // auto — дефолт (F-2.5)
+
+	// off: детект и запуск внешних тулз не выполняются вовсе (externalTools нет)
+	if (mode === "off") {
+		return createReport({
+			tool: TOOL,
+			version: VERSION,
+			target: targetPath,
+			findings: scanBaseTarget(targetPath, isDirectory, root),
+			external: "off",
+		});
+	}
+
+	// auto/only: детект выполняется всегда → externalTools = результат детекта
+	const tools = resolveExternalTools({ env: options.env });
+	const externalTools: ExternalToolsReport = {
+		gitleaks: tools.gitleaks !== null,
+		semgrep: tools.semgrep !== null,
+	};
+
+	// only: базовый regex-скан пропущен — только внешние (дедуп среди них);
+	// доменная тулза не найдена → findings=[] (явное намерение оператора)
+	if (mode === "only") {
+		const external = tools.semgrep ? runSemgrep(root, tools.semgrep, options.env) : [];
+		return createReport({
+			tool: TOOL,
+			version: VERSION,
+			target: targetPath,
+			findings: mergeFindings([], external),
+			external: "only",
+			externalTools,
+		});
+	}
+
+	// auto: доменная тулза (semgrep) не найдена → вырождается в off (TC-F-2.5-1)
+	const baseFindings = scanBaseTarget(targetPath, isDirectory, root);
+	if (!tools.semgrep) {
+		return createReport({
+			tool: TOOL,
+			version: VERSION,
+			target: targetPath,
+			findings: baseFindings,
+			external: "off",
+			externalTools,
+		});
+	}
+
+	// auto + semgrep: запуск (любая ошибка → 0 внешних) и мердж (base wins)
+	const external = runSemgrep(root, tools.semgrep, options.env);
+	return createReport({
+		tool: TOOL,
+		version: VERSION,
+		target: targetPath,
+		findings: mergeFindings(baseFindings, external),
+		external: "auto",
+		externalTools,
+	});
+}
+
+/** Базовый regex-скан (CWE-сигнатуры): обход файлов + построчное исполнение таблицы. */
+function scanBaseTarget(targetPath: string, isDirectory: boolean, root: string): Finding[] {
 	const files = isDirectory ? walkDirectory(targetPath) : [targetPath];
 	files.sort();
 
@@ -96,8 +182,7 @@ export async function scanPatterns(targetPath: string, _options: ScanPatternsOpt
 	for (const file of files) {
 		findings.push(...scanFile(file, root, nextId));
 	}
-
-	return createReport({ tool: TOOL, version: VERSION, target: targetPath, findings });
+	return findings;
 }
 
 /** Скан одного файла: исполнение CWE_PATTERNS построчно. */
@@ -209,15 +294,17 @@ function toPosix(value: string): string {
 // ── CLI (§3.3, §4.1) ────────────────────────────────────────────────────────
 
 /**
- * CLI-входная точка: парсит [target] [--format json|text], печатает отчёт и
- * ВОЗВРАЩАЕТ exit-код (resolveExitCode): 0 — чисто, 1 — findings, 2 — ошибка.
- * process.exit НЕ вызывает — только обёртка import.meta.main ниже.
+ * CLI-входная точка: парсит [target] [--format json|text]
+ * [--use-external off|auto|only], печатает отчёт и ВОЗВРАЩАЕТ exit-код
+ * (resolveExitCode): 0 — чисто, 1 — findings, 2 — ошибка. process.exit НЕ
+ * вызывает — только обёртка import.meta.main ниже.
  * Вывод — исключительно console.log (stdout) / console.error (stderr).
  */
 export async function main(argv?: string[]): Promise<number> {
 	const args = argv ?? process.argv.slice(2);
 	let target: string | undefined;
 	let format: OutputFormat = "text"; // text — дефолт (roadmap F-2.3)
+	let useExternal: ExternalMode = "auto"; // auto — дефолт (F-2.5)
 
 	for (let index = 0; index < args.length; index++) {
 		const arg = args[index];
@@ -236,8 +323,25 @@ export async function main(argv?: string[]): Promise<number> {
 				return 2;
 			}
 			format = value;
+		} else if (arg === "--use-external") {
+			const value = args[index + 1] as ExternalMode | undefined;
+			if (value !== "off" && value !== "auto" && value !== "only") {
+				console.error(
+					`scan-patterns: недопустимое значение --use-external "${String(value)}" (ожидается off|auto|only)`,
+				);
+				return 2;
+			}
+			useExternal = value;
+			index += 1;
+		} else if (arg.startsWith("--use-external=")) {
+			const value = arg.slice("--use-external=".length) as ExternalMode;
+			if (value !== "off" && value !== "auto" && value !== "only") {
+				console.error(`scan-patterns: недопустимое значение --use-external "${value}" (ожидается off|auto|only)`);
+				return 2;
+			}
+			useExternal = value;
 		} else if (arg.startsWith("-") && arg.length > 1) {
-			console.error(`scan-patterns: неизвестная опция "${arg}" (поддерживается --format json|text)`);
+			console.error(`scan-patterns: неизвестная опция "${arg}" (поддерживаются --format json|text и --use-external off|auto|only)`);
 			return 2;
 		} else if (target === undefined) {
 			target = arg;
@@ -248,12 +352,14 @@ export async function main(argv?: string[]): Promise<number> {
 	}
 
 	if (!target) {
-		console.error("Использование: bun cli/scan-patterns.ts <путь> [--format json|text] (text — по умолчанию)");
+		console.error(
+			"Использование: bun cli/scan-patterns.ts <путь> [--format json|text] [--use-external off|auto|only] (text/auto — по умолчанию)",
+		);
 		return 2;
 	}
 
 	try {
-		const report = await scanPatterns(target);
+		const report = await scanPatterns(target, { useExternal });
 		// §4.1: --format json без лишнего вывода — весь stdout валидный JSON
 		console.log(format === "json" ? JSON.stringify(report, null, "\t") : renderText(report));
 		return resolveExitCode(report);

@@ -259,7 +259,9 @@ function findingsWithCwe(report, cwe) {
  * относительные POSIX-пути и 1-based строки.
  */
 function expectF2_1Schema(report) {
-	expect(Object.keys(report).sort()).toEqual(
+	// F-2.5: Report может нести опциональные external/externalTools (см. tests/external.test.mjs)
+	const coreKeys = Object.keys(report).filter((key) => key !== "external" && key !== "externalTools");
+	expect(coreKeys.sort()).toEqual(
 		["findings", "scannedAt", "summary", "target", "tool", "version"].sort(),
 	);
 	expect(report.tool).toBe("scan-patterns");
