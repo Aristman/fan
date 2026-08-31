@@ -9,7 +9,8 @@
       "bug-fix": "",
       "code-research": "",
       "tests-impl": "",
-      "docs-impl": ""
+      "docs-impl": "",
+      "security": ""
     }
   },
   "local": {
@@ -22,7 +23,8 @@
       "bug-fix": "",
       "code-research": "",
       "tests-impl": "",
-      "docs-impl": ""
+      "docs-impl": "",
+      "security": ""
     }
   },
   "providerMode": "auto",
@@ -52,7 +54,8 @@
     "bug-fix": 0.1,
     "code-research": 0.2,
     "tests-impl": 0.1,
-    "docs-impl": 0.3
+    "docs-impl": 0.3,
+    "security": 0.1
   },
   "dangerousCommands": [
     "rm -rf",
