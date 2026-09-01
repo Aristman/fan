@@ -55,6 +55,93 @@
   TC-F-0.1-1/2). Кастомные user/project агенты в model-editor и `/orchestrator
   models` не показываются — поведение не изменилось.
 
+### Fixed — fan-security 1.0.1 (security-аудит: 6 находок)
+
+- **F-1. Санитизация `evidence` во всех источниках (MEDIUM → закрыто).**
+  `sanitizeEvidence()` из `lib/sanitize.ts` — единая точка маскирования
+  секретов в evidence: прогон текста через `SECRET_PATTERNS`
+  (`lib/patterns/secrets.ts`) с заменой каждого совпадения на `maskSecret`,
+  затем маскирование высокоэнтропийных токенов без известного префикса
+  (`entropyCandidates` + `isHighEntropyToken`, shannon-эвристика) и обрезка
+  до `MAX_EVIDENCE_LENGTH = 300`. Подключено во всех источниках, которые
+  раньше клали цитату открытым текстом: `cli/dep-audit.ts` (строка манифеста
+  для вывода `npm audit`/`pip-audit`/`cargo audit`), `cli/scan-patterns.ts`
+  (CWE-сниппет `match[0]`) и semgrep-конвертер `semgrepToFindings()` в
+  `lib/external.ts` (`extra.lines`, далее обрезка до
+  `MAX_EXTERNAL_EVIDENCE_LENGTH = 240`); gitleaks-конвертер маскирует
+  `Secret`/`Match` через `maskSecret` как и прежде. Применяется ДО сборки
+  `findings[]`, поэтому покрывает и text-вывод, и `--format json`, и сводку
+  `/security-scan`.
+
+- **F-2. Лимит длины строки и тайм-бюджет скана (MEDIUM → закрыто).**
+  В `lib/sanitize.ts` введены `MAX_SCAN_LINE_LENGTH = 8192` (`clampScanLine`
+  перед построчным regex-матчингом; квадратичные CWE-89/78 сигнатуры на
+  строке 1 МБ давали десятки секунд CPU — хвост сверхдлинной строки
+  осознанно не сканируется) и `DEFAULT_TIME_BUDGET_MS = 30_000`. Прерывание
+  кооперативное: проверка `Date.now() >= budget` каждые
+  `TIME_BUDGET_CHECK_INTERVAL = 50` строк/файлов в `cli/scan-patterns.ts` и
+  `cli/scan-secrets.ts` → остановка с частичными результатами и
+  предупреждением в stderr («скан прерван по тайм-бюджету»); флаг в схему
+  отчёта не добавляется, а `main()` при 0 findings и прерванном скане
+  возвращает exit 2 (недоверенный результат), при непустых findings — обычный
+  exit 1. Замер регрессии: 33.0с → 0.117с. Покрытие:
+  `tests/sanitize.test.mjs` (константы и `clampScanLine`),
+  `tests/scan-patterns.test.mjs` / `tests/scan-secrets.test.mjs` (файл ~1 МБ
+  одной строкой < 5с; `timeBudgetMs: 0` → stderr-предупреждение + exit 2).
+
+- **F-3. Полное маскирование коротких секретов (LOW → закрыто).**
+  `maskSecret()` в `lib/report.ts`: если `secret.length < MASK_THRESHOLD` (9
+  символов), возвращается только `MASK_SEPARATOR` — `…` (U+2026), то есть
+  строка маскируется целиком (раньше короткие значения вроде
+  `api_key="shortkey"` попадали в evidence без изменений). Для строк `≥ 9`
+  поведение сохранено: 4 видимых символа + скрытая середина (минимум 2) +
+  хвост до 4 символов (`AKIA…MNOP`, на границе порога — `ABCD…GHI`).
+  Функция детерминирована; границы 8/9 закреплены в `tests/report.test.mjs`.
+
+- **F-4. Безопасные временные отчёты `/security-scan` (LOW → закрыто).**
+  В `index.ts` JSON-дампы (сканеры с > `JSON_FILE_THRESHOLD = 20` findings)
+  пишутся как `security-scan-<tool>-<randomBytes(6).hex>.json` в
+  `os.tmpdir()`: непредсказуемый суффикс вместо ISO-штампа + запись с флагом
+  `wx` (эксклюзивное создание — существующий файл или симлинк не
+  перезаписывается). Коллизия `EEXIST` → новая случайная попытка, максимум
+  `REPORT_FILE_ATTEMPTS = 3`, иначе ошибка пробрасывается. Осознанное
+  отклонение от рекомендации аудитора: файл после отправки НЕ удаляется —
+  это артефакт для пользователя (полный JSON-отчёт скана); риск смягчён
+  непредсказуемым именем и каталогом ОС с правами пользователя.
+
+- **F-5. Лимиты обхода ФС и парсинга вывода утилит (LOW → закрыто).**
+  `lib/walker.ts` (обход стеком, как и до патча): `MAX_FILES = 50_000` — при
+  достижении лимита предупреждение в stderr и остановка обхода;
+  `MAX_DEPTH = 32` — ветки глубже не обходятся, тоже с предупреждением в
+  stderr. Результат частичный, флаг усечения в отчёт не добавляется (сигнал
+  только через stderr). В `cli/dep-audit.ts`: `MAX_PARSE_BYTES = 64 * 1024 *
+  1024` на `stdout` audit-утилиты — превышение трактуется как недоверенный
+  вывод: предупреждение в stderr, манифест пропускается, скан продолжается
+  (та же деградация, что при отсутствии утилиты). Защита от деградации на
+  `node_modules`-подобных деревьях, symlink-петлях и гигантском выводе.
+
+- **F-6. Изоляция cwd dep-audit от пользовательских конфигов (LOW →
+  закрыто).**
+  В `cli/dep-audit.ts`: `createAuditWorkspace()` создаёт `mkdtempSync` под
+  `os.tmpdir()` (префикс `fan-dep-audit-`) и копирует туда манифест и его
+  lockfiles (`WORKSPACE_EXTRA_FILES`: npm — `package-lock.json`,
+  `pnpm-lock.yaml`, `yarn.lock`; cargo — `Cargo.lock`; pip — только сам
+  `requirements.txt`), а `Bun.spawnSync` запускает audit-утилиту с
+  `cwd = workspace` — `.npmrc` и прочие конфиги сканируемого репо не
+  читаются. Для npm дополнительно `env.npm_config_userconfig` указывает на
+  несуществующий `.npmrc-isolated` внутри workspace, поэтому
+  `registry`/`token` из пользовательского `~/.npmrc` не подгружаются.
+  `line`/`evidence` в findings берутся из ОРИГИНАЛЬНОГО манифеста, не из
+  копии; workspace удаляется в `finally` через `rmSync(workspace, {
+  recursive: true, force: true })`.
+
+- **Bump версий: bundle/extension/skill → 1.0.1.** `bundles/fan-security/
+  package.json`, `bundles/fan-security/extensions/fan-security/package.json`
+  и `bundles/fan-security/skills/fan-security/package.json` синхронизированы
+  на `1.0.1`; фронтматтер `skills/fan-security/SKILL.md` версии не имеет
+  (наследует из `package.json` бандла). Версия рантайма fan/корневого
+  `package.json` не меняется — патчит security-bundle, не API агента.
+
 ### Stats
 
 - 387 fan-orchestrator tests pass + 155 fan-security tests pass (с smoke) = 542
