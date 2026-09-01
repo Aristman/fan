@@ -102,7 +102,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 // lib/report.ts уже существует (F-2.1 COMPLETED) — статический импорт для ожиданий/exit-кодов
-import { resolveExitCode, SEVERITIES } from "../lib/report.ts";
+import { maskSecret, resolveExitCode, SEVERITIES } from "../lib/report.ts";
 
 const SCANNER_URL = "../cli/dep-audit.ts";
 
@@ -261,6 +261,40 @@ function makeUnavailableRunner() {
 	const runner = (invocation) => {
 		calls.push({ ...invocation });
 		return { stdout: "", stderr: `command not found: ${invocation.cmd}`, exitCode: 127 };
+	};
+	return { calls, runner };
+}
+
+/**
+ * Обёртка makeRunner, проверяющая изоляцию cwd на момент вызова (F-6, patch
+ * 1.0.1): workspace существует ТОЛЬКО во время вызова runner (удаляется после),
+ * поэтому копии манифестов фиксируются внутри вызова: cwd — tmp-директория
+ * (не директория манифеста), в ней лежит скопированный манифест.
+ */
+function makeWorkspaceCheckingRunner(overrides = {}) {
+	const base = makeRunner(overrides);
+	const calls = [];
+	const COPIABLE = [
+		"package.json",
+		"package-lock.json",
+		"pnpm-lock.yaml",
+		"yarn.lock",
+		"requirements.txt",
+		"pyproject.toml",
+		"Cargo.toml",
+		"Cargo.lock",
+	];
+	const runner = (invocation) => {
+		const result = base.runner(invocation);
+		calls.push({
+			...invocation,
+			/** cwd — изолированный tmp-workspace (родитель — os.tmpdir(), как у mkdtemp). */
+			cwdIsTmpWorkspace:
+				path.dirname(path.resolve(invocation.cwd)) === path.resolve(tmpdir()),
+			/** Файлы, скопированные в workspace на момент вызова. */
+			copiedManifests: COPIABLE.filter((name) => existsSync(path.join(invocation.cwd, name))),
+		});
+		return result;
 	};
 	return { calls, runner };
 }
@@ -501,8 +535,13 @@ describe("(а) pip-audit и cargo audit: парсинг вывода на том
 		expect(pipCalls.length, "один вызов pip-audit на requirements.txt").toBe(1);
 		expect(pipCalls[0].args).toContain("--format");
 		expect(pipCalls[0].args).toContain("json");
-		expect(path.resolve(pipCalls[0].cwd)).toBe(path.resolve(DEP_FIXTURE));
-
+		// F-6 (patch 1.0.1): cwd — изолированный tmp-workspace, НЕ директория манифеста
+		expect(path.resolve(pipCalls[0].cwd), "cwd не должен быть директорией манифеста (F-6)").not.toBe(
+			path.resolve(DEP_FIXTURE),
+		);
+		expect(path.dirname(path.resolve(pipCalls[0].cwd)), "cwd — tmp-workspace под os.tmpdir").toBe(
+			path.resolve(tmpdir()),
+		);
 		const flask = findingsForPackage(report, "fake-flask");
 		expect(flask.length, "fake-flask: ровно 1 finding").toBe(1);
 		expect(flask[0].severity, "pip-audit не отдаёт severity → дефолт MEDIUM (контракт шапки)").toBe(
@@ -543,7 +582,7 @@ describe("(а) pip-audit и cargo audit: парсинг вывода на том
 });
 
 describe("(в) несколько манифестов в дереве: по одному вызову runner на манифест", () => {
-	it("дерево root package.json + apps/backend/requirements.txt + crates/native/Cargo.toml → 3 вызова, cwd = директория манифеста, findings слиты", async () => {
+	it("дерево root package.json + apps/backend/requirements.txt + crates/native/Cargo.toml → 3 вызова, cwd = изолированный tmp-workspace с копией манифеста (F-6), findings слиты", async () => {
 		const { scanDepAudits } = requireExport(await loadScanner(), "scanDepAudits");
 		const tree = makeTempDir();
 		writeTempFile(tree, "package.json", ['{ "name": "tree-root", "dependencies": {} }']);
@@ -559,21 +598,32 @@ describe("(в) несколько манифестов в дереве: по о�
 			'[package]\nname = "tree-native"\nversion = "0.1.0"\n\n[dependencies]\nfake-crate = "0.1"\n',
 			"utf8",
 		);
-		const { calls, runner } = makeRunner();
+		// F-6: копии манифестов проверяются ВНУТРИ вызова runner — workspace живёт
+		// только на время вызова утилиты.
+		const { calls, runner } = makeWorkspaceCheckingRunner();
 
 		const report = await scanDepAudits(tree, { runner });
 
 		expect(calls.length, "по одному вызову на каждый манифест дерева").toBe(3);
 		const byCmd = Object.fromEntries(calls.map((call) => [call.cmd, call]));
 		expect(Object.keys(byCmd).sort()).toEqual(["cargo", "npm", "pip-audit"]);
-		expect(path.resolve(byCmd.npm.cwd)).toBe(path.resolve(tree));
-		expect(path.resolve(byCmd["pip-audit"].cwd)).toBe(path.resolve(tree, "apps", "backend"));
-		expect(path.resolve(byCmd.cargo.cwd)).toBe(path.resolve(tree, "crates", "native"));
+		for (const cmd of ["npm", "pip-audit", "cargo"]) {
+			const call = byCmd[cmd];
+			expect(
+				call.cwdIsTmpWorkspace,
+				`${cmd}: cwd — изолированный tmp-workspace, не директория манифеста (F-6)`,
+			).toBe(true);
+			expect(path.resolve(call.cwd), `${cmd}: cwd не совпадает с корнем скана`).not.toBe(path.resolve(tree));
+		}
+		// Копии манифестов лежат в workspace на момент вызова утилиты
+		expect(byCmd.npm.copiedManifests).toContain("package.json");
+		expect(byCmd["pip-audit"].copiedManifests).toContain("requirements.txt");
+		expect(byCmd.cargo.copiedManifests).toContain("Cargo.toml");
 
 		// Findings всех трёх утилит слиты в один отчёт (3 npm + 1 pip + 1 cargo)
 		expect(report.findings.length).toBe(5);
 		expectDepAuditSchema(report);
-		// file — относительно корня сканирования, POSIX
+		// file — относительно корня сканирования, POSIX (путь ОРИГИНАЛЬНОГО манифеста)
 		const flask = findingsForPackage(report, "fake-flask")[0];
 		expect(flask.file).toBe(path.posix.join("apps", "backend", "requirements.txt"));
 	});
@@ -634,6 +684,61 @@ describe("(в) несколько манифестов в дереве: по о�
 
 		expect(calls.length).toBe(1);
 		expect(report.target).toBe(manifest);
+	});
+});
+
+describe("F-1 (patch 1.0.1): evidence dep-audit санитизируется — секреты не утекают из манифеста", () => {
+	/** Фейковый GitHub PAT в формате ghp_ + 36 (PoC аудита F-1: утечка из манифеста). */
+	const LEAKED_TOKEN = `ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef1234`;
+
+	it("манифест с ghp_-токеном в строке dependency → evidence замаскирован, сырой токен отсутствует", async () => {
+		const { scanDepAudits } = requireExport(await loadScanner(), "scanDepAudits");
+		const dir = makeTempDir();
+		writeTempFile(dir, "package.json", [
+			`{`,
+			`  "name": "leak-fixture",`,
+			`  "dependencies": { "fake-pkg-leak": "github:evil/repo#${LEAKED_TOKEN}" }`,
+			`}`,
+		]);
+		// Мок npm audit: уязвимость для объявленного пакета — цитата его строки пойдёт в evidence
+		const audit = {
+			vulnerabilities: {
+				"fake-pkg-leak": {
+					name: "fake-pkg-leak",
+					severity: "high",
+					isDirect: true,
+					via: [
+						{
+							source: 1,
+							name: "fake-pkg-leak",
+							dependency: "fake-pkg-leak",
+							title: "Fake issue in fake-pkg-leak",
+							url: "https://github.com/advisories/GHSA-fake-leak-0001",
+							severity: "high",
+							range: "<1.0.0",
+							cwe: ["CWE-400"],
+						},
+					],
+					effects: [],
+					range: "<1.0.0",
+					nodes: [],
+					fixAvailable: true,
+				},
+			},
+		};
+		const { runner } = makeRunner({ npm: { stdout: JSON.stringify(audit) } });
+
+		const report = await scanDepAudits(dir, { runner });
+
+		const finding = findingsForPackage(report, "fake-pkg-leak")[0];
+		expect(finding, "уязвимость для объявленного пакета найдена").toBeTruthy();
+		expect(finding.evidence, "evidence — цитата строки манифеста (предусловие F-1)").toContain("fake-pkg-leak");
+		expect(finding.evidence, "токен промаскирован в evidence (sanitizeEvidence, §2.3)").toContain(
+			maskSecret(LEAKED_TOKEN),
+		);
+		// Инвариант §2.3: сырой токен не воспроизводится НИ В ОДНОМ поле отчёта
+		expect(JSON.stringify(finding)).not.toContain(LEAKED_TOKEN);
+		expect(JSON.stringify(report)).not.toContain(LEAKED_TOKEN);
 	});
 });
 
@@ -791,5 +896,52 @@ describe("(г) CLI-контракт: text дефолт, --format json, exit 0/1/
 		const stderr = console$.stderr();
 		expect(stderr.length).toBeGreaterThan(0);
 		expect(stderr).toMatch(/usage|использование/i); // usage при пустых аргументах
+	});
+});
+
+describe("F-6 (patch 1.0.1): dep-audit вне недоверенного cwd — изоляция npm-конфига и копии", () => {
+	it("npm: env.npm_config_userconfig указывает внутрь workspace (изоляция от ~/.npmrc)", async () => {
+		const { scanDepAudits } = requireExport(await loadScanner(), "scanDepAudits");
+		const { calls, runner } = makeWorkspaceCheckingRunner();
+
+		await scanDepAudits(DEP_FIXTURE, { runner });
+
+		const npmCalls = calls.filter((call) => call.cmd === "npm");
+		expect(npmCalls.length).toBe(1);
+		const userconfig = npmCalls[0].env?.npm_config_userconfig;
+		expect(userconfig, "npm_config_userconfig должен быть задан (изоляция ~/.npmrc, F-6)").toBeTruthy();
+		expect(
+			path.dirname(path.resolve(userconfig)),
+			"userconfig — внутри изолированного workspace",
+		).toBe(path.resolve(npmCalls[0].cwd));
+	});
+
+	it("pip-audit и cargo не получают env-оверрайдов (минимальный фикс — только cwd-изоляция)", async () => {
+		const { scanDepAudits } = requireExport(await loadScanner(), "scanDepAudits");
+		const { calls, runner } = makeWorkspaceCheckingRunner();
+
+		await scanDepAudits(DEP_FIXTURE, { runner });
+
+		for (const cmd of ["pip-audit", "cargo"]) {
+			const call = calls.find((entry) => entry.cmd === cmd);
+			expect(call, `${cmd}: вызов был`).toBeTruthy();
+			expect(call.env, `${cmd}: без env-оверрайдов (минимальный фикс F-6)`).toBeUndefined();
+		}
+	});
+
+	it("lockfile копируется в workspace: pnpm-lock.yaml рядом с package.json → доступен утилите в cwd", async () => {
+		const { scanDepAudits } = requireExport(await loadScanner(), "scanDepAudits");
+		const dir = makeTempDir();
+		writeTempFile(dir, "package.json", ['{ "name": "pnpm-fixture", "dependencies": {} }']);
+		writeTempFile(dir, "pnpm-lock.yaml", ["lockfileVersion: '9.0'"]);
+		const { calls, runner } = makeWorkspaceCheckingRunner();
+
+		await scanDepAudits(dir, { runner });
+
+		expect(calls.length).toBe(1);
+		expect(calls[0].cmd, "lockfile-уточнение по ОРИГИНАЛЬНОЙ директории манифеста").toBe("pnpm");
+		expect(calls[0].copiedManifests, "копии манифеста и lockfile в workspace").toEqual(
+			expect.arrayContaining(["package.json", "pnpm-lock.yaml"]),
+		);
 	});
 });

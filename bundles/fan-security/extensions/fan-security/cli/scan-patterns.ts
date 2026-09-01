@@ -14,9 +14,10 @@
  * Построчное исполнение таблицы: совпадение regex + контекстная проверка
  * (CwePattern.contextRegex — CWE-338 флагуется только при security-словах
  * token/secret/password/… на строке; кубик/тест-данные — не finding).
- * Evidence — совпавший фрагмент (match[0]), обрезанный до MAX_CWE_EVIDENCE_LENGTH
- * (§6.1, ≤ 300 символов); маскирование секретов здесь не применяется — секреты
- * зона scan-secrets (F-2.2), в CWE-цитатах кода литеральных секретов нет.
+ * Evidence — совпавший фрагмент (match[0]), прогнанный через sanitizeEvidence
+ * (lib/sanitize.ts, patch 1.0.1 F-1: маскирование секретов/высокоэнтропийных
+ * токенов во ВСЕХ источниках evidence — инвариант §2.3) и обрезанный до
+ * MAX_CWE_EVIDENCE_LENGTH (§6.1, ≤ 300 символов).
  *
  * Схема отчёта — lib/report.ts (F-2.1): createReport/renderText/resolveExitCode;
  * tool/scanner: "scan-patterns", file — путь относительно корня сканирования
@@ -36,6 +37,9 @@
  *    недопустимое значение → exit 2)
  *   main() ВОЗВРАЩАЕТ exit-код (0 чисто / 1 findings / 2 ошибка) и НЕ вызывает
  *   process.exit — он только в CLI-обёртке import.meta.main ниже.
+ *   F-2 (patch 1.0.1): скан, прерванный по тайм-бюджету (дефолт 30 000 мс,
+ *   проверка каждые 50 строк/файлов), даёт stderr-предупреждение и частичные
+ *   результаты; 0 findings + прерван → exit 2 (недоверенный результат).
  *   `--format json` — весь stdout валидный JSON без посторонних строк.
  *
  * Без внешних зависимостей: только node:fs / node:path + lib/report.ts +
@@ -62,11 +66,15 @@ import { mergeFindings, resolveExternalTools, runSemgrep, type ExternalEnv } fro
 import { getPkgVersion } from "../lib/pkg.ts";
 import {
 	CWE_PATTERNS,
-	MAX_CWE_EVIDENCE_LENGTH,
 	resolvePatternConfidence,
 	type CwePattern,
 } from "../lib/patterns/cwe.ts";
 import { readTextFileSafe, walkDirectory } from "../lib/walker.ts";
+import {
+	DEFAULT_TIME_BUDGET_MS,
+	clampScanLine,
+	sanitizeEvidence,
+} from "../lib/sanitize.ts";
 
 // ── Константы сканера ────────────────────────────────────────────────────────
 
@@ -74,6 +82,7 @@ const TOOL = "scan-patterns";
 const VERSION = getPkgVersion();
 // Обход ФС и фильтры файлов (SKIP_DIRS, BINARY_EXTENSIONS, MAX_FILE_BYTES,
 // readTextFileSafe) — lib/walker.ts, общий для обоих CLI (F-2.3 REFACTOR).
+// Предел evidence (§6.1, ≤ 300) — sanitizeEvidence в lib/sanitize.ts (patch 1.0.1).
 
 // ── Сканирование ────────────────────────────────────────────────────────────
 
@@ -85,6 +94,30 @@ export interface ScanPatternsOptions {
 	useExternal?: ExternalMode;
 	/** Инъекция PATH для детекта/раннера внешних тулз (F-2.5, для тестов). */
 	env?: ExternalEnv;
+	/**
+	 * Тайм-бюджет скана в мс (patch 1.0.1, F-2): дефолт DEFAULT_TIME_BUDGET_MS
+	 * (30 000). Проверка Date.now() — на каждой 50-й строке/файле; при истечении
+	 * скан останавливается с частичными результатами (stderr-предупреждение).
+	 */
+	timeBudgetMs?: number;
+}
+
+/** Результат полного скана: отчёт + флаг прерывания по тайм-бюджету (F-2). */
+export interface ScanPatternsOutcome {
+	/** Отчёт по схеме F-2.1 (флаг прерывания в схему НЕ добавляется). */
+	report: Report;
+	/** true — базовый regex-скан прерван по тайм-бюджету (частичные результаты). */
+	interrupted: boolean;
+}
+
+/** Интервал проверок тайм-бюджета (F-2): каждая 50-я строка/файл. */
+const TIME_BUDGET_CHECK_INTERVAL = 50;
+
+/** Предупреждение о прерывании по бюджету — только в stderr (§4.1: stdout чист). */
+function warnTimeBudget(tool: string, timeBudgetMs: number): void {
+	console.error(
+		`${tool}: скан прерван по тайм-бюджету (${timeBudgetMs} мс) — частичные результаты`,
+	);
 }
 
 /** Тип вывода main(): json | text (text — дефолт, roadmap F-2.3). */
@@ -103,6 +136,19 @@ export type OutputFormat = "json" | "text";
  * - only — базовый regex-скан пропущен; тулзы нет → findings=[] (exit 0).
  */
 export async function scanPatterns(targetPath: string, options: ScanPatternsOptions = {}): Promise<Report> {
+	return (await runScanPatterns(targetPath, options)).report;
+}
+
+/**
+ * Полный скан (общий путь scanPatterns/main): отчёт + флаг прерывания по
+ * тайм-бюджету. Флаг НЕ попадает в схему отчёта (решение patch 1.0.1): сигнал
+ * — через stderr-предупреждение, а exit-решение принимает main() (см. ниже:
+ * 0 findings + прерван → exit 2, недоверенный результат).
+ */
+async function runScanPatterns(targetPath: string, options: ScanPatternsOptions): Promise<ScanPatternsOutcome> {
+	const timeBudgetMs = options.timeBudgetMs ?? DEFAULT_TIME_BUDGET_MS;
+	const budget = Date.now() + timeBudgetMs;
+
 	let stats;
 	try {
 		stats = statSync(targetPath);
@@ -116,13 +162,20 @@ export async function scanPatterns(targetPath: string, options: ScanPatternsOpti
 
 	// off: детект и запуск внешних тулз не выполняются вовсе (externalTools нет)
 	if (mode === "off") {
-		return createReport({
-			tool: TOOL,
-			version: VERSION,
-			target: targetPath,
-			findings: scanBaseTarget(targetPath, isDirectory, root),
-			external: "off",
-		});
+		const base = scanBaseTarget(targetPath, isDirectory, root, budget);
+		if (base.interrupted) {
+			warnTimeBudget(TOOL, timeBudgetMs);
+		}
+		return {
+			report: createReport({
+				tool: TOOL,
+				version: VERSION,
+				target: targetPath,
+				findings: base.findings,
+				external: "off",
+			}),
+			interrupted: base.interrupted,
+		};
 	}
 
 	// auto/only: детект выполняется всегда → externalTools = результат детекта
@@ -136,43 +189,65 @@ export async function scanPatterns(targetPath: string, options: ScanPatternsOpti
 	// доменная тулза не найдена → findings=[] (явное намерение оператора)
 	if (mode === "only") {
 		const external = tools.semgrep ? runSemgrep(root, tools.semgrep, options.env) : [];
-		return createReport({
-			tool: TOOL,
-			version: VERSION,
-			target: targetPath,
-			findings: mergeFindings([], external),
-			external: "only",
-			externalTools,
-		});
+		return {
+			report: createReport({
+				tool: TOOL,
+				version: VERSION,
+				target: targetPath,
+				findings: mergeFindings([], external),
+				external: "only",
+				externalTools,
+			}),
+			interrupted: false, // базовый скан не выполнялся — прерывать нечего
+		};
 	}
 
 	// auto: доменная тулза (semgrep) не найдена → вырождается в off (TC-F-2.5-1)
-	const baseFindings = scanBaseTarget(targetPath, isDirectory, root);
+	const base = scanBaseTarget(targetPath, isDirectory, root, budget);
+	if (base.interrupted) {
+		warnTimeBudget(TOOL, timeBudgetMs);
+	}
 	if (!tools.semgrep) {
-		return createReport({
-			tool: TOOL,
-			version: VERSION,
-			target: targetPath,
-			findings: baseFindings,
-			external: "off",
-			externalTools,
-		});
+		return {
+			report: createReport({
+				tool: TOOL,
+				version: VERSION,
+				target: targetPath,
+				findings: base.findings,
+				external: "off",
+				externalTools,
+			}),
+			interrupted: base.interrupted,
+		};
 	}
 
 	// auto + semgrep: запуск (любая ошибка → 0 внешних) и мердж (base wins)
 	const external = runSemgrep(root, tools.semgrep, options.env);
-	return createReport({
-		tool: TOOL,
-		version: VERSION,
-		target: targetPath,
-		findings: mergeFindings(baseFindings, external),
-		external: "auto",
-		externalTools,
-	});
+	return {
+		report: createReport({
+			tool: TOOL,
+			version: VERSION,
+			target: targetPath,
+			findings: mergeFindings(base.findings, external),
+			external: "auto",
+			externalTools,
+		}),
+		interrupted: base.interrupted,
+	};
 }
 
-/** Базовый regex-скан (CWE-сигнатуры): обход файлов + построчное исполнение таблицы. */
-function scanBaseTarget(targetPath: string, isDirectory: boolean, root: string): Finding[] {
+/**
+ * Базовый regex-скан (CWE-сигнатуры): обход файлов + построчное исполнение
+ * таблицы. Лимиты F-2/F-5: обход — walkDirectory (MAX_FILES/MAX_DEPTH);
+ * тайм-бюджет — проверка на каждой 50-й строке/файле, при истечении —
+ * остановка с частичными результатами (interrupted=true).
+ */
+function scanBaseTarget(
+	targetPath: string,
+	isDirectory: boolean,
+	root: string,
+	budget: number,
+): { findings: Finding[]; interrupted: boolean } {
 	const files = isDirectory ? walkDirectory(targetPath) : [targetPath];
 	files.sort();
 
@@ -180,17 +255,29 @@ function scanBaseTarget(targetPath: string, isDirectory: boolean, root: string):
 	const nextId = () => `SEC-${String(++counter).padStart(3, "0")}`;
 
 	const findings: Finding[] = [];
-	for (const file of files) {
-		findings.push(...scanFile(file, root, nextId));
+	for (let index = 0; index < files.length; index++) {
+		if (index % TIME_BUDGET_CHECK_INTERVAL === 0 && Date.now() >= budget) {
+			return { findings, interrupted: true };
+		}
+		const scanned = scanFile(files[index]!, root, nextId, budget);
+		findings.push(...scanned.findings);
+		if (scanned.interrupted) {
+			return { findings, interrupted: true };
+		}
 	}
-	return findings;
+	return { findings, interrupted: false };
 }
 
-/** Скан одного файла: исполнение CWE_PATTERNS построчно. */
-function scanFile(filePath: string, root: string, nextId: () => string): Finding[] {
+/** Скан одного файла: исполнение CWE_PATTERNS построчно (+ тайм-бюджет, F-2). */
+function scanFile(
+	filePath: string,
+	root: string,
+	nextId: () => string,
+	budget: number,
+): { findings: Finding[]; interrupted: boolean } {
 	const content = readTextFileSafe(filePath);
 	if (content === null) {
-		return []; // бинарное расширение / пустой / > 1 МБ / ошибка чтения / null-байт
+		return { findings: [], interrupted: false }; // бинарное расширение / пустой / > 1 МБ / ошибка чтения / null-байт
 	}
 
 	const relFile = toPosix(path.relative(root, filePath)) || path.basename(filePath);
@@ -198,9 +285,12 @@ function scanFile(filePath: string, root: string, nextId: () => string): Finding
 
 	const lines = content.split(/\r?\n/);
 	for (let index = 0; index < lines.length; index++) {
-		findings.push(...scanLine(lines[index], index + 1, relFile, nextId));
+		if (index % TIME_BUDGET_CHECK_INTERVAL === 0 && Date.now() >= budget) {
+			return { findings, interrupted: true };
+		}
+		findings.push(...scanLine(lines[index]!, index + 1, relFile, nextId));
 	}
-	return findings;
+	return { findings, interrupted: false };
 }
 
 /**
@@ -213,12 +303,16 @@ function scanFile(filePath: string, root: string, nextId: () => string): Finding
  */
 function scanLine(line: string, lineNumber: number, relFile: string, nextId: () => string): Finding[] {
 	const findings: Finding[] = [];
+	// F-2 (patch 1.0.1): усечение строки до MAX_SCAN_LINE_LENGTH перед матчингом —
+	// ReDoS-защита (квадратичные CWE-89/78 regex); потеря хвостов задокументирована
+	// в JSDoc MAX_SCAN_LINE_LENGTH (lib/sanitize.ts).
+	const scanLineText = clampScanLine(line);
 
 	for (const pattern of CWE_PATTERNS) {
-		if (pattern.contextRegex && !pattern.contextRegex.test(line)) {
+		if (pattern.contextRegex && !pattern.contextRegex.test(scanLineText)) {
 			continue; // контекст не подтверждён (напр. Math.random() вне security-слов)
 		}
-		for (const match of line.matchAll(pattern.regex)) {
+		for (const match of scanLineText.matchAll(pattern.regex)) {
 			const fragment = match[0];
 			if (!fragment) {
 				continue;
@@ -234,7 +328,7 @@ function scanLine(line: string, lineNumber: number, relFile: string, nextId: () 
 					description: pattern.description,
 					exploit: pattern.exploit,
 					remediation: pattern.remediation,
-					confidence: resolvePatternConfidence(line, pattern),
+					confidence: resolvePatternConfidence(scanLineText, pattern),
 				}),
 			);
 		}
@@ -276,15 +370,13 @@ function buildFinding(
 }
 
 /**
- * Evidence: цитата совпавшего фрагмента (НЕ вся строка файла), обрезанная до
- * MAX_CWE_EVIDENCE_LENGTH (§6.1, ≤ 300 символов). Маскирование не применяется —
- * секреты зона scan-secrets (F-2.2).
+ * Evidence: цитата совпавшего фрагмента (НЕ вся строка файла), прогнанная через
+ * sanitizeEvidence (patch 1.0.1 F-1: секреты/высокоэнтропийные токены в цитате
+ * маскируются — инвариант §2.3 распространён на все источники evidence) и
+ * обрезанная до MAX_CWE_EVIDENCE_LENGTH (§6.1, ≤ 300 символов).
  */
 function clipEvidence(fragment: string): string {
-	const text = fragment.trim();
-	return text.length > MAX_CWE_EVIDENCE_LENGTH
-		? text.slice(0, MAX_CWE_EVIDENCE_LENGTH)
-		: text;
+	return sanitizeEvidence(fragment.trim());
 }
 
 /** Относительный путь в POSIX-стиле (единый вид отчёта на Win/Linux/macOS). */
@@ -294,14 +386,21 @@ function toPosix(value: string): string {
 
 // ── CLI (§3.3, §4.1) ────────────────────────────────────────────────────────
 
+export interface MainOptions {
+	/** Тайм-бюджет скана в мс (patch 1.0.1, F-2); дефолт — DEFAULT_TIME_BUDGET_MS. */
+	timeBudgetMs?: number;
+}
+
 /**
  * CLI-входная точка: парсит [target] [--format json|text]
- * [--use-external off|auto|only], печатает отчёт и ВОЗВРАЩАЕТ exit-код
- * (resolveExitCode): 0 — чисто, 1 — findings, 2 — ошибка. process.exit НЕ
- * вызывает — только обёртка import.meta.main ниже.
+ * [--use-external off|auto|only], печатает отчёт и ВОЗВРАЩАЕТ exit-код:
+ * 0 — чисто, 1 — findings, 2 — ошибка (§3.3). F-2 (patch 1.0.1): скан,
+ * прерванный по тайм-бюджету, при 0 findings — НЕдоверенный результат →
+ * exit 2 (при наличии findings — обычный exit 1). process.exit НЕ вызывает —
+ * только обёртка import.meta.main ниже.
  * Вывод — исключительно console.log (stdout) / console.error (stderr).
  */
-export async function main(argv?: string[]): Promise<number> {
+export async function main(argv?: string[], options: MainOptions = {}): Promise<number> {
 	const args = argv ?? process.argv.slice(2);
 	let target: string | undefined;
 	let format: OutputFormat = "text"; // text — дефолт (roadmap F-2.3)
@@ -360,10 +459,14 @@ export async function main(argv?: string[]): Promise<number> {
 	}
 
 	try {
-		const report = await scanPatterns(target, { useExternal });
+		const { report, interrupted } = await runScanPatterns(target, {
+			useExternal,
+			timeBudgetMs: options.timeBudgetMs,
+		});
 		// §4.1: --format json без лишнего вывода — весь stdout валидный JSON
 		console.log(format === "json" ? JSON.stringify(report, null, "\t") : renderText(report));
-		return resolveExitCode(report);
+		// F-2: прерванный скан + 0 findings → exit 2 (недоверенный результат)
+		return interrupted && report.findings.length === 0 ? 2 : resolveExitCode(report);
 	} catch (cause) {
 		const error = cause instanceof Error ? cause : new Error(String(cause));
 		console.error(`scan-patterns: ${error.message}`);

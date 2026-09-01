@@ -80,8 +80,8 @@ const SKILL_DIR = path.join(BUNDLE_ROOT, "skills", "fan-security");
 const SKILL_PKG_PATH = path.join(SKILL_DIR, "package.json");
 const SKILL_MD_PATH = path.join(SKILL_DIR, "SKILL.md");
 
-/** Синхронизированная версия всех трёх манифестов (приказ оператора). */
-const SHIPPED_VERSION = "1.0.0";
+/** Синхронизированная версия всех трёх манифестов (patch-release 1.0.1, приказ оператора). */
+const SHIPPED_VERSION = "1.0.1";
 
 /** Контрактный main пакета (roadmap F-2.8: «main → index.ts»). */
 const ENTRY_BASENAME = "index.ts";
@@ -309,7 +309,7 @@ describe("Skill-компонент: bundles/fan-security/skills/fan-security/pac
 	});
 });
 
-describe("Синхронизация версий: bundle === extension === skill === 1.0.0", () => {
+describe("Синхронизация версий: bundle === extension === skill === SHIPPED_VERSION (1.0.1)", () => {
 	it("все три манифеста имеют одну и ту же версию (приказ оператора)", () => {
 		const bundlePkg = readBundlePkg();
 		const extPkg = readPackageJson();
@@ -541,7 +541,7 @@ describe("(б-2) README.md бандла: состав + версии, устан
 		).toMatch(/extensions\/?\s*\+\s*skills|авто-детект|auto-?detect/i);
 	});
 
-	it("состав + версии компонентов (extension и skill, 1.0.0)", () => {
+	it("состав + версии компонентов (extension и skill, 1.0.1)", () => {
 		const readme = readBundleReadme();
 
 		expect(readme, "должны перечисляться оба компонента (extension + skill)").toMatch(

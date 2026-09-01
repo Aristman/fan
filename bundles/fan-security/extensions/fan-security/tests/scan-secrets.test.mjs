@@ -377,6 +377,76 @@ describe("Покрытие паттернов §4 (присваивания, sk-
 	});
 });
 
+describe("F-3 (patch 1.0.1): короткое значение api_key маскируется целиком", () => {
+	it("api_key с 8-символьным значением → finding с замаскированной evidence «…», значение НЕ в отчёте", async () => {
+		const { scanSecrets } = requireExport(await loadScanner(), "scanSecrets");
+		const dir = makeTempDir();
+		writeTempFile(dir, "short-key.ts", [`const apiKey = "shortkey";`]); // значение ровно 8 символов
+
+		const report = await scanSecrets(dir, { useExternal: "off" });
+
+		const findings = report.findings.filter((f) => /api[_-]?key/i.test(f.title));
+		expect(findings.length, "короткое присваивание api_key должно давать finding").toBeGreaterThan(0);
+		for (const finding of findings) {
+			// fix F-3: раньше len<9 маскировался без изменений → «shortkey» утекал в evidence
+			expect(finding.evidence, "короткое значение не должно попадать в evidence открытым текстом").not.toContain(
+				"shortkey",
+			);
+			expect(finding.evidence, "evidence содержит полную маску «…» (maskSecret len<9)").toContain("…");
+		}
+		// Инвариант §2.3: значение не воспроизводится ни в одном поле отчёта
+		expect(JSON.stringify(report)).not.toContain("shortkey");
+	});
+});
+
+describe("F-2 (patch 1.0.1): длинная строка и тайм-бюджет", () => {
+	it("файл с ~1 МБ одной строкой сканируется < 5 сек (усечение MAX_SCAN_LINE_LENGTH)", async () => {
+		const { scanSecrets } = requireExport(await loadScanner(), "scanSecrets");
+		const dir = makeTempDir();
+		// Одна строка ~999 КБ (< MAX_FILE_BYTES = 1 МБ), низкоэнтропийное содержимое
+		// (паддинг — не секрет, findings не ожидается).
+		const bigLine = `const pad = "${"a".repeat(999_000)}";`;
+		writeTempFile(dir, "big-line.txt", [bigLine]);
+
+		const started = Date.now();
+		const report = await scanSecrets(dir, { useExternal: "off" });
+		const elapsedMs = Date.now() - started;
+
+		expect(elapsedMs, `скан занял ${elapsedMs} мс — усечение строки не сработало`).toBeLessThan(5000);
+		expect(report.summary.total, "низкоэнтропийный паддинг — не секрет, чисто").toBe(0);
+	});
+
+	it("тайм-бюджет истёк (timeBudgetMs: 0) → stderr-предупреждение, exit 2 при 0 findings (недоверенный результат)", async () => {
+		const main = requireExport(await loadScanner(), "main");
+		const dir = makeTempDir();
+		writeTempFile(dir, "clean.txt", ["const a = 1;"]);
+
+		const console$ = captureConsole();
+		const exitCode = await main([dir, "--use-external", "off", "--format", "json"], { timeBudgetMs: 0 });
+		const stderr = console$.err.join("\n");
+		const stdout = console$.stdout();
+		console$.restore();
+
+		expect(stderr, "предупреждение о прерывании — в stderr").toMatch(/тайм-бюджет/);
+		expect(stderr).toMatch(/частичные результаты/);
+		const report = JSON.parse(stdout);
+		expect(report.findings).toEqual([]);
+		expect(exitCode, "0 findings + прерван → exit 2 (решение patch 1.0.1, F-2)").toBe(2);
+	});
+
+	it("скан в пределах бюджета (дефолт) — без предупреждений, обычный exit-код (регрессия F-2)", async () => {
+		const main = requireExport(await loadScanner(), "main");
+
+		const console$ = captureConsole();
+		const exitCode = await main([SECRETS_SAMPLE, "--use-external", "off", "--format", "json"]);
+		const stderr = console$.err.join("\n");
+		console$.restore();
+
+		expect(stderr, "без предупреждений при обычном скане").toBe("");
+		expect(exitCode).toBe(1); // fixture с секретами
+	});
+});
+
 describe("CLI-контракт: --format text (дефолт), exit 2 при ошибке", () => {
 	it("text — ДЕФОЛТ: вывод НЕ JSON, содержит severity и file (renderText)", async () => {
 		const main = requireExport(await loadScanner(), "main");

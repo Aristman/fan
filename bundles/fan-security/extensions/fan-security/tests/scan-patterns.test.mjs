@@ -458,6 +458,57 @@ describe("Evidence: совпавший фрагмент, а не вся стро
 	});
 });
 
+describe("F-2 (patch 1.0.1): ReDoS-защита — длинная строка и тайм-бюджет", () => {
+	it("файл с ~1 МБ одной строкой сканируется < 5 сек (усечение MAX_SCAN_LINE_LENGTH)", async () => {
+		const { scanPatterns } = requireExport(await loadScanner(), "scanPatterns");
+		const dir = makeTempDir();
+		// Одна строка ~999 КБ (< MAX_FILE_BYTES = 1 МБ): раньше квадратичные CWE-89/78
+		// regex на такой строке давали десятки секунд; с clampScanLine — константа.
+		const bigLine = `const pad = "${"x".repeat(999_000)}";`;
+		writeTempFile(dir, "big-line.ts", [bigLine]);
+
+		const started = Date.now();
+		const report = await scanPatterns(dir, { useExternal: "off" });
+		const elapsedMs = Date.now() - started;
+
+		expect(elapsedMs, `скан занял ${elapsedMs} мс — усечение строки не сработало`).toBeLessThan(5000);
+		expect(report.summary.total, "pad-строка без CWE-сигнатур — чисто").toBe(0);
+	});
+
+	it("тайм-бюджет истёк (timeBudgetMs: 0) → stderr-предупреждение, exit 2 при 0 findings (недоверенный результат)", async () => {
+		const main = requireExport(await loadScanner(), "main");
+		const dir = makeTempDir();
+		writeTempFile(dir, "clean.ts", ["const a = 1;"]);
+
+		const console$ = captureConsole();
+		const exitCode = await main([dir, "--use-external", "off", "--format", "json"], { timeBudgetMs: 0 });
+		const stderr = console$.err.join("\n");
+		const stdout = console$.stdout();
+		console$.restore();
+
+		expect(stderr, "предупреждение о прерывании — в stderr").toMatch(/тайм-бюджет/);
+		expect(stderr).toMatch(/частичные результаты/);
+		const report = JSON.parse(stdout);
+		expect(report.findings).toEqual([]);
+		expect(exitCode, "0 findings + прерван → exit 2 (решение patch 1.0.1, F-2)").toBe(2);
+	});
+
+	it("скан в пределах бюджета (дефолт) — без предупреждений, обычный exit-код (регрессия F-2)", async () => {
+		const mod = await loadScanner();
+		const scanPatterns = requireExport(mod, "scanPatterns");
+		const main = requireExport(mod, "main");
+
+		const console$ = captureConsole();
+		const exitCode = await main([PATTERNS_SAMPLE, "--use-external", "off", "--format", "json"]);
+		const stderr = console$.err.join("\n");
+		console$.restore();
+
+		expect(stderr, "без предупреждений при обычном скане").toBe("");
+		expect(exitCode).toBe(1); // fixture с findings
+		expect(typeof scanPatterns).toBe("function");
+	});
+});
+
 describe("CLI-контракт: --format text (дефолт), usage, exit 2 при ошибке", () => {
 	it("text — ДЕФОЛТ: вывод НЕ JSON, содержит severity и file (renderText), exit 1", async () => {
 		const main = requireExport(await loadScanner(), "main");

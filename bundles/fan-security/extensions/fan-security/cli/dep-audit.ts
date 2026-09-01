@@ -8,7 +8,18 @@
  *   той же директории → `pnpm audit --json`, yarn.lock → `yarn audit --json`;
  * - requirements.txt ИЛИ pyproject.toml → `pip-audit --format json`;
  * - Cargo.toml → `cargo audit --json`.
- * cwd каждого вызова — директория манифеста.
+ *
+ * ИЗОЛЯЦИЯ CWD (F-6, patch 1.0.1 — fix security-аудита): утилита запускается
+ * НЕ в директории манифеста, а во временном workspace (mkdtemp под os.tmpdir):
+ * туда копируются манифест и его lockfiles (package.json + package-lock.json /
+ * pnpm-lock.yaml / yarn.lock; requirements.txt / pyproject.toml; Cargo.toml +
+ * Cargo.lock), cwd = workspace. Иначе npm/pip/cargo читают конфиги из cwd
+ * (прежде всего .npmrc сканируемого репо) — эксфильтрация/подмена registry
+ * через недоверенный каталог. Дополнительно для npm изолируется пользовательский
+ * конфиг: env.npm_config_userconfig указывает на несуществующий файл внутри
+ * workspace (изоляция и от пользовательского ~/.npmrc). line/evidence в
+ * findings считаются по ОРИГИНАЛЬНОМУ манифесту (путь сохраняется); workspace
+ * удаляется после вызова.
  *
  * Парсинг вывода (1 запись уязвимости → ровно 1 finding, без дублей):
  * - npm/pnpm/yarn: JSON.vulnerabilities{} (формат npm audit v7+/v9);
@@ -34,7 +45,9 @@
  *   line — строка объявления пакета в манифесте (1-based), для транзитивных
  *   зависимостей — 0 (неприменимо, разрешено схемой);
  * - evidence ≤ 300: цитата строки манифеста с объявлением, иначе краткая
- *   цитата audit-вывода (имя + range) — всегда непустая;
+ *   цитата audit-вывода (имя + range) — всегда непустая; САНИТИЗИРУЕТСЯ через
+ *   sanitizeEvidence (lib/sanitize.ts, patch 1.0.1 F-1: строка манифеста —
+ *   недоверенный текст, секреты в ней маскируются — инвариант §2.3);
  * - confidence = "confirmed" (утилита сверяет установленные версии с БД).
  *
  * Деградация (§3.3 — сообщение, не падение):
@@ -45,7 +58,7 @@
  * - манифестов нет → findings=[], предупреждение «no manifests» в stderr,
  *   exit 0; несуществующий targetPath → throw (main() превращает в exit 2).
  *
- * Запуск внешних команд — через инъекцию runner ({cmd,args,cwd}) →
+ * Запуск внешних команд — через инъекцию runner ({cmd,args,cwd,env?}) →
  * {stdout,stderr,exitCode}; по умолчанию Bun.spawnSync. Тесты всегда
  * передают мок-runner — реальных spawn в тестах нет.
  *
@@ -61,7 +74,8 @@
  * Spec: docs/specs/spec_security-worker_2026-08-31.md §3.3, §4, §5.3, §6.
  */
 
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import {
 	createReport,
@@ -73,13 +87,13 @@ import {
 } from "../lib/report.ts";
 import { getPkgVersion } from "../lib/pkg.ts";
 import { walkDirectory } from "../lib/walker.ts";
+import { sanitizeEvidence } from "../lib/sanitize.ts";
 
 // ── Константы сканера ────────────────────────────────────────────────────────
 
 const TOOL = "dep-audit";
 const VERSION = getPkgVersion();
-/** Верхняя граница evidence (§6.1) — цитата строки манифеста или audit-вывода. */
-const MAX_EVIDENCE_LENGTH = 300;
+// Предел evidence (§6.1, ≤ 300) — sanitizeEvidence в lib/sanitize.ts (patch 1.0.1).
 /** CWE-дефолт, когда утилита не отдаёт CWE (npm via-строка, pip-audit, cargo). */
 const DEFAULT_CWE = "CWE-1395";
 
@@ -114,13 +128,31 @@ const SEVERITY_BY_WORD: Readonly<Record<string, Severity>> = {
 /** CVE-идентификатор (§6.2: CVE не теряются — уходят в description). */
 const CVE_PATTERN = /CVE-\d{4}-\d+/g;
 
+/**
+ * Предел размера stdout audit-утилиты (patch 1.0.1, F-5): больше — недоверенный
+ * вывод, парсинг не выполняется (предупреждение в stderr, манифест пропускается,
+ * скан продолжается — как при отсутствии утилиты). Проверка по string.length
+ * (UTF-16 единицы): для ASCII-вывода аудитов соответствует байтам; защитная
+ * оценка против аномально огромного вывода (подмена утилиты/переполнение).
+ */
+const MAX_PARSE_BYTES = 64 * 1024 * 1024;
+
 // ── Runner: инъекция внешних команд (единственная точка spawn) ──────────────
 
-/** Вызов audit-утилиты: команда, аргументы, рабочая директория. */
+/**
+ * Вызов audit-утилиты: команда, аргументы, рабочая директория.
+ * cwd — изолированный tmp-workspace (F-6, patch 1.0.1), НЕ директория манифеста.
+ */
 export interface DepAuditInvocation {
 	cmd: string;
 	args: string[];
 	cwd: string;
+	/**
+	 * Дополнение окружения дочернего процесса (поверх process.env). F-6: для
+	 * npm — npm_config_userconfig → несуществующий файл внутри workspace
+	 * (изоляция от пользовательского ~/.npmrc). Не задан → чистое окружение.
+	 */
+	env?: Record<string, string>;
 }
 
 /** Результат вызова audit-утилиты (синхронный, как Bun.spawnSync). */
@@ -132,14 +164,19 @@ export interface DepAuditResult {
 
 /**
  * Seam для тестов и окружений без npm/pip/cargo: вместо spawn подставляется
- * функция. По умолчанию — Bun.spawnSync (spawnSync(cmd, args, {cwd})).
+ * функция. По умолчанию — Bun.spawnSync (spawnSync(cmd, args, {cwd, env})).
  */
 export type DepAuditRunner = (invocation: DepAuditInvocation) => DepAuditResult;
 
 /** Дефолтный runner — Bun.spawnSync; ошибка запуска (нет бинарника) → exit 127. */
-const defaultRunner: DepAuditRunner = ({ cmd, args, cwd }) => {
+const defaultRunner: DepAuditRunner = ({ cmd, args, cwd, env }) => {
 	try {
-		const result = Bun.spawnSync([cmd, ...args], { cwd, stdout: "pipe", stderr: "pipe" });
+		const result = Bun.spawnSync([cmd, ...args], {
+			cwd,
+			env: env ? { ...process.env, ...env } : undefined,
+			stdout: "pipe",
+			stderr: "pipe",
+		});
 		return {
 			stdout: result.stdout.toString(),
 			stderr: result.stderr.toString(),
@@ -224,17 +261,60 @@ function collectFileManifest(filePath: string): ManifestTarget[] {
 	return MANIFEST_NAMES.has(name) ? [{ absolutePath: filePath, kind: manifestKind(name) }] : [];
 }
 
-/** Ровно один вызов runner на манифест; cwd = директория манифеста (§5.3). */
-function buildInvocation(manifest: ManifestTarget): DepAuditInvocation {
-	const dir = path.dirname(manifest.absolutePath);
+/** Префикс tmp-workspace аудита (F-6). */
+const WORKSPACE_PREFIX = "fan-dep-audit-";
+
+/** Дополнительные файлы, копируемые в workspace рядом с манифестом (F-6). */
+const WORKSPACE_EXTRA_FILES: Readonly<Record<ManifestKind, readonly string[]>> = {
+	npm: ["package-lock.json", "pnpm-lock.yaml", "yarn.lock"],
+	pip: [],
+	cargo: ["Cargo.lock"],
+};
+
+/**
+ * Создаёт изолированный workspace для аудита одного манифеста (F-6, patch
+ * 1.0.1): mkdtemp под os.tmpdir + копия манифеста и его lockfiles. Утилита
+ * запускается с cwd = workspace — конфиги сканируемого репо (.npmrc и пр.)
+ * не читаются. Ошибка создания → throw (caller деградирует до пропуска
+ * манифеста с предупреждением, как при недоступной утилите).
+ */
+function createAuditWorkspace(manifest: ManifestTarget): string {
+	const workspace = mkdtempSync(path.join(tmpdir(), WORKSPACE_PREFIX));
+	const manifestDir = path.dirname(manifest.absolutePath);
+	copyFileSync(manifest.absolutePath, path.join(workspace, path.basename(manifest.absolutePath)));
+	for (const name of WORKSPACE_EXTRA_FILES[manifest.kind]) {
+		const source = path.join(manifestDir, name);
+		if (existsSync(source)) {
+			copyFileSync(source, path.join(workspace, name));
+		}
+	}
+	return workspace;
+}
+
+/**
+ * Ровно один вызов runner на манифест; cwd = изолированный tmp-workspace
+ * (F-6, patch 1.0.1: НЕ директория манифеста — защита от .npmrc-подмены).
+ * lockfile-уточнение — по ОРИГИНАНАЛЬНОЙ директории манифеста (копии кладутся
+ * в workspace, см. createAuditWorkspace).
+ */
+function buildInvocation(manifest: ManifestTarget, workspace: string): DepAuditInvocation {
 	if (manifest.kind === "npm") {
+		const dir = path.dirname(manifest.absolutePath);
 		const lockfile = NPM_LOCKFILES.find(([name]) => existsSync(path.join(dir, name)));
-		return { cmd: lockfile?.[1] ?? "npm", args: ["audit", "--json"], cwd: dir };
+		return {
+			cmd: lockfile?.[1] ?? "npm",
+			args: ["audit", "--json"],
+			cwd: workspace,
+			// F-6: изоляция пользовательского npm-конфига (~/.npmrc) — registry из
+			// недоверенного конфига не должен влиять на аудит; project-.npmrc уже
+			// отсечён самим cwd=workspace.
+			env: { npm_config_userconfig: path.join(workspace, ".npmrc-isolated") },
+		};
 	}
 	if (manifest.kind === "pip") {
-		return { cmd: "pip-audit", args: ["--format", "json"], cwd: dir };
+		return { cmd: "pip-audit", args: ["--format", "json"], cwd: workspace };
 	}
-	return { cmd: "cargo", args: ["audit", "--json"], cwd: dir };
+	return { cmd: "cargo", args: ["audit", "--json"], cwd: workspace };
 }
 
 // ── Сканирование ────────────────────────────────────────────────────────────
@@ -283,10 +363,13 @@ export async function scanDepAudits(
 }
 
 /**
- * Аудит одного манифеста: вызов утилиты, парсинг JSON, маппинг в findings.
+ * Аудит одного манифеста: изолированный tmp-workspace (F-6), вызов утилиты,
+ * парсинг JSON, маппинг в findings. line/evidence — по ОРИГИНАЛЬНОМУ манифесту.
  * Отсутствие утилиты (exitCode ≠ 0 И stdout пуст/не-JSON) → предупреждение
  * в stderr, findings нет, скан продолжается (частичная деградация).
  * Валидный JSON при exitCode ≠ 0 (npm audit при уязвимостях) парсится нормально.
+ * Ошибка создания workspace → предупреждение + манифест пропущен (не падение).
+ * Workspace удаляется после вызова (finally) — там только копии манифестов.
  */
 function auditManifest(
 	manifest: ManifestTarget,
@@ -295,7 +378,35 @@ function auditManifest(
 	nextId: () => string,
 ): Finding[] {
 	const relFile = toPosix(path.relative(root, manifest.absolutePath)) || path.basename(manifest.absolutePath);
-	const invocation = buildInvocation(manifest);
+
+	let workspace: string;
+	try {
+		workspace = createAuditWorkspace(manifest);
+	} catch (cause) {
+		const detail = cause instanceof Error ? cause.message : String(cause);
+		console.error(
+			`dep-audit: не удалось создать изолированный workspace для ${relFile} (${detail}) — ` +
+				`манифест пропущен, скан продолжается`,
+		);
+		return [];
+	}
+
+	try {
+		return auditManifestInWorkspace(manifest, relFile, workspace, runner, nextId);
+	} finally {
+		rmSync(workspace, { recursive: true, force: true });
+	}
+}
+
+/** Тело аудита внутри workspace (вызывается из auditManifest, F-6). */
+function auditManifestInWorkspace(
+	manifest: ManifestTarget,
+	relFile: string,
+	workspace: string,
+	runner: DepAuditRunner,
+	nextId: () => string,
+): Finding[] {
+	const invocation = buildInvocation(manifest, workspace);
 
 	let result: DepAuditResult;
 	try {
@@ -305,6 +416,16 @@ function auditManifest(
 		console.error(
 			`dep-audit: утилита "${invocation.cmd}" недоступна (ошибка запуска: ${detail}) — ` +
 				`манифест ${relFile} пропущен, скан продолжается`,
+		);
+		return [];
+	}
+
+	// F-5 (patch 1.0.1): аномально огромный stdout — недоверенный вывод, парсинг
+	// не выполняется (как отсутствие утилиты: предупреждение + манифест пропущен).
+	if (result.stdout.length > MAX_PARSE_BYTES) {
+		console.error(
+			`dep-audit: вывод "${invocation.cmd}" для ${relFile} превышает ${MAX_PARSE_BYTES} байт — ` +
+				`недоверенный вывод, манифест ${relFile} пропущен, скан продолжается`,
 		);
 		return [];
 	}
@@ -600,10 +721,13 @@ function finalizeFinding(
 	};
 }
 
-/** Evidence ≤ 300 символов (§6.1): цитата строки манифеста или audit-вывода. */
+/**
+ * Evidence ≤ 300 символов (§6.1): цитата строки манифеста или audit-вывода,
+ * санитизированная через sanitizeEvidence (patch 1.0.1 F-1 — маскирование
+ * секретов/высокоэнтропийных токенов во всех источниках evidence).
+ */
 function clipEvidence(text: string): string {
-	const trimmed = text.trim();
-	return trimmed.length > MAX_EVIDENCE_LENGTH ? trimmed.slice(0, MAX_EVIDENCE_LENGTH) : trimmed;
+	return sanitizeEvidence(text.trim());
 }
 
 /** Строки манифеста для поиска объявлений; ошибка чтения → без объявлений. */

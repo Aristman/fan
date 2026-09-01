@@ -11,8 +11,8 @@
 
 | Компонент | Тип | Версия | Что делает |
 |-----------|-----|--------|------------|
-| **fan-security** | extension | 1.0.0 | CLI-сканеры `scan-secrets` (секреты: AWS, OpenAI, GitHub PAT, Slack, PEM, `.env`, entropy), `scan-patterns` (CWE-сигнатуры: SQLi CWE-89, command injection CWE-78, path traversal CWE-22, XSS CWE-79, weak crypto), `dep-audit` (npm/pnpm/yarn/pip/cargo) + slash-команда `/security-scan` |
-| **fan-security** | skill | 1.0.0 | SKILL.md-методология ручного аудита для агента (`/skill:fan-security`): OWASP/CWE-чеклист, secret scanning, dependency audit, IaC, configuration audit, формат отчёта с severity, маскирование секретов 4+4 |
+| **fan-security** | extension | 1.0.1 | CLI-сканеры `scan-secrets` (секреты: AWS, OpenAI, GitHub PAT, Slack, PEM, `.env`, entropy), `scan-patterns` (CWE-сигнатуры: SQLi CWE-89, command injection CWE-78, path traversal CWE-22, XSS CWE-79, weak crypto), `dep-audit` (npm/pnpm/yarn/pip/cargo) + slash-команда `/security-scan` |
+| **fan-security** | skill | 1.0.1 | SKILL.md-методология ручного аудита для агента (`/skill:fan-security`): OWASP/CWE-чеклист, secret scanning, dependency audit, IaC, configuration audit, формат отчёта с severity, маскирование секретов 4+4 |
 
 Связь компонентов: воркер или агент проходит методологию skill'а и запускает
 сканеры extension'а; сводный отчёт публикуется в чат.
@@ -36,7 +36,7 @@ Installer авто-детектит bundle по поддиректориям `ex
 ### Из локального архива (.tar.gz)
 
 ```bash
-fan store install ./fan-security-1.0.0.tar.gz
+fan store install ./fan-security-1.0.1.tar.gz
 ```
 
 Архив распаковывается, авто-детект видит `extensions/` + `skills/` и
@@ -114,9 +114,9 @@ bun cli/dep-audit.ts <path> [--format json]
 ## Что внутри архива
 
 ```
-fan-security-1.0.0.tar.gz
+fan-security-1.0.1.tar.gz
 └── fan-security/
-    ├── package.json      ← manifest бандла (v1.0.0)
+    ├── package.json      ← manifest бандла (v1.0.1)
     ├── DEPLOY.toml       ← deploy manifest (schema v1, type = bundle)
     ├── README.md         ← этот файл
     ├── extensions/

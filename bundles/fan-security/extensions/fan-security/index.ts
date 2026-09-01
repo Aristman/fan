@@ -48,6 +48,7 @@
  * roadmap: docs/features/security-worker/roadmap.md → F-2.6.
  */
 
+import { randomBytes } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -197,8 +198,8 @@ function mergeBySeverity(findings: Finding[]): Partial<Record<Severity, number>>
 
 /**
  * > 20 findings в отчёте сканера → полный JSON ЭТОГО отчёта во временный
- * файл security-scan-*.json (os.tmpdir, абсолютный путь). Возвращает пути
- * записанных файлов для упоминания в сводке.
+ * файл security-scan-<tool>-<random>.json (os.tmpdir, абсолютный путь).
+ * Возвращает пути записанных файлов для упоминания в сводке.
  */
 async function dumpOversizedReports(reports: Report[]): Promise<string[]> {
 	const paths: string[] = [];
@@ -206,12 +207,42 @@ async function dumpOversizedReports(reports: Report[]): Promise<string[]> {
 		if (report.findings.length <= JSON_FILE_THRESHOLD) {
 			continue;
 		}
-		const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-		const filePath = path.join(tmpdir(), `security-scan-${report.tool}-${stamp}.json`);
-		await writeFile(filePath, JSON.stringify(report, null, 2), "utf8");
-		paths.push(filePath);
+		paths.push(await writeReportFile(report));
 	}
 	return paths;
+}
+
+/** Максимум попыток записи с флагом "wx" при коллизии имени (F-4). */
+const REPORT_FILE_ATTEMPTS = 3;
+
+/**
+ * Записывает JSON-отчёт во временный файл (F-4, patch 1.0.1):
+ * - имя — security-scan-<tool>-<randomBytes(6).hex>.json: непредсказуемый
+ *   суффикс вместо ISO-штампа (защита от symlink-атак по предсказуемому пути
+ *   в общем каталоге temp);
+ * - запись с флагом "wx" (эксклюзивное создание — существующий файл/симлинк
+ *   не перезаписывается); коллизия → новая случайная попытка, максимум 3;
+ * - ОТКЛОНЕНИЕ ОТ РЕКОМЕНДАЦИИ аудитора (F-4): файл НЕ удаляется после
+ *   отправки — это артефакт для пользователя (полный JSON-отчёт скана);
+ *   риск смягчён непредсказуемым именем и каталогом ОС (tmpdir с правами
+ *   пользователя).
+ */
+async function writeReportFile(report: Report): Promise<string> {
+	for (let attempt = 1; attempt <= REPORT_FILE_ATTEMPTS; attempt++) {
+		const suffix = randomBytes(6).toString("hex");
+		const filePath = path.join(tmpdir(), `security-scan-${report.tool}-${suffix}.json`);
+		try {
+			await writeFile(filePath, JSON.stringify(report, null, 2), { encoding: "utf8", flag: "wx" });
+			return filePath;
+		} catch (cause) {
+			const code = (cause as NodeJS.ErrnoException | null)?.code;
+			if (code !== "EEXIST" || attempt === REPORT_FILE_ATTEMPTS) {
+				throw cause;
+			}
+			// коллизия имени — новая случайная попытка (F-4: максимум 3)
+		}
+	}
+	throw new Error("unreachable: writeReportFile должен вернуть путь или throw");
 }
 
 // ── Рендеры ─────────────────────────────────────────────────────────────────

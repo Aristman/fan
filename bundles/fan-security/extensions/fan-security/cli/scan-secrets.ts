@@ -16,7 +16,9 @@
  * Все паттерны — data-driven таблица SECRET_PATTERNS в lib/patterns/secrets.ts
  * (§4.4: добавление нового паттерна = запись в таблице, без изменения логики).
  * Там же — entropy-константы и исключённые значения (undefined|null|true|false|
- * process.env.*, пустые — не секреты).
+ * process.env.*, пустые — не секреты). Entropy-детект (shannon/isHighEntropyToken/
+ * entropyCandidates) — общий хелпер lib/sanitize.ts (patch 1.0.1: вынесен из
+ * этого файла для переиспользования в sanitizeEvidence, F-1).
  *
  * Инварианты (спека §2.3, §6.2): evidence ВСЕГДА маскируется через maskSecret
  * из lib/report.ts (4+4, «AKIA…MNOP») — полный секрет не утекает ни в одно поле.
@@ -37,12 +39,16 @@
  *    недопустимое значение → exit 2)
  *   main() ВОЗВРАЩАЕТ exit-код (0 чисто / 1 findings / 2 ошибка) и НЕ вызывает
  *   process.exit — он только в CLI-обёртке import.meta.main ниже.
+ *   F-2 (patch 1.0.1): скан, прерванный по тайм-бюджету (дефолт 30 000 мс,
+ *   проверка каждые 50 строк/файлов), даёт stderr-предупреждение и частичные
+ *   результаты; 0 findings + прерван → exit 2 (недоверенный результат).
  *   `--format json` — весь stdout валидный JSON без посторонних строк.
  *
  * Без внешних зависимостей: только node:fs / node:path + lib/report.ts +
  * lib/patterns/secrets.ts (data-driven таблица паттернов, F-2.2 refactor) +
  * lib/walker.ts (общий обход ФС, F-2.3 REFACTOR) + lib/external.ts (гибридный
- * режим: детект/раннер/мердж внешних тулз, F-2.5).
+ * режим: детект/раннер/мердж внешних тулз, F-2.5) + lib/sanitize.ts (entropy-
+ * детект и лимиты скана, patch 1.0.1 F-1/F-2).
  * Spec: docs/specs/spec_security-worker_2026-08-31.md §2.3, §3.3, §4, §5.3, §6.
  */
 
@@ -64,10 +70,12 @@ import { mergeFindings, resolveExternalTools, runGitleaks, type ExternalEnv } fr
 import { getPkgVersion } from "../lib/pkg.ts";
 import { readTextFileSafe, walkDirectory } from "../lib/walker.ts";
 import {
-	ENTROPY_BARE_MIN_LENGTH,
-	ENTROPY_MIN_LENGTH,
-	ENTROPY_QUOTED_MIN_LENGTH,
-	ENTROPY_SHANNON_THRESHOLD,
+	DEFAULT_TIME_BUDGET_MS,
+	clampScanLine,
+	entropyCandidates,
+	isHighEntropyToken,
+} from "../lib/sanitize.ts";
+import {
 	SECRET_PATTERNS,
 	isExcludedSecretValue,
 	type SecretPattern,
@@ -85,64 +93,10 @@ const MAX_EVIDENCE_LENGTH = 240;
 
 // ── Паттерны и entropy-константы — lib/patterns/secrets.ts (§4.4) ───────────
 // SECRET_PATTERNS (data-driven таблица), ENTROPY_* (именованные пороги) и
-// isExcludedSecretValue импортируются в шапке модуля.
-
-// ── Entropy-эвристика (§2.3) ────────────────────────────────────────────────
-
-/** Shannon-энтропия строки, бит/символ (0 для пустой строки). */
-function shannonEntropy(value: string): number {
-	if (value.length === 0) {
-		return 0;
-	}
-	const counts = new Map<string, number>();
-	for (const char of value) {
-		counts.set(char, (counts.get(char) ?? 0) + 1);
-	}
-	let entropy = 0;
-	for (const count of counts.values()) {
-		const probability = count / value.length;
-		entropy -= probability * Math.log2(probability);
-	}
-	return entropy;
-}
-
-/** Высокоэнтропийный токен: ≥ ENTROPY_MIN_LENGTH, mixed case + цифры, shannon > порога. */
-function isHighEntropyToken(token: string): boolean {
-	if (token.length < ENTROPY_MIN_LENGTH) {
-		return false;
-	}
-	if (!/[a-z]/.test(token) || !/[A-Z]/.test(token) || !/\d/.test(token)) {
-		return false;
-	}
-	return shannonEntropy(token) > ENTROPY_SHANNON_THRESHOLD;
-}
-
-/**
- * Кандидаты entropy-проверки (regex собран из констант lib/patterns/secrets.ts).
- * matchAll клонирует regex — переиспользование модульных констант безопасно.
- */
-const QUOTED_CANDIDATE_RE = new RegExp(
-	`["'\`]([^"'\\s]{${ENTROPY_QUOTED_MIN_LENGTH},})["'\`]`,
-	"g",
-);
-const BARE_CANDIDATE_RE = new RegExp(`[A-Za-z0-9_\\-/+=]{${ENTROPY_BARE_MIN_LENGTH},}`, "g");
-
-/**
- * Кандидаты для entropy-проверки в строке: содержимое кавычек и «голые»
- * длинные токены (base64-тела, значения в .env без кавычек).
- */
-function entropyCandidates(line: string): string[] {
-	const tokens = new Set<string>();
-	for (const match of line.matchAll(QUOTED_CANDIDATE_RE)) {
-		if (match[1]) {
-			tokens.add(match[1]);
-		}
-	}
-	for (const match of line.matchAll(BARE_CANDIDATE_RE)) {
-		tokens.add(match[0]);
-	}
-	return [...tokens];
-}
+// isExcludedSecretValue импортируются в шапке модуля. Entropy-детект
+// (shannonEntropy / isHighEntropyToken / entropyCandidates) — общий хелпер
+// lib/sanitize.ts (patch 1.0.1, F-1: единая точка для scan-secrets и
+// sanitizeEvidence).
 
 // ── Сканирование ────────────────────────────────────────────────────────────
 
@@ -162,6 +116,30 @@ export interface ScanSecretsOptions {
 	useExternal?: ExternalMode;
 	/** Инъекция PATH для детекта/раннера внешних тулз (F-2.5, для тестов). */
 	env?: ExternalEnv;
+	/**
+	 * Тайм-бюджет скана в мс (patch 1.0.1, F-2): дефолт DEFAULT_TIME_BUDGET_MS
+	 * (30 000). Проверка Date.now() — на каждой 50-й строке/файле; при истечении
+	 * скан останавливается с частичными результатами (stderr-предупреждение).
+	 */
+	timeBudgetMs?: number;
+}
+
+/** Результат полного скана: отчёт + флаг прерывания по тайм-бюджету (F-2). */
+export interface ScanSecretsOutcome {
+	/** Отчёт по схеме F-2.1 (флаг прерывания в схему НЕ добавляется). */
+	report: Report;
+	/** true — базовый regex-скан прерван по тайм-бюджету (частичные результаты). */
+	interrupted: boolean;
+}
+
+/** Интервал проверок тайм-бюджета (F-2): каждая 50-я строка/файл. */
+const TIME_BUDGET_CHECK_INTERVAL = 50;
+
+/** Предупреждение о прерывании по бюджету — только в stderr (§4.1: stdout чист). */
+function warnTimeBudget(tool: string, timeBudgetMs: number): void {
+	console.error(
+		`${tool}: скан прерван по тайм-бюджету (${timeBudgetMs} мс) — частичные результаты`,
+	);
 }
 
 /** Тип вывода main(): json | text (text — дефолт, roadmap F-2.2). */
@@ -180,6 +158,19 @@ export type OutputFormat = "json" | "text";
  * - only — базовый regex-скан пропущен; тулзы нет → findings=[] (exit 0).
  */
 export async function scanSecrets(targetPath: string, options: ScanSecretsOptions = {}): Promise<Report> {
+	return (await runScanSecrets(targetPath, options)).report;
+}
+
+/**
+ * Полный скан (общий путь scanSecrets/main): отчёт + флаг прерывания по
+ * тайм-бюджету. Флаг НЕ попадает в схему отчёта (решение patch 1.0.1): сигнал
+ * — через stderr-предупреждение, а exit-решение принимает main() (см. ниже:
+ * 0 findings + прерван → exit 2, недоверенный результат).
+ */
+async function runScanSecrets(targetPath: string, options: ScanSecretsOptions): Promise<ScanSecretsOutcome> {
+	const timeBudgetMs = options.timeBudgetMs ?? DEFAULT_TIME_BUDGET_MS;
+	const budget = Date.now() + timeBudgetMs;
+
 	let stats;
 	try {
 		stats = statSync(targetPath);
@@ -193,13 +184,20 @@ export async function scanSecrets(targetPath: string, options: ScanSecretsOption
 
 	// off: детект и запуск внешних тулз не выполняются вовсе (externalTools нет)
 	if (mode === "off") {
-		return createReport({
-			tool: TOOL,
-			version: VERSION,
-			target: targetPath,
-			findings: scanBaseTarget(targetPath, isDirectory, root),
-			external: "off",
-		});
+		const base = scanBaseTarget(targetPath, isDirectory, root, budget);
+		if (base.interrupted) {
+			warnTimeBudget(TOOL, timeBudgetMs);
+		}
+		return {
+			report: createReport({
+				tool: TOOL,
+				version: VERSION,
+				target: targetPath,
+				findings: base.findings,
+				external: "off",
+			}),
+			interrupted: base.interrupted,
+		};
 	}
 
 	// auto/only: детект выполняется всегда → externalTools = результат детекта
@@ -213,43 +211,65 @@ export async function scanSecrets(targetPath: string, options: ScanSecretsOption
 	// доменная тулза не найдена → findings=[] (явное намерение оператора)
 	if (mode === "only") {
 		const external = tools.gitleaks ? runGitleaks(root, tools.gitleaks, options.env) : [];
-		return createReport({
-			tool: TOOL,
-			version: VERSION,
-			target: targetPath,
-			findings: mergeFindings([], external),
-			external: "only",
-			externalTools,
-		});
+		return {
+			report: createReport({
+				tool: TOOL,
+				version: VERSION,
+				target: targetPath,
+				findings: mergeFindings([], external),
+				external: "only",
+				externalTools,
+			}),
+			interrupted: false, // базовый скан не выполнялся — прерывать нечего
+		};
 	}
 
 	// auto: доменная тулза (gitleaks) не найдена → вырождается в off (TC-F-2.5-1)
-	const baseFindings = scanBaseTarget(targetPath, isDirectory, root);
+	const base = scanBaseTarget(targetPath, isDirectory, root, budget);
+	if (base.interrupted) {
+		warnTimeBudget(TOOL, timeBudgetMs);
+	}
 	if (!tools.gitleaks) {
-		return createReport({
-			tool: TOOL,
-			version: VERSION,
-			target: targetPath,
-			findings: baseFindings,
-			external: "off",
-			externalTools,
-		});
+		return {
+			report: createReport({
+				tool: TOOL,
+				version: VERSION,
+				target: targetPath,
+				findings: base.findings,
+				external: "off",
+				externalTools,
+			}),
+			interrupted: base.interrupted,
+		};
 	}
 
 	// auto + gitleaks: запуск (любая ошибка → 0 внешних) и мердж (base wins)
 	const external = runGitleaks(root, tools.gitleaks, options.env);
-	return createReport({
-		tool: TOOL,
-		version: VERSION,
-		target: targetPath,
-		findings: mergeFindings(baseFindings, external),
-		external: "auto",
-		externalTools,
-	});
+	return {
+		report: createReport({
+			tool: TOOL,
+			version: VERSION,
+			target: targetPath,
+			findings: mergeFindings(base.findings, external),
+			external: "auto",
+			externalTools,
+		}),
+		interrupted: base.interrupted,
+	};
 }
 
-/** Базовый regex-скан (секреты): обход файлов + построчные паттерны/entropy. */
-function scanBaseTarget(targetPath: string, isDirectory: boolean, root: string): Finding[] {
+/**
+ * Базовый regex-скан (секреты): обход файлов + построчные паттерны/entropy.
+ * Лимиты F-2/F-5: обход — walkDirectory (MAX_FILES/MAX_DEPTH); тайм-бюджет —
+ * проверка на каждой 50-й строке/файле, при истечении — остановка с частичными
+ * результатами (interrupted=true).
+ */
+function scanBaseTarget(
+	targetPath: string,
+	isDirectory: boolean,
+	root: string,
+	budget: number,
+): { findings: Finding[]; interrupted: boolean } {
 	const files = isDirectory ? walkDirectory(targetPath) : [targetPath];
 	files.sort();
 
@@ -257,17 +277,29 @@ function scanBaseTarget(targetPath: string, isDirectory: boolean, root: string):
 	const nextId = () => `SEC-${String(++counter).padStart(3, "0")}`;
 
 	const findings: Finding[] = [];
-	for (const file of files) {
-		findings.push(...scanFile(file, root, nextId));
+	for (let index = 0; index < files.length; index++) {
+		if (index % TIME_BUDGET_CHECK_INTERVAL === 0 && Date.now() >= budget) {
+			return { findings, interrupted: true };
+		}
+		const scanned = scanFile(files[index]!, root, nextId, budget);
+		findings.push(...scanned.findings);
+		if (scanned.interrupted) {
+			return { findings, interrupted: true };
+		}
 	}
-	return findings;
+	return { findings, interrupted: false };
 }
 
-/** Скан одного файла: паттерны построчно + правило «закоммиченный .env». */
-function scanFile(filePath: string, root: string, nextId: () => string): Finding[] {
+/** Скан одного файла: паттерны построчно + правило «закоммиченный .env» (+ тайм-бюджет, F-2). */
+function scanFile(
+	filePath: string,
+	root: string,
+	nextId: () => string,
+	budget: number,
+): { findings: Finding[]; interrupted: boolean } {
 	const content = readTextFileSafe(filePath);
 	if (content === null) {
-		return []; // бинарное расширение / пустой / > 1 МБ / ошибка чтения / null-байт
+		return { findings: [], interrupted: false }; // бинарное расширение / пустой / > 1 МБ / ошибка чтения / null-байт
 	}
 
 	const relFile = toPosix(path.relative(root, filePath)) || path.basename(filePath);
@@ -294,9 +326,12 @@ function scanFile(filePath: string, root: string, nextId: () => string): Finding
 
 	const lines = content.split(/\r?\n/);
 	for (let index = 0; index < lines.length; index++) {
-		findings.push(...scanLine(lines[index], index + 1, relFile, nextId));
+		if (index % TIME_BUDGET_CHECK_INTERVAL === 0 && Date.now() >= budget) {
+			return { findings, interrupted: true };
+		}
+		findings.push(...scanLine(lines[index]!, index + 1, relFile, nextId));
 	}
-	return findings;
+	return { findings, interrupted: false };
 }
 
 /**
@@ -345,9 +380,13 @@ function dedupKey(token: string): string {
 function scanLine(line: string, lineNumber: number, relFile: string, nextId: () => string): Finding[] {
 	const findings: Finding[] = [];
 	const matchedSecrets = new Set<string>();
+	// F-2 (patch 1.0.1): усечение строки до MAX_SCAN_LINE_LENGTH перед матчингом —
+	// единая точка для паттернов, confidence-проверки и entropy; потеря хвостов
+	// задокументирована в JSDoc MAX_SCAN_LINE_LENGTH (lib/sanitize.ts).
+	const scanLineText = clampScanLine(line);
 
 	for (const pattern of SECRET_PATTERNS) {
-		for (const match of line.matchAll(pattern.regex)) {
+		for (const match of scanLineText.matchAll(pattern.regex)) {
 			const secret = match[pattern.captureGroup];
 			if (!secret) {
 				continue;
@@ -366,17 +405,17 @@ function scanLine(line: string, lineNumber: number, relFile: string, nextId: () 
 					title: pattern.title,
 					file: relFile,
 					line: lineNumber,
-					evidence: maskedEvidence(line, secret),
+					evidence: maskedEvidence(scanLineText, secret),
 					description: pattern.description,
 					exploit: pattern.exploit,
 					remediation: pattern.remediation,
-					confidence: patternConfidence(line, match, pattern),
+					confidence: patternConfidence(scanLineText, match, pattern),
 				}),
 			);
 		}
 	}
 
-	for (const token of entropyCandidates(line)) {
+	for (const token of entropyCandidates(scanLineText)) {
 		if (matchedSecrets.has(dedupKey(token)) || !isHighEntropyToken(token)) {
 			continue; // токен с известным префиксом уже дал finding (нормализованный ключ)
 		}
@@ -387,7 +426,7 @@ function scanLine(line: string, lineNumber: number, relFile: string, nextId: () 
 				title: "Подозрительная высокоэнтропийная строка (возможный секрет)",
 				file: relFile,
 				line: lineNumber,
-				evidence: maskedEvidence(line, token),
+				evidence: maskedEvidence(scanLineText, token),
 				description:
 					`Строка из ${token.length} символов (смешанный регистр + цифры, ` +
 					"высокая энтропия) без известного префикса может быть секретом.",
@@ -451,12 +490,20 @@ function toPosix(value: string): string {
 
 // ── CLI (§3.3, §4.1) ────────────────────────────────────────────────────────
 
+/** Опции main(): тайм-бюджет скана (F-2). */
+export interface MainOptions {
+	/** Тайм-бюджет скана в мс (patch 1.0.1, F-2); дефолт — DEFAULT_TIME_BUDGET_MS. */
+	timeBudgetMs?: number;
+}
+
 /** CLI-входная точка: парсит [target] [--format json|text] [--use-external off|auto|only],
- * печатает отчёт и ВОЗВРАЩАЕТ exit-код (resolveExitCode): 0 — чисто, 1 — findings,
- * 2 — ошибка. process.exit НЕ вызывает — только обёртка import.meta.main ниже.
+ * печатает отчёт и ВОЗВРАЩАЕТ exit-код: 0 — чисто, 1 — findings, 2 — ошибка (§3.3).
+ * F-2 (patch 1.0.1): скан, прерванный по тайм-бюджету, при 0 findings —
+ * недоверенный результат → exit 2 (при наличии findings — обычный exit 1).
+ * process.exit НЕ вызывает — только обёртка import.meta.main ниже.
  * Вывод — исключительно console.log (stdout) / console.error (stderr).
  */
-export async function main(argv?: string[]): Promise<number> {
+export async function main(argv?: string[], options: MainOptions = {}): Promise<number> {
 	const args = argv ?? process.argv.slice(2);
 	let target: string | undefined;
 	let format: OutputFormat = "text"; // text — дефолт (roadmap F-2.2)
@@ -515,10 +562,14 @@ export async function main(argv?: string[]): Promise<number> {
 	}
 
 	try {
-		const report = await scanSecrets(target, { useExternal });
+		const { report, interrupted } = await runScanSecrets(target, {
+			useExternal,
+			timeBudgetMs: options.timeBudgetMs,
+		});
 		// §4.1: --format json без лишнего вывода — весь stdout валидный JSON
 		console.log(format === "json" ? JSON.stringify(report, null, "\t") : renderText(report));
-		return resolveExitCode(report);
+		// F-2: прерванный скан + 0 findings → exit 2 (недоверенный результат)
+		return interrupted && report.findings.length === 0 ? 2 : resolveExitCode(report);
 	} catch (cause) {
 		const error = cause instanceof Error ? cause : new Error(String(cause));
 		console.error(`scan-secrets: ${error.message}`);

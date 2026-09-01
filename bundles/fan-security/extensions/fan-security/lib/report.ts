@@ -103,7 +103,11 @@ export const SEVERITIES: readonly Severity[] = [
 	"INFO",
 ] as const;
 
-/** Порог маскирования: строки короче не маскируются (нечего скрывать). */
+/**
+ * Порог маскирования: строки короче маскируются ЦЕЛИКОМ (fix F-3, patch 1.0.1:
+ * короткие токены не должны утекать даже частично — было «без изменений»,
+ * PoC: api_key="shortkey" (8 симв.) попадал в evidence открытым текстом).
+ */
 const MASK_THRESHOLD = 9;
 /** Разделитель скрытой середины — U+2026 HORIZONTAL ELLIPSIS. */
 const MASK_SEPARATOR = "…";
@@ -165,12 +169,13 @@ export function createReport(input: CreateReportInput): Report {
  * Маскирует секрет: видны первые {@link MASK_VISIBLE} символа, скрытая середина
  * (минимум {@link MASK_MIN_HIDDEN} символов) и хвост — до 4 символов
  * («AKIA…MNOP», TC-F-2.1-2). На границе порога (len = 9) хвостовых видно 3,
- * чтобы скрыть минимум 2 символа середины. Строки короче порога 9 возвращаются
- * без изменений. Чистая и детерминированная.
+ * чтобы скрыть минимум 2 символа середины. Строки короче порога 9 маскируются
+ * ЦЕЛИКОМ («…», fix F-3 patch 1.0.1): короткие токены не должны утекать даже
+ * частично. Чистая и детерминированная.
  */
 export function maskSecret(secret: string): string {
 	if (secret.length < MASK_THRESHOLD) {
-		return secret;
+		return MASK_SEPARATOR;
 	}
 	const hidden = Math.max(secret.length - 2 * MASK_VISIBLE, MASK_MIN_HIDDEN);
 	return (

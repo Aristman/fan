@@ -36,6 +36,7 @@ import { statSync } from "node:fs";
 import path from "node:path";
 import { spawnSync as nodeSpawnSync } from "node:child_process";
 import { maskSecret, type ExternalMode, type ExternalToolsReport, type Finding, type Severity } from "./report.ts";
+import { sanitizeEvidence } from "./sanitize.ts";
 
 // ── Типы ────────────────────────────────────────────────────────────────────
 
@@ -365,8 +366,10 @@ const SEMGREP_SEVERITY: Readonly<Record<string, Severity>> = {
  * semgrep → Finding[]: scanner «external:semgrep», title содержит check_id,
  * severity ERROR→HIGH / WARNING→MEDIUM / INFO→INFO / иное→LOW, cwe из
  * extra.metadata.cwe (первый /^CWE-\d+/, без него «CWE-798»), confidence
- * «confirmed», evidence — extra.lines ?? extra.message. Битые элементы
- * пропускаются; мусорный корень → [].
+ * «confirmed», evidence — extra.lines ?? extra.message, санитизированный через
+ * sanitizeEvidence (patch 1.0.1 F-1: сырой код из вывода тулзы — недоверенный
+ * текст, секреты в нём маскируются — инвариант §2.3) и обрезанный до лимита.
+ * Битые элементы пропускаются; мусорный корень → [].
  */
 export function semgrepToFindings(output: unknown): Finding[] {
 	const root = asRecord(output);
@@ -396,7 +399,7 @@ export function semgrepToFindings(output: unknown): Finding[] {
 			file: normalizeFile(asString(typed.path) ?? ""),
 			line: typeof line === "number" && Number.isFinite(line) ? line : 0,
 			cwe: resolveSemgrepCwe(asRecord(extra?.metadata) ?? null),
-			evidence: (lines ?? message).trim().slice(0, MAX_EXTERNAL_EVIDENCE_LENGTH),
+			evidence: sanitizeEvidence((lines ?? message).trim()).slice(0, MAX_EXTERNAL_EVIDENCE_LENGTH),
 			description: message.trim() !== ""
 				? message.trim()
 				: `semgrep: срабатывание правила "${checkId}".`,
@@ -431,8 +434,20 @@ function semgrepArgs(root: string): string[] {
 	return ["scan", "--json", "--quiet", root];
 }
 
-/** JSON.parse без throw: мусор/пусто → null. */
+/** Предел размера JSON-вывода внешней тулзы (patch 1.0.1, F-5): больше —
+ * недоверенный вывод (защитная оценка по string.length ≈ байтам для ASCII). */
+export const MAX_PARSE_BYTES = 64 * 1024 * 1024;
+
+/** JSON.parse без throw: мусор/пусто → null; аномально огромный вывод —
+ * предупреждение в stderr + null (как мусорный: скан продолжается, отчёт
+ * остаётся валидным). */
 function parseJsonOrNull(stdout: string): unknown {
+	if (stdout.length > MAX_PARSE_BYTES) {
+		console.error(
+			`external: JSON-вывод внешней тулзы превышает ${MAX_PARSE_BYTES} байт — недоверенный вывод, пропущен`,
+		);
+		return null;
+	}
 	try {
 		return JSON.parse(stdout);
 	} catch {

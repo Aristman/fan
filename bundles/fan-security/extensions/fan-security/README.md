@@ -35,7 +35,7 @@ Installer авто-детектит bundle по поддиректориям `ex
 работает и для распакованного архива):
 
 ```bash
-fan store install ./fan-security-1.0.0.tar.gz
+fan store install ./fan-security-1.0.1.tar.gz
 ```
 
 После установки выполните `/reload` в сессии FAN.
