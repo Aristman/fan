@@ -17,7 +17,14 @@ import {
 } from "./file-state-manager.js";
 import { promoteAcceptedIdeas } from "./idea-promoter.js";
 import { MissionLoop, readMissionLoopState, writeLoopStateSync } from "./mission-loop.js";
-import { BOOTSTRAP_PLANNING_GUIDANCE, buildExecutionPrompt, IDEA_PLANNING_GUIDANCE } from "./prompt-builder.js";
+import {
+	BOOTSTRAP_PLANNING_GUIDANCE,
+	buildExecutionPrompt,
+	IDEA_PLANNING_GUIDANCE,
+	ITEM_SIZE_GUIDANCE,
+	PLANNING_ITEM_TEXT,
+	RECUR_GUIDANCE,
+} from "./prompt-builder.js";
 import { registerMissionSlashCommands, type SlashCommandRegister, type SlashCtx } from "./slash-commands.js";
 
 // ─── Test helpers ──────────────────────────────────────────────────────────
@@ -465,5 +472,51 @@ describe("prompt-builder: size-heuristic guidance for promoted ideas (F-22)", ()
 		const prompt = await buildExecutionPrompt(ideaOpts(item, roadmap, 1));
 		expect(prompt).not.toContain(IDEA_PLANNING_GUIDANCE);
 		expect(prompt).not.toContain(BOOTSTRAP_PLANNING_GUIDANCE);
+	});
+
+	// ── Anti-long-steps: ITEM_SIZE_GUIDANCE wiring (Task B) ──────────────────
+
+	it("(e) regular item → prompt contains ITEM_SIZE_GUIDANCE", async () => {
+		const roadmap = "- [x] Done thing\n- [ ] Plain small task\n";
+		const prompt = await buildExecutionPrompt(ideaOpts("Plain small task", roadmap, 1));
+		expect(prompt).toContain(ITEM_SIZE_GUIDANCE);
+	});
+
+	it("(f) planning item → no ITEM_SIZE_GUIDANCE (own bootstrap guidance)", async () => {
+		// isPlanningIteration requires a non-empty `## Goal` section in MISSION.md
+		writeFileSync(join(missionDir, "MISSION.md"), `${MISSION_TEMPLATE}\n## Goal\nBuild the thing\n`, "utf8");
+		const roadmap = `- [ ] ${PLANNING_ITEM_TEXT}\n`;
+		const prompt = await buildExecutionPrompt(ideaOpts(PLANNING_ITEM_TEXT, roadmap, 0));
+		expect(prompt).toContain(BOOTSTRAP_PLANNING_GUIDANCE);
+		expect(prompt).not.toContain(ITEM_SIZE_GUIDANCE);
+	});
+
+	it("(g) (idea:id) item → F-22 guidance instead of ITEM_SIZE_GUIDANCE", async () => {
+		const roadmap = "- [x] Done thing\n- [ ] Add export button (idea:idea-100)\n";
+		const prompt = await buildExecutionPrompt(ideaOpts("Add export button (idea:idea-100)", roadmap, 1));
+		expect(prompt).toContain(IDEA_PLANNING_GUIDANCE);
+		expect(prompt).not.toContain(ITEM_SIZE_GUIDANCE);
+	});
+
+	it("(h) [EPIC] item → no ITEM_SIZE_GUIDANCE (own delegation path)", async () => {
+		const item = "[EPIC] Big multi-module feature";
+		const roadmap = `- [x] Done thing\n- [ ] ${item}\n`;
+		const prompt = await buildExecutionPrompt(ideaOpts(item, roadmap, 1));
+		expect(prompt).not.toContain(ITEM_SIZE_GUIDANCE);
+	});
+
+	it("(i) recurring item → no ITEM_SIZE_GUIDANCE (tick semantics)", async () => {
+		const item = "Watch the loop (recur)";
+		const roadmap = `- [x] Done thing\n- [ ] ${item}\n`;
+		const prompt = await buildExecutionPrompt(ideaOpts(item, roadmap, 1));
+		expect(prompt).toContain(RECUR_GUIDANCE);
+		expect(prompt).not.toContain(ITEM_SIZE_GUIDANCE);
+	});
+
+	it("(j) bootstrap item → prompt contains the ~20–30 minutes sizing phrase", async () => {
+		writeFileSync(join(missionDir, "MISSION.md"), `${MISSION_TEMPLATE}\n## Goal\nBuild the thing\n`, "utf8");
+		const roadmap = "- [ ] Bootstrap mission: decompose the goal\n";
+		const prompt = await buildExecutionPrompt(ideaOpts("Bootstrap mission: decompose the goal", roadmap, 0));
+		expect(prompt).toContain("~20–30 minutes");
 	});
 });

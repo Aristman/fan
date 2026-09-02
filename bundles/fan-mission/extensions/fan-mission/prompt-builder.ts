@@ -29,7 +29,7 @@ export const PLANNING_ITEM_TEXT = "Plan: decompose mission Goal into ROADMAP ite
 
 /** Guidance line appended for bootstrap/planning iterations. */
 export const BOOTSTRAP_PLANNING_GUIDANCE =
-	"- This is the bootstrap iteration: decompose the mission Goal into concrete unchecked ROADMAP.md items (- [ ] ...) and replace/extend the roadmap. Keep items atomic and verifiable.";
+	"- This is the bootstrap iteration: decompose the mission Goal into concrete unchecked ROADMAP.md items (- [ ] ...) and replace/extend the roadmap. Keep items atomic — one focused change per item, completable and verifiable in a single iteration (~20–30 minutes); split bigger areas into separate items.";
 
 /**
  * F-22 size-heuristic: guidance appended for promoted idea items (marker
@@ -39,6 +39,16 @@ export const BOOTSTRAP_PLANNING_GUIDANCE =
  */
 export const IDEA_PLANNING_GUIDANCE =
 	"- This roadmap item is a newly promoted operator idea (marker `(idea:<id>)`). FIRST assess its size honestly. If it needs more than one atomic verifiable change (e.g. new integration surface, multi-step feature, several modules/files, config + code + docs) — do NOT implement everything in this single iteration: instead decompose the idea into concrete, atomic, verifiable unchecked ROADMAP.md items and insert them directly BELOW this item, then mark THIS item as done ([x] — planning complete) and end the iteration; the loop will pick up the new items one by one. If it is genuinely small (single focused change) — implement, verify and complete it directly in this iteration as usual. Do not decompose trivially small ideas; do not implement large ideas in one run.";
+
+/**
+ * Anti-long-steps: guidance appended for REGULAR roadmap items (not planning,
+ * not idea-promoted, not [EPIC], not recurring). Generalizes the F-22
+ * mechanics to any oversized item: before executing, the agent assesses the
+ * item's size; oversized items are decomposed into atomic sub-items instead of
+ * being attempted in one giant iteration.
+ */
+export const ITEM_SIZE_GUIDANCE =
+	"- Before starting, honestly assess the size of this roadmap item. If it clearly needs multiple unrelated changes or cannot be finished and verified in one focused iteration (~20–30 minutes) — do NOT attempt it all at once: decompose it into atomic, verifiable unchecked ROADMAP.md items and insert them directly BELOW this item, then mark THIS item as done ([x] — decomposed) and end the iteration; the loop will execute the new sub-items one by one. Do not split items that already fit in a single focused iteration.";
 
 /** Guidance line appended for recurring items (R2: from RECURRING.md). */
 export const RECUR_GUIDANCE =
@@ -199,6 +209,14 @@ export async function buildExecutionPrompt(opts: ExecutionPromptOptions): Promis
 	// (already guided by BOOTSTRAP_PLANNING_GUIDANCE).
 	const isIdeaIteration =
 		!isPlanningIteration && !opts.itemText.trimStart().startsWith(EPIC_MARKER) && isPromotedIdeaItem(opts.itemText);
+	// Anti-long-steps: ITEM_SIZE_GUIDANCE applies ONLY to regular items —
+	// excluded: planning iterations (own bootstrap guidance), promoted idea
+	// items (F-22 guidance), [EPIC] items (own delegation path), recurring
+	// items (tick semantics, never completed).
+	const isEpicItem = opts.itemText.trimStart().startsWith(EPIC_MARKER);
+	const isRecurringIteration = opts.recurring === true || isRecurringItem(opts.itemText);
+	const isRegularItemIteration =
+		!isPlanningIteration && !isIdeaIteration && !isEpicItem && !isRecurringIteration;
 
 	const assemble = (): string => {
 		const parts: string[] = [];
@@ -253,6 +271,11 @@ export async function buildExecutionPrompt(opts: ExecutionPromptOptions): Promis
 		// R2: recurring items (from RECURRING.md or legacy (recur) marker)
 		if (opts.recurring || isRecurringItem(opts.itemText)) {
 			parts.push(RECUR_GUIDANCE);
+		}
+		// Anti-long-steps: regular items get size-assessment guidance (see
+		// isRegularItemIteration above)
+		if (isRegularItemIteration) {
+			parts.push(ITEM_SIZE_GUIDANCE);
 		}
 		// ralph-loop (S4): fresh-session cold-start section (only when enabled)
 		if (opts.freshSession === true) {
