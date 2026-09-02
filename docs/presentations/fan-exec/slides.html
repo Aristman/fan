@@ -149,7 +149,7 @@
       <div class="arch-layer" style="border-color:var(--accent)"><span class="icon">⚙️</span><span class="ttl" style="color:var(--accent)">Runtime (ядро)</span><span class="desc">агент-петля · сессии (JSONL) · расширения и скиллы · MCP-интеграции</span></div>
       <div class="arch-arrow">▼</div>
       <div class="arch-row">
-        <div class="arch-layer"><span class="ttl">🎯 Оркестратор</span><span class="desc">координатор + 8 типов воркеров</span></div>
+        <div class="arch-layer"><span class="ttl">🎯 Оркестратор</span><span class="desc">координатор + 9 типов воркеров</span></div>
         <div class="arch-layer"><span class="ttl">🧠 Менеджер моделей</span><span class="desc">роутинг · fallback · бюджет</span></div>
         <div class="arch-layer"><span class="ttl">💾 SQLite + JSONL</span><span class="desc">сессии · бюджеты · настройки</span></div>
       </div>
@@ -167,7 +167,7 @@
       <div>
         <ul class="clean">
           <li><b>Координатор</b> разбивает задачу на подзадачи <small>и контролирует исполнение</small></li>
-          <li><b>8 специализированных воркеров</b> <small>explore · plan · implement · verify · bug-fix · code-research · tests-impl · docs-impl</small></li>
+          <li><b>9 специализированных воркеров</b> <small>explore · plan · implement · verify · security · bug-fix · code-research · tests-impl · docs-impl</small></li>
           <li><b>Верификация после каждого шага</b> <small>adversarial-проверка результатов</small></li>
           <li><b>Retry / fallback</b> <small>до 3 попыток с анализом ошибок</small></li>
         </ul>
@@ -233,7 +233,7 @@
     <h2>Чем FAN отличается от облачных ассистентов</h2>
     <div class="grid g3" style="margin-top:2rem">
       <div class="card"><h3>🔒 Данные не уходят</h3><p>Сессии, код, настройки — локально. Нет облачного сервера FAN вообще.</p></div>
-      <div class="card"><h3>🤖 Команда агентов</h3><p>Не один чат, а координатор + 8 воркеров с верификацией каждого шага.</p></div>
+      <div class="card"><h3>🤖 Команда агентов</h3><p>Не один чат, а координатор + 9 воркеров с верификацией каждого шага.</p></div>
       <div class="card"><h3>🖥 Мультиклиентность</h3><p>TUI, браузер, IDE, скрипты — один рантайм, единый контекст.</p></div>
       <div class="card"><h3>💰 Бюджет под контролем</h3><p>Лимиты, роутинг к дешёвым моделям, прозрачная статистика.</p></div>
       <div class="card"><h3>🏪 Расширяемость</h3><p>FAN Store, MCP-интеграции, собственные скиллы и расширения.</p></div>
@@ -261,7 +261,7 @@
     <p class="quote">FAN — приватный, многоагентный, расширяемый.</p>
     <div class="grid g3" style="margin-top:2rem">
       <div class="card"><h3>🔒 Приватность</h3><p>Данные не покидают машину пользователя</p></div>
-      <div class="card"><h3>🤖 Команда агентов</h3><p>Координатор + 8 воркеров с верификацией</p></div>
+      <div class="card"><h3>🤖 Команда агентов</h3><p>Координатор + 9 воркеров с верификацией</p></div>
       <div class="card"><h3>🖥 Мультиклиентность</h3><p>TUI · браузер · IDE · скрипты</p></div>
       <div class="card"><h3>💰 Контроль бюджета</h3><p>Лимиты, роутинг, прозрачная статистика</p></div>
       <div class="card"><h3>🏪 FAN Store</h3><p>Расширения, скиллы, бандлы — переносимы между экземплярами</p></div>

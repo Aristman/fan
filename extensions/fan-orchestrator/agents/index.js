@@ -2,6 +2,7 @@ import { type as exploreType, definition as exploreDef } from "./explore.js";
 import { type as planType, definition as planDef, PROMPT as PLAN_PROMPT } from "./plan.js";
 import { type as implementType, definition as implementDef } from "./implement.js";
 import { type as verifyType, definition as verifyDef } from "./verify.js";
+import { type as securityType, definition as securityDef } from "./security.js";
 import { type as bugFixType, definition as bugFixDef } from "./bug-fix.js";
 import { type as codeResearchType, definition as codeResearchDef } from "./code-research.js";
 import { type as testsImplType, definition as testsImplDef } from "./tests-impl.js";
@@ -12,6 +13,7 @@ export const AGENT_REGISTRY = {
     [planType]: planDef,
     [implementType]: implementDef,
     [verifyType]: verifyDef,
+    [securityType]: securityDef,
     [bugFixType]: bugFixDef,
     [codeResearchType]: codeResearchDef,
     [testsImplType]: testsImplDef,

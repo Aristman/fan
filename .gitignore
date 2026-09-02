@@ -19,6 +19,8 @@ packages/coding-agent/binaries/
 .env
 .env.local
 .env.*.local
+# Исключение: фикстура security-сканера (TC-F-2.2-3, fan-security) — только фейковые значения
+!extensions/fan-security/tests/fixtures/env-fixture/.env
 
 # Database files
 *.db

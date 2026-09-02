@@ -16,7 +16,7 @@
 Внедрить в fan-orchestrator настраиваемую температуру генерации для воркеров:
 
 - Общая температура по умолчанию для всех воркеров оркестратора.
-- Индивидуальная температура для каждого типа агента (explore, plan, implement, verify, bug-fix, code-research, tests-impl, docs-impl).
+- Индивидуальная температура для каждого типа агента (explore, plan, implement, verify, bug-fix, code-research, tests-impl, docs-impl, security).
 - Передача температуры в worker-процесс через CLI-флаг `--temperature`.
 - Поддержка CLI-флага `--temperature` в fan-coding-agent.
 
@@ -193,7 +193,8 @@
     "bug-fix": 0.1,
     "code-research": 0.1,
     "tests-impl": 0.1,
-    "docs-impl": 0.1
+    "docs-impl": 0.1,
+    "security": 0.1
   },
   "dangerousCommands": []
 }
@@ -267,7 +268,7 @@ fan --mode rpc --model claude-sonnet-4 --temperature 0.1
 
 2. **Индивидуальная температура по типам агентов**:
    - Вопрос: "Configure per-agent temperatures?"
-   - Если да — показать таблицу из 8 типов агентов с дефолтом `0.1`.
+   - Если да — показать таблицу из 9 типов агентов с дефолтом `0.1`.
    - Если нет — `agentTemperature` заполняется дефолтами `0.1` для всех агентов.
 
 ### 7.2 Пример результата
@@ -283,7 +284,8 @@ fan --mode rpc --model claude-sonnet-4 --temperature 0.1
     "bug-fix": 0.1,
     "code-research": 0.1,
     "tests-impl": 0.1,
-    "docs-impl": 0.1
+    "docs-impl": 0.1,
+    "security": 0.1
   }
 }
 ```

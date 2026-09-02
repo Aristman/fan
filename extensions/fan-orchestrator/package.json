@@ -1,6 +1,6 @@
 {
 	"name": "fan-orchestrator",
-	"version": "8.2.5",
+	"version": "8.3.0",
 	"description": "Многоагентный оркестратор для FAN — декомпозиция задач, координация воркеров, планирование и отслеживание прогресса.",
 	"type": "module",
 	"main": "./orchestrator-extension.js",

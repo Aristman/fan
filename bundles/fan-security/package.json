@@ -1,0 +1,7 @@
+{
+  "name": "fan-security",
+  "version": "1.0.1",
+  "description": "FAN Security bundle — практичный аудит безопасности: extension (CLI-сканеры секретов/CWE/зависимостей + /security-scan) и skill (SKILL.md-методология ручного аудита) одним пакетом",
+  "license": "MIT",
+  "keywords": ["fan", "security", "secrets", "cwe", "audit", "dependencies", "bundle"]
+}

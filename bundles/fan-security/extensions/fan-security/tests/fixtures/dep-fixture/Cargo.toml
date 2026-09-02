@@ -1,0 +1,11 @@
+# FIXTURE (TC-F-2.4-a) — фейковый Rust-манифест для мок-аудита cargo audit.
+# Крейт fake-crate не существует; содержимое только для тестов парсера tests/dep-audit.test.mjs.
+# fake-crate уязвим в мок-выводе (RUSTSEC-2026-0001, aliases: CVE-2026-424242, patched: >=0.2.0).
+
+[package]
+name = "dep-fixture"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+fake-crate = "0.1"

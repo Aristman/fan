@@ -6,7 +6,7 @@
 
 - **Multi-provider AI** — OpenAI, Anthropic, Google, Groq, xAI, Mistral, Azure, Vertex AI, and 40+ more
 - **Interactive TUI** — streaming, markdown rendering, thinking blocks, tool execution widgets
-- **Multi-agent orchestrator** — coordinator mode, 8 worker types (explore, plan, implement, verify, bug-fix, code-research, docs-impl, tests-impl), single mode, live tool call display
+- **Multi-agent orchestrator** — coordinator mode, 9 worker types (explore, plan, implement, verify, security, bug-fix, code-research, docs-impl, tests-impl), single mode, live tool call display
 - **Model management** — routing rules, fallback chains, budget tracking, per-session settings
 - **REST API + WebSocket server** — 14 endpoints, token auth, background daemon mode
 - **Web dashboard** — Lit-based, real-time streaming, model settings, budget visualization
@@ -63,6 +63,7 @@ FAN includes a built-in multi-agent orchestrator with specialized workers:
 | 📋 **plan** | Create implementation plans from gathered context | Read-only |
 | 🔧 **implement** | Write code, make changes, run commands | Full |
 | 🛡️ **verify** | Code review, quality checks, security audit | Read-only |
+| 🔒 **security** | Security Auditor, read-only, deep security audit: OWASP/CWE, secrets, deps, IaC, configs | Read-only |
 | 🐛 **bug-fix** | Targeted bug reproduction, diagnosis, and fix | Full |
 | 🔬 **code-research** | Deep code analysis, dependency tracing | Read-only |
 | 📝 **docs-impl** | Write and update documentation | Full |
@@ -137,7 +138,7 @@ Client (TUI / Dashboard / IDE / SDK)
     │    │            │
 Model   │       Orchestrator
 Manager │       (coordinator mode,
-(routing,│       8 worker types,
+(routing,│       9 worker types,
 fallback,│       single mode)
 budget)  │
     │    │

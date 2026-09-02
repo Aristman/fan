@@ -3,8 +3,8 @@
  *
  * Two-level TUI component that replaces the full wizard when editing an
  * existing preset:
- *   Level 1 (worker list): provider mode toggle, default model, 8 worker
- *           rows, Save / Cancel footer actions.
+ *   Level 1 (worker list): provider mode toggle, default model, one row per
+ *           registered worker agent, Save / Cancel footer actions.
  *   Level 2 (model picker): all models from all providers (current provider
  *           first, others with `· provider` suffix), plus a reset entry.
  *
@@ -18,14 +18,17 @@
  * should detect this (isCustomUIAvailable) and fall back to the wizard flow.
  */
 import { Container, Spacer, Text, getKeybindings } from "@seaagents/fan-tui";
+import { getAgentTypes } from "./agents/index.js";
 
-export const AGENT_TYPES = [
-    "explore", "plan", "implement", "verify", "bug-fix", "code-research", "tests-impl", "docs-impl",
-];
+/** Built-in agent types — accessor over the agent registry (single source of truth). */
+export function AGENT_TYPES() {
+    return getAgentTypes();
+}
 
 const AGENT_ICONS = {
     explore: "🔍", plan: "📋", implement: "🔧", verify: "✅",
     "bug-fix": "🐛", "code-research": "🔬", "tests-impl": "🧪", "docs-impl": "📝",
+    security: "🔒",
 };
 
 const PROVIDER_MODES = ["cloud", "local", "auto"];
@@ -144,7 +147,7 @@ class ModelEditorComponent extends Container {
         return [
             { kind: "providerMode" },
             { kind: "default" },
-            ...AGENT_TYPES.map((worker) => ({ kind: "worker", worker })),
+            ...AGENT_TYPES().map((worker) => ({ kind: "worker", worker })),
             { kind: "save" },
             { kind: "cancel" },
         ];

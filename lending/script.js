@@ -223,8 +223,8 @@
             version: '5.4.1',
             type: 'extension',
             icon: '[ORC]',
-            description: 'Мульти-агентная система декомпозиции и координации задач. 8 типов воркеров, loop prevention, RPC workers, динамический coordinator prompt, task pipeline, permission system.',
-            details: 'Оркестратор v5.4.1: loop prevention (hard-fail no-op detection), исправленные имена тулов в prompt, 8 агентов (explore, plan, implement, verify, bug-fix, code-research, tests-impl, docs-impl). RPC-воркеры: каждый воркер запускается в отдельном процессе fan с JSONL stdin/stdout. Слот-пул: только 1 implement-воркер одновременно, остальные — до maxParallel. Permission system: обнаружение опасных команд (rm -rf, git push --force, publish). Динамический coordinator prompt: адаптируется под текущее состояние задач и конфигурацию. Task pipeline: pending → in_progress → completed/failed/blocked. Agent discovery: built-in + user (~/.fan/agent/agents/) + project (.fan/agents/).',
+            description: 'Мульти-агентная система декомпозиции и координации задач. 9 типов воркеров, loop prevention, RPC workers, динамический coordinator prompt, task pipeline, permission system.',
+            details: 'Оркестратор v5.4.1: loop prevention (hard-fail no-op detection), исправленные имена тулов в prompt, 9 агентов (explore, plan, implement, verify, security, bug-fix, code-research, tests-impl, docs-impl). RPC-воркеры: каждый воркер запускается в отдельном процессе fan с JSONL stdin/stdout. Слот-пул: только 1 implement-воркер одновременно, остальные — до maxParallel. Permission system: обнаружение опасных команд (rm -rf, git push --force, publish). Динамический coordinator prompt: адаптируется под текущее состояние задач и конфигурацию. Task pipeline: pending → in_progress → completed/failed/blocked. Agent discovery: built-in + user (~/.fan/agent/agents/) + project (.fan/agents/).',
             tools: [
                 'delegate_task — запуск одного, цепочки или параллельных воркеров',
                 'list_tasks — просмотр задач с фильтрацией по статусу',

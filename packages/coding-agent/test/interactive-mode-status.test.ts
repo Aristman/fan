@@ -182,4 +182,63 @@ describe("InteractiveMode.showLoadedResources", () => {
 		expect(output).toContain("[Skill conflicts]");
 		expect(output).not.toContain("[Skills]");
 	});
+
+	test("shows short directory names for third-party extensions", () => {
+		const fakeThis = createShowLoadedResourcesThis({ quietStartup: false });
+		fakeThis.getExtensionDisplayName = (InteractiveMode as any).prototype.getExtensionDisplayName;
+
+		(InteractiveMode as any).prototype.showLoadedResources.call(fakeThis, {
+			extensions: [
+				{
+					path: "C:/Users/User/.fan/agent/extensions/fan-loop/index.ts",
+					sourceInfo: { scope: "user" },
+				},
+				{
+					path: "C:/Users/User/.fan/agent/extensions/stack-overflow-agents/index.ts",
+					sourceInfo: { scope: "user" },
+				},
+				{
+					path: "C:/Users/User/.fan/agent/extensions/voice-ollama-tui/index.ts",
+					sourceInfo: { scope: "user" },
+				},
+			],
+			force: false,
+		});
+
+		const output = renderAll(fakeThis.chatContainer);
+		expect(output).toContain("[Extensions]");
+		expect(output).toContain("fan-loop");
+		expect(output).toContain("stack-overflow-agents");
+		expect(output).toContain("voice-ollama-tui");
+		expect(output).not.toContain("C:/Users/User/.fan/agent/extensions/voice-ollama-tui/index.ts");
+	});
+});
+
+describe("InteractiveMode.getExtensionDisplayName", () => {
+	const getName = (path: string): string =>
+		(InteractiveMode as any).prototype.getExtensionDisplayName.call({} as any, path);
+
+	test("uses the first segment inside the extensions directory", () => {
+		expect(getName("C:/Users/User/.fan/agent/extensions/fan-loop/index.ts")).toBe("fan-loop");
+		expect(getName("C:/Users/User/.fan/agent/extensions/stack-overflow-agents/index.ts")).toBe(
+			"stack-overflow-agents",
+		);
+		expect(getName("C:/Users/User/.fan/agent/extensions/voice-ollama-tui/index.ts")).toBe("voice-ollama-tui");
+	});
+
+	test("uses the first segment for nested entry files", () => {
+		expect(getName("/home/u/.fan/agent/extensions/fan-orchestrator/dist/index.js")).toBe("fan-orchestrator");
+		expect(getName("/home/u/.fan/agent/extensions/my-tool/dist/index.js")).toBe("my-tool");
+	});
+
+	test("handles Windows backslash separators", () => {
+		expect(getName("C:\\Users\\User\\.fan\\agent\\extensions\\voice-ollama-tui\\index.ts")).toBe(
+			"voice-ollama-tui",
+		);
+	});
+
+	test("falls back to file basename without extension outside an extensions directory", () => {
+		expect(getName("/some/path/my-extension.ts")).toBe("my-extension");
+		expect(getName("my-extension.js")).toBe("my-extension");
+	});
 });

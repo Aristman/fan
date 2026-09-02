@@ -1,0 +1,39 @@
+# DEPLOY.toml — FAN Package Deployment Manifest
+# Schema version: 1
+
+# Bundle: extension (CLI-сканеры + /security-scan) и skill (SKILL.md-методология)
+# packaged together for one-click install. Installer detects the bundle by the
+# extensions/ + skills/ subdirectories (detectType checks them BEFORE SKILL.md),
+# поэтому явный --type при установке не нужен.
+
+[package]
+name = "fan-security"
+type = "bundle"
+
+include = [
+    "package.json",
+    "README.md",
+    "DEPLOY.toml",
+    "extensions/**/*.ts",
+    "extensions/**/package.json",
+    "extensions/**/*.md",
+    "skills/**/SKILL.md",
+    "skills/**/package.json",
+    "skills/**/*.md",
+]
+
+exclude = [
+    "**/node_modules/**",
+    "**/tests/**",
+    "**/fixtures/**",
+    "**/*.test.*",
+    "**/vitest.config.*",
+    ".env",
+    ".env.*",
+    "**/dist/**",
+    "*.lock",
+    ".git/",
+    ".DS_Store",
+]
+
+preserve = []

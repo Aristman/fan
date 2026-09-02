@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { showModelEditor } from "../model-editor.js";
+import { showModelEditor, AGENT_TYPES } from "../model-editor.js";
 
 const mockTheme = { fg: (_color, s) => s, bold: (s) => s };
 
@@ -38,12 +38,14 @@ function makeTuiCtx() {
   return { ctx, state };
 }
 
-// List row indices: 0 providerMode, 1 default, 2-9 workers, 10 save, 11 cancel
+// List row indices: 0 providerMode, 1 default, 2..(N+1) workers, then save, cancel.
+// Worker count derives from the agent registry (single source of truth since F-0.1).
+const WORKER_COUNT = AGENT_TYPES().length;
 const ROW_PROVIDER_MODE = 0;
 const ROW_DEFAULT = 1;
 const ROW_EXPLORE = 2; // first worker
-const ROW_SAVE = 10;
-const ROW_CANCEL = 11;
+const ROW_SAVE = 2 + WORKER_COUNT;
+const ROW_CANCEL = ROW_SAVE + 1;
 
 function moveTo(component, rowIndex) {
   // navigate up to top first, then down to the target row

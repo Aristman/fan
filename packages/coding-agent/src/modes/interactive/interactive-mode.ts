@@ -882,6 +882,23 @@ export class InteractiveMode {
 		return this.formatDisplayPath(fullPath);
 	}
 
+	/**
+	 * Derive a short display name for an extension from its entry file path.
+	 * The extension name is always the first path segment inside the "extensions"
+	 * directory that contains the entry file (which may be nested, e.g. dist/index.js).
+	 * Falls back to the file basename without extension for other paths.
+	 */
+	private getExtensionDisplayName(path: string): string {
+		const segments = path.split("\\").join("/").split("/");
+		const extensionsIndex = segments.lastIndexOf("extensions");
+		if (extensionsIndex >= 0 && extensionsIndex + 1 < segments.length) {
+			return segments[extensionsIndex + 1];
+		}
+		const base = segments[segments.length - 1];
+		const dotIndex = base.lastIndexOf(".");
+		return dotIndex > 0 ? base.slice(0, dotIndex) : base;
+	}
+
 	private getDisplaySourceInfo(sourceInfo?: SourceInfo): {
 		label: string;
 		scopeLabel?: string;
@@ -1160,21 +1177,7 @@ export class InteractiveMode {
 				(ext) => ext.sourceInfo?.scope !== "temporary" && !ext.path.startsWith("<inline"),
 			);
 			if (userExtensions.length > 0) {
-				const compactExtNames = userExtensions
-					.map((ext) => {
-						const basename = ext.path
-							.replace(/\\/g, "/")
-							.replace(/.*\/(fan-[^/]+|stack-overflow-[^/]+)\/.*/, "$1");
-						return (
-							basename ||
-							ext.path
-								.split("/")
-								.pop()
-								?.replace(/\.(ts|js)$/, "") ||
-							ext.path
-						);
-					})
-					.join(", ");
+				const compactExtNames = userExtensions.map((ext) => this.getExtensionDisplayName(ext.path)).join(", ");
 				this.chatContainer.addChild(
 					new Text(`${sectionHeader("Extensions", "mdHeading")}\n  ${compactExtNames}`, 0, 0),
 				);

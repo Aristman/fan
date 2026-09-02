@@ -1,5 +1,5 @@
 # Documentation Manifest
-> Last updated: 2026-08-24 (bundle fan-mission 1.0.0 testing docs added)
+> Last updated: 2026-09-01 (CHANGELOG: подсекция «Fixed — fan-security 1.0.1» сверена с кодом; добавлены записи fan-security)
 > Comprehensive index of all project documentation.
 > Maintainer: docs-impl agent
 
@@ -12,7 +12,7 @@
 | `SETUP.md` | ✅ | Полное руководство по настройке |
 | `MIGRATION.md` | ✅ | Migration from upstream fan/pi |
 | `CONTRIBUTING.md` | ✅ | Contribution guidelines |
-| `CHANGELOG.md` | ✅ | FAN changelog — [Unreleased]: сверх-оркестратор этапы 0+1; релизы 0.2.0 → 2.5.1 |
+| `CHANGELOG.md` | ✅ | FAN changelog — [Unreleased]: security-worker + fan-security 1.0.1 (F-1..F-6 сверены с кодом), сверх-оркестратор этапы 0+1; релизы 0.2.0 → 2.5.1 |
 | `docs/guides/quick-start.md` | ✅ | Quick start stub — redirects to QUICK-START.md |
 | `docs/guides/configuration.md` | ✅ | Full settings reference |
 | `docs/guides/orchestrator.md` | ✅ | Orchestrator user guide (v7.10.0: `/orchestrator models`, named presets, permission approval, slot pools, Pipeline Mode v3.1.0) |
@@ -37,6 +37,8 @@
 | `docs/specs/spec_filin-lightllm-provider_2026-04-27.md` | ✅ | Filin-LightLLM provider specification |
 | `docs/specs/spec_feature-roadmap_2026-05-28.md` | ✅ | Feature-roadmap skill specification |
 | `docs/specs/spec_feature-pipeline_2026-05-29.md` | ✅ | Feature-pipeline skill specification |
+| `docs/specs/spec_security-worker_2026-08-31.md` | ✅ | Security-worker specification (§2.3 маскирование, §3.3 exit-коды, §4/§4.1 обход ФС, §6.1/§6.2 схема отчёта) |
+| `docs/research/security-worker/ANALYSIS.md` | ✅ | Security-worker research & analysis |
 | `docs/specs/migrate-store-url-2026-05-11.md` | ✅ | FAN Store server URL migration spec |
 | `docs/specs/MVP-SPEC.md` | ⚠️ | Archived (superseded by runtime-agent spec, web SaaS concept) |
 | `docs/orchestrator-comparison.md` | ⚠️ | Pi Sample vs FAN Copy comparison — содержит удалённые фичи (parallel/chain), исправлено частично |
@@ -65,6 +67,8 @@
 | `tools/fan-store-server/GUIDE.md` | ✅ | FAN Store server guide |
 | `extensions/fan-orchestrator/README.md` | ✅ | FAN Orchestrator v7.10.0 — `/orchestrator models`, named presets, multi-provider lists, permission approval, broker-handler; + task list persistence (F-48: `TaskManager` serialize/deserialize via session JSONL, доска переживает рестарт) |
 | `extensions/fan-mission/` | ✅ | Mission loop extension (F-08..F-22) — file-state-manager, mission-loop, slash-commands, mission-widget, templates/{default,refactor}; + promise-parser, verification-ladder/config, idea-generator, idea-scorer, metrics-collector |
+| `bundles/fan-security/README.md` | ✅ | Bundle FAN Security 1.0.1 — extension + skill |
+| `bundles/fan-security/extensions/fan-security/README.md` | ✅ | fan-security extension 1.0.1 — 3 CLI-сканера, `/security-scan`, patch 1.0.1 (F-1..F-6) |
 | `extensions/fan-scheduler/` | ✅ | Cron tick scheduler (F-13) — 5-field cron со строгой валидацией, I4 тики |
 | `extensions/fan-webhook/` | ✅ | Hono webhook server (F-14) — steer/followUp dispatch на порту 9090 |
 
@@ -132,4 +136,4 @@
 
 All 5 package READMEs have been created — status updated to ✅.
 
-Total: **64 tracked documents** (60 ✅, 4 ⚠️, 0 ❌)
+Total: **68 tracked documents** (64 ✅, 4 ⚠️, 0 ❌)

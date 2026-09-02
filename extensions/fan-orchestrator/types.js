@@ -1,21 +1,16 @@
 /**
  * FAN Orchestrator — shared type declarations (JS runtime shapes)
  *
- * This module contains no runtime logic. It re-exports type-like constants
- * so that the extension can import from "./types.js" consistently.
+ * This module contains no runtime logic beyond constants and registry-backed
+ * accessors so that the extension can import from "./types.js" consistently.
  */
 
-/** Valid worker/agent types */
-export const WORKER_TYPES = [
-  "explore",
-  "plan",
-  "implement",
-  "verify",
-  "bug-fix",
-  "code-research",
-  "tests-impl",
-  "docs-impl",
-];
+import { getAgentTypes } from "./agents/index.js";
+
+/** Valid worker/agent types — accessor over the agent registry (single source of truth). */
+export function WORKER_TYPES() {
+  return getAgentTypes();
+}
 
 export const PROVIDER_MODES = ["auto", "cloud", "local"];
 
