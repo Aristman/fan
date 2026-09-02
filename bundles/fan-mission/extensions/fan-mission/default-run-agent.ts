@@ -20,45 +20,20 @@
 //      response = текст последнего assistant с непустым текстом;
 //      costTokens = Σ usage.totalTokens; costUsd = Σ usage.cost.total.
 //      stopReason "error"/"aborted" без валидного <promise>-тега → FAILED-тег.
-//   6. timeout/settle всегда возвращают <promise>FAILED:...</promise>,
+//   6. settle всегда возвращает <promise>FAILED:...</promise>,
 //      НИКОГДА пустую строку (пустая → ложный COMPLETE → коммит
 //      невыполненного item).
+//
+// Per-step timeout (runagent_timeout_min) УБРАН (hard-remove): без watchdog'а
+// для сабагентов он резолвил waiter в FAILED, НЕ прерывая агента, — миссия
+// уезжала дальше и клала следующий промпт в followUp живого агента. Таймеров
+// на прогон нет; settle() на shutdown/pause сохранён.
 
 import type { AgentEndEvent, ExtensionAPI, IterationBudgetExceededEvent } from "@seaagents/fan-coding-agent";
 import { parsePromise } from "./promise-parser.js";
 import type { RunAgent } from "./session-executor.js";
 
-/** Дефолтный таймаут ожидания agent_end: 0 = бесконечно (таймер не ставится). */
-export const DEFAULT_TIMEOUT_MS = 0;
-
-/** Минимальный таймаут (1 минута). */
-const MIN_TIMEOUT_MS = 60_000;
-
-/** Максимальный таймаут (8 часов). */
-const MAX_TIMEOUT_MS = 480 * 60_000;
-
-/**
- * Вычислить таймаут runAgent из frontmatter MISSION.md.
- * Читает поле `runagent_timeout_min` (минуты); валидирует границы 1–480.
- * При отсутствии или невалидном значении — возвращает дефолт (0 = бесконечно).
- *
- * Используется в index.ts (wireMission) для проброса таймаута в
- * createDefaultRunAgent при создании runAgent для каждой конкретной миссии.
- */
-export function resolveRunAgentTimeoutMs(frontmatter: Record<string, unknown>): number {
-	const raw = frontmatter.runagent_timeout_min;
-	if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) {
-		const ms = raw * 60_000;
-		if (ms >= MIN_TIMEOUT_MS && ms <= MAX_TIMEOUT_MS) {
-			return ms;
-		}
-	}
-	return DEFAULT_TIMEOUT_MS;
-}
-
 export interface DefaultRunAgentOptions {
-	/** Таймаут ожидания завершения turn (по умолчанию 0 = бесконечно). */
-	timeoutMs?: number;
 	/** DI часов (для тестов); по умолчанию Date.now. */
 	now?: () => number;
 }
@@ -137,10 +112,10 @@ function isAssistantLike(msg: unknown): msg is {
 /**
  * Production runAgent: prompt → fan.sendUserMessage(deliverAs:"followUp") →
  * ожидание agent_end с нашим prompt в messages → последний assistant-текст +
- * Σ usage. Single-flight; timeout/settle → FAILED-тег.
+ * Σ usage. Single-flight; settle (shutdown/pause) → FAILED-тег. Per-step
+ * таймаута НЕТ (убран — см. header).
  */
 export function createDefaultRunAgent(fan: ExtensionAPI, opts?: DefaultRunAgentOptions): DefaultRunAgentHandle {
-	const timeoutMs = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 	const now = opts?.now ?? Date.now;
 
 	const state: { pending: Pending | null; budgetExceeded: { tokensUsed: number; costUsed: number } | null } = {
@@ -255,20 +230,6 @@ export function createDefaultRunAgent(fan: ExtensionAPI, opts?: DefaultRunAgentO
 		}
 		return new Promise<RunAgentResult>((resolve) => {
 			const pending: Pending = { prompt, resolve, timer: null, sentAt: now() };
-			if (timeoutMs > 0) {
-				const timer = setTimeout(() => {
-					if (state.pending !== pending) {
-						return;
-					}
-					clearPending(pending);
-					console.warn(`[fan-mission] runAgent timeout after ${timeoutMs}ms`);
-					resolve(failed(`runAgent timeout after ${timeoutMs}ms`));
-				}, timeoutMs);
-				if (typeof timer.unref === "function") {
-					timer.unref();
-				}
-				pending.timer = timer;
-			}
 			// pending устанавливается ДО sendUserMessage (race-guard: agent_end
 			// может прийти синхронно/мгновенно в некоторых runtime-конфигурациях).
 			// Флаг iteration_budget_exceeded сбрасывается на новый прогон.

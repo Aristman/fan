@@ -11,9 +11,9 @@
 //     и идемпотентен для того же missionDir.
 //     Дефолтный runAgent (без opts.runAgent) — createDefaultRunAgent из
 //     ./default-run-agent.js: prompt → sendUserMessage(followUp) → ожидание
-//     agent_end → последний assistant-текст + Σ usage (single-flight,
-//     timeout = opts.runAgentTimeoutMs ?? 0 (бесконечно)). shutdown() осаживает
-//     активный waiter дефолтного runAgent FAILED-тегом ДО abort loop.
+//     agent_end → последний assistant-текст + Σ usage (single-flight; per-step
+//     таймаут убран — см. default-run-agent.ts). shutdown() осаживает активный
+//     waiter дефолтного runAgent FAILED-тегом ДО abort loop.
 //   export default missionExtension(fan) — фабрика расширения: регистрирует
 //     7 slash-команд /mission:* (DI через fan.registerCommand), виджет
 //     (f9, uiEvents = fan.events), хуки session_start (скан
@@ -37,7 +37,7 @@ import process from "node:process";
 import type { ExtensionAPI } from "@seaagents/fan-coding-agent";
 import type { KeyId } from "@seaagents/fan-tui";
 import { createOperatorDecisionPrompter, type OperatorDecisionUI } from "./decision-dialog.js";
-import { createDefaultRunAgent, resolveRunAgentTimeoutMs } from "./default-run-agent.js";
+import { createDefaultRunAgent } from "./default-run-agent.js";
 import { compactStateIfNeeded, readMission, readRecurring, writeMissionStatus } from "./file-state-manager.js";
 import { createGitAdapter } from "./git-adapter.js";
 import { promoteAcceptedIdeas } from "./idea-promoter.js";
@@ -83,8 +83,6 @@ export interface MissionWireOptions {
 	runAgent?: RunAgent;
 	/** Дефолтный deliverAs для actions.sendMessage (по умолчанию "steer"). */
 	streamingBehavior?: "steer" | "followUp";
-	/** Таймаут дефолтного runAgent (мс; по умолчанию 0 = бесконечно). */
-	runAgentTimeoutMs?: number;
 	/** F-48.5: таймаут ожидания ответа EPIC-делегирования (мс; default 30 мин). */
 	delegationTimeoutMs?: number;
 	/** ralph-loop (S5): provider текущего session-файла — parentSession для
@@ -116,10 +114,8 @@ export interface MissionWiring {
 export function wireMission(fan: ExtensionAPI, opts?: MissionWireOptions): MissionWiring {
 	// Дефолтный runAgent создаётся только при отсутствии DI-варианта (не нужно
 	// подписываться на agent_end в тестах с mock runAgent).
-	// let — пересоздаётся при per-mission timeout (attachMission).
-	let defaultHandle = opts?.runAgent ? null : createDefaultRunAgent(fan, { timeoutMs: opts?.runAgentTimeoutMs });
-	let currentTimeoutMs: number | undefined = opts?.runAgentTimeoutMs;
-	let runAgent: RunAgent = defaultHandle ? defaultHandle.runAgent : (opts?.runAgent as RunAgent);
+	const defaultHandle = opts?.runAgent ? null : createDefaultRunAgent(fan);
+	const runAgent: RunAgent = defaultHandle ? defaultHandle.runAgent : (opts?.runAgent as RunAgent);
 
 	let loop: MissionLoop | null = null;
 	let attachedDir: string | null = null;
@@ -174,22 +170,6 @@ export function wireMission(fan: ExtensionAPI, opts?: MissionWireOptions): Missi
 	};
 
 	const attachMission = (missionDir: string): MissionLoop => {
-		// per-mission runAgent timeout из frontmatter MISSION.md (runagent_timeout_min, 1–480 мин)
-		let missionTimeoutMs: number | undefined;
-		try {
-			const raw = readFileSync(join(missionDir, "MISSION.md"), "utf8");
-			const m = raw.match(/^runagent_timeout_min\s*:\s*(\d+)\s*$/m);
-			if (m) missionTimeoutMs = resolveRunAgentTimeoutMs({ runagent_timeout_min: Number(m[1]) });
-		} catch {
-			// MISSION.md не читается — дефолтный таймаут wire-уровня
-		}
-		if (defaultHandle && missionTimeoutMs !== undefined && missionTimeoutMs !== currentTimeoutMs) {
-			defaultHandle.settle("re-attach: per-mission timeout");
-			defaultHandle = createDefaultRunAgent(fan, { timeoutMs: missionTimeoutMs });
-			runAgent = defaultHandle.runAgent;
-			currentTimeoutMs = missionTimeoutMs;
-		}
-
 		if (loop && attachedDir === missionDir) {
 			return loop; // идемпотентен для того же dir — без двойного wiring
 		}
