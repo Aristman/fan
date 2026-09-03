@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.8.9] / 2026-09-03
+
+### Fixed — compaction reasoning on thinking models
+
+- **Compaction "Turn prefix summarization" and branch summarization now pass
+  `reasoning: "high"` for reasoning models** (`model.reasoning === true`),
+  fixing HTTP 400 error *"This model always engages in thinking and cannot be
+  disabled"* on `glm-5.3` / `glm-5.3-turbo` (zai `thinkingFormat`) during
+  compaction. Non-reasoning models are unaffected (option omitted).
+  Files: `packages/coding-agent/src/core/compaction/compaction.ts`,
+  `packages/coding-agent/src/core/compaction/branch-summarization.ts`.
+- Version bump: root `fan` 2.8.8 → 2.8.9,
+  `@seaagents/fan-coding-agent` 2.9.1 → 2.9.2.
+
 ## [Unreleased] / 2026-08-31
 
 ### Added — Security-worker (agent type `security` + extension `fan-security`)

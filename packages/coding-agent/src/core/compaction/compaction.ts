@@ -806,10 +806,14 @@ async function generateTurnPrefixSummary(
 		},
 	];
 
+	const completionOptions = model.reasoning
+		? { maxTokens, signal, apiKey, headers, reasoning: "high" as const }
+		: { maxTokens, signal, apiKey, headers };
+
 	const response = await completeSimple(
 		model,
 		{ systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages },
-		{ maxTokens, signal, apiKey, headers },
+		completionOptions,
 	);
 
 	if (response.stopReason === "error") {
