@@ -5,6 +5,8 @@
  * Uses the subagent runner to spawn fna subprocesses.
  */
 import * as os from "node:os";
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import { StringEnum } from "@seaagents/fan-ai";
 import { getMarkdownTheme } from "@seaagents/fan-coding-agent";
 import { Container, Markdown, Spacer, Text } from "@seaagents/fan-tui";
@@ -352,7 +354,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                     // Chain no-duplication rule: do NOT inject previousOutput into previousFindings when the
                     // task uses the {previous} placeholder (the output is already inlined in the task text).
                     const usesPreviousPlaceholder = step.task.includes("{previous}");
-                    let stepContext = mergeContext(step.context, autoContext);
+                    let stepContext = enrichWorkerContext(step.agent, mergeContext(step.context, autoContext));
                     if (previousOutput && !usesPreviousPlaceholder && i > 0) {
                         stepContext = {
                             ...(stepContext ?? {}),
@@ -535,7 +537,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                                 allResults[index] = { ...allResults[index], ..._cr, exitCode: -1 };
                                 emitParallelUpdate();
                             }
-                        }, undefined, mergeContext(t.context, autoContext));
+                        }, undefined, enrichWorkerContext(t.agent, mergeContext(t.context, autoContext)));
                     } catch (workerErr) {
                         const msg = workerErr instanceof Error ? workerErr.message : String(workerErr);
                         const now = Date.now();
@@ -613,7 +615,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                 updateWorker(workerId, { abortController: singleAbort });
                 let result;
                 try {
-                    result = await runSingleAgent(ctx.cwd, agents, params.agent, params.task, workerTemperature, params.cwd, undefined, singleAbort.signal, singleUpdate, undefined, mergeContext(params.context, autoContext));
+                    result = await runSingleAgent(ctx.cwd, agents, params.agent, params.task, workerTemperature, params.cwd, undefined, singleAbort.signal, singleUpdate, undefined, enrichWorkerContext(params.agent, mergeContext(params.context, autoContext)));
                 } catch (workerErr) {
                     const msg = workerErr instanceof Error ? workerErr.message : String(workerErr);
                     const now = Date.now();
@@ -1588,5 +1590,33 @@ Each subagent runs in an isolated context window — it cannot see the main conv
             };
         },
     });
+}
+
+/**
+ * F-13: агент-специфичное обогащение контекста воркера перед запуском (runSingleAgent).
+ *
+ * Для code-review инъектирует constraint `CODE_REVIEW_RULES_DIR=<abs>` — абсолютный путь
+ * к каталогу правил extension (`<dir of orchestrator-tools.js>/review-rules`). Воркер-промпт
+ * (agents/code-review.md, STEP 2) читает constraint и загружает правила оттуда. Путь считается
+ * относительно этого модуля (fileURLToPath(import.meta.url), ESM — __dirname нет), поэтому
+ * резолвится и в dev (extensions/fan-orchestrator), и в установленном extension
+ * (~/.fan/agent/extensions/fan-orchestrator), независимо от cwd процесса.
+ *
+ * Для остальных агентов (и не-объектного context) — no-op: контекст не мутируется.
+ */
+const ORCHESTRATOR_MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
+export function enrichWorkerContext(agent, context) {
+    if (agent !== "code-review" || !context || typeof context !== "object")
+        return context;
+    // Иммутабельный enrich: mergeContext может вернуть autoContext ПО ССЫЛКЕ
+    // (explicit === undefined, context-builder.js), поэтому мутация context.constraints
+    // утекала бы в общий autoContext и в контексты следующих шагов chain (F-13 fix).
+    return {
+        ...context,
+        constraints: [
+            ...(context.constraints ?? []),
+            `CODE_REVIEW_RULES_DIR=${path.join(ORCHESTRATOR_MODULE_DIR, "review-rules")}`,
+        ],
+    };
 }
 //# sourceMappingURL=orchestrator-tools.js.map
