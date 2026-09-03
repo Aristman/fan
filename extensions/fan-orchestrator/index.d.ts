@@ -1,5 +1,5 @@
 export type { AgentScope } from "./agents.js";
-export { COORDINATOR_PROMPT, discoverAgents, formatAgentList, formatTaskNotification, PLANNING_PROMPT, parseVerdict, } from "./agents.js";
+export { COORDINATOR_PROMPT, discoverAgents, formatAgentList, formatTaskNotification, PLANNING_PROMPT, parseVerdict, severityToVerdict, } from "./agents.js";
 export { DEFAULTS, getCloudHealthCached, getCloudStatus, loadConfig, resolveModel, } from "./config.js";
 export { default, orchestratorExtension } from "./orchestrator-extension.js";
 export { isDangerousCommand } from "./permissions.js";
