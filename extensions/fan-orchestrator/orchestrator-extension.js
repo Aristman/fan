@@ -761,7 +761,7 @@ export const orchestratorExtension = (fan) => {
                         "code-review": { reasoning: 0.5, context: 6, cost: 3, maxTokens: 0.3 },
                     };
                     // Priority order: assign heavy workers first so they get the best models
-                    const ASSIGNMENT_ORDER = ["implement", "plan", "bug-fix", "explore", "code-research", "tests-impl", "verify", "docs-impl", "security"];
+                    const ASSIGNMENT_ORDER = ["implement", "plan", "bug-fix", "explore", "code-research", "tests-impl", "verify", "docs-impl", "code-review", "security"];
 
                     function scoreModel(model, profile) {
                         let score = 0;

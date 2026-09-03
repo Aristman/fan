@@ -28,6 +28,7 @@ export const DEFAULTS = {
         plan: 600,
         implement: 600,
         verify: 600,
+        "code-review": 900,
     },
     temperature: 0.1,
     contextEnrichment: {
@@ -42,6 +43,7 @@ export const DEFAULTS = {
         verify: 0.3,
         "bug-fix": 0.1,
         "code-research": 0.2,
+        "code-review": 0.2,
         "tests-impl": 0.1,
         "docs-impl": 0.3,
     },

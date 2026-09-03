@@ -28,9 +28,11 @@ const PROFILES_BY_AGENT = {
 	plan: "read-only",
 	verify: "read-only",
 	"code-research": "read-only",
+	"code-review": "read-only",
 	implement: "all",
 	"bug-fix": "all",
 	"tests-impl": "all",
+	security: "read-only",
 };
 
 const DEFAULT_LEVEL = "all";

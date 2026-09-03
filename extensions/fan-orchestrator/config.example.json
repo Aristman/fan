@@ -10,7 +10,8 @@
       "code-research": "",
       "tests-impl": "",
       "docs-impl": "",
-      "security": ""
+      "security": "",
+      "code-review": ""
     }
   },
   "local": {
@@ -24,7 +25,8 @@
       "code-research": "",
       "tests-impl": "",
       "docs-impl": "",
-      "security": ""
+      "security": "",
+      "code-review": ""
     }
   },
   "providerMode": "auto",
@@ -38,7 +40,8 @@
     "explore": 600,
     "plan": 600,
     "implement": 600,
-    "verify": 600
+    "verify": 600,
+    "code-review": 900
   },
   "temperature": 0.1,
   "contextEnrichment": {
@@ -55,7 +58,8 @@
     "code-research": 0.2,
     "tests-impl": 0.1,
     "docs-impl": 0.3,
-    "security": 0.1
+    "security": 0.1,
+    "code-review": 0.2
   },
   "dangerousCommands": [
     "rm -rf",
