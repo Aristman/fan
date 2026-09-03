@@ -7,6 +7,7 @@ import { type as bugFixType, definition as bugFixDef } from "./bug-fix.js";
 import { type as codeResearchType, definition as codeResearchDef } from "./code-research.js";
 import { type as testsImplType, definition as testsImplDef } from "./tests-impl.js";
 import { type as docsImplType, definition as docsImplDef } from "./docs-impl.js";
+import { type as codeReviewType, definition as codeReviewDef } from "./code-review.js";
 /** All registered agent definitions. Keyed by agent type string. */
 export const AGENT_REGISTRY = {
     [exploreType]: exploreDef,
@@ -18,6 +19,7 @@ export const AGENT_REGISTRY = {
     [codeResearchType]: codeResearchDef,
     [testsImplType]: testsImplDef,
     [docsImplType]: docsImplDef,
+    [codeReviewType]: codeReviewDef,
 };
 /** Get all registered agent type names. */
 export function getAgentTypes() {

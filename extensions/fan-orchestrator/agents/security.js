@@ -1,7 +1,8 @@
+import { makeReadOnlyAgent } from "./read-only-agent.js";
+
 export const type = "security";
 export const definition = {
     type,
-    label: "Security Auditor",
     prompt: `## ROLE
 You are a SECURITY AUDITOR operating in READ-ONLY mode. Your job is to find real,
 exploitable security vulnerabilities — not to confirm that the code is safe.
@@ -78,9 +79,10 @@ For each finding:
 ## FINAL SUMMARY
 End with a summary table by severity: counts for CRITICAL / HIGH / MEDIUM / LOW / INFO,
 the number of needs-verification items, and a 3-5 sentence overall risk assessment.`,
-    tools: ["read", "bash", "grep", "find", "ls"],
-    readOnly: true,
-    description: "Full-scope security audit: OWASP/CWE code patterns, secret scanning, dependency, IaC and config review",
-    useFor: "Deep security audit of a feature, module, or repository on request: OWASP/CWE vulnerability patterns, secret scanning, dependency audit, IaC and configuration review. Use when proactive security analysis is the goal — verify covers build/test diff checks instead.",
-    icon: "🔒",
+    ...makeReadOnlyAgent({
+        label: "Security Auditor",
+        icon: "🔒",
+        description: "Full-scope security audit: OWASP/CWE code patterns, secret scanning, dependency, IaC and config review",
+        useFor: "Deep security audit of a feature, module, or repository on request: OWASP/CWE vulnerability patterns, secret scanning, dependency audit, IaC and configuration review. Use when proactive security analysis is the goal — verify covers build/test diff checks instead.",
+    }),
 };
