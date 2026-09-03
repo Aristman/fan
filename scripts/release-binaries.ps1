@@ -248,7 +248,9 @@ foreach ($platform in $PlatformList) {
 
     Copy-Item "package.json" "$destDir\" -Force
     Copy-Item "README.md" "$destDir\" -Force
-    Copy-Item "CHANGELOG.md" "$destDir\" -Force
+    # CHANGELOG.md is versioned at the monorepo root, NOT per-package:
+    # packages/coding-agent/CHANGELOG.md has been stale since Aug 9 (max 2.4.1).
+    Copy-Item (Join-Path $RootDir "CHANGELOG.md") "$destDir\" -Force
 
     # Copy wasm file
     $wasmSrc = "..\..\node_modules\@silvia-odwyer\photon-node\photon_rs_bg.wasm"
@@ -371,6 +373,10 @@ foreach ($platform in $PlatformList) {
         }
     }
 
+    # Guarantee fresh CHANGELOG.md from the monorepo root before archiving,
+    # regardless of whether the binary was rebuilt in this run.
+    Copy-Item (Join-Path $RootDir "CHANGELOG.md") "$platform\" -Force
+
     if ($platform -eq "windows-x64") {
         # Windows (zip) - use wrapper directory for consistency with Unix
         Write-Info "Creating fan-$FAN_VERSION-$platform.zip..."
@@ -383,6 +389,20 @@ foreach ($platform in $PlatformList) {
         Rename-Item -Path $platform -NewName "fan"
         tar -czf "fan-$FAN_VERSION-$platform.tar.gz" "fan"
         Rename-Item -Path "fan" -NewName $platform
+    }
+
+    # Verify the CHANGELOG.md that just went into the archive matches the source.
+    $srcChangelog = Join-Path $RootDir "CHANGELOG.md"
+    $dstChangelog = Join-Path $platform "CHANGELOG.md"
+    if (-not (Test-Path $dstChangelog)) {
+        Write-Err "CHANGELOG.md missing in binaries\$platform after archiving"
+        exit 1
+    }
+    $srcChangelogHash = (Get-FileHash $srcChangelog -Algorithm SHA256).Hash
+    $dstChangelogHash = (Get-FileHash $dstChangelog -Algorithm SHA256).Hash
+    if ($srcChangelogHash -ne $dstChangelogHash) {
+        Write-Err "CHANGELOG.md in binaries\$platform differs from $srcChangelog - refusing to ship a stale changelog"
+        exit 1
     }
 }
 
