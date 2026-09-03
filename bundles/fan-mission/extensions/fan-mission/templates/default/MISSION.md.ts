@@ -8,9 +8,8 @@
 // ограничен. Лимит дочерних узлов — конфиг fan-super-orchestrator
 // (childBudgetTokens, default 1_000_000).
 //
-// runagent_timeout_min — per-mission таймаут одного запуска runAgent (минуты).
-// Диапазон: 1–480, дефолт: 30 (когда поле отсутствует или невалидно).
-// Поле читается regex'ом из сырого MISSION.md при attach (index.ts).
+// runagent_timeout_min УСТАРЕЛ и удалён из шаблона: per-step таймаут runAgent
+// убран (ключ в старых MISSION.md игнорируется — см. README fan-mission).
 
 export const MISSION_MD = `---
 mission_id: {{mission_id}}
@@ -21,7 +20,6 @@ metric_command: npm test
 # Информационные поля: L0 бюджетом не ограничен; лимит детей — childBudgetTokens (fan-super-orchestrator)
 budget_tokens: 500000
 budget_usd: 10.00
-runagent_timeout_min: 30
 max_depth: 4
 max_width: 4
 session_mode: fresh
@@ -37,4 +35,5 @@ session_mode: fresh
 ## Unbreakable Metric
 
 ## Constraints
+- Keep ROADMAP items atomic: one focused change per item, completable and verifiable in a single iteration (~20–30 minutes each).
 `;

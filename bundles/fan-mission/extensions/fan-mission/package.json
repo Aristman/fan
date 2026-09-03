@@ -1,6 +1,6 @@
 {
 	"name": "fan-mission",
-	"version": "1.4.2",
+	"version": "1.4.3",
 	"description": "Миссионный контур FAN — 7-шаговый цикл, файловое хранилище состояния (MISSION.md, ROADMAP.md, STATE.md, BACKLOG.md, DECISIONS.md), FSM статусов.",
 	"type": "module",
 	"private": true,
@@ -9,7 +9,7 @@
 		"type": "extension",
 		"displayName": "FAN Mission Loop",
 		"description": "Миссионный контур FAN — файловое хранилище, FSM, 7-шаговый цикл.",
-		"version": "1.4.0",
+		"version": "1.4.1",
 		"author": "FAN Team",
 		"tags": [
 			"mission",
