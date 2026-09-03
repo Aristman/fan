@@ -1,5 +1,5 @@
 # Documentation Manifest
-> Last updated: 2026-09-01 (CHANGELOG: подсекция «Fixed — fan-security 1.0.1» сверена с кодом; добавлены записи fan-security)
+> Last updated: 2026-09-03 (новая спека spec_code-review-worker_2026-09-03 — Черновик v1.0: 10-й воркер orchestrator, D1-D5, 4 стека, security-переадресация)
 > Comprehensive index of all project documentation.
 > Maintainer: docs-impl agent
 
@@ -38,6 +38,7 @@
 | `docs/specs/spec_feature-roadmap_2026-05-28.md` | ✅ | Feature-roadmap skill specification |
 | `docs/specs/spec_feature-pipeline_2026-05-29.md` | ✅ | Feature-pipeline skill specification |
 | `docs/specs/spec_security-worker_2026-08-31.md` | ✅ | Security-worker specification (§2.3 маскирование, §3.3 exit-коды, §4/§4.1 обход ФС, §6.1/§6.2 схема отчёта) |
+| `docs/specs/spec_code-review-worker_2026-09-03.md` | ✅ | Code-review worker v1.0 (Черновик): D1-D5, 4 стека (TS/Py/Kotlin/Rust), security-переадресация, платформенный contract, diff-only ревью, conventions auto-profile |
 | `docs/research/security-worker/ANALYSIS.md` | ✅ | Security-worker research & analysis |
 | `docs/specs/migrate-store-url-2026-05-11.md` | ✅ | FAN Store server URL migration spec |
 | `docs/specs/MVP-SPEC.md` | ⚠️ | Archived (superseded by runtime-agent spec, web SaaS concept) |
