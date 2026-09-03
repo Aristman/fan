@@ -1,5 +1,152 @@
 # Changelog
 
+## [Unreleased] / 2026-09-03
+
+### Added — Code-Review worker (agent type `code-review`)
+
+- **`agent type code-review` в `fan-orchestrator` (10-й built-in воркер).**
+  Read-only reviewer с дифф-only семантическим ревью: подтягивает
+  conventions проекта (auto-profile `conventions.md` + 3 триггера регенерации),
+  читает stack-специфичные правила (`common.md` + `<stack>.md` для
+  typescript/python/kotlin/rust, приоритет при множественных манифестах:
+  typescript > python > rust > kotlin), генерирует findings в формате
+  `Severity | File:Line | Category | Problem | Suggestion` (4 severity
+  CRITICAL/MAJOR/MINOR/INFO) и выдаёт verdict из 6 значений
+  (PASS/FAIL/PARTIAL/APPROVED/CHANGES_REQUESTED/NEEDS_DISCUSSION).
+  Определение в `extensions/fan-orchestrator/agents/code-review.{js,md}`
+  (двойное определение по образцу verify.js/verify.md и security.js/security.md,
+  паттерн frontmatter: type/label/icon/readOnly/tools/useFor/description);
+  `readOnly: true`, `tools: [read, bash, grep, find, ls]`, icon 🔎.
+  Маршрутизация координатором: новое правило №2 в
+  `classifyTaskByDescription('code review...|review this PR|ревью...')` →
+  `code-review` (regex `CODE_REVIEW_KEYWORDS`); verify-regex сужен (без
+  голого `\breview\b` — иначе перехватывал «code review» фразы).
+  `delegate_task(agent: "code-review")`; добавлены профиль
+  `WORKER_PROFILES.code-review` (`reasoning: 1, context: 6, cost: 3,
+  maxTokens: 0.3`) и `agentIcons.code-review = "🔎"` в
+  `orchestrator-extension.js`, icon рендерится в `/agents` и task-виджете.
+  Чёткое разграничение ролей: verify = свежий дифф (build/test/lint),
+  code-review = семантический анализ (conventions, идиоматичность, magic
+  numbers, edge cases), security = полный security-аудит (boundary
+  зафиксирован в `useFor` всех трёх промптов и TDD-тестах
+  `agents-role-boundary.test.mjs`). Code-review помечает security-подозрительные
+  findings тегом `security-note: true` и собирает их в блок `## Security
+  Handoffs` с рекомендацией `Recommend delegating to security worker` —
+  координатор решает, дёргать ли security явно.
+
+- **Routing правило №2 (после security).** В `orchestrator-tools.js:
+  classifyTaskByDescription` добавлен `CODE_REVIEW_KEYWORDS` regex
+  (`/\b(code\s*review|review\s+(this|the)\s+(pr|diff|changes|commit|branch)|
+  pr\s*review|lgtm|ревью|код[\s-]ревью)\b/i`); 8 positive phrases
+  («code review of the auth module», «review this PR», «review the diff»,
+  «review the changes», «commit review for last commit», «branch review
+  before merge», «LGTM check», «ревью диффа») → code-review; 5 negative
+  guards («verify the build» → verify, «check for vulnerabilities» →
+  security, «review the new feature design» → verify, «run tests» → verify,
+  `""` → implement) не пересекаются. Verify-regex сужен — убран
+  `\breview\b|\bsecurity\b` (эти домены теперь у code-review и security).
+  Существующий `agents-security-routing.test.mjs:201-205` мигрирован
+  (`"review this PR"` → code-review).
+
+- **Profile config: read-only + temperature 0.2 + timeout 900s.**
+  `PROFILES_BY_AGENT["code-review"] = "read-only"` в `broker-handler.js`
+  (КРИТИЧНО — без него дефолт `"all"` → write-MCP; попутно закрыта
+  permissions-дырка: добавлен отсутствовавший
+  `PROFILES_BY_AGENT["security"] = "read-only"`); `DEFAULTS.agentTemperature.
+  code-review = 0.2` (стабильный verdict) и `DEFAULTS.agentTimeouts.code-review
+  = 900` (clone + большой diff) в `config.js`; `cloud.models.code-review = ""`
+  и `local.models.code-review = ""` (× 2 секции) в `config.example.json`;
+  `agentIcons["code-review"] = "🔎"` в 2 местах
+  `orchestrator-extension.js` (~:500 и ~:1218),
+  `ASSIGNMENT_ORDER += ["code-review"]`, `WORKER_PROFILES["code-review"]` задан;
+  `DEPLOY.toml` `include` расширен `review-rules/*.md`, `review-adapters.d.ts`,
+  `review-adapters.md`.
+
+- **Review-rules corpus (4 стека + common + индекс).** Шесть markdown-файлов
+  в `extensions/fan-orchestrator/review-rules/`: `common.md` (4 severity +
+  verdict-маппинг), `typescript.md`/`python.md`/`kotlin.md`/`rust.md`
+  (каждый со Stack Detection Hints + Reviewer Checklist ≥ 10 пунктов),
+  `README.md` (Loading order: `common.md → <stack>.md → conventions.md`).
+  CI-валидация `wc -c review-rules/*.md` ≤ 5000 chars на файл (4 правила +
+  common укладываются в 22500 chars контекст-бюджета).
+
+- **Conventions auto-profile (`.fan/code-review/conventions.md`).** Frontmatter
+  (YAML): `stack` / `last_analyzed` (ISO 8601) / `analyzed_files` (non-empty);
+  3 секции (`## Style` / `## Architecture` / `## Patterns`); пользовательские
+  секции (`## ...`) сохраняются в `customSections` и не теряются при
+  регенерации. 3 триггера регенерации: файл отсутствует, `last_analyzed` >
+  30 дней, `analyzed_files` изменились → bash-heredoc `cat > .fan/code-review/
+  conventions.md << 'EOF' ... EOF`. `parseConventions(path)` валидирует
+  frontmatter и возвращает `{stack, lastAnalyzed, analyzedFiles, sections,
+  customSections}`.
+
+- **External repo clone-cache (`.fan/git/<slug>`, `--depth 200`).** При
+  `gitUrl="https://github.com/owner/repo"` + `base="main"`: `git clone
+  --depth 200 <url> .fan/git/<slug>` (cache miss) или `cd .fan/git/<slug> &&
+  git fetch --prune && git checkout <base>` (cache hit); conventions внешнего
+  репо пишутся в `conventions.<slug>.md` (отдельно от project-local);
+  edge case `fatal: bad revision` (base не в shallow-копии) → инструкция
+  `git fetch --unshallow`; при невозможности → `VERDICT: NEEDS_DISCUSSION`.
+
+- **PlatformReviewAdapter contract (типы + документация, 0 рантайма).**
+  `extensions/fan-orchestrator/review-adapters.d.ts` — TypeScript declaration
+  file: типы `ReviewSeverity`, `ReviewVerdict`, `PlatformRef`, `DiffRequest`,
+  `DiffResult`, `ReviewComment`, `ReviewResolution` + interface
+  `PlatformReviewAdapter { id, getDiff, postComments, resolvePr }` (8
+  объявлений, strict mode compile зелёный). `review-adapters.md` — секции
+  Semantics of errors, Extension model, Precedent (`fan-confluence/client.ts`).
+  Orchestrator остаётся platform-agnostic; реализации (GitHub, Bitbucket) —
+  отдельные extension в следующих фазах.
+
+- **Verdict parser extension (6 значений + severity-маппинг).**
+  `parseVerdict` в `agents.js` расширен regex до 6 значений:
+  `PASS|FAIL|PARTIAL|APPROVED|CHANGES_REQUESTED|NEEDS_DISCUSSION`
+  (case-insensitive, `\s*` вокруг); `severityToVerdict(findings)` маппит
+  CRITICAL/MAJOR → CHANGES_REQUESTED, MINOR/INFO-only → APPROVED,
+  mixed → NEEDS_DISCUSSION; `agents.d.ts` перегенерирован (union тип Verdict
+  содержит все 6 значений).
+
+- **Finding structure schema + парсер.** `parseFinding(line)` →
+  `{severity, file, line, category?, problem, suggestion}` для строки
+  формата `Severity | File:Line | Category | Problem | Suggestion`;
+  `parseFindings(markdownOutput)` агрегирует массив `Finding[]`, фильтрует
+  пустые строки. Невалидный severity (не из 4 enum) → throw.
+
+- **RULES_DIR constraint injection через `enrichWorkerContext`.** Функция
+  `enrichWorkerContext(agent, context)` в `orchestrator-tools.js` инжектит
+  `CODE_REVIEW_RULES_DIR=<abs>` в `context.constraints`, где
+  `<abs> = path.join(__dirname, "review-rules")`; вызывается во всех 3 точках
+  `mergeContext` (chain:355, parallel:538, single:616). При agent !==
+  "code-review" — no-op (другие агенты не получают RULES_DIR). Путь работает
+  во всех режимах установки (dev / `~/.fan/agent/extensions/` / `execDir`),
+  т.к. `__dirname` вычисляется относительно расположения
+  `orchestrator-tools.js`.
+
+### Fixed
+
+- **Permissions-дырка: `security` отсутствовал в `PROFILES_BY_AGENT`.**
+  В `broker-handler.js:PROFILES_BY_AGENT` не было ключа `"security"` →
+  дефолтный fallback на `"all"` → security-воркер получал write-MCP
+  (противоречие с `readOnly: true` в `agents/security.js`). Закрыто
+  добавлением `"security": "read-only"` в одной правке с code-review
+  (TC-F-14-1). Без фикса security-воркер мог случайно вызвать write-тулы
+  через broker.
+
+- **Verify-regex перехватывал «code review» фразы.** `verify`-regex
+  содержал `\breview\b|\bsecurity\b` и ловил «проведи code review
+  последних изменений» → verify (механическая проверка build/test/lint)
+  вместо code-review (семантический анализ). Сужен — verify остаётся
+  на механических проверках, code-review отвечает за «review this PR»,
+  «ревью диффа», «LGTM check» и т.п. (`"review this PR"` мигрировал
+  с verify на code-review в `agents-security-routing.test.mjs:201-205`).
+
+### Stats
+
+- 473+1 smoke тестов для фичи (15/15 функций реализованы); финальный verify PASS
+- 6 per-function commits + 1 spec/roadmap commit на ветке FAN/feature/code-reviewer-worker
+- Build: clean (10/10 packages)
+- No regressions: 0 lines changed в packages/coding-agent от feature pipeline
+
 ## [2.8.9] / 2026-09-03
 
 ### Fixed — compaction reasoning on thinking models

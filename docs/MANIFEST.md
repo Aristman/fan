@@ -1,5 +1,5 @@
 # Documentation Manifest
-> Last updated: 2026-09-03 (новая спека spec_code-review-worker_2026-09-03 — Черновик v1.0: 10-й воркер orchestrator, D1-D5, 4 стека, security-переадресация)
+> Last updated: 2026-09-03 (code-review-worker финал: roadmap 15/15 ✅, README 9→10 воркеров, CHANGELOG [Unreleased] / 2026-09-03: code-review worker + 2 фикса permissions/verify-regex)
 > Comprehensive index of all project documentation.
 > Maintainer: docs-impl agent
 
@@ -12,7 +12,7 @@
 | `SETUP.md` | ✅ | Полное руководство по настройке |
 | `MIGRATION.md` | ✅ | Migration from upstream fan/pi |
 | `CONTRIBUTING.md` | ✅ | Contribution guidelines |
-| `CHANGELOG.md` | ✅ | FAN changelog — [Unreleased]: security-worker + fan-security 1.0.1 (F-1..F-6 сверены с кодом), сверх-оркестратор этапы 0+1; релизы 0.2.0 → 2.5.1 |
+| `CHANGELOG.md` | ✅ | FAN changelog — [Unreleased] / 2026-09-03: code-review worker (10-й воркер: routing №2, profile 0.2/900s, review-rules corpus, conventions, security handoff, external clone-cache, adapters contract) + 2 фикса (security в PROFILES_BY_AGENT, verify-regex); [Unreleased] / 2026-08-31: security-worker + fan-security 1.0.1; релизы 0.2.0 → 2.5.1 |
 | `docs/guides/quick-start.md` | ✅ | Quick start stub — redirects to QUICK-START.md |
 | `docs/guides/configuration.md` | ✅ | Full settings reference |
 | `docs/guides/orchestrator.md` | ✅ | Orchestrator user guide (v7.10.0: `/orchestrator models`, named presets, permission approval, slot pools, Pipeline Mode v3.1.0) |

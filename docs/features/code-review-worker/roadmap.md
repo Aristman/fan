@@ -64,7 +64,7 @@
 - *Ожидаемый результат:* CI-проверка `wc -c review-rules/*.md` зелёная (правила влезают в контекст-бюджет 22500 chars), README содержит секцию «Loading order: common → <stack> → conventions».
 **Smoke-критерий этапа:** `cat review-rules/README.md | grep "Loading order"` возвращает 1 строку с упоминанием `common.md` и `<stack>.md`.
 
-#### ☐ F-1: Review-rules corpus
+#### ✅ F-1: Review-rules corpus
 - **Приоритет:** P0
 - **Слой:** [DATA]
 - **Описание:** Создать 6 markdown-файлов с правилами код-ревью (cross-stack + 4 стека + индекс) в `extensions/fan-orchestrator/review-rules/`. Каждый файл ≤ 5000 chars (CI-валидация). Объём ≥ 50% файлов покрывает checklist из 10–15 пунктов на стек.
@@ -104,7 +104,7 @@
 - *Ожидаемый результат:* `getAgentTypes()` length увеличился на 1 (было 9 → стало 10); `parseVerdict` устойчив к case + whitespace для всех 6 значений.
 **Smoke-критерий этапа:** `npx vitest run test/agents-code-review-definition.test.mjs` — все ассерты зелёные.
 
-#### ☐ F-2: Agent definition (code-review.js + .md)
+#### ✅ F-2: Agent definition (code-review.js + .md)
 - **Приоритет:** P0
 - **Слой:** [CLI]
 - **Описание:** Создать `agents/code-review.{js,md}` по образцу `verify`: `label: "Code Reviewer"`, `icon: "🔎"`, `readOnly: true`, `tools: [read, bash, grep, find, ls]`, `description`/`useFor` с разграничением от verify («build/tests/lint») и security («deep OWASP»). Файл `code-review.md` — ~150–200 строк: ROLE → ROLE BOUNDARY → CRITICAL RULES → STEP 0-3 → REVIEW CHECKLIST → COMMON MISTAKES → MANDATORY OUTPUT FORMAT. Зарегистрировать в `agents/index.js`.
@@ -132,7 +132,7 @@
 - **Ожидаемый результат:** `extensions/fan-orchestrator/agents/code-review.{js,md}` созданы; `agents/index.js` импортирует и регистрирует; `getAgentTypes()` length = 10.
 - **Оценка объёма:** M (≤ 1 день; ~200 строк .md + ~30 строк .js + 1 правка index.js)
 
-#### ☐ F-3: Stack detection (манифесты → стек)
+#### ✅ F-3: Stack detection (манифесты → стек)
 - **Приоритет:** P0
 - **Слой:** [BIZ]
 - **Описание:** Воркер в STEP 1 промпта читает манифесты (`package.json` → typescript, `pyproject.toml` → python, `Cargo.toml` → rust, `build.gradle.kts`/`pom.xml` → kotlin) и/или распределение файлов по расширениям (`.ts/.js`, `.py`, `.rs`, `.kt/.java`), выбирает один из 4 стеков. При множественных манифестах — приоритет по убыванию: typescript > python > rust > kotlin. При отсутствии — fallback на `unknown` (только common.md).
@@ -160,7 +160,7 @@
 - **Ожидаемый результат:** раздел STEP 1 в `agents/code-review.md` описывает детекцию; unit-тесты в `test/agents-code-review-definition.test.mjs` зелёные.
 - **Оценка объёма:** S (≤ 4ч; ~30 строк в промпте + 2 unit-теста)
 
-#### ☐ F-10: Verdict parser extension (6 значений + severity-маппинг)
+#### ✅ F-10: Verdict parser extension (6 значений + severity-маппинг)
 - **Приоритет:** P0
 - **Слой:** [BIZ]
 - **Описание:** Расширить `parseVerdict` в `agents.js` regex до 6 значений: `PASS|FAIL|PARTIAL|APPROVED|CHANGES_REQUESTED|NEEDS_DISCUSSION` (case-insensitive, `\s*` вокруг). Маппинг severity→verdict: CRITICAL/MAJOR → CHANGES_REQUESTED; только MINOR/INFO → APPROVED; неоднозначность → NEEDS_DISCUSSION. Обновить `agents.d.ts` (перегенерация `tsc`).
@@ -200,7 +200,7 @@
 - *Ожидаемый результат:* `conventions.md` валиден по frontmatter-схеме; finding парсится в структуру `{severity, file, line, category, problem, suggestion}`.
 **Smoke-критерий этапа:** vitest-тест парсинга finding + conventions frontmatter — оба зелёные.
 
-#### ☐ F-5: Conventions.md schema (frontmatter + секции)
+#### ✅ F-5: Conventions.md schema (frontmatter + секции)
 - **Приоритет:** P0
 - **Слой:** [DATA]
 - **Описание:** Определить формат файла `.fan/code-review/conventions.md` (project-local) и `.fan/code-review/conventions.<name>.md` (для внешних репо). Frontmatter (YAML): обязательные `stack` (string, один из 4), `last_analyzed` (ISO 8601), `analyzed_files` (non-empty array строк). Тело: 3 секции (`## Style`, `## Architecture`, `## Patterns`) с markdown-списками. Парсер `parseConventions(path)` → `{stack, lastAnalyzed, analyzedFiles, sections: {style, architecture, patterns}}`. Валидация: frontmatter полный → OK; иначе → генерировать заново.
@@ -228,7 +228,7 @@
 - **Ожидаемый результат:** `conventions.js` (или `conventions.ts`) экспортирует `parseConventions(path)` + `validateConventions(parsed)` + Zod-схему; 3 unit-теста зелёные.
 - **Оценка объёма:** S (≤ 4ч; ~30 строк парсера + 3 unit-теста + 1 schema-файл)
 
-#### ☐ F-9: Finding structure schema (Severity/File:Line/Category/Problem/Suggestion)
+#### ✅ F-9: Finding structure schema (Severity/File:Line/Category/Problem/Suggestion)
 - **Приоритет:** P0
 - **Слой:** [DATA]
 - **Описание:** Определить формат единичного finding в выводе воркера: 5 полей (Severity, File:Line, Category, Problem, Suggestion). Парсер `parseFinding(line)` → `{severity: "CRITICAL"|"MAJOR"|"MINOR"|"INFO", file: string, line: number, category?: string, problem: string, suggestion: string}`. Валидация: File:Line формат `path:line` (regex `/^.+:\d+$/`); severity — enum из 4; проблема/сапоген непустые. Findings аггрегируются в `Finding[]` (массив).
@@ -268,7 +268,7 @@
 - *Ожидаемый результат:* `delegate_task("code-review", ...)` во всех 3 режимах несёт CODE_REVIEW_RULES_DIR; conventions.md создан и валиден; воркер получил 3 файла правил в STEP 2.
 **Smoke-критерий этапа:** vitest `enrichWorkerContext` test PASS (проверяет, что constraint добавлен при agent === "code-review" и НЕ добавлен для других).
 
-#### ☐ F-6: Conventions auto-profile lifecycle (генерация + регенерация)
+#### ✅ F-6: Conventions auto-profile lifecycle (генерация + регенерация)
 - **Приоритет:** P0
 - **Слой:** [BIZ]
 - **Описание:** Воркер в STEP 3 промпта проверяет 3 триггера регенерации `.fan/code-review/conventions.md`: (1) файл отсутствует → сгенерировать; (2) `last_analyzed` > 30 дней назад → регенерировать; (3) `analyzed_files` изменились (хэш-список/список) → регенерировать. При регенерации: прочитать старый файл, извлечь `customSections`, сгенерировать новые Style/Architecture/Patterns, смерджить обратно customSections, записать через bash-heredoc. Формат heredoc: `cat > .fan/code-review/conventions.md << 'EOF'\n<new content>\nEOF`.
@@ -296,7 +296,7 @@
 - **Ожидаемый результат:** STEP 3 в `agents/code-review.md` описывает триггеры и heredoc; unit-тесты зелёные.
 - **Оценка объёма:** M (≤ 1 день; ~50 строк в промпте + bash-команда + 3 unit-теста)
 
-#### ☐ F-4: Rules loading pipeline (common + stack + conventions)
+#### ✅ F-4: Rules loading pipeline (common + stack + conventions)
 - **Приоритет:** P0
 - **Слой:** [INTEG]
 - **Описание:** Воркер в STEP 2 промпта загружает правила в порядке: (1) `<RULES_DIR>/common.md`, (2) `<RULES_DIR>/<stack>.md`, (3) `.fan/code-review/conventions.md` (или `conventions.<name>.md` для внешних). Каждый файл читается через `read`, конкатенируется в блок `## Loaded Rules` в worker context. Если `<stack>.md` не существует (неизвестный стек) → воркер продолжает с common-only + warning в Review Scope. Если `common.md` отсутствует → error (минимальное требование).
@@ -324,7 +324,7 @@
 - **Ожидаемый результат:** STEP 2 в `agents/code-review.md` описывает loading order; `loadRules()` функция экспортируется и покрыта 3 unit-тестами.
 - **Оценка объёма:** S (≤ 4ч; ~30 строк в промпте + 1 функция + 3 unit-теста)
 
-#### ☐ F-13: RULES_DIR constraint injection через enrichWorkerContext
+#### ✅ F-13: RULES_DIR constraint injection через enrichWorkerContext
 - **Приоритет:** P0
 - **Слой:** [INTEG]
 - **Описание:** Функция `enrichWorkerContext(agent, context)` в `orchestrator-tools.js` инжектит constraint `CODE_REVIEW_RULES_DIR=<abs>` в `context.constraints`, где `<abs> = path.join(__dirname, "review-rules")`. Вызывается во всех 3 точках `mergeContext` (chain:355, parallel:538, single:616). При agent !== "code-review" — контекст не меняется. Путь работает во всех режимах установки (dev / `~/.fan/agent/extensions/` / `execDir`), т.к. `__dirname` вычисляется относительно расположения `orchestrator-tools.js`.
@@ -364,7 +364,7 @@
 - *Ожидаемый результат:* вывод воркера содержит finding с severity, блок Security Handoffs (если есть security-issue), и `VERDICT: CHANGES_REQUESTED` (т.к. есть CRITICAL/MAJOR).
 **Smoke-критерий этапа:** vitest-тест на integration `parseVerdict` + security-handoff блок — оба зелёные.
 
-#### ☐ F-8: Diff-only review workflow (git diff → findings → verdict)
+#### ✅ F-8: Diff-only review workflow (git diff → findings → verdict)
 - **Приоритет:** P0
 - **Слой:** [BIZ]
 - **Описание:** Воркер в STEP 0 промпта принимает один из 3 вариантов входа: (a) `gitUrl` — внешний репо (см. F-7, clone в `.fan/git/<slug>`); (b) `base` + cwd — `git diff <base>...HEAD` в текущей директории; (c) `path` — локальный путь к другому проекту (`cd <path>` + `git diff <base>...HEAD` без клонирования, конвенции берутся из `.fan/code-review/conventions.md` целевого проекта либо из общего). Парсит вывод пофайлово (`git diff -- <path>` для каждого изменённого файла), применяет правила (common + stack + conventions), генерирует findings в формате F-9, выводит: (1) Review Scope (что проверено), (2) Findings list, (3) Summary Table (распределение по severity), (4) Security Handoffs (если есть — см. F-11), (5) финальный `VERDICT: APPROVED | CHANGES_REQUESTED | NEEDS_DISCUSSION`. Воркер НЕ запускает build/tests/lint (ответственность verify).
@@ -392,7 +392,7 @@
 - **Ожидаемый результат:** `agents/code-review.md` STEP 0 + MANDATORY OUTPUT FORMAT описывают workflow; mock-тесты в `test/agents-code-review-integration.test.mjs` зелёные.
 - **Оценка объёма:** M (≤ 1 день; ~80 строк в промпте + 1 runner + 3 теста)
 
-#### ☐ F-11: Security-handoff tagging (security-note + delegate)
+#### ✅ F-11: Security-handoff tagging (security-note + delegate)
 - **Приоритет:** P0
 - **Слой:** [BIZ]
 - **Описание:** Воркер НЕ проводит глубокий security-аудит (D7 спеки). При обнаружении потенциальной security-проблемы в finding (маркеры: SQL injection, XSS, hardcoded secret, weak crypto, path traversal, insecure deserialization, missing auth, IDOR, etc.) воркер: (1) помечает finding тегом `security-note` (дополнительное поле в finding), (2) добавляет секцию `## Security Handoffs` со списком file:line + краткое описание проблемы, (3) рекомендует делегировать полный аудит на security-воркер через координатор (не вызывает security сам).
@@ -432,7 +432,7 @@
 - *Ожидаемый результат:* routing корректно направляет 3 типа задач; profile code-review = "read-only" (не дефолтный "all").
 **Smoke-критерий этапа:** `npx vitest run test/agents-code-review-routing.test.mjs test/agents-code-review-integration.test.mjs test/agents-consistency.test.mjs` — все зелёные.
 
-#### ☐ F-12: Routing classification (classify_task правило №2 + сужение verify)
+#### ✅ F-12: Routing classification (classify_task правило №2 + сужение verify)
 - **Приоритет:** P0
 - **Слой:** [BIZ]
 - **Описание:** В `orchestrator-tools.js:classifyTaskByDescription` добавить правило №2 (после security): regex `CODE_REVIEW_KEYWORDS = /\b(code\s*review|review\s+(this|the)\s+(pr|diff|changes|commit|branch)|pr\s*review|lgtm|ревью|код[\s-]ревью)\b/i`. Сузить verify-regex: убрать `\breview\b|\bsecurity\b` (эти домены теперь у code-review и security). Порядок: security (№1) → code-review (№2) → explore (→) → plan (→) → verify (default fallback). Осознанная миграция теста `agents-security-routing.test.mjs:201-205`: эталон `"review this PR"` → verify мигрирует на code-review.
@@ -460,7 +460,7 @@
 - **Ожидаемый результат:** `orchestrator-tools.js:classifyTaskByDescription` экспортирует обновлённый классификатор; `test/agents-code-review-routing.test.mjs` создан; существующий `agents-security-routing.test.mjs` обновлён.
 - **Оценка объёма:** M (≤ 1 день; ~30 строк regex + classify logic + 2 новых тест-файла + 1 правка)
 
-#### ☐ F-14: Agent profile config (read-only + 0.2/900s + DEPLOY)
+#### ✅ F-14: Agent profile config (read-only + 0.2/900s + DEPLOY)
 - **Приоритет:** P0
 - **Слой:** [CLI]
 - **Описание:** В `broker-handler.js:PROFILES_BY_AGENT` добавить `"code-review": "read-only"` (КРИТИЧНО — иначе default `"all"` → write-MCP). Заодно добить `"security": "read-only"` (отсутствие в текущей карте = permissions-дырка). В `config.js:DEFAULTS` добавить `agentTemperature.code-review = 0.2` и `agentTimeouts.code-review = 900`. В `config.example.json` добавить `cloud.models.code-review = ""` и `local.models.code-review = ""` (× 2 секции). В `orchestrator-extension.js`: `agentIcons["code-review"] = "🔎"` в 2 местах (500-504 и 1218), `WORKER_PROFILES["code-review"] = {reasoning: 1, context: 6, cost: 3, maxTokens: 0.3}`, `ASSIGNMENT_ORDER += ["code-review"]`. В `DEPLOY.toml` добавить `include = [..., "review-rules/*.md", "review-adapters.d.ts", "review-adapters.md"]`.
@@ -500,7 +500,7 @@
 - *Ожидаемый результат:* внешний репо склонирован в кэш `.fan/git/<name>`, conventions.<name>.md создан, воркер выдал findings+verdict; платформенный contract импортируется без рантайма.
 **Smoke-критерий этапа:** vitest `cloneExternalRepo` (с моком `git` через bash mock) + `review-adapters.d.ts` compile — оба зелёные.
 
-#### ☐ F-7: External repo clone-cache (`.fan/git/<name>`, --depth 200)
+#### ✅ F-7: External repo clone-cache (`.fan/git/<name>`, --depth 200)
 - **Приоритет:** P1
 - **Слой:** [INTEG]
 - **Описание:** Воркер в STEP 0 промпта принимает git URL (`https://github.com/owner/repo` или `git@...`). Алгоритм: (1) вычислить slug из URL (`owner-repo`); (2) `mkdir -p .fan/git`; (3) если `.fan/git/<slug>` не существует → `git clone --depth 200 <url> .fan/git/<slug>` через bash; (4) если существует → `cd .fan/git/<slug> && git fetch --prune && git checkout <base>` (cache hit); (5) `base` — обязательный аргумент (commit/branch/tag); (6) `git diff <base>...HEAD` через bash; (7) конвенции внешнего → `.fan/code-review/conventions.<slug>.md` (отдельно от project-local); (8) при ошибке `fatal: bad revision` (base не в shallow-копии) → инструкция `git fetch --unshallow`; при невозможности → `VERDICT: NEEDS_DISCUSSION`.
@@ -528,7 +528,7 @@
 - **Ожидаемый результат:** STEP 0 в `agents/code-review.md` описывает алгоритм clone-cache; `cloneExternalRepo` функция экспортируется + 3 unit-теста.
 - **Оценка объёма:** M (≤ 1 день; ~50 строк в промпте + 1 функция + bash mocks + 3 unit-теста)
 
-#### ☐ F-15: PlatformReviewAdapter contract (типы + документация)
+#### ✅ F-15: PlatformReviewAdapter contract (типы + документация)
 - **Приоритет:** P1
 - **Слой:** [INTEG]
 - **Описание:** Создать `extensions/fan-orchestrator/review-adapters.d.ts` (TypeScript declaration file, 0 рантайма): типы `ReviewSeverity`, `ReviewVerdict`, `PlatformRef`, `DiffRequest`, `DiffResult`, `ReviewComment`, `ReviewResolution` + interface `PlatformReviewAdapter { id, getDiff, postComments, resolvePr }`. Создать `review-adapters.md` с документацией: семантика ошибок (network → retry, auth → явная ошибка, not found → 404), модель расширения (новые extension регистрируют реализацию, orchestrator остаётся platform-agnostic), прецедент `fan-confluence/client.ts`. Реализации (GitHub, Bitbucket) — отдельные extension в следующих фазах (не в v1).
@@ -561,23 +561,23 @@
 ## Полный чеклист по приоритетам
 
 ### P0 — Критические
-- [ ] F-1 [DATA]: Review-rules corpus (6 markdown-файлов в `review-rules/`)
-- [ ] F-2 [CLI]: Agent definition (`agents/code-review.{js,md}` + регистрация в `agents/index.js`)
-- [ ] F-3 [BIZ]: Stack detection (манифесты → стек, 4 стека + приоритет)
-- [ ] F-4 [INTEG]: Rules loading pipeline (common → stack → conventions)
-- [ ] F-5 [DATA]: Conventions.md schema (frontmatter + секции + парсер)
-- [ ] F-6 [BIZ]: Conventions auto-profile lifecycle (3 триггера регенерации)
-- [ ] F-8 [BIZ]: Diff-only review workflow (git diff → findings → verdict)
-- [ ] F-9 [DATA]: Finding structure schema (5 полей + парсер)
-- [ ] F-10 [BIZ]: Verdict parser extension (6 значений + severity-маппинг)
-- [ ] F-11 [BIZ]: Security-handoff tagging (security-note + delegate)
-- [ ] F-12 [BIZ]: Routing classification (правило №2 после security)
-- [ ] F-13 [INTEG]: RULES_DIR constraint injection (enrichWorkerContext × 3)
-- [ ] F-14 [CLI]: Agent profile config (read-only + 0.2/900s + DEPLOY)
+- [x] F-1 [DATA]: Review-rules corpus (6 markdown-файлов в `review-rules/`)
+- [x] F-2 [CLI]: Agent definition (`agents/code-review.{js,md}` + регистрация в `agents/index.js`)
+- [x] F-3 [BIZ]: Stack detection (манифесты → стек, 4 стека + приоритет)
+- [x] F-4 [INTEG]: Rules loading pipeline (common → stack → conventions)
+- [x] F-5 [DATA]: Conventions.md schema (frontmatter + секции + парсер)
+- [x] F-6 [BIZ]: Conventions auto-profile lifecycle (3 триггера регенерации)
+- [x] F-8 [BIZ]: Diff-only review workflow (git diff → findings → verdict)
+- [x] F-9 [DATA]: Finding structure schema (5 полей + парсер)
+- [x] F-10 [BIZ]: Verdict parser extension (6 значений + severity-маппинг)
+- [x] F-11 [BIZ]: Security-handoff tagging (security-note + delegate)
+- [x] F-12 [BIZ]: Routing classification (правило №2 после security)
+- [x] F-13 [INTEG]: RULES_DIR constraint injection (enrichWorkerContext × 3)
+- [x] F-14 [CLI]: Agent profile config (read-only + 0.2/900s + DEPLOY)
 
 ### P1 — Высокие
-- [ ] F-7 [INTEG]: External repo clone-cache (`.fan/git/<name>`, `--depth 200`)
-- [ ] F-15 [INTEG]: PlatformReviewAdapter contract (типы + документация)
+- [x] F-7 [INTEG]: External repo clone-cache (`.fan/git/<name>`, `--depth 200`)
+- [x] F-15 [INTEG]: PlatformReviewAdapter contract (типы + документация)
 
 ---
 
