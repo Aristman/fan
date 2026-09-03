@@ -321,10 +321,14 @@ export async function generateBranchSummary(
 	];
 
 	// Call LLM for summarization
+	const completionOptions = model.reasoning
+		? { apiKey, headers, signal, maxTokens: 2048, reasoning: "high" as const }
+		: { apiKey, headers, signal, maxTokens: 2048 };
+
 	const response = await completeSimple(
 		model,
 		{ systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages },
-		{ apiKey, headers, signal, maxTokens: 2048 },
+		completionOptions,
 	);
 
 	// Check if aborted or errored
