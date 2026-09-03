@@ -198,8 +198,8 @@ const SECURITY_PHRASES = [
 const REFERENCE_PHRASES = [
     {
         phrase: "review this PR",
-        expected: "verify",
-        note: "эталон roadmap №1 — без изменений",
+        expected: "code-review",
+        note: "мигрирован в F-12 (было verify): правило №2 code-review направляет review-обороты на code-review",
     },
     {
         phrase: "explore the project structure",
