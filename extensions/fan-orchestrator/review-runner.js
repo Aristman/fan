@@ -10,8 +10,16 @@
  *   ## Review Scope → ## Findings → ## Summary Table → [## Security Handoffs] → VERDICT
  *
  * Input scenarios (STEP 0 of the worker prompt):
- *   (a) gitUrl  — external repo: RESERVED for F-7 (clone-cache .fan/git/<slug>).
- *                 This phase THROWS with "gitUrl" in the message.
+ *   (a) gitUrl  — external repo (F-7): cloneExternalRepo({url, base, projectDir}, deps)
+ *                 (external-repo-clone.js) maintains the shallow clone-cache
+ *                 `.fan/git/<slug>` (--depth 200; cache hit → fetch --prune + checkout
+ *                 <base>); stack, rules and the diff then run INSIDE the cache dir.
+ *                 Shallow limitation — git fails with "fatal: bad revision" because
+ *                 base is older than the cloned depth — is handled gracefully:
+ *                 a `git fetch --unshallow` retry is attempted and, when it fails
+ *                 too (e.g. no network), the result is a report carrying the
+ *                 "git fetch --unshallow" instruction and VERDICT: NEEDS_DISCUSSION
+ *                 (card F-7, step 6 — graceful fallback, never a throw).
  *   (b) base + projectDir — `git diff <base>...HEAD` in the given directory.
  *   (c) path    — local path to ANOTHER project: works in the target directory
  *                 (path wins over projectDir), NO cloning, conventions are read
@@ -20,22 +28,26 @@
  *
  * Pipeline (SKELETON — real git over real repos, NO LLM code analysis):
  *   1. Validate: targetDir = path ?? projectDir (exactly one required); base required.
- *   2. STEP 1 — stack: detectStack(targetDir) (F-3, stack-detection.js).
- *   3. STEP 2 — rules: loadRules(targetDir, stack, rulesDir) (F-4, rules-loader.js)
+ *   2. STEP 0, scenario (a): gitUrl → cloneExternalRepo (F-7, external-repo-clone.js)
+ *      → reviewDir = cache dir `.fan/git/<slug>`; for (b)/(c) reviewDir = targetDir.
+ *   3. STEP 1 — stack: detectStack(reviewDir) (F-3, stack-detection.js).
+ *   4. STEP 2 — rules: loadRules(reviewDir, stack, rulesDir) (F-4, rules-loader.js)
  *      → { files, warning? }; rulesDir = options.rulesDir ?? env CODE_REVIEW_RULES_DIR
  *      (F-13) ?? <extension root>/review-rules (fileURLToPath pattern, F-13 parity).
- *   4. git diff: execGit(["diff", `${base}...HEAD`], targetDir) — no clone, no network.
- *   5. Empty stdout → EARLY RETURN with verdict "APPROVED" and scope marked
+ *   5. git diff: execGit(["diff", `${base}...HEAD`], reviewDir) — scenario (a) diffs
+ *      inside the clone-cache; "fatal: bad revision" → unshallow retry → graceful
+ *      NEEDS_DISCUSSION (see scenario (a) above). (b)/(c): no clone, no network.
+ *   6. Empty stdout → EARLY RETURN with verdict "APPROVED" and scope marked
  *      "no changes detected". This is a SPECIAL CASE ON TOP OF severityToVerdict:
  *      the F-10 mapper returns NEEDS_DISCUSSION for [] ("ambiguity"), but an empty
  *      DIFF means "nothing to review" = APPROVED (roadmap TC-F-8-2).
- *   6. Per-file unified-diff parsing: file boundaries on «diff --git a/<p> b/<p>»
+ *   7. Per-file unified-diff parsing: file boundaries on «diff --git a/<p> b/<p>»
  *      (path from the b/ side, relative, POSIX separators, refined by «+++ b/<p>»);
  *      new-file line numbers from hunk headers «@@ -a,b +c,d @@» (1-based); added
  *      lines are «+»-prefixed (the «+++» file header is never counted); deleted
  *      lines do not advance the new-file counter; renames/binary files are kept
  *      in scope with a note but skipped from analysis.
- *   7. Analysis — PLACEHOLDER HEURISTIC (documented stub for the LLM step; the real
+ *   8. Analysis — PLACEHOLDER HEURISTIC (documented stub for the LLM step; the real
  *      rule-based analysis is performed by the LLM code-review worker at runtime and
  *      is intentionally not reproducible in unit tests — here only the SKELETON is
  *      tested: diff retrieval, parsing, stub-rule application, output structure):
@@ -44,8 +56,8 @@
  *        MAJOR (category "correctness") with concrete problem/suggestion text;
  *        added line matches one of SECURITY_PATTERNS (F-11) → ADDITIONAL finding
  *        CRITICAL (category "security", securityNote: true) naming the marker.
- *   8. VERDICT: severityToVerdict(findings) (F-10, agents.js); empty diff — step 5.
- *   9. Report: all sections in the order above; finding lines are emitted in the
+ *   9. VERDICT: severityToVerdict(findings) (F-10, agents.js); empty diff — step 6.
+ *   10. Report: all sections in the order above; finding lines are emitted in the
  *      exact F-9 line format so parseFindings(report) round-trips losslessly.
  *
  * Metrics (REFACTOR F-8, additive): runReview returns `metrics =
@@ -68,6 +80,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { detectStack } from "./stack-detection.js";
 import { loadRules } from "./rules-loader.js";
+import { cloneExternalRepo } from "./external-repo-clone.js";
 import { SEVERITY_VALUES } from "./findings.js";
 import { severityToVerdict } from "./agents.js";
 
@@ -409,34 +422,70 @@ function formatSecurityHandoffs(findings) {
 }
 
 /**
- * Run the diff-only code-review workflow (F-8 skeleton).
+ * «fatal: bad revision» from `git diff <base>...HEAD` against a shallow clone-cache
+ * (scenario (a)): base is older than the cloned depth (F-7, card step 6).
+ */
+const BAD_REVISION_RE = /fatal:\s*bad revision/i;
+
+/**
+ * Build the «## Review Scope» section for the graceful shallow-limit fallback
+ * (F-7, card step 6): the diff could not run because base is outside the
+ * shallow history and the unshallow retry failed — the report carries the
+ * «git fetch --unshallow» resolution instruction and ends with
+ * VERDICT: NEEDS_DISCUSSION (assembled in runReview).
+ */
+function formatShallowLimitSection({ gitUrl, base, cacheDir, rules, diffError, unshallowError }) {
+    const lines = [
+        "## Review Scope",
+        "",
+        `- Diff: git diff ${base}...HEAD — failed: the clone-cache is a shallow clone (--depth 200)`,
+        "- Rules loaded:",
+    ];
+    for (const ruleFile of rules.files) {
+        lines.push(`  - ${ruleFile}`);
+    }
+    if (rules.warning) {
+        lines.push(`- Warning: ${rules.warning}`);
+    }
+    if (gitUrl !== undefined) {
+        lines.push(`- External repo: ${gitUrl} (clone-cache: ${cacheDir})`);
+    }
+    lines.push(`- Shallow clone limitation: base "${base}" is not present in the cached history — ${String(diffError?.message ?? diffError).trim()}`);
+    lines.push(`- Resolution: run \`git fetch --unshallow\` in ${cacheDir}, then re-run the review`);
+    lines.push(`- Unshallow attempt failed: ${String(unshallowError?.message ?? unshallowError).trim()}`);
+    return lines.join("\n");
+}
+
+/**
+ * Run the diff-only code-review workflow (F-8 skeleton; F-7 scenario (a) wiring).
  *
  * @param {object} options
- * @param {string} [options.projectDir] - Project directory (scenario (b)); target is `path ?? projectDir`.
+ * @param {string} [options.projectDir] - Project directory (scenario (b)); target is `path ?? projectDir`;
+ *   scenario (a): root of the `.fan/git` clone-cache.
  * @param {string} [options.path] - Local path to ANOTHER project (scenario (c)); wins over projectDir; no cloning.
  * @param {string} options.base - REQUIRED ref (commit/branch/tag); diff = `git diff <base>...HEAD`.
- * @param {string} [options.gitUrl] - RESERVED for F-7: throws with "gitUrl" in the message.
+ * @param {string} [options.gitUrl] - External repo URL (scenario (a), F-7): delegated to
+ *   cloneExternalRepo({url, base, projectDir}, deps) → shallow clone-cache `.fan/git/<slug>`;
+ *   stack/rules/diff then run inside the cache dir; shallow-limit diff failure degrades
+ *   gracefully to VERDICT: NEEDS_DISCUSSION with a `git fetch --unshallow` instruction.
  * @param {string} [options.rulesDir] - Review-rules corpus root; defaults to env
  *   CODE_REVIEW_RULES_DIR (F-13), then `<extension root>/review-rules`.
- * @param {{execGit?: (args: string[], cwd: string) => string}} [deps] - Injectable
- *   git executor (test spy); defaults to synchronous execFileSync("git", …).
+ * @param {{execGit?: (args: string[], cwd: string) => string, existsSync?: (p: string) => boolean, fs?: {mkdirSync: (p: string, opts?: object) => unknown}}} [deps]
+ *   Injectable dependencies (test spies) — passed through to cloneExternalRepo in
+ *   scenario (a); execGit defaults to synchronous execFileSync("git", …).
  * @returns {Promise<{scope: string, findings: object[], summaryTable: string, handoffs: string|undefined, report: string, verdict: "APPROVED"|"CHANGES_REQUESTED"|"NEEDS_DISCUSSION", rulesLoaded: string[], metrics: {durationMs: number, filesInDiff: number, rulesLoaded: number}}>}
  *   metrics (REFACTOR F-8, additive): durationMs — wall time of the whole call;
  *   filesInDiff — number of files parsed from the diff (0 for an empty diff);
  *   rulesLoaded — count of loaded rule files (rules.files.length).
- * @throws {Error} On gitUrl (reserved F-7), missing base, missing projectDir/path,
- *   or git/rules failures (stderr / common.md missing — F-4 contract).
+ * @throws {Error} On missing base, missing projectDir/path, git/rules failures
+ *   (stderr / common.md missing — F-4 contract); scenario (a) shallow-limit diff
+ *   failures do NOT throw (graceful NEEDS_DISCUSSION, F-7 step 6).
  */
 export async function runReview(options, deps) {
     const startedAt = Date.now(); // metrics.durationMs (REFACTOR F-8)
     const opts = options ?? {};
 
-    // ── Step 1: validation (gitUrl reserved F-7 → base → target dir) ──
-    if (opts.gitUrl !== undefined) {
-        throw new Error(
-            "gitUrl is not supported in this phase: external repo clone-cache (.fan/git/<slug>) is reserved for F-7 — use projectDir or path instead",
-        );
-    }
+    // ── Step 1: validation (base → target dir) ──
     if (typeof opts.base !== "string" || opts.base.trim().length === 0) {
         throw new Error('runReview requires a "base" ref (commit/branch/tag) to diff against HEAD');
     }
@@ -448,14 +497,52 @@ export async function runReview(options, deps) {
     const execGit = deps?.execGit ?? defaultExecGit;
     const rulesDir = opts.rulesDir ?? process.env.CODE_REVIEW_RULES_DIR ?? DEFAULT_RULES_DIR;
 
+    // ── STEP 0, scenario (a): gitUrl → shallow clone-cache (F-7, external-repo-clone.js) ──
+    // reviewDir = cache dir `.fan/git/<slug>`; scenarios (b)/(c): reviewDir = targetDir.
+    let reviewDir = targetDir;
+    let externalCache = null;
+    if (opts.gitUrl !== undefined) {
+        externalCache = cloneExternalRepo({ url: opts.gitUrl, base: opts.base, projectDir: opts.projectDir }, deps);
+        reviewDir = externalCache.cacheDir;
+    }
+
     // ── STEP 1: stack (F-3) ──
-    const stack = detectStack(targetDir);
+    const stack = detectStack(reviewDir);
 
     // ── STEP 2: rules (F-4) — throws when common.md is missing ──
-    const rules = loadRules(targetDir, stack, rulesDir);
+    const rules = loadRules(reviewDir, stack, rulesDir);
 
-    // ── git diff (no clone, no network) ──
-    const diffText = execGit(["diff", `${opts.base}...HEAD`], targetDir);
+    // ── git diff (scenario (a): inside the clone-cache; shallow-limit fallback below) ──
+    let diffText;
+    try {
+        diffText = execGit(["diff", `${opts.base}...HEAD`], reviewDir);
+    } catch (err) {
+        // F-7 step 6 (scenario (a) only): base older than the shallow depth →
+        // try `git fetch --unshallow`, on failure degrade gracefully.
+        if (externalCache === null || !BAD_REVISION_RE.test(String(err?.message ?? err))) {
+            throw err;
+        }
+        try {
+            execGit(["fetch", "--unshallow"], reviewDir);
+            diffText = execGit(["diff", `${opts.base}...HEAD`], reviewDir);
+        } catch (unshallowErr) {
+            // Graceful fallback (card F-7): report carries the unshallow instruction;
+            // verdict NEEDS_DISCUSSION — deliberate, NOT the F-10 empty-findings mapping
+            // and NOT the empty-diff APPROVED special case.
+            const scope = formatShallowLimitSection({
+                gitUrl: opts.gitUrl,
+                base: opts.base,
+                cacheDir: reviewDir,
+                rules,
+                diffError: err,
+                unshallowError: unshallowErr,
+            });
+            const summaryTable = formatSummaryTable([]);
+            const report = [scope, formatFindingsSection([]), summaryTable, "VERDICT: NEEDS_DISCUSSION"].join("\n\n") + "\n";
+            const metrics = { durationMs: Date.now() - startedAt, filesInDiff: 0, rulesLoaded: rules.files.length };
+            return { scope, findings: [], summaryTable, handoffs: undefined, report, verdict: "NEEDS_DISCUSSION", rulesLoaded: rules.files, metrics };
+        }
+    }
 
     // ── Empty diff → EARLY RETURN: APPROVED (special case on top of F-10) ──
     if (diffText.trim().length === 0) {

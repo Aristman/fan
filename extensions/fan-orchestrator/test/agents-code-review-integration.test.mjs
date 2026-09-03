@@ -18,8 +18,9 @@
  *                               целевой директории БЕЗ клонирования (git clone — только F-7/gitUrl);
  *                               целевая директория = path ?? projectDir (ровно одна обязательна);
  *       - base: string        — ОБЯЗАТЕЛЬНЫЙ ref (commit/branch/tag); diff = git diff <base>...HEAD;
- *       - gitUrl?: string     — ЗАРЕЗЕРВИРОВАНО за F-7 (clone-cache .fan/git/<slug>): текущая фаза →
- *                               throw, сообщение содержит «gitUrl»;
+ *       - gitUrl?: string     — внешний репо (сценарий (a), F-7 Green): делегируется в
+ *                               cloneExternalRepo (external-repo-clone.js) — shallow clone-cache
+ *                               .fan/git/<slug> (--depth 200); стек/правила/diff — внутри кэш-директории;
  *       - rulesDir?: string   — корень review-rules corpus (F-1/F-4); по умолчанию env
  *                               CODE_REVIEW_RULES_DIR (F-13), затем <корень extension>/review-rules.
  *
@@ -92,8 +93,9 @@
  *           (b) rulesLoaded = common.md + typescript.md + <other>/.fan/code-review/conventions.md
  *               (общий файл), НЕ conventions.other-project.md;
  *           (c) findings ≥ 1 (в т.ч. src/db.ts), verdict "CHANGES_REQUESTED".
- * (+) Контракт-пины входа: gitUrl → rejects /gitUrl/ (F-7); без base → rejects /base/;
- *     без projectDir и path → rejects /projectDir|path/.
+ * (+) Контракт-пины входа: gitUrl → делегация clone-cache (F-7 Green, clone через deps,
+ *     БЕЗ throw «reserved»); без base → rejects /base/; без projectDir и path →
+ *     rejects /projectDir|path/.
  *
  * Фикстуры (constraint карточки: реальные tmp-git-репо, git в PATH): fs.mkdtemp + execFileSync
  * ("git", ...) — init + локальный config (user.name/user.email, core.autocrlf=false) + 1-2 коммита;
@@ -462,11 +464,30 @@ describe("F-8: Diff-only review workflow (git diff → findings → verdict, rev
 });
 
 describe("F-8: контракт входа runReview (валидация опций)", () => {
-    it("gitUrl зарезервирован за F-7 → throw, сообщение содержит «gitUrl»", async () => {
-        await expect(
-            runReview({ projectDir: ".", base: "HEAD", gitUrl: "https://github.com/owner/repo" }),
-            "gitUrl на этапе F-8 не поддерживается: явный throw с «gitUrl» в сообщении (контракт; clone-cache — F-7)",
-        ).rejects.toThrow(/gitUrl/);
+    it("gitUrl → F-7 clone-cache: делегация cloneExternalRepo (clone через deps), НЕ throw «reserved»", async () => {
+        // F-7 Green: throw «reserved for F-7» заменён на делегацию (карточка TC-F-7-3:
+        // вход через runReview). deps-шпион: кэша нет → clone-путь; пустой diff →
+        // EARLY RETURN APPROVED (никакой сети и реального git).
+        const calls = [];
+        const result = await runReview(
+            { projectDir: ".", base: "HEAD", gitUrl: "https://github.com/owner/repo" },
+            {
+                execGit(args, cwd) {
+                    calls.push({ args, cwd });
+                    return "";
+                },
+                existsSync: () => false,
+                fs: { mkdirSync() {} },
+            },
+        );
+        const cloneCalls = calls.filter((c) => c.args[0] === "clone");
+        expect(
+            cloneCalls,
+            "gitUrl больше не reserved: runReview делегирует клон в cloneExternalRepo (F-7 Green)",
+        ).toHaveLength(1);
+        expect(cloneCalls[0].args).toEqual(["clone", "--depth", "200", "https://github.com/owner/repo", ".fan/git/owner-repo"]);
+        expect(cloneCalls[0].cwd).toBe(".");
+        expect(result.verdict, "пустой mock-diff → EARLY RETURN APPROVED (F-8 TC-F-8-2)").toBe("APPROVED");
     });
 
     it("без base → throw с упоминанием «base»; без projectDir/path → throw с упоминанием цели", async () => {
