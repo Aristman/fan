@@ -41,7 +41,9 @@
  *      tested: diff retrieval, parsing, stub-rule application, output structure):
  *        added line matches /user\.id\b/ AND has no null-safety on the same line
  *        (none of «user?.», «== null», «!= null», «typeof user») → finding
- *        MAJOR (category "correctness") with concrete problem/suggestion text.
+ *        MAJOR (category "correctness") with concrete problem/suggestion text;
+ *        added line matches one of SECURITY_PATTERNS (F-11) → ADDITIONAL finding
+ *        CRITICAL (category "security", securityNote: true) naming the marker.
  *   8. VERDICT: severityToVerdict(findings) (F-10, agents.js); empty diff — step 5.
  *   9. Report: all sections in the order above; finding lines are emitted in the
  *      exact F-9 line format so parseFindings(report) round-trips losslessly.
@@ -52,9 +54,13 @@
  * empty diff), and the count of loaded rule files. Report behavior and all
  * pre-existing result fields are unchanged.
  *
- * Security Handoffs (F-11): the skeleton never produces security findings, so
- * `handoffs` is undefined and the «## Security Handoffs» section is omitted —
- * its population is F-11's responsibility.
+ * Security Handoffs (F-11): added lines matching SECURITY_PATTERNS produce
+ * CRITICAL security findings (securityNote: true). When at least one exists,
+ * a «## Security Handoffs» section — entries `- file:line — problem` plus the
+ * explicit «Recommend delegating to security worker» RECOMMENDATION (never a
+ * delegate_task tool call) — is inserted between «## Summary Table» and
+ * «VERDICT:», and `handoffs` carries its full text. Without security findings
+ * the section is omitted and `handoffs` stays undefined (TC-F-8-1 pin).
  */
 
 import { execFileSync } from "node:child_process";
@@ -75,6 +81,60 @@ const DEFAULT_RULES_DIR = path.join(EXTENSION_DIR, "review-rules");
 const USER_ID_RE = /user\.id\b/;
 /** Null-safety markers that silence the heuristic ON THE SAME LINE ONLY. */
 const NULL_SAFETY_RE = /user\?\.|==\s*null|!=\s*null|typeof\s+user/;
+
+/**
+ * SECURITY_PATTERNS (F-11): skeleton security markers scanned over added diff
+ * lines. A matched line yields an ADDITIONAL finding — CRITICAL, category
+ * "security", securityNote: true — whose problem text names the marker. This
+ * is TAGGING for a security-worker handoff (roadmap F-11), not an audit: the
+ * worker never delegates on its own (TC-F-11-2). Order matters: the FIRST
+ * matching marker names the finding. Patterns are line-scoped (no `g` flag —
+ * `test()` must stay stateless).
+ */
+export const SECURITY_PATTERNS = Object.freeze([
+    {
+        // String-concatenated SQL: db.query("…" + input) / exec('…' + input),
+        // or template interpolation: query(`…${input}`)
+        name: "SQL injection",
+        pattern: /\b(?:query|execute|exec)\s*\(\s*(?:"[^"]*"\s*\+|'[^']*'\s*\+|`[^`]*\$\{)/i,
+    },
+    {
+        // Raw HTML sinks: el.innerHTML = …, document.write(…)
+        name: "XSS",
+        pattern: /\b(?:innerHTML|outerHTML)\s*=|\bdocument\.write(?:ln)?\s*\(/i,
+    },
+    {
+        // Credential literals: const API_KEY = "sk-live-…", password = "hunter2"
+        name: "hardcoded secret",
+        pattern: /\b(?:password|passwd|secret|api_?key|access_?token|auth_?token|private_?key)\b\s*[:=]\s*["'][^"']{4,}["']/i,
+    },
+    {
+        // Broken primitives: createHash("md5"/"sha1"), createCipher("des"/"rc4")
+        name: "weak crypto",
+        pattern: /\b(?:createHash|createCipher(?:iv)?)\s*\(\s*["'](md5|sha1|des|rc4)["']/i,
+    },
+    {
+        // «..» path segments, or FS reads fed straight from request input
+        name: "path traversal",
+        pattern: /\.\.[\\/]|(?:readFileSync?|createReadStream)\s*\([^)]*\breq(?:uest)?\.(?:query|params|body)\b/i,
+    },
+    {
+        // Interpreting data as code: eval(…), new Function(…), unserialize(…)
+        name: "insecure deserialization",
+        pattern: /\b(?:eval\s*\(|new\s+Function\s*\(|unserialize\s*\(|pickle\.loads\s*\()/i,
+    },
+    {
+        // Route registered WITHOUT an auth/middleware/guard/session/token marker
+        // on the same line (skeleton heuristic — single line only)
+        name: "missing auth",
+        pattern: /^(?=.*\b(?:app|router|server)\.(?:get|post|put|patch|delete|all)\s*\()(?!.*(?:auth|middleware|guard|session|token|permission|jwt|verify)).*$/i,
+    },
+    {
+        // Object lookup keyed by unvalidated request data: findById(req.params.id)
+        name: "IDOR",
+        pattern: /\b(?:find(?:One|Many)?|findById(?:AndUpdate|AndDelete)?|deleteOne|updateOne)\s*\([^)]*\breq\.(?:params|query|body)\b/i,
+    },
+]);
 
 /**
  * Default git executor: contract-compatible with deps.execGit. Returns stdout;
@@ -202,7 +262,7 @@ export function parseUnifiedDiff(diffText) {
  * documented stub heuristic to every added line of an analyzable file.
  *
  * @param {{path: string, added: {line: number, content: string}[], binary: boolean, renamed: boolean, deleted: boolean}[]} files - Parsed diff records.
- * @returns {{severity: "MAJOR", file: string, line: number, category: "correctness", problem: string, suggestion: string}[]} Findings in F-9 format, diff order.
+ * @returns {{severity: "CRITICAL"|"MAJOR", file: string, line: number, category: "correctness"|"security", problem: string, suggestion: string, securityNote?: boolean}[]} Findings in F-9 format, diff order; security findings additionally carry securityNote: true (F-11).
  */
 function analyzeAddedLines(files) {
     const findings = [];
@@ -220,6 +280,23 @@ function analyzeAddedLines(files) {
                     problem: "Possible access to user.id without a null-check",
                     suggestion: "Add a null/undefined check for user before accessing user.id",
                 });
+            }
+            // F-11: skeleton security markers — an added line matching any
+            // SECURITY_PATTERNS entry yields an ADDITIONAL finding (a TAG for
+            // the security-worker handoff; the first matched marker names it).
+            for (const { name, pattern } of SECURITY_PATTERNS) {
+                if (pattern.test(content)) {
+                    findings.push({
+                        severity: "CRITICAL",
+                        file: file.path,
+                        line,
+                        category: "security",
+                        problem: `${name}: pattern matched in added line — needs a dedicated security audit`,
+                        suggestion: `Run a full security audit for ${file.path}:${line} (${name}) and fix the risk before merge`,
+                        securityNote: true,
+                    });
+                    break; // one security finding per added line
+                }
             }
         }
     }
@@ -308,6 +385,30 @@ export function formatSummaryTable(findings, options) {
 }
 
 /**
+ * Build the «## Security Handoffs» section (F-11): one `- <file>:<line> —
+ * <problem>` entry per security finding (securityNote: true) followed by the
+ * explicit delegation RECOMMENDATION («Recommend delegating to security
+ * worker») — a text hint for the coordinator, never a tool call (TC-F-11-2).
+ *
+ * @param {object[]} findings - Findings in F-9 format (securityNote allowed).
+ * @returns {string|undefined} Full section text (header included), or undefined
+ *   when there are no security findings (section omitted — TC-F-8-1 pin).
+ */
+function formatSecurityHandoffs(findings) {
+    const security = findings.filter((f) => f.securityNote === true);
+    if (security.length === 0) {
+        return undefined;
+    }
+    const lines = ["## Security Handoffs", ""];
+    for (const f of security) {
+        lines.push(`- ${f.file}:${f.line} — ${f.problem}`);
+    }
+    lines.push("");
+    lines.push("Recommend delegating to security worker");
+    return lines.join("\n");
+}
+
+/**
  * Run the diff-only code-review workflow (F-8 skeleton).
  *
  * @param {object} options
@@ -377,10 +478,15 @@ export async function runReview(options, deps) {
     // ── Report: Review Scope → Findings → Summary Table → [Security Handoffs] → VERDICT ──
     const scope = formatScopeSection({ base: opts.base, rules, diffFiles, isEmpty: false });
     const summaryTable = formatSummaryTable(findings);
-    // F-11 territory: the skeleton produces no security findings, so handoffs
-    // stays undefined and the section is omitted from the report.
-    const handoffs = undefined;
-    const report = [scope, formatFindingsSection(findings), summaryTable, `VERDICT: ${verdict}`].join("\n\n") + "\n";
+    // F-11: security findings (securityNote: true) → «## Security Handoffs»
+    // between Summary Table and VERDICT; no security findings → omitted, undefined.
+    const handoffs = formatSecurityHandoffs(findings);
+    const reportParts = [scope, formatFindingsSection(findings), summaryTable];
+    if (handoffs !== undefined) {
+        reportParts.push(handoffs);
+    }
+    reportParts.push(`VERDICT: ${verdict}`);
+    const report = reportParts.join("\n\n") + "\n";
 
     const metrics = { durationMs: Date.now() - startedAt, filesInDiff: diffFiles.length, rulesLoaded: rules.files.length };
     return { scope, findings, summaryTable, handoffs, report, verdict, rulesLoaded: rules.files, metrics };
