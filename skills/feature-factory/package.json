@@ -1,22 +1,25 @@
 {
   "name": "feature-factory",
-  "version": "1.0.0",
-  "description": "Полный цикл разработки фичи от описания до закоммиченного кода в одном запуске: спецификация → Lavish-аппрув → TDD-роадмапа → Lavish-аппрув → TDD-пайплайн Red-Green-Refactor с воркерами delegate_task. Интервью строго по вопросам из конфига (.fan/feature-factory.json), импровизированный опрос запрещён. Resumable: старт с описания фичи, спеки или roadmap.",
+  "version": "1.3.0",
+  "description": "Полный цикл разработки фичи от описания до закоммиченного кода в одном запуске: единый kickoff-опрос на старте (≤ 12 вопросов, табы «Скоуп»/«Роадмапа»/«Пайплайн») с персистенцией решений в .fan/feature-factory/<slug>/decisions.json (resumable), затем — спецификация → Lavish-аппрув → TDD-роадмапа → Lavish-аппрув → TDD-пайплайн Red-Green-Refactor с воркерами delegate_task без единого вопроса. Конфиг (.fan/feature-factory.json) — только общие настройки реализации.",
   "type": "module",
   "keywords": ["fan-package", "fan-skill", "spec", "roadmap", "pipeline", "tdd", "lavish", "unified", "feature"],
   "author": "FAN Team",
   "license": "MIT",
   "changelog": {
+    "1.3.0": "Фаза 0 автосоздаёт .fan/feature-factory.json копией дефолта, если конфига нет; fallback — дефолт пакета при ошибке записи.",
+    "1.2.0": "Baseline-коммит после апрува роадмапы (точка начала разработки, SHA фиксируется в pipeline-report.md); скилл больше не создаёт веток — работа в текущей ветке оператора, проверка защищённых веток (dev/develop/master/main/trunk) с предупреждением и продолжением.",
+    "1.1.0": "Вопросы вынесены из конфига в единый kickoff-опрос на старте (один вызов questionnaire, табы «Скоуп»/«Роадмапа»/«Пайплайн», ≤ 12 вопросов; контекстные вопросы таба «Скоуп» агент генерирует после исследования); конфиг — только общие настройки реализации (research/лимиты/финальные проверки/lavish); все решения персистятся в .fan/feature-factory/<slug>/decisions.json (resumable: полный decisions — kickoff пропускается, при запуске с середины — kickoff до целевой фазы); маппинг MoSCoW→P0-P3 — фиксированный формат, лимит verify-ретраев — фиксированные 3; фазы перенумерованы 0-7 (Kickoff/Спека/Апрув спеки/Роадмапа/Апрув роадмапы/Pipeline/Финал).",
     "1.0.0": "Initial release — unified spec→roadmap→pipeline: spec phase with config-driven interview (research-spec-generator base), Lavish approval loop for spec and roadmap (playbook → HTML → poll → edits), roadmap phase with MoSCoW→P0-P3 mapping and stage limits (feature-roadmap v1.3 base), TDD pipeline with Red-Green-Refactor, phase-gate, final code review (G.1.5) and security audit (G.1.6) (feature-pipeline v3.3 base). All parameters from .fan/feature-factory.json or bundled default config; no improvised questions."
   },
   "fan": {
     "name": "feature-factory",
     "type": "skill",
     "displayName": "Feature Factory",
-    "description": "Единый запуск: спецификация → роадмапа → TDD-pipeline с Lavish-аппрувом артефактов и интервью строго по конфигу. Resumable (описание / спека / roadmap).",
-    "version": "1.0.0",
+    "description": "Единый запуск: kickoff-опрос (решения в decisions.json) → спецификация → роадмапа → TDD-pipeline с Lavish-аппрувом артефактов, без вопросов после kickoff. Resumable (описание / спека / roadmap).",
+    "version": "1.3.0",
     "main": "SKILL.md",
     "author": "FAN Team",
-    "tags": ["spec", "roadmap", "pipeline", "tdd", "lavish", "approval", "interview", "config-driven", "rgr", "phase-gate", "code-review", "security", "unified", "resumable"]
+    "tags": ["spec", "roadmap", "pipeline", "tdd", "lavish", "approval", "kickoff", "decisions", "resumable", "rgr", "phase-gate", "code-review", "security", "unified"]
   }
 }

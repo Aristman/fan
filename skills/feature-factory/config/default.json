@@ -1,34 +1,12 @@
 {
   "spec": {
-    "requestTypes": ["feature","project","modification","integration","optimization","research"],
     "autoDetectType": true,
-    "research": { "memory": true, "projectFiles": true, "webSearch": true, "minQuality": 0.8 },
-    "interview": {
-      "maxQuestionsPerRound": 5,
-      "rounds": [
-        { "id": "round-1", "label": "Скоуп", "trigger": "always", "questions": [
-          { "id": "target_users", "label": "Аудитория", "prompt": "Кто целевые пользователи фичи?", "options": [{"value":"internal","label":"Внутренние (команда)"},{"value":"external","label":"Внешние пользователи"}], "allowOther": true, "required": false },
-          { "id": "success_criteria", "label": "Успех", "prompt": "Как измерим успех фичи?", "allowOther": true, "required": true },
-          { "id": "constraints", "label": "Ограничения", "prompt": "Есть ли технические/сроковые ограничения?", "allowOther": true, "required": false }
-        ]},
-        { "id": "round-2", "label": "Детали", "trigger": "on_gaps", "questions": [] }
-      ]
-    }
+    "research": { "memory": true, "projectFiles": true, "webSearch": true, "minQuality": 0.8 }
   },
   "roadmap": {
-    "maxStages": 8, "maxFunctions": 15, "functionsPerStage": [3,30],
-    "stagingStrategies": [{"value":"mvp-first","label":"MVP → Расширение → Полировка"},{"value":"core-integration","label":"Ядро → Интеграция → Продвинутые"}],
-    "defaultStrategy": "mvp-first",
-    "priorityMapping": {"Must Have":"P0","Should Have":"P1","Could Have":"P2","Won't Have":"exclude"},
-    "onStageLimitExceeded": "delegate",
-    "onMissingSpecFields": "infer"
+    "maxStages": 8, "maxFunctions": 15, "functionsPerStage": [3,30]
   },
   "pipeline": {
-    "commitStrategy": "per-function",
-    "controlPoints": "on-error",
-    "maxVerifyRetries": 3,
-    "onMaxRetriesExceeded": "abort",
-    "phaseGate": "auto",
     "codeReview": "final",
     "securityAudit": "final",
     "docsUpdate": true
@@ -36,6 +14,7 @@
   "lavish": {
     "specApproval": { "enabled": true, "playbook": "plan" },
     "roadmapApproval": { "enabled": true, "playbook": "plan" },
+    "maxRevisions": 5,
     "approveKeywords": ["approve","approved","аппрув","ок","согласовано","всё отлично","выглядит хорошо"]
   }
 }

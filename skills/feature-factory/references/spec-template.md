@@ -9,7 +9,7 @@
 ## Правила заполнения секции «Функции»
 
 1. **Одна запись = одна функция.** ID присваивается при генерации: `F-<порядковый номер>` (F-1, F-2, ...). Фаза роадмапы переприсвоит ID в формат `F-X.Y` (этап.номер).
-2. **Приоритет** — либо напрямую `P0|P1|P2|P3`, либо MoSCoW: `Must Have | Should Have | Could Have | Won't Have`. MoSCoW переводится автоматически по `config.roadmap.priorityMapping` из активного конфига (дефолт: Must Have → P0, Should Have → P1, Could Have → P2, Won't Have → исключить из roadmap).
+2. **Приоритет** — либо напрямую `P0|P1|P2|P3`, либо MoSCoW: `Must Have | Should Have | Could Have | Won't Have`. MoSCoW переводится в Фазе 4 (роадмапа) по **фиксированному маппингу формата** (таблица в `references/roadmap-phase.md`): Must Have → P0, Should Have → P1, Could Have → P2, Won't Have → исключить из roadmap.
 3. **Слой** — ровно одно значение: `API | UI | storage | model | integration | business | cli`.
    Маппинг в слои роадмапы (обособленность фич):
 
@@ -53,7 +53,7 @@
 ## 2. Функции
 
 > Структурированная секция для автоматической генерации роадмапы.
-> Приоритет: `P0`–`P3` напрямую ИЛИ MoSCoW (автоперевод по config.roadmap.priorityMapping).
+> Приоритет: `P0`–`P3` напрямую ИЛИ MoSCoW (автоперевод по фиксированному маппингу формата).
 > Слой: `API | UI | storage | model | integration | business | cli` — ровно один на функцию.
 
 ### F-1: [Название функции]
@@ -157,8 +157,8 @@
 
 ## 12. Следующие шаги
 
-- [ ] Роадмапа: docs/features/<slug>/roadmap.md (фаза 3 feature-factory)
-- [ ] Pipeline: TDD-реализация (фаза 5 feature-factory)
+- [ ] Роадмапа: docs/features/<slug>/roadmap.md (фаза 4 feature-factory)
+- [ ] Pipeline: TDD-реализация (фаза 6 feature-factory)
 
 ---
 
