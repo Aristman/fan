@@ -1,0 +1,20 @@
+# DEPLOY.toml — FAN Package Deployment Manifest
+# Schema version: 1
+
+[package]
+name = "feature-factory"
+type = "skill"
+
+include = [
+    "SKILL.md",
+    "package.json",
+    "README.md",
+    "references/**/*.md",
+    "templates/**",
+    "config/*.json",
+]
+
+exclude = []
+
+# Skills are read-only markdown/templates — no client-side state to preserve
+preserve = []

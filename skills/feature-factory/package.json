@@ -1,0 +1,22 @@
+{
+  "name": "feature-factory",
+  "version": "1.0.0",
+  "description": "Полный цикл разработки фичи от описания до закоммиченного кода в одном запуске: спецификация → Lavish-аппрув → TDD-роадмапа → Lavish-аппрув → TDD-пайплайн Red-Green-Refactor с воркерами delegate_task. Интервью строго по вопросам из конфига (.fan/feature-factory.json), импровизированный опрос запрещён. Resumable: старт с описания фичи, спеки или roadmap.",
+  "type": "module",
+  "keywords": ["fan-package", "fan-skill", "spec", "roadmap", "pipeline", "tdd", "lavish", "unified", "feature"],
+  "author": "FAN Team",
+  "license": "MIT",
+  "changelog": {
+    "1.0.0": "Initial release — unified spec→roadmap→pipeline: spec phase with config-driven interview (research-spec-generator base), Lavish approval loop for spec and roadmap (playbook → HTML → poll → edits), roadmap phase with MoSCoW→P0-P3 mapping and stage limits (feature-roadmap v1.3 base), TDD pipeline with Red-Green-Refactor, phase-gate, final code review (G.1.5) and security audit (G.1.6) (feature-pipeline v3.3 base). All parameters from .fan/feature-factory.json or bundled default config; no improvised questions."
+  },
+  "fan": {
+    "name": "feature-factory",
+    "type": "skill",
+    "displayName": "Feature Factory",
+    "description": "Единый запуск: спецификация → роадмапа → TDD-pipeline с Lavish-аппрувом артефактов и интервью строго по конфигу. Resumable (описание / спека / roadmap).",
+    "version": "1.0.0",
+    "main": "SKILL.md",
+    "author": "FAN Team",
+    "tags": ["spec", "roadmap", "pipeline", "tdd", "lavish", "approval", "interview", "config-driven", "rgr", "phase-gate", "code-review", "security", "unified", "resumable"]
+  }
+}
