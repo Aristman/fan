@@ -7,15 +7,20 @@ description: >
   Каждый шаг цикла — отдельный delegate_task с независимым verify.
   На границах этапов — phase-gate e2e (smoke + e2e-сценарий этапа из roadmap).
   Координатор управляет pipeline через TaskCreate/TaskUpdate, не выполняя код сам.
-  В финале: полная верификация, smoke/e2e-тесты, обновление документации,
+  В финале: полная верификация, code review, security-аудит, smoke/e2e-тесты, обновление документации,
   финальный коммит и отчёт.
   Используйте когда есть roadmap фичи и нужно автоматизировать полный цикл разработки
   с прозрачным TDD-контролем.
 compatibility: "TaskCreate, TaskUpdate, list_tasks, TaskClear, delegate_task, read, write, edit, bash, question, questionnaire, pipeline"
 metadata:
   author: "FAN Team"
-  version: "3.2.0"
+  version: "3.3.0"
   changelog: |
+    v3.3.0 (2026-09-04):
+    - Integrated read-only security and code-review workers into the flow
+    - Final phase: new steps G.1.5 (code review, once per feature) and G.1.6 (security audit)
+    - Optional security audit on phase-gate for stages touching auth/secrets/user input
+    - Rule 22: heavy read-only workers are never run in every TDD cycle
     v3.2.0 (2026-08-10):
     - TDD cycle reordered to Red-Green-Refactor: tests-impl (Red) → implement (Green) → verify → refactor → commit
     - Refactor step added between verify and commit (reads Refactor-цели from roadmap)

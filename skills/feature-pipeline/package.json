@@ -1,23 +1,24 @@
 {
   "name": "feature-pipeline",
-  "version": "3.2.0",
-  "description": "Полный TDD-пайплайн разработки фичи (Red-Green-Refactor) от roadmap до готового результата. Координатор управляет через TaskCreate/TaskUpdate, каждый шаг — отдельный delegate_task. Каждая функция: tests-impl (Red) → implement (Green) → verify → refactor → commit. Phase-gate e2e на границах этапов. В финале: полная верификация, smoke/e2e-тесты, документация, отчёт.",
+  "version": "3.3.0",
+  "description": "Полный TDD-пайплайн разработки фичи (Red-Green-Refactor) от roadmap до готового результата. Координатор управляет через TaskCreate/TaskUpdate, каждый шаг — отдельный delegate_task. Каждая функция: tests-impl (Red) → implement (Green) → verify → refactor → commit. Phase-gate e2e на границах этапов. В финале: полная верификация, code review, security-аудит, smoke/e2e-тесты, документация, отчёт.",
   "type": "module",
   "keywords": ["fan-package", "fan-skill", "pipeline", "tdd", "orchestrator", "ci", "automation", "rgr", "phase-gate"],
   "author": "FAN Team",
   "license": "MIT",
   "changelog": {
+    "3.3.0": "Integrated read-only security and code-review workers: final-phase steps G.1.5 (code review, once per feature) and G.1.6 (security audit). Optional security audit on phase-gate for stages touching auth/secrets/user input. Rule 22: heavy read-only workers are never run in every TDD cycle.",
     "3.2.0": "TDD cycle reordered to Red-Green-Refactor: tests-impl (Red) → implement (Green) → verify → refactor → commit. Refactor step added between verify and commit. Phase-gate e2e at stage boundaries (Smoke-критерий этапа + E2E-сценарий этапа). New anti-patterns: Test-After, refactor without green tests. Aligned with feature-roadmap v1.3.0.",
     "3.1.0": "Pipeline Mode: working artifacts (development-plan.md, development-log.md, phase-status.json). Integration with FAN Orchestrator /pipeline command. Auto-update hooks on TaskCreate/TaskUpdate. Mandatory commit policy (conventional-commits, per-phase/per-function/manual). Function limit increased to 30 per stage. State recovery after session restart."
   },
   "fan": {
     "name": "feature-pipeline",
     "type": "skill",
-    "displayName": "Feature Pipeline v3.2.0",
-    "description": "Полный TDD-pipeline (Red-Green-Refactor) с рабочими артефактами (development-plan.md, development-log.md, phase-status.json), интеграцией с FAN Orchestrator /pipeline, обязательным commit policy через conventional-commits, phase-gate e2e на границах этапов.",
-    "version": "3.2.0",
+    "displayName": "Feature Pipeline v3.3.0",
+    "description": "Полный TDD-pipeline (Red-Green-Refactor) с рабочими артефактами (development-plan.md, development-log.md, phase-status.json), интеграцией с FAN Orchestrator /pipeline, обязательным commit policy через conventional-commits, phase-gate e2e на границах этапов, финальным code review и security-аудитом.",
+    "version": "3.3.0",
     "main": "SKILL.md",
     "author": "FAN Team",
-    "tags": ["pipeline", "tdd", "orchestrator", "automation", "testing", "verification", "coordinator", "artifacts", "commit-policy", "rgr", "phase-gate", "v3.2"]
+    "tags": ["pipeline", "tdd", "orchestrator", "automation", "testing", "verification", "coordinator", "artifacts", "commit-policy", "rgr", "phase-gate", "v3.3"]
   }
 }
