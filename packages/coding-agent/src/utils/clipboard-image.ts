@@ -154,22 +154,28 @@ function isWSL(env: NodeJS.ProcessEnv = process.env): boolean {
 }
 
 /**
- * On WSL, the Linux clipboard (Wayland/X11) does not receive image data from
- * Windows screenshots (Win+Shift+S). PowerShell can access the Windows clipboard
- * directly, so we use it as a fallback.
+ * Read clipboard image via Windows PowerShell.
+ * Works both on WSL (via wslpath for path conversion) and on native Windows.
  */
-function readClipboardImageViaPowerShell(): ClipboardImage | null {
-	const tmpFile = join(tmpdir(), `fan-wsl-clip-${randomUUID()}.png`);
+function readClipboardImageViaPowerShell(options?: { isNativeWindows?: boolean }): ClipboardImage | null {
+	const tmpFile = join(tmpdir(), `fan-clip-${randomUUID()}.png`);
+	const isNativeWindows = options?.isNativeWindows ?? false;
 
 	try {
-		const winPathResult = runCommand("wslpath", ["-w", tmpFile], { timeoutMs: DEFAULT_LIST_TIMEOUT_MS });
-		if (!winPathResult.ok) {
-			return null;
-		}
-
-		const winPath = winPathResult.stdout.toString("utf-8").trim();
-		if (!winPath) {
-			return null;
+		let winPath: string;
+		if (isNativeWindows) {
+			// On native Windows, use the tmp path directly
+			winPath = tmpFile;
+		} else {
+			// On WSL, convert Linux path to Windows path via wslpath
+			const winPathResult = runCommand("wslpath", ["-w", tmpFile], { timeoutMs: DEFAULT_LIST_TIMEOUT_MS });
+			if (!winPathResult.ok) {
+				return null;
+			}
+			winPath = winPathResult.stdout.toString("utf-8").trim();
+			if (!winPath) {
+				return null;
+			}
 		}
 
 		const psScript = [
@@ -238,7 +244,12 @@ function readClipboardImageViaXclip(): ClipboardImage | null {
 }
 
 async function readClipboardImageViaNativeClipboard(): Promise<ClipboardImage | null> {
-	if (!clipboard || !clipboard.hasImage()) {
+	if (!clipboard) {
+		if (process.env.FAN_DEBUG) process.stderr.write(`[FAN_DEBUG] native clipboard module is null\n`);
+		return null;
+	}
+	if (!clipboard.hasImage()) {
+		if (process.env.FAN_DEBUG) process.stderr.write(`[FAN_DEBUG] clipboard.hasImage() returned false\n`);
 		return null;
 	}
 
@@ -280,7 +291,22 @@ export async function readClipboardImage(options?: {
 			image = await readClipboardImageViaNativeClipboard();
 		}
 	} else {
-		image = await readClipboardImageViaNativeClipboard();
+		try {
+			image = await readClipboardImageViaNativeClipboard();
+		} catch (error) {
+			if (process.env.FAN_DEBUG) {
+				process.stderr.write(
+					`[FAN_DEBUG] native clipboard threw: ${error instanceof Error ? error.message : String(error)}\n`,
+				);
+			}
+			image = null;
+		}
+		if (!image && platform === "win32") {
+			if (process.env.FAN_DEBUG) {
+				process.stderr.write(`[FAN_DEBUG] native clipboard failed, trying PowerShell fallback\n`);
+			}
+			image = readClipboardImageViaPowerShell({ isNativeWindows: true });
+		}
 	}
 
 	if (!image) {
