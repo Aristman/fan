@@ -44,7 +44,7 @@ metadata:
 Этот skill предназначен для **агента-оркестратора**, который имеет
 доступ к инструментам **TaskCreate/TaskUpdate/list_tasks/TaskClear**
 и инструменту **delegate_task** с типами воркеров:
-`implement`, `verify`, `tests-impl`, `bug-fix`, `docs-impl`, `explore`, `plan`.
+`implement`, `verify`, `tests-impl`, `bug-fix`, `docs-impl`, `explore`, `plan`, `security`, `code-review`.
 
 ### Запрещено
 
@@ -174,7 +174,7 @@ git log -1 --format=%H  # сохраняем sha в phase-status.json
 | `TaskUpdate` | Обновление статуса задачи (in_progress → completed/failed) |
 | `list_tasks` | Просмотр списка задач |
 | `TaskClear` | Очистка завершённых задач после финала |
-| `delegate_task` | Запуск под-агентов: implement, verify, tests-impl, bug-fix, docs-impl, explore, plan |
+| `delegate_task` | Запуск под-агентов: implement, verify, tests-impl, bug-fix, docs-impl, explore, plan, security, code-review |
 | `read` | Чтение roadmap, кода, тестов |
 | `write` | Запись файлов и отчёта |
 | `edit` | Изменение roadmap (статусы), документов |
@@ -472,6 +472,9 @@ Orchestrator создаёт:
     roadmap) — запустить phase-gate перед переходом:
     - **Smoke-критерий этапа:** прочитать из roadmap.md текущего этапа, запустить через delegate_task(agent="verify").
     - **E2E-сценарий этапа:** прочитать из roadmap.md текущего этапа, запустить через delegate_task(agent="tests-impl").
+    - **Опционально (критичные фичи):** если этап затрагивал auth/секреты/обработку
+      пользовательского ввода — дополнительно `delegate_task(agent="security")`
+      с аудитом нового кода этапа.
     - Если smoke/e2e этапа падает — этап НЕ считается завершённым;
       возврат к исправлению через `delegate_task(agent="bug-fix")` до зелёного состояния.
     - Только после зелёного phase-gate — показать пользователю краткую сводку
@@ -512,8 +515,11 @@ TaskUpdate.
 - **verify** — верификация на соответствие TDD-тестам
 - **bug-fix** — исправление найденных ошибок (вызывается когда verify нашёл FAIL)
 - **explore** — исследование кодовой базы перед реализацией
+- **plan** — исследование и планирование кодовой базы, read-only
 - **tests-impl** — написание тестов
 - **docs-impl** — обновление документации
+- **security** — глубокий security-аудит (OWASP/CWE, secrets, deps, IaC, config), read-only
+- **code-review** — статическое ревью диффа фичи, read-only; не заменяет verify
 
 ### Анти-паттерн: делегирование всего pipeline
 
@@ -665,6 +671,61 @@ delegate_task({
 Если FAIL или PARTIAL:
 - Исправить проблемы через implement (отдельным воркером)
 - Повторить верификацию (max 3 итерации для финала)
+
+#### Шаг G.1.5: Code-review
+
+Запустить code-review-воркер на ПОЛНЫЙ дифф фичи — статическое ревью всех
+изменений. Выполняется ОДИН раз на фичу (не после каждого TDD-цикла).
+
+```
+delegate_task({
+  agent: "code-review",
+  task: "Проверь полный дифф фичи <slug> (git diff master..feature/<slug>).
+         Slug: <slug>.
+         Roadmap: docs/features/<slug>/roadmap.md
+         
+         Проверь:
+         1. Качество и читаемость кода, соответствие конвенциям проекта
+         2. Дублирование, мёртвый код, лишние абстракции
+         3. Обработку ошибок и краевых случаев
+         4. Согласованность с существующими модулями
+         
+         Вердикт: PASS / CHANGES_REQUESTED (с конкретными замечаниями)."
+})
+```
+
+Если CHANGES_REQUESTED:
+- Исправить замечания через implement (отдельным воркером)
+- Повторить code-review (max 2 итерации), иначе — PASS.
+
+#### Шаг G.1.6: Security-аудит
+
+Запустить security-воркер на новый код фичи — глубокий security-аудит
+перед финальным коммитом.
+
+```
+delegate_task({
+  agent: "security",
+  task: "Проведи security-аудит фичи <slug>: OWASP/CWE паттерны нового кода,
+         secret scanning, зависимости, конфигурации.
+         Slug: <slug>.
+         Дифф: git diff master..feature/<slug>
+         
+         Проверь:
+         1. OWASP/CWE паттерны в новом коде (injection, XSS, небезопасная
+            десериализация, слабая криптография и т.д.)
+         2. Secret scanning — нет ли закоммиченных ключей/токенов/паролей
+         3. Зависимости — известные уязвимости в новых пакетах
+         4. Конфигурации — exposure, дефолтные креды, права доступа
+         
+         Формат: список findings с severity (CRITICAL/HIGH/MEDIUM/LOW)
+         и рекомендациями по исправлению."
+})
+```
+
+При CRITICAL/HIGH findings:
+- Исправить через implement (отдельным воркером)
+- Повторить аудит (max 2 итерации).
 
 #### Шаг G.2: Smoke-тестирование
 
@@ -830,7 +891,7 @@ git commit -m "feat(<slug>): finalize <slug>
 ## Рекомендации
 
 - F-2.1 (P1, уведомления с вложениями) требует отдельной проработки архитектуры
-- Рекомендуется code review перед мержем в master
+- Code review и security-аудит выполнены воркерами code-review/security на шагах G.1.5-G.1.6
 ```
 
 #### Шаг G.8: Представить отчёт пользователю и очистить задачи
@@ -848,7 +909,7 @@ echo "=== Статус ==="
 echo ""
 echo "Что дальше:"
 echo "1. Проверьте журнал: docs/development-log.md"
-echo "2. Сделайте code review"
+echo "2. Просмотрите отчёты code-review и security (шаги G.1.5-G.1.6)"
 echo "3. Замержьте ветку feature/<slug> в master"
 ```
 
@@ -949,3 +1010,7 @@ rm .fan/tracking/phase-status.json  # удалить state
     из roadmap.md. Если smoke/e2e падает — этап НЕ завершён, возврат к
     исправлению (bug-fix worker) до зелёного состояния. Только после зелёного
     phase-gate — переход к следующему этапу.
+22. **security и code-review — read-only и тяжёлые.** code-review — один раз
+    на фичу (шаг G.1.5), security — шаг G.1.6 + опционально на phase-gate
+    критичных этапов (auth/секреты/пользовательский ввод); не запускать их
+    в каждом TDD-цикле.
