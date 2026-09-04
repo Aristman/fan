@@ -5,6 +5,8 @@
  * Uses the subagent runner to spawn fna subprocesses.
  */
 import * as os from "node:os";
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import { StringEnum } from "@seaagents/fan-ai";
 import { getMarkdownTheme } from "@seaagents/fan-coding-agent";
 import { Container, Markdown, Spacer, Text } from "@seaagents/fan-tui";
@@ -25,12 +27,24 @@ const AGENT_ICONS = {
 };
 const WRITE_WORKER_TYPES = new Set(["implement", "bug-fix", "tests-impl", "docs-impl"]);
 // Security-ключевые слова классификатора задач (routing на security-воркера).
-// ПЕРВОЕ правило classifyTaskByDescription: security-слова специфичнее generic-глаголов
+// №1 правило classifyTaskByDescription: security-слова специфичнее generic-глаголов
 // (explore/verify) и однозначно указывают на аудит, поэтому приоритетнее
 // (например, "search for hardcoded secrets" → security, а не explore).
 // Примечание: \b не работает вокруг кириллицы (\w — только ASCII),
 // поэтому русские ключи (уязвим*, инъекци*) матчатся без границ.
 const SECURITY_KEYWORDS = /\bsecurity\b|vulnerab\w*|exploit\w*|\bcve\w*|owasp|injection\w*|\bxss\b|secret\w*|уязвим\w*|инъекци\w*/i;
+// Code-review-обороты классификатора задач (routing на code-review-воркера).
+// №2 правило classifyTaskByDescription (СРАЗУ после security): review-обороты специфичнее
+// generic-глаголов (verify/check) и однозначно указывают на code-review (F-12, TC-F-12-1).
+// Поэтому из verify-правила ниже убраны \breview\b|\bsecurity\b — их домены теперь
+// правила №1 (security) и №2 (code-review), иначе правило №2 никогда бы не сработало
+// (verify ловит 'review' раньше всего, что ниже него).
+// Отличия от карточки (проверено фактически, F-12):
+//  - кириллица (ревью, код[\s-]ревью) — ВНЕ \b…\b: \b не работает вокруг кириллицы
+//    ('р' — не \w в ASCII-режиме), иначе 'ревью диффа' не матчится (прецедент выше);
+//  - noun-first артефакты (pr|commit|branch)\s*review: обороты 'commit review …' /
+//    'branch review …' из TC-F-12-1 не покрываются формой review (this|the) (pr|…).
+const CODE_REVIEW_KEYWORDS = /\b(?:code\s*review|review\s+(?:this|the)\s+(?:pr|diff|changes|commit|branch)|(?:pr|commit|branch)\s*review|lgtm)\b|ревью|код[\s-]ревью/i;
 function getAgentIcon(agentName) {
     return AGENT_ICONS[agentName] ?? "🤖";
 }
@@ -146,7 +160,7 @@ function formatToolCall(toolName, args, themeFg) {
 }
 function classifyTaskByDescription(description) {
     const lower = description.toLowerCase();
-    // Security — ПЕРВОЕ правило (SECURITY_KEYWORDS в шапке модуля)
+    // №1: Security — security-слова специфичнее generic-глаголов (SECURITY_KEYWORDS в шапке модуля)
     if (SECURITY_KEYWORDS.test(lower)) {
         return {
             workerType: "security",
@@ -154,7 +168,15 @@ function classifyTaskByDescription(description) {
             reasoning: "Task description mentions security keywords (security, vulnerability, exploit, CVE, OWASP, injection, XSS, secrets)",
         };
     }
-    // Explore patterns
+    // №2: Code review — review-обороты специфичнее verify-глаголов (CODE_REVIEW_KEYWORDS в шапке модуля)
+    if (CODE_REVIEW_KEYWORDS.test(lower)) {
+        return {
+            workerType: "code-review",
+            confidence: 0.9,
+            reasoning: "Task description mentions code-review phrases (code review, review this/the PR/diff/changes/commit/branch, PR review, LGTM, ревью)",
+        };
+    }
+    // №3: Explore patterns
     if (/\b(explore|find|locate|search|grep|look for|what files|list|structure|where|which file)\b/i.test(lower)) {
         return {
             workerType: "explore",
@@ -162,12 +184,12 @@ function classifyTaskByDescription(description) {
             reasoning: "Task description suggests codebase exploration or file lookup",
         };
     }
-    // Plan patterns
+    // №4: Plan patterns
     if (/\b(plan|design|architect|spec|how should|what approach|strategy|outline|propose)\b/i.test(lower)) {
         return { workerType: "plan", confidence: 0.8, reasoning: "Task description suggests planning or design work" };
     }
-    // Verify patterns
-    if (/\b(review|verify|check|test|audit|inspect|validate|security|quality)\b/i.test(lower)) {
+    // №5: Verify patterns (сужено в F-12: review → правило №2 code-review, security → правило №1)
+    if (/\b(verify|check|test|audit|inspect|validate|quality)\b/i.test(lower)) {
         return { workerType: "verify", confidence: 0.8, reasoning: "Task description suggests verification or review" };
     }
     // Default: implement
@@ -352,7 +374,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                     // Chain no-duplication rule: do NOT inject previousOutput into previousFindings when the
                     // task uses the {previous} placeholder (the output is already inlined in the task text).
                     const usesPreviousPlaceholder = step.task.includes("{previous}");
-                    let stepContext = mergeContext(step.context, autoContext);
+                    let stepContext = enrichWorkerContext(step.agent, mergeContext(step.context, autoContext));
                     if (previousOutput && !usesPreviousPlaceholder && i > 0) {
                         stepContext = {
                             ...(stepContext ?? {}),
@@ -535,7 +557,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                                 allResults[index] = { ...allResults[index], ..._cr, exitCode: -1 };
                                 emitParallelUpdate();
                             }
-                        }, undefined, mergeContext(t.context, autoContext));
+                        }, undefined, enrichWorkerContext(t.agent, mergeContext(t.context, autoContext)));
                     } catch (workerErr) {
                         const msg = workerErr instanceof Error ? workerErr.message : String(workerErr);
                         const now = Date.now();
@@ -613,7 +635,7 @@ Each subagent runs in an isolated context window — it cannot see the main conv
                 updateWorker(workerId, { abortController: singleAbort });
                 let result;
                 try {
-                    result = await runSingleAgent(ctx.cwd, agents, params.agent, params.task, workerTemperature, params.cwd, undefined, singleAbort.signal, singleUpdate, undefined, mergeContext(params.context, autoContext));
+                    result = await runSingleAgent(ctx.cwd, agents, params.agent, params.task, workerTemperature, params.cwd, undefined, singleAbort.signal, singleUpdate, undefined, enrichWorkerContext(params.agent, mergeContext(params.context, autoContext)));
                 } catch (workerErr) {
                     const msg = workerErr instanceof Error ? workerErr.message : String(workerErr);
                     const now = Date.now();
@@ -1588,5 +1610,33 @@ Each subagent runs in an isolated context window — it cannot see the main conv
             };
         },
     });
+}
+
+/**
+ * F-13: агент-специфичное обогащение контекста воркера перед запуском (runSingleAgent).
+ *
+ * Для code-review инъектирует constraint `CODE_REVIEW_RULES_DIR=<abs>` — абсолютный путь
+ * к каталогу правил extension (`<dir of orchestrator-tools.js>/review-rules`). Воркер-промпт
+ * (agents/code-review.md, STEP 2) читает constraint и загружает правила оттуда. Путь считается
+ * относительно этого модуля (fileURLToPath(import.meta.url), ESM — __dirname нет), поэтому
+ * резолвится и в dev (extensions/fan-orchestrator), и в установленном extension
+ * (~/.fan/agent/extensions/fan-orchestrator), независимо от cwd процесса.
+ *
+ * Для остальных агентов (и не-объектного context) — no-op: контекст не мутируется.
+ */
+const ORCHESTRATOR_MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
+export function enrichWorkerContext(agent, context) {
+    if (agent !== "code-review" || !context || typeof context !== "object")
+        return context;
+    // Иммутабельный enrich: mergeContext может вернуть autoContext ПО ССЫЛКЕ
+    // (explicit === undefined, context-builder.js), поэтому мутация context.constraints
+    // утекала бы в общий autoContext и в контексты следующих шагов chain (F-13 fix).
+    return {
+        ...context,
+        constraints: [
+            ...(context.constraints ?? []),
+            `CODE_REVIEW_RULES_DIR=${path.join(ORCHESTRATOR_MODULE_DIR, "review-rules")}`,
+        ],
+    };
 }
 //# sourceMappingURL=orchestrator-tools.js.map

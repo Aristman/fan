@@ -2183,7 +2183,13 @@ export class InteractiveMode {
 	private async handleClipboardImagePaste(): Promise<void> {
 		try {
 			const image = await readClipboardImage();
+			if (process.env.FAN_DEBUG) {
+				process.stderr.write(
+					`[FAN_DEBUG] readClipboardImage returned: ${image ? `${image.bytes.length} bytes ${image.mimeType}` : "null"}\n`,
+				);
+			}
 			if (!image) {
+				this.showWarning("Clipboard: no image found. Take a screenshot (Win+Shift+S) then press Alt+V.");
 				return;
 			}
 
@@ -2206,8 +2212,10 @@ export class InteractiveMode {
 			const marker = `[image_${this.imageCounter}]`;
 			this.editor.insertTextAtCursor?.(marker);
 			this.ui.requestRender();
-		} catch {
-			// Silently ignore clipboard errors (may not have permission, etc.)
+			this.showStatus(`Image pasted as ${marker}`);
+		} catch (error) {
+			const msg = error instanceof Error ? error.message : String(error);
+			this.showStatus(`Clipboard paste failed: ${msg}`);
 		}
 	}
 

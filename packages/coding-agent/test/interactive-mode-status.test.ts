@@ -232,9 +232,7 @@ describe("InteractiveMode.getExtensionDisplayName", () => {
 	});
 
 	test("handles Windows backslash separators", () => {
-		expect(getName("C:\\Users\\User\\.fan\\agent\\extensions\\voice-ollama-tui\\index.ts")).toBe(
-			"voice-ollama-tui",
-		);
+		expect(getName("C:\\Users\\User\\.fan\\agent\\extensions\\voice-ollama-tui\\index.ts")).toBe("voice-ollama-tui");
 	});
 
 	test("falls back to file basename without extension outside an extensions directory", () => {

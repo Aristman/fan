@@ -71,6 +71,11 @@
  *         специализированный read-only воркер получает модель после основных воркеров,
  *         как verify/docs-impl в хвосте списка.
  *
+ *   UPDATE F-14: ASSIGNMENT_ORDER расширен ключом "code-review" (read-only on-demand
+ *   воркер, профиль в WORKER_PROFILES совпадает с security). Позиция — ПЕРЕД security:
+ *   решение F-1.3 «security — последний» сохранено, code-review примыкает к хвосту.
+ *   Regression-guard ниже фильтрует обоих новых агентов.
+ *
  * Red-ожидание: routing-тесты TC-F-1.3-1 и граничные падают (verify/implement/explore
  * вместо security); контракт-тесты agentIcons / WORKER_PROFILES / ASSIGNMENT_ORDER
  * падают (security отсутствует). TC-F-1.3-2 и пустая строка зелёные СРАЗУ — это
@@ -81,6 +86,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getAgentTypes } from "../agents/index.js";
 
 const SECURITY_TYPE = "security";
+const CODE_REVIEW_TYPE = "code-review"; // F-14: read-only on-demand worker, в хвосте ASSIGNMENT_ORDER
 const SECURITY_ICON = "🔒";
 
 /* ============================================================================
@@ -198,8 +204,8 @@ const SECURITY_PHRASES = [
 const REFERENCE_PHRASES = [
     {
         phrase: "review this PR",
-        expected: "verify",
-        note: "эталон roadmap №1 — без изменений",
+        expected: "code-review",
+        note: "мигрирован в F-12 (было verify): правило №2 code-review направляет review-обороты на code-review",
     },
     {
         phrase: "explore the project structure",
@@ -466,8 +472,8 @@ describe("F-1.3: контракты данных orchestrator-extension.js (agen
             ];
             const order = extractAssignmentOrder(requireExtensionSource());
             expect(
-                order.filter((t) => t !== SECURITY_TYPE),
-                "порядок существующих 8 типов не должен меняться при добавлении security",
+                order.filter((t) => t !== SECURITY_TYPE && t !== CODE_REVIEW_TYPE),
+                "порядок существующих 8 типов не должен меняться при добавлении security (F-1.3) / code-review (F-14)",
             ).toEqual(EXISTING_ORDER);
         });
     });

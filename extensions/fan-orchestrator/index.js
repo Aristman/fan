@@ -1,6 +1,6 @@
 // Agent discovery
 // Orchestrator prompts
-export { COORDINATOR_PROMPT, discoverAgents, formatAgentList, formatTaskNotification, PLANNING_PROMPT, parseVerdict, } from "./agents.js";
+export { COORDINATOR_PROMPT, discoverAgents, formatAgentList, formatTaskNotification, PLANNING_PROMPT, parseVerdict, severityToVerdict, } from "./agents.js";
 // Configuration
 export { DEFAULTS, configExists, getConfigPath, getCloudStatus, loadConfig, resolveWorkerModel, saveConfig, } from "./config.js";
 export { default, orchestratorExtension } from "./orchestrator-extension.js";

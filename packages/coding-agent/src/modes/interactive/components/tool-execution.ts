@@ -66,9 +66,7 @@ export class ToolExecutionComponent extends Container {
 					? true
 					: typeof builtInOpt === "function"
 						? builtInOpt
-						: builtInOpt === true
-							? true
-							: false;
+						: builtInOpt === true;
 
 		this.addChild(new Spacer(1));
 

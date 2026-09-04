@@ -14,8 +14,11 @@ const hasDisplay = process.platform !== "linux" || Boolean(process.env.DISPLAY |
 if (!process.env.TERMUX_VERSION && hasDisplay) {
 	try {
 		clipboard = require("@mariozechner/clipboard") as ClipboardModule;
-	} catch {
+	} catch (e) {
 		clipboard = null;
+		if (process.env.FAN_DEBUG) {
+			process.stderr.write(`[FAN_DEBUG] clipboard-native: require failed: ${e instanceof Error ? e.message : e}\n`);
+		}
 	}
 }
 

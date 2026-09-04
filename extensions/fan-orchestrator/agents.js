@@ -606,10 +606,49 @@ export function formatTaskNotification(workerId, agentType, model, status, resul
     lines.push(`</task-notification>`);
     return lines.join("\n");
 }
+/**
+ * All 6 valid verdict values — single source of truth. Composed from the two
+ * verdict groups: the parseVerdict regex is built from VERDICT_VALUES, and
+ * the code-review subset also drives isCodeReviewVerdict().
+ */
+const VERIFY_VERDICTS = ["PASS", "FAIL", "PARTIAL"];
+const CODE_REVIEW_VERDICTS = ["APPROVED", "CHANGES_REQUESTED", "NEEDS_DISCUSSION"];
+export const VERDICT_VALUES = [...VERIFY_VERDICTS, ...CODE_REVIEW_VERDICTS];
 export function parseVerdict(text) {
-    const match = text.match(/VERDICT:\s*(PASS|FAIL|PARTIAL)\b/i);
+    if (!text)
+        return null;
+    const match = text.match(new RegExp(`VERDICT:\\s*(${VERDICT_VALUES.join("|")})\\b`, "i"));
     if (!match)
         return null;
     return match[1].toUpperCase();
+}
+/**
+ * Whether a verdict belongs to the code-review set (APPROVED |
+ * CHANGES_REQUESTED | NEEDS_DISCUSSION) as opposed to the verify set
+ * (PASS | FAIL | PARTIAL). Lets the coordinator distinguish review results
+ * from verification results.
+ */
+export function isCodeReviewVerdict(verdict) {
+    return CODE_REVIEW_VERDICTS.includes(verdict);
+}
+/**
+ * Map code-review findings (F-9 format: {severity, file, line, ...}) to a
+ * review verdict (spec D4):
+ *   - any finding with an «unclear» marker in metadata → "NEEDS_DISCUSSION"
+ *   - any CRITICAL or MAJOR severity                   → "CHANGES_REQUESTED"
+ *   - only MINOR/INFO severities                       → "APPROVED"
+ *   - empty/missing findings (ambiguity)               → "NEEDS_DISCUSSION"
+ */
+export function severityToVerdict(findings) {
+    if (!Array.isArray(findings) || findings.length === 0)
+        return "NEEDS_DISCUSSION";
+    let hasBlocking = false;
+    for (const finding of findings) {
+        if (finding?.metadata?.unclear)
+            return "NEEDS_DISCUSSION";
+        if (finding?.severity === "CRITICAL" || finding?.severity === "MAJOR")
+            hasBlocking = true;
+    }
+    return hasBlocking ? "CHANGES_REQUESTED" : "APPROVED";
 }
 //# sourceMappingURL=agents.js.map

@@ -1,7 +1,8 @@
+import { makeReadOnlyAgent } from "./read-only-agent.js";
+
 export const type = "verify";
 export const definition = {
     type,
-    label: "Verify",
     prompt: `## ROLE
 You are a VERIFICATION SPECIALIST — an ADVERSARY whose job is to FIND PROBLEMS, not confirm everything works.
 
@@ -57,9 +58,10 @@ Result: PASS / FAIL / SKIPPED
 **VERDICT: PASS** — all runnable checks passed
 **VERDICT: FAIL** — one or more checks failed
 **VERDICT: PARTIAL** — some passed, some SKIPPED`,
-    tools: ["read", "bash", "grep", "find", "ls"],
-    readOnly: true,
-    description: "Adversary verification: build, tests, linters, edge cases",
-    useFor: "adversarial check AFTER a write worker. Always run after implement or bug-fix to catch issues.",
-    icon: "🛡️",
+    ...makeReadOnlyAgent({
+        label: "Verify",
+        icon: "🛡️",
+        description: "Adversary verification: build, tests, linters, edge cases",
+        useFor: "adversarial check AFTER a write worker. Always run after implement or bug-fix to catch issues.",
+    }),
 };

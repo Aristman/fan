@@ -133,4 +133,70 @@ describe("readClipboardImage", () => {
 		const result = await readClipboardImage({ platform: "linux", env: {} });
 		expect(result).toBeNull();
 	});
+
+	test("Windows: falls back to PowerShell when native clipboard is null", async () => {
+		mocks.clipboard.hasImage.mockReturnValue(false);
+
+		// PowerShell succeeds with an image
+		mocks.spawnSync.mockImplementation((command, args, _options) => {
+			if (command === "powershell.exe") {
+				return spawnOk(Buffer.from("ok\n", "utf-8"));
+			}
+			throw new Error(`Unexpected spawnSync call: ${command} ${args.join(" ")}`);
+		});
+
+		const { readClipboardImage } = await import("../src/utils/clipboard-image.js");
+		const result = await readClipboardImage({ platform: "win32", env: {} });
+		// PowerShell writes a PNG to temp file; since we mock spawnSync only, the temp file won't exist
+		// so the function should return null (readFileSync would fail). We verify the mock was called.
+		expect(result).toBeNull();
+		expect(mocks.spawnSync).toHaveBeenCalledWith(
+			"powershell.exe",
+			expect.arrayContaining(["-NoProfile", "-Command"]),
+			expect.any(Object),
+		);
+	});
+
+	test("Windows: stays null when both native clipboard and PowerShell fail", async () => {
+		mocks.clipboard.hasImage.mockReturnValue(false);
+
+		// PowerShell also fails
+		mocks.spawnSync.mockImplementation((command, args, _options) => {
+			if (command === "powershell.exe") {
+				return spawnError(new Error("ENOENT"));
+			}
+			throw new Error(`Unexpected spawnSync call: ${command} ${args.join(" ")}`);
+		});
+
+		const { readClipboardImage } = await import("../src/utils/clipboard-image.js");
+		const result = await readClipboardImage({ platform: "win32", env: {} });
+		expect(result).toBeNull();
+	});
+
+	test("Windows: falls back to PowerShell when native clipboard throws", async () => {
+		// hasImage() throws — simulates native module crash
+		mocks.clipboard.hasImage.mockImplementation(() => {
+			throw new Error("native clipboard crashed");
+		});
+		mocks.clipboard.getImageBinary.mockRejectedValue(new Error("should not be called"));
+
+		// PowerShell succeeds with an image
+		mocks.spawnSync.mockImplementation((command, args, _options) => {
+			if (command === "powershell.exe") {
+				return spawnOk(Buffer.from("ok\n", "utf-8"));
+			}
+			throw new Error(`Unexpected spawnSync call: ${command} ${args.join(" ")}`);
+		});
+
+		const { readClipboardImage } = await import("../src/utils/clipboard-image.js");
+		const result = await readClipboardImage({ platform: "win32", env: {} });
+		// PowerShell writes temp file, but since we mock spawnSync only, readFileSync will fail
+		// The important thing is that PowerShell WAS called despite the throw
+		expect(result).toBeNull();
+		expect(mocks.spawnSync).toHaveBeenCalledWith(
+			"powershell.exe",
+			expect.arrayContaining(["-NoProfile", "-Command"]),
+			expect.any(Object),
+		);
+	});
 });
