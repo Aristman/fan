@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Спецификация: {{SPEC_TITLE}}</title>
+<style>
+  /* feature-factory — spec preview. Inline CSS, без внешних CDN.
+     Тема: светлая/тёмная через prefers-color-scheme + CSS-переменные. */
+  :root {
+    --bg: #f8fafc; --bg-card: #ffffff; --bg-soft: #f1f5f9;
+    --text: #0f172a; --text-muted: #64748b; --border: #e2e8f0;
+    --accent: #2563eb; --accent-soft: #dbeafe;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f172a; --bg-card: #1e293b; --bg-soft: #273449;
+      --text: #e2e8f0; --text-muted: #94a3b8; --border: #334155;
+      --accent: #60a5fa; --accent-soft: #1e3a5f;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px;
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.55;
+  }
+  .container { max-width: 960px; margin: 0 auto; }
+  header.page {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 24px; margin-bottom: 24px;
+    border-left: 4px solid var(--accent);
+  }
+  h1 { margin: 0 0 8px; font-size: 26px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 12px; color: var(--text-muted); font-size: 14px; }
+  .meta span { background: var(--bg-soft); border-radius: 6px; padding: 2px 10px; }
+  section.card {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 20px 24px; margin-bottom: 20px;
+  }
+  h2 { font-size: 18px; margin: 0 0 12px; color: var(--accent); }
+  h3 { font-size: 15px; margin: 16px 0 6px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  th { color: var(--text-muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  .prio {
+    display: inline-block; min-width: 34px; text-align: center;
+    border-radius: 6px; padding: 1px 8px; font-weight: 700; font-size: 12px;
+  }
+  .p0 { background: #dc2626; color: #fff; }
+  .p1 { background: #ea580c; color: #fff; }
+  .p2 { background: #ca8a04; color: #fff; }
+  .p3 { background: var(--bg-soft); color: var(--text-muted); }
+  .pexcl { background: var(--bg-soft); color: var(--text-muted); text-decoration: line-through; }
+  .fn {
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 16px; margin-bottom: 10px; background: var(--bg-soft);
+  }
+  .fn-title { font-weight: 600; margin-bottom: 4px; }
+  .fn-desc { color: var(--text-muted); font-size: 14px; }
+  .fn-tags { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 8px; font-size: 12px; }
+  .fn-tags span { background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; padding: 1px 8px; }
+  details summary { cursor: pointer; color: var(--accent); font-weight: 600; }
+  ul { margin: 8px 0; padding-left: 22px; }
+  footer.note { color: var(--text-muted); font-size: 12px; text-align: center; margin-top: 24px; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header class="page">
+    <h1>{{SPEC_TITLE}}</h1>
+    <div class="meta">
+      <span>Тип: {{SPEC_TYPE}}</span>
+      <span>Slug: {{SPEC_SLUG}}</span>
+      <span>Дата: {{SPEC_DATE}}</span>
+      <span>Версия: {{SPEC_VERSION}}</span>
+      <span>Статус: {{SPEC_STATUS}}</span>
+    </div>
+  </header>
+
+  <section class="card">
+    <h2>Обзор</h2>
+    <h3>Цель</h3>
+    <p>{{SPEC_GOAL}}</p>
+    <h3>Контекст</h3>
+    <p>{{SPEC_CONTEXT}}</p>
+    <h3>Решение</h3>
+    <p>{{SPEC_SOLUTION}}</p>
+  </section>
+
+  <section class="card">
+    <h2>Функции ({{FUNCTIONS_COUNT}})</h2>
+    <div class="fn">
+      <div class="fn-title">F-1: {{FUNCTION_1_NAME}} <span class="prio p0">P0</span></div>
+      <div class="fn-desc">{{FUNCTION_1_DESC}}</div>
+      <div class="fn-tags"><span>Слой: {{FUNCTION_1_LAYER}}</span><span>Зависимости: {{FUNCTION_1_DEPS}}</span></div>
+    </div>
+    <div class="fn">
+      <div class="fn-title">F-2: {{FUNCTION_2_NAME}} <span class="prio p1">P1</span></div>
+      <div class="fn-desc">{{FUNCTION_2_DESC}}</div>
+      <div class="fn-tags"><span>Слой: {{FUNCTION_2_LAYER}}</span><span>Зависимости: {{FUNCTION_2_DEPS}}</span></div>
+    </div>
+    <!-- {{FUNCTIONS_EXTRA}} — повторить блок .fn для остальных функций;
+         класс бейджа приоритета: p0/p1/p2/p3, исключённые из roadmap — pexcl -->
+  </section>
+
+  <section class="card">
+    <h2>MoSCoW / Приоритеты</h2>
+    <table>
+      <thead>
+        <tr><th>Категория</th><th>Маппинг</th><th>Функции</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Must Have</td><td><span class="prio p0">P0</span></td><td>{{MOSCOW_MUST}}</td></tr>
+        <tr><td>Should Have</td><td><span class="prio p1">P1</span></td><td>{{MOSCOW_SHOULD}}</td></tr>
+        <tr><td>Could Have</td><td><span class="prio p2">P2</span></td><td>{{MOSCOW_COULD}}</td></tr>
+        <tr><td>Won't Have</td><td><span class="prio pexcl">exclude</span></td><td>{{MOSCOW_WONT}}</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="card">
+    <h2>Нефункциональные требования (NFR)</h2>
+    <table>
+      <thead><tr><th>Категория</th><th>Требование</th></tr></thead>
+      <tbody>
+        <tr><td>Производительность</td><td>{{NFR_PERFORMANCE}}</td></tr>
+        <tr><td>Безопасность</td><td>{{NFR_SECURITY}}</td></tr>
+        <tr><td>Надёжность</td><td>{{NFR_RELIABILITY}}</td></tr>
+        <tr><td>Масштабируемость</td><td>{{NFR_SCALABILITY}}</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="card">
+    <h2>Риски</h2>
+    <table>
+      <thead><tr><th>Риск</th><th>Вероятность</th><th>Влияние</th><th>Митигация</th></tr></thead>
+      <tbody>
+        <tr><td>{{RISK_1_NAME}}</td><td>{{RISK_1_PROB}}</td><td>{{RISK_1_IMPACT}}</td><td>{{RISK_1_MITIGATION}}</td></tr>
+        <!-- {{RISKS_EXTRA}} — повторить <tr> для остальных рисков -->
+      </tbody>
+    </table>
+  </section>
+
+  <section class="card">
+    <details>
+      <summary>Технические детали и компромиссы</summary>
+      <h3>Стек</h3>
+      <p>{{SPEC_STACK}}</p>
+      <h3>Архитектура</h3>
+      <p>{{SPEC_ARCHITECTURE}}</p>
+      <h3>Компромиссы</h3>
+      <ul>
+        <li>{{TRADEOFF_1}}</li>
+        <!-- {{TRADEOFFS_EXTRA}} -->
+      </ul>
+    </details>
+  </section>
+
+  <footer class="note">
+    feature-factory · превью спеки для Lavish-аппрува · источник истины: {{SPEC_PATH}}
+  </footer>
+
+</div>
+</body>
+</html>

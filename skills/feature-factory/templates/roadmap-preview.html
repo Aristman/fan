@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Roadmap: {{ROADMAP_TITLE}}</title>
+<style>
+  /* feature-factory — roadmap preview. Inline CSS, без внешних CDN, без JS-библиотек.
+     Граф зависимостей — CSS-схема. Тема: светлая/тёмная через prefers-color-scheme. */
+  :root {
+    --bg: #f8fafc; --bg-card: #ffffff; --bg-soft: #f1f5f9;
+    --text: #0f172a; --text-muted: #64748b; --border: #e2e8f0;
+    --accent: #2563eb; --accent-soft: #dbeafe;
+    --ok: #16a34a; --wait: #94a3b8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f172a; --bg-card: #1e293b; --bg-soft: #273449;
+      --text: #e2e8f0; --text-muted: #94a3b8; --border: #334155;
+      --accent: #60a5fa; --accent-soft: #1e3a5f;
+      --ok: #4ade80; --wait: #64748b;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px;
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.55;
+  }
+  .container { max-width: 960px; margin: 0 auto; }
+  header.page {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 24px; margin-bottom: 24px;
+    border-left: 4px solid var(--accent);
+  }
+  h1 { margin: 0 0 8px; font-size: 26px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 12px; color: var(--text-muted); font-size: 14px; }
+  .meta span { background: var(--bg-soft); border-radius: 6px; padding: 2px 10px; }
+  section.card {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 20px 24px; margin-bottom: 20px;
+  }
+  h2 { font-size: 18px; margin: 0 0 12px; color: var(--accent); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  th { color: var(--text-muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  .prio {
+    display: inline-block; min-width: 34px; text-align: center;
+    border-radius: 6px; padding: 1px 8px; font-weight: 700; font-size: 12px;
+  }
+  .p0 { background: #dc2626; color: #fff; }
+  .p1 { background: #ea580c; color: #fff; }
+  .p2 { background: #ca8a04; color: #fff; }
+  .p3 { background: var(--bg-soft); color: var(--text-muted); }
+  .status { font-weight: 700; color: var(--wait); }
+  .status.done { color: var(--ok); }
+  .stage {
+    border: 1px solid var(--border); border-radius: 12px;
+    padding: 16px 20px; margin-bottom: 16px; background: var(--bg-card);
+  }
+  .stage-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+  .stage-num {
+    background: var(--accent); color: #fff; border-radius: 8px;
+    padding: 2px 12px; font-weight: 700; font-size: 14px; white-space: nowrap;
+  }
+  .stage-title { font-size: 17px; font-weight: 700; }
+  .stage-goals { color: var(--text-muted); font-size: 13px; margin-bottom: 12px; }
+  .stage-goals b { color: var(--text); }
+  details summary { cursor: pointer; color: var(--accent); font-weight: 600; }
+  /* Граф зависимостей: CSS-схема (колонки = этапы, стрелки = зависимости), без JS */
+  .dep-graph {
+    display: flex; gap: 24px; align-items: stretch; overflow-x: auto; padding: 8px 0;
+  }
+  .dep-col { display: flex; flex-direction: column; gap: 10px; min-width: 150px; }
+  .dep-col-label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); text-align: center; }
+  .dep-node {
+    background: var(--bg-soft); border: 1px solid var(--border); border-radius: 8px;
+    padding: 6px 10px; font-size: 13px; text-align: center; white-space: nowrap;
+  }
+  .dep-node b { color: var(--accent); }
+  .dep-arrow {
+    align-self: center; color: var(--text-muted); font-size: 20px;
+    display: flex; align-items: center; padding: 0 2px;
+  }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--text-muted); }
+  footer.note { color: var(--text-muted); font-size: 12px; text-align: center; margin-top: 24px; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header class="page">
+    <h1>Roadmap: {{ROADMAP_TITLE}}</h1>
+    <div class="meta">
+      <span>Slug: {{ROADMAP_SLUG}}</span>
+      <span>Источник: {{ROADMAP_SPEC}}</span>
+      <span>Дата: {{ROADMAP_DATE}}</span>
+      <span>Этапов: {{STAGES_COUNT}} / лимит {{MAX_STAGES}}</span>
+      <span>Функций: {{FUNCTIONS_COUNT}} / лимит {{MAX_FUNCTIONS}}</span>
+      <span>Стратегия: {{ROADMAP_STRATEGY}}</span>
+    </div>
+  </header>
+
+  <section class="card">
+    <h2>Этапы</h2>
+
+    <div class="stage">
+      <div class="stage-head">
+        <span class="stage-num">Этап 1</span>
+        <span class="stage-title">{{STAGE_1_TITLE}}</span>
+      </div>
+      <div class="stage-goals">
+        <b>Цель:</b> {{STAGE_1_GOAL}} · <b>E2E:</b> {{STAGE_1_E2E}} · <b>Smoke:</b> {{STAGE_1_SMOKE}}
+      </div>
+      <table>
+        <thead>
+          <tr><th>ID</th><th>Функция</th><th>Приоритет</th><th>TDD-тесты</th><th>Статус</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>{{STAGE_1_FN_1_ID}}</td>
+            <td>{{STAGE_1_FN_1_NAME}} <small style="color:var(--text-muted)">[{{STAGE_1_FN_1_LAYER}}]</small></td>
+            <td><span class="prio p0">P0</span></td>
+            <td>{{STAGE_1_FN_1_TESTS}}</td>
+            <td><span class="status">{{STAGE_1_FN_1_STATUS}}</span></td>
+          </tr>
+          <tr>
+            <td>{{STAGE_1_FN_2_ID}}</td>
+            <td>{{STAGE_1_FN_2_NAME}} <small style="color:var(--text-muted)">[{{STAGE_1_FN_2_LAYER}}]</small></td>
+            <td><span class="prio p1">P1</span></td>
+            <td>{{STAGE_1_FN_2_TESTS}}</td>
+            <td><span class="status">{{STAGE_1_FN_2_STATUS}}</span></td>
+          </tr>
+          <!-- {{STAGE_1_FUNCTIONS_EXTRA}} — повторить <tr> для остальных функций этапа 1 -->
+        </tbody>
+      </table>
+    </div>
+
+    <div class="stage">
+      <div class="stage-head">
+        <span class="stage-num">Этап 2</span>
+        <span class="stage-title">{{STAGE_2_TITLE}}</span>
+      </div>
+      <div class="stage-goals">
+        <b>Цель:</b> {{STAGE_2_GOAL}} · <b>E2E:</b> {{STAGE_2_E2E}} · <b>Smoke:</b> {{STAGE_2_SMOKE}}
+      </div>
+      <table>
+        <thead>
+          <tr><th>ID</th><th>Функция</th><th>Приоритет</th><th>TDD-тесты</th><th>Статус</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>{{STAGE_2_FN_1_ID}}</td>
+            <td>{{STAGE_2_FN_1_NAME}} <small style="color:var(--text-muted)">[{{STAGE_2_FN_1_LAYER}}]</small></td>
+            <td><span class="prio p0">P0</span></td>
+            <td>{{STAGE_2_FN_1_TESTS}}</td>
+            <td><span class="status">{{STAGE_2_FN_1_STATUS}}</span></td>
+          </tr>
+          <!-- {{STAGE_2_FUNCTIONS_EXTRA}} -->
+        </tbody>
+      </table>
+    </div>
+
+    <!-- {{STAGES_EXTRA}} — повторить блок .stage для остальных этапов;
+         статус в колонке «Статус»: ☐ (запланировано) / ⏳ / ✅ / ❌ -->
+
+  </section>
+
+  <section class="card">
+    <h2>Граф зависимостей</h2>
+    <div class="dep-graph">
+      <div class="dep-col">
+        <div class="dep-col-label">Этап 1</div>
+        <div class="dep-node"><b>{{DEP_NODE_1_ID}}</b> {{DEP_NODE_1_NAME}}</div>
+        <div class="dep-node"><b>{{DEP_NODE_2_ID}}</b> {{DEP_NODE_2_NAME}}</div>
+      </div>
+      <div class="dep-arrow">→</div>
+      <div class="dep-col">
+        <div class="dep-col-label">Этап 2</div>
+        <div class="dep-node"><b>{{DEP_NODE_3_ID}}</b> {{DEP_NODE_3_NAME}}<br><small>← {{DEP_NODE_3_DEPS}}</small></div>
+      </div>
+      <div class="dep-arrow">→</div>
+      <div class="dep-col">
+        <div class="dep-col-label">Этап N</div>
+        <div class="dep-node"><b>{{DEP_NODE_N_ID}}</b> {{DEP_NODE_N_NAME}}<br><small>← {{DEP_NODE_N_DEPS}}</small></div>
+      </div>
+    </div>
+    <p style="color:var(--text-muted);font-size:13px">
+      Направление: этап N+1 зависит от этапа N. Зависимости внутри этапа указаны в узлах. Циклов: {{DEP_CYCLES}}.
+    </p>
+  </section>
+
+  <section class="card">
+    <h2>Легенда</h2>
+    <div class="legend">
+      <span>☐ — запланировано</span>
+      <span>⏳ — в работе</span>
+      <span>✅ — реализовано</span>
+      <span>❌ — заблокировано/провалено</span>
+      <span><span class="prio p0">P0</span> критично</span>
+      <span><span class="prio p1">P1</span> высокий</span>
+      <span><span class="prio p2">P2</span> средний</span>
+      <span><span class="prio p3">P3</span> низкий</span>
+    </div>
+    <details>
+      <summary>Предупреждения и допущения</summary>
+      <ul>
+        <li>{{ROADMAP_WARNINGS}}</li>
+        <!-- {{WARNINGS_EXTRA}} -->
+      </ul>
+    </details>
+  </section>
+
+  <footer class="note">
+    feature-factory · превью роадмапы для Lavish-аппрува · источник истины: {{ROADMAP_PATH}}
+  </footer>
+
+</div>
+</body>
+</html>

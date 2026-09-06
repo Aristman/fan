@@ -85,6 +85,8 @@ The coordinator receives your request and:
 | **code-research** | read, bash, grep, find, ls | Read-only | Deep code analysis, dependency tracing, pattern mining |
 | **tests-impl** | read, write, edit, bash, grep, find, ls | Full | Writing unit/integration tests for existing code |
 | **docs-impl** | read, write, edit, bash, grep, find, ls | Full | Writing and updating documentation |
+| **security** | read, bash, grep, find, ls | Read-only | Deep security audit: OWASP/CWE patterns, secret scanning, dependencies, IaC, config |
+| **code-review** | read, bash, grep, find, ls | Read-only | Static review of diff/PR/project with verdict system |
 
 Read-only vs. write access is derived from each agent's `readOnly` flag (set from its declared tools), not from a hardcoded list — custom agents with read-only tools automatically get read-only treatment.
 
@@ -514,7 +516,7 @@ Legacy keys are migrated automatically on load (`cloud.defaultModel` → `cloud.
 
 Workers are restricted by their declared tools, enforced at spawn time:
 
-- **Read-only workers** (explore, plan, verify, code-research): `read`, `bash`, `grep`, `find`, `ls` — no write/edit.
+- **Read-only workers** (explore, plan, verify, security, code-review, code-research): `read`, `bash`, `grep`, `find`, `ls` — no write/edit.
 - **Write workers** (implement, bug-fix, tests-impl, docs-impl): full access (all tools).
 
 ### Interactive Permission Approval

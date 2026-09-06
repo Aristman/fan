@@ -1,0 +1,20 @@
+{
+  "spec": {
+    "autoDetectType": true,
+    "research": { "memory": true, "projectFiles": true, "webSearch": true, "minQuality": 0.8 }
+  },
+  "roadmap": {
+    "maxStages": 8, "maxFunctions": 15, "functionsPerStage": [3,30]
+  },
+  "pipeline": {
+    "codeReview": "final",
+    "securityAudit": "final",
+    "docsUpdate": true
+  },
+  "lavish": {
+    "specApproval": { "enabled": true, "playbook": "plan" },
+    "roadmapApproval": { "enabled": true, "playbook": "plan" },
+    "maxRevisions": 5,
+    "approveKeywords": ["approve","approved","аппрув","ок","согласовано","всё отлично","выглядит хорошо"]
+  }
+}
