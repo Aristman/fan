@@ -66,7 +66,7 @@
 | `stage` | `intake` \| `rca` \| `approval` \| `red` \| `green` \| `verify` \| `done` \| `stopped` | Текущая стадия; точка resume |
 | `rca.status` | `confirmed` \| `refuted` \| `not_reproducible` | Итог RCA-воркера |
 | `rca.summaryRef` | string | Ссылка на секцию RCA в документе решения |
-| `rca.attempt` | number | Попытка RCA (повтор после `not_reproducible` с новым контекстом) |
+| `rca.attempt` | number | Попытка RCA (счётчик повторных запусков стадии RCA) |
 | `approval.method` | `lavish` \| `question` \| `hotfix-bypass` | Способ аппрува |
 | `approval.approvedAt` | ISO 8601 \| null | Момент фиксации аппрува |
 | `approval.iterations` | number | Итераций правок (лимит 5) |
