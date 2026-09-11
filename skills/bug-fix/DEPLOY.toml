@@ -8,6 +8,8 @@ type = "skill"
 include = [
     "SKILL.md",
     "package.json",
+    "README.md",
+    "references/**/*.md",
 ]
 
 # No generated files in skills
